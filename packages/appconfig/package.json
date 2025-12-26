@@ -1,6 +1,6 @@
 {
   "name": "@maroonedsoftware/appconfig",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "A flexible, type-safe configuration management library with support for multiple sources and value transformation.",
   "author": {
     "name": "Marooned Software",

@@ -1,6 +1,6 @@
 {
   "name": "@maroonedsoftware/logger",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "A simple, dependency injection friendly logging abstraction with multiple log levels.",
   "author": {
     "name": "Marooned Software",

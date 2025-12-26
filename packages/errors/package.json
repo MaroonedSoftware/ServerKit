@@ -1,6 +1,6 @@
 {
   "name": "@maroonedsoftware/errors",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "A comprehensive error handling library for HTTP APIs with built-in support for PostgreSQL error mapping and class-level error decorators.",
   "author": {
     "name": "Marooned Software",
