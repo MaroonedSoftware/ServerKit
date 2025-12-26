@@ -1,6 +1,6 @@
 {
   "name": "@maroonedsoftware/jobbroker",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "A flexible background job processing library with support for scheduled and on-demand jobs.",
   "author": {
     "name": "Marooned Software",
