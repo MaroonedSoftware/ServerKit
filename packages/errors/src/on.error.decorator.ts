@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unsafe-function-type */
+
 /**
  * Type definition for an error handler function.
  * Called when an error is caught in a decorated method, getter, or setter.

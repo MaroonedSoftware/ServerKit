@@ -119,7 +119,7 @@ export class AppConfigProviderGcpSecrets implements AppConfigProvider {
     const tasks: Promise<void>[] = [];
     const matches = value.matchAll(this.prefix);
 
-    for (const [found, key] of matches) {
+    for (const [, key] of matches) {
       const task = this.getSecret(key!).then(value => {
         if (meta.arrayIndex !== undefined && Array.isArray(meta.owner)) {
           meta.owner[meta.arrayIndex] = tryParseJson(value);

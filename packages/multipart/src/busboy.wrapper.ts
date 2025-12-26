@@ -146,12 +146,8 @@ export class BusboyWrapper extends Busboy {
     }
   }
 
-  private resolve(_: Map<string, MultipartData | MultipartData[]>) {
-    console.log('resolve', this.fields);
-  }
-  private reject(_?: Error) {
-    console.log('reject', _);
-  }
+  private resolve(_: Map<string, MultipartData | MultipartData[]>) {}
+  private reject(_?: Error) {}
 
   /**
    * Handler called when parsing completes or an error occurs.

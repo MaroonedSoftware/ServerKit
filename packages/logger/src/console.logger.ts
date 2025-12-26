@@ -18,7 +18,11 @@ export class ConsoleLogger implements Logger {
    * @param optionalParams - Additional parameters to include in the log output.
    */
   private log(level: 'error' | 'warn' | 'info' | 'debug' | 'trace', message: unknown, optionalParams: unknown[]) {
-    optionalParams.length > 0 ? this._console[level](message, optionalParams) : this._console[level](message);
+    if (optionalParams.length > 0) {
+      this._console[level](message, optionalParams);
+    } else {
+      this._console[level](message);
+    }
   }
 
   /**

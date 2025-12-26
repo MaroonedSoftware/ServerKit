@@ -43,14 +43,14 @@
   },
   "dependencies": {
     "@maroonedsoftware/logger": "workspace:*",
-    "injectkit": "^1.0.0"
+    "injectkit": "^1.0.3"
   },
   "devDependencies": {
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
     "pg-boss": "^12.5.4",
-    "unplugin-swc": "^1.5.1",
-    "vitest": "^3.0.2"
+    "unplugin-swc": "^1.5.9",
+    "vitest": "^4.0.16"
   },
   "peerDependencies": {
     "pg-boss": "^12.5.4"

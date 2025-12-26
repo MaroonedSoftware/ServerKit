@@ -40,7 +40,7 @@
   "dependencies": {
     "deepmerge-ts": "^7.1.5",
     "dotenv": "^17.2.3",
-    "injectkit": "^1.0.0"
+    "injectkit": "^1.0.3"
   },
   "devDependencies": {
     "@google-cloud/secret-manager": "^6.1.1",

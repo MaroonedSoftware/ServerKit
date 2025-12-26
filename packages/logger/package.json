@@ -39,7 +39,7 @@
     "test:ci": "vitest run --coverage"
   },
   "dependencies": {
-    "injectkit": "^1.0.0"
+    "injectkit": "^1.0.3"
   },
   "devDependencies": {
     "@repo/config-eslint": "workspace:*",
