@@ -7,7 +7,9 @@ on:
 
 permissions:
   id-token: write # Required for OIDC
-  contents: read
+  contents: write # to create release (changesets/action)
+  issues: write # to post issue comments (changesets/action)
+  pull-requests: write # to create pull request (changesets/action)
 
 jobs:
   build:

@@ -14,11 +14,6 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    permissions:
-      contents: write # to create release (changesets/action)
-      issues: write # to post issue comments (changesets/action)
-      pull-requests: write # to create pull request (changesets/action)
-      id-token: write # to use OpenID Connect token for provenance (changesets/action)
     steps:
       - name: Retrieve build cache
         id: cache
