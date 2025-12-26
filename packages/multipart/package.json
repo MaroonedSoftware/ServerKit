@@ -1,0 +1,51 @@
+{
+  "name": "@maroonedsoftware/multipart",
+  "version": "0.0.1",
+  "description": "A robust multipart form-data and multipart/related parser for Node.js HTTP servers.",
+  "author": {
+    "name": "Marooned Software",
+    "url": "https://github.com/MaroonedSoftware/serverkit"
+  },
+  "bugs": {
+    "url": "https://github.com/MaroonedSoftware/serverkit/issues"
+  },
+  "homepage": "https://github.com/MaroonedSoftware/serverkit/packages/multipart#readme",
+  "keywords": [
+    "backend",
+    "busboy",
+    "multipart",
+    "multipart/form-data",
+    "multipart/related",
+    "serverkit",
+    "typescript"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MaroonedSoftware/serverkit.git"
+  },
+  "private": false,
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "license": "MIT",
+  "files": [
+    "dist/**"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --sourcemap --dts && tsc --emitDeclarationOnly --declaration",
+    "build:ci": "eslint --max-warnings=0 && pnpm run build",
+    "lint": "eslint --fix",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:ci": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@maroonedsoftware/errors": "workspace:*",
+    "@fastify/busboy": "^3.2.0"
+  },
+  "devDependencies": {
+    "@repo/config-eslint": "workspace:*",
+    "@repo/config-typescript": "workspace:*"
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "name": "@maroonedsoftware/jobbroker",
+  "version": "0.0.1",
+  "description": "A flexible background job processing library with support for scheduled and on-demand jobs.",
+  "author": {
+    "name": "Marooned Software",
+    "url": "https://github.com/MaroonedSoftware/serverkit"
+  },
+  "bugs": {
+    "url": "https://github.com/MaroonedSoftware/serverkit/issues"
+  },
+  "homepage": "https://github.com/MaroonedSoftware/serverkit/packages/jobbroker#readme",
+  "keywords": [
+    "backend",
+    "jobbroker",
+    "jobs",
+    "scheduled",
+    "pubsub",
+    "queues",
+    "serverkit",
+    "typescript"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MaroonedSoftware/serverkit.git"
+  },
+  "private": false,
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "license": "MIT",
+  "files": [
+    "dist/**"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --sourcemap --dts && tsc --emitDeclarationOnly --declaration",
+    "build:ci": "eslint --max-warnings=0 && pnpm run build",
+    "lint": "eslint --fix",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:ci": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@maroonedsoftware/logger": "workspace:*",
+    "injectkit": "^1.0.0"
+  },
+  "devDependencies": {
+    "@repo/config-eslint": "workspace:*",
+    "@repo/config-typescript": "workspace:*",
+    "pg-boss": "^12.5.4",
+    "unplugin-swc": "^1.5.1",
+    "vitest": "^3.0.2"
+  },
+  "peerDependencies": {
+    "pg-boss": "^12.5.4"
+  }
+}

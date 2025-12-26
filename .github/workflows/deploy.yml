@@ -1,0 +1,39 @@
+name: Deploy
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: false
+        type: string
+
+env:
+  CI: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # to create release (changesets/action)
+      issues: write # to post issue comments (changesets/action)
+      pull-requests: write # to create pull request (changesets/action)
+      id-token: write # to use OpenID Connect token for provenance (changesets/action)
+    steps:
+      - name: Retrieve build cache
+        id: cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ./*
+          key: build-cache-${{ github.sha }}
+          fail-on-cache-miss: true
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Create and publish versions
+        id: changesets
+        uses: changesets/action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

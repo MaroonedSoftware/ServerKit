@@ -1,0 +1,29 @@
+{
+  "name": "@maroonedsoftware/serverkit",
+  "private": true,
+  "scripts": {
+    "build": "turbo run build",
+    "build:ci": "turbo run build:ci",
+    "changeset": "changeset",
+    "lint": "turbo run lint",
+    "format": "turbo run format",
+    "test": "turbo run test",
+    "test:ci": "turbo run test:ci"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.29.8",
+    "@types/node": "^25.0.2",
+    "@vitest/coverage-v8": "^4.0.15",
+    "eslint": "^9.39.2",
+    "prettier": "^3.7.4",
+    "tsup": "^8.5.1",
+    "turbo": "^2.6.3",
+    "typescript": "5.9.3",
+    "unplugin-swc": "^1.5.9",
+    "vitest": "^4.0.15"
+  },
+  "packageManager": "pnpm@10.24.0",
+  "engines": {
+    "node": ">=20"
+  }
+}

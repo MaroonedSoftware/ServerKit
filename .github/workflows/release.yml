@@ -1,0 +1,22 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  id-token: write # Required for OIDC
+  contents: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+    secrets: inherit
+
+  deploy:
+    needs: [build]
+    uses: ./.github/workflows/deploy.yml
+    secrets: inherit
+    with:
+      tag: ${{ github.head_ref }}

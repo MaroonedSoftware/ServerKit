@@ -1,0 +1,55 @@
+{
+  "name": "@maroonedsoftware/appconfig",
+  "version": "0.0.1",
+  "description": "A flexible, type-safe configuration management library with support for multiple sources and value transformation.",
+  "author": {
+    "name": "Marooned Software",
+    "url": "https://github.com/MaroonedSoftware/serverkit"
+  },
+  "bugs": {
+    "url": "https://github.com/MaroonedSoftware/serverkit/issues"
+  },
+  "homepage": "https://github.com/MaroonedSoftware/serverkit/packages/appconfig#readme",
+  "keywords": [
+    "backend",
+    "configuration",
+    "serverkit",
+    "typescript"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MaroonedSoftware/serverkit.git"
+  },
+  "private": false,
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "license": "MIT",
+  "files": [
+    "dist/**"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --sourcemap --dts && tsc --emitDeclarationOnly --declaration",
+    "build:ci": "eslint --max-warnings=0 && pnpm run build",
+    "lint": "eslint --fix",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:ci": "vitest run --coverage"
+  },
+  "dependencies": {
+    "deepmerge-ts": "^7.1.5",
+    "dotenv": "^17.2.3",
+    "injectkit": "^1.0.0"
+  },
+  "devDependencies": {
+    "@google-cloud/secret-manager": "^6.1.1",
+    "@repo/config-eslint": "workspace:*",
+    "@repo/config-typescript": "workspace:*",
+    "yaml": "^2.8.2"
+  },
+  "peerDependencies": {
+    "@google-cloud/secret-manager": "^6.1.1",
+    "yaml": "^2.8.2"
+  }
+}
