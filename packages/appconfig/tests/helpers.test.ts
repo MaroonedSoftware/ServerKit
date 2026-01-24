@@ -40,9 +40,7 @@ describe('tryParseJson', () => {
     });
 
     it('should parse JSON with mixed types', () => {
-      const result = tryParseJson(
-        '{"string": "value", "number": 42, "bool": true, "null": null, "array": [1, 2, 3]}',
-      );
+      const result = tryParseJson('{"string": "value", "number": 42, "bool": true, "null": null, "array": [1, 2, 3]}');
       expect(result).toEqual({
         string: 'value',
         number: 42,
@@ -125,4 +123,3 @@ describe('tryParseJson', () => {
     });
   });
 });
-
