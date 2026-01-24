@@ -50,7 +50,7 @@
     "@repo/config-typescript": "workspace:*",
     "pg-boss": "^12.5.4",
     "unplugin-swc": "^1.5.9",
-    "vitest": "^4.0.16"
+    "vitest": "^4.0.18"
   },
   "peerDependencies": {
     "pg-boss": "^12.5.4"
