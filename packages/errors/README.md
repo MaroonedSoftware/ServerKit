@@ -30,8 +30,8 @@ throw httpError(404);
 // With custom message
 throw httpError(400, 'Validation failed');
 
-// With error details (great for form validation)
-throw httpError(400).withErrors({
+// With error details
+throw httpError(400).withDetails({
   email: 'Invalid email format',
   password: 'Must be at least 8 characters',
 });
@@ -54,7 +54,7 @@ throw httpError(500).withInternalDetails({
 });
 
 // Combine multiple options
-throw httpError(409).withErrors({ username: 'Already taken' }).withCause(dbError).withInternalDetails({ attemptedUsername: 'john_doe' });
+throw httpError(409).withDetails({ username: 'Already taken' }).withCause(dbError).withInternalDetails({ attemptedUsername: 'john_doe' });
 ```
 
 ### Type Guard
