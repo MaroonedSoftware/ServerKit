@@ -348,7 +348,7 @@ describe('bodyParserMiddleware', () => {
     describe('error handling', () => {
       it('should re-throw HttpError from parsing', async () => {
         const middleware = bodyParserMiddleware(['application/json']);
-        const httpErr = httpError(400).withErrors({ field: 'invalid' });
+        const httpErr = httpError(400).withDetails({ field: 'invalid' });
         mockRequest.length = 100;
         mockRequest.is.mockImplementation((types: string[]) => {
           if (types.includes('application/json')) return true;

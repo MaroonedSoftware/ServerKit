@@ -26,18 +26,18 @@ describe('HttpError', () => {
     });
   });
 
-  describe('withErrors', () => {
+  describe('withDetails', () => {
     it('should set details and return the error instance', () => {
       const error = new HttpError(400);
-      const errors = { field1: 'Error 1', field2: 'Error 2' };
-      const result = error.withErrors(errors);
+      const details = { field1: 'Error 1', field2: 'Error 2' };
+      const result = error.withDetails(details);
 
       expect(result).toBe(error);
-      expect(error.details).toEqual(errors);
+      expect(error.details).toEqual(details);
     });
 
     it('should allow chaining', () => {
-      const error = new HttpError(400).withErrors({ field1: 'Error 1' }).withHeaders({ 'X-Custom': 'value' });
+      const error = new HttpError(400).withDetails({ field1: 'Error 1' }).withHeaders({ 'X-Custom': 'value' });
 
       expect(error.details).toEqual({ field1: 'Error 1' });
       expect(error.headers).toEqual({ 'X-Custom': 'value' });
@@ -92,7 +92,7 @@ describe('HttpError', () => {
     });
 
     it('should allow chaining', () => {
-      const error = new HttpError(500).withInternalDetails({ debug: 'info' }).withErrors({ validation: 'failed' });
+      const error = new HttpError(500).withInternalDetails({ debug: 'info' }).withDetails({ validation: 'failed' });
 
       expect(error.internalDetails).toEqual({ debug: 'info' });
       expect(error.details).toEqual({ validation: 'failed' });
@@ -103,7 +103,7 @@ describe('HttpError', () => {
     it('should allow chaining all methods together', () => {
       const originalError = new Error('Original');
       const error = new HttpError(422)
-        .withErrors({ email: 'Invalid email' })
+        .withDetails({ email: 'Invalid email' })
         .withHeaders({ 'X-Error-Code': 'VALIDATION_FAILED' })
         .withCause(originalError)
         .withInternalDetails({ userId: 123, requestId: 'abc-123' });

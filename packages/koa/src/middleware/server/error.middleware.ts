@@ -1,6 +1,13 @@
 import { ServerKitMiddleware } from '../../serverkit.middleware.js';
 import { IsHttpError } from '@maroonedsoftware/errors';
 
+/**
+ * Central error handler: catches thrown errors, sets status/body from HTTP errors,
+ * returns 404 for unmatched routes, and 500 for unknown errors.
+ * Emits `error` or `warn` on the app for logging.
+ *
+ * @returns {@link ServerKitMiddleware} that wraps the stack in try/catch and normalizes responses.
+ */
 export const errorMiddleware = (): ServerKitMiddleware => {
   return async (ctx, next) => {
     try {

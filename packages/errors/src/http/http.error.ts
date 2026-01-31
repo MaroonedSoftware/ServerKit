@@ -17,7 +17,7 @@ export type HttpStatusMessage<T extends HttpStatusCodes> = (typeof HttpStatusMap
  *
  * @example
  * ```ts
- * throw new HttpError(404).withErrors({ field: 'not found' });
+ * throw new HttpError(404).withDetails({ field: 'not found' });
  * ```
  *
  * @example
@@ -74,16 +74,16 @@ export class HttpError extends Error {
   /**
    * Adds error details to the HTTP error and returns the instance for method chaining.
    *
-   * @param errors - Object containing field-specific error information.
+   * @param details - Object containing field-specific error information.
    * @returns The HttpError instance for method chaining.
    *
    * @example
    * ```ts
-   * error.withErrors({ email: 'Invalid email format', password: 'Too short' });
+   * error.withDetails({ email: 'Invalid email format', password: 'Too short' });
    * ```
    */
-  withErrors(errors: Record<string, unknown>): HttpError {
-    this.details = errors;
+  withDetails(details: Record<string, unknown>): HttpError {
+    this.details = details;
     return this;
   }
 

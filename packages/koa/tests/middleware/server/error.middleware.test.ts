@@ -6,7 +6,7 @@ import type { Next } from 'koa';
 
 describe('errorMiddleware', () => {
   let mockCtx: ServerKitContext;
-  let mockNext: Next;
+  let mockNext: ReturnType<typeof vi.fn<Next>>;
   let mockApp: { emit: ReturnType<typeof vi.fn> };
   let mockURL: URL;
 
@@ -87,7 +87,7 @@ describe('errorMiddleware', () => {
   describe('HttpError handling', () => {
     it('should handle HttpError and set status code and body', async () => {
       const middleware = errorMiddleware();
-      const httpErr = httpError(400).withErrors({ field: 'invalid' });
+      const httpErr = httpError(400).withDetails({ field: 'invalid' });
       mockNext.mockRejectedValue(httpErr);
 
       await middleware(mockCtx, mockNext);
@@ -103,7 +103,7 @@ describe('errorMiddleware', () => {
 
     it('should handle HttpError with headers', async () => {
       const middleware = errorMiddleware();
-      const httpErr = httpError(401).withHeaders({ 'WWW-Authenticate': 'Bearer realm="api"' }).withErrors({ auth: 'Unauthorized' });
+      const httpErr = httpError(401).withHeaders({ 'WWW-Authenticate': 'Bearer realm="api"' }).withDetails({ auth: 'Unauthorized' });
       mockNext.mockRejectedValue(httpErr);
 
       await middleware(mockCtx, mockNext);
