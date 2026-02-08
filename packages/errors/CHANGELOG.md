@@ -1,5 +1,11 @@
 # @maroonedsoftware/errors
 
+## 1.2.0
+
+### Minor Changes
+
+- 3f636dd: adding additional postgres error codes to be handled
+
 ## 1.1.0
 
 ### Minor Changes
