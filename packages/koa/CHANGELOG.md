@@ -1,5 +1,13 @@
 # @maroonedsoftware/koa
 
+## 1.1.1
+
+### Patch Changes
+
+- Updated dependencies [3f636dd]
+  - @maroonedsoftware/errors@1.2.0
+  - @maroonedsoftware/multipart@1.0.2
+
 ## 1.1.0
 
 ### Minor Changes
