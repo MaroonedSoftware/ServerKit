@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { PostgresErrorHandler, PostgresError } from '../src/postgres/postgres.error.handler.js';
+import {
+  PostgresErrorHandler,
+  PostgresError,
+  isPostgresError,
+} from '../src/postgres/postgres.error.handler.js';
 import { HttpError, IsHttpError } from '../src/http/http.error.js';
 
 const createPostgresError = (code: string, message = 'Postgres error'): PostgresError => {
@@ -99,6 +103,47 @@ describe('PostgresErrorHandler', () => {
     });
   });
 
+  describe('additional validation errors (22000, 22004, 22023)', () => {
+    it('should throw 400 Bad Request for 22000 (data exception)', () => {
+      const error = createPostgresError('22000', 'data exception');
+      expect(() => PostgresErrorHandler(error)).toThrow();
+      try {
+        PostgresErrorHandler(error);
+      } catch (thrown) {
+        expect(IsHttpError(thrown)).toBe(true);
+        const httpError = thrown as HttpError;
+        expect(httpError.statusCode).toBe(400);
+        expect(httpError.cause).toBe(error);
+      }
+    });
+
+    it('should throw 400 Bad Request for 22004 (null value not allowed)', () => {
+      const error = createPostgresError('22004', 'null value not allowed');
+      expect(() => PostgresErrorHandler(error)).toThrow();
+      try {
+        PostgresErrorHandler(error);
+      } catch (thrown) {
+        expect(IsHttpError(thrown)).toBe(true);
+        const httpError = thrown as HttpError;
+        expect(httpError.statusCode).toBe(400);
+        expect(httpError.cause).toBe(error);
+      }
+    });
+
+    it('should throw 400 Bad Request for 22023 (invalid parameter value)', () => {
+      const error = createPostgresError('22023', 'invalid parameter value');
+      expect(() => PostgresErrorHandler(error)).toThrow();
+      try {
+        PostgresErrorHandler(error);
+      } catch (thrown) {
+        expect(IsHttpError(thrown)).toBe(true);
+        const httpError = thrown as HttpError;
+        expect(httpError.statusCode).toBe(400);
+        expect(httpError.cause).toBe(error);
+      }
+    });
+  });
+
   describe('transaction rollback errors', () => {
     it('should throw 500 Internal Server Error for 40000', () => {
       const error = createPostgresError('40000', 'transaction rollback');
@@ -178,6 +223,24 @@ describe('PostgresErrorHandler', () => {
         expect(httpError.cause).toBe(error);
         expect(httpError.internalDetails).toBeUndefined();
       }
+    });
+  });
+
+  describe('isPostgresError', () => {
+    it('should return true for errors with code property', () => {
+      const error = createPostgresError('23505');
+      expect(isPostgresError(error)).toBe(true);
+    });
+
+    it('should return false for plain Error', () => {
+      const error = new Error('plain');
+      expect(isPostgresError(error)).toBe(false);
+    });
+
+    it('should return false for error with code deleted', () => {
+      const error = new Error('no code') as Error & { code?: string };
+      delete error.code;
+      expect(isPostgresError(error)).toBe(false);
     });
   });
 

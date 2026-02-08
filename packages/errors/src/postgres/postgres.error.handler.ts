@@ -33,7 +33,7 @@ export const isPostgresError = (error: Error): error is PostgresError => {
  * Maps PostgreSQL error codes to HTTP status codes:
  * - 23505 (unique constraint violation) → 409 Conflict
  * - 23503 (foreign key violation) → 404 Not Found
- * - 23502, 22P02, 22003, 23514 (validation errors) → 400 Bad Request
+ * - 23502, 22P02, 22003, 22004, 22023, 23514 (validation errors) → 400 Bad Request
  * - 40000, 40001, 40002 (transaction rollback) → 500 Internal Server Error
  * - 40P01 (deadlock) → 500 Internal Server Error
  * - Unknown codes → 500 Internal Server Error
@@ -60,9 +60,12 @@ export const PostgresErrorHandler = (error: Error) => {
         throw httpError(409).withCause(error);
       case '23503':
         throw httpError(404).withCause(error);
+      case '22000':
+      case '22003':
+      case '22004':
+      case '22023':
       case '23502':
       case '22P02':
-      case '22003':
       case '23514':
         throw httpError(400).withCause(error);
       case '40000':
