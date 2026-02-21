@@ -6,10 +6,3 @@ jobs:
   pull-request:
     uses: ./.github/workflows/build.yml
     secrets: inherit
-
-  deploy:
-    needs: [pull-request]
-    uses: ./.github/workflows/deploy.yml
-    secrets: inherit
-    with:
-      tag: ${{ github.sha }}

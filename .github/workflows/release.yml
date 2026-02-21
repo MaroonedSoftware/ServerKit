@@ -20,5 +20,3 @@ jobs:
     needs: [build]
     uses: ./.github/workflows/deploy.yml
     secrets: inherit
-    with:
-      tag: ${{ github.head_ref }}
