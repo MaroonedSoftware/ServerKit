@@ -23,4 +23,6 @@ export interface ServerKitContext extends Context {
   correlationId: string;
   /** Request ID; from `X-Request-Id` header or generated. */
   requestId: string;
+  /** Raw body for this request. */
+  rawBody: unknown;
 }

@@ -1,8 +1,6 @@
-import coBody from 'co-body';
 import { httpError, IsHttpError } from '@maroonedsoftware/errors';
-import { MultipartBody } from '@maroonedsoftware/multipart';
-import rawBody from 'raw-body';
 import { ServerKitMiddleware } from '../../serverkit.middleware.js';
+import { ServerKitBodyParser } from '../../serverkit.bodyparser.js';
 
 /**
  * Parses the request body based on `Content-Type` and assigns it to `ctx.body`.
@@ -35,19 +33,10 @@ export const bodyParserMiddleware = (contentTypes: string[]): ServerKitMiddlewar
         }
 
         try {
-          if (ctx.request.is('json', 'application/*+json')) {
-            ctx.body = await coBody.json(ctx);
-          } else if (ctx.request.is('urlencoded')) {
-            ctx.body = await coBody.form(ctx);
-          } else if (ctx.request.is('text/*')) {
-            ctx.body = await coBody.text(ctx);
-          } else if (ctx.request.is('multipart')) {
-            ctx.body = new MultipartBody(ctx.req);
-          } else if (ctx.request.is('pdf')) {
-            ctx.body = await rawBody(ctx.req);
-          } else {
-            throw httpError(422).withDetails({ body: 'Unsupported media type' });
-          }
+          const parser = ctx.container.get(ServerKitBodyParser);
+          const result = await parser.parse(ctx);
+          ctx.body = result.parsed;
+          ctx.rawBody = result.raw;
         } catch (error) {
           if (IsHttpError(error)) {
             throw error;

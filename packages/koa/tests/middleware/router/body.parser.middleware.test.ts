@@ -1,23 +1,15 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, Mock } from 'vitest';
 import { bodyParserMiddleware } from '../../../src/middleware/router/body.parser.middleware.js';
 import { httpError, HttpError } from '@maroonedsoftware/errors';
-import { MultipartBody } from '@maroonedsoftware/multipart';
-import coBody from 'co-body';
-import rawBody from 'raw-body';
+import { ServerKitBodyParser } from '../../../src/serverkit.bodyparser.js';
 import type { ServerKitContext } from '../../../src/serverkit.context.js';
 import type { Next } from 'koa';
-
-// Mock dependencies
-vi.mock('co-body');
-vi.mock('raw-body');
-vi.mock('@maroonedsoftware/multipart', () => ({
-  MultipartBody: vi.fn(),
-}));
 
 describe('bodyParserMiddleware', () => {
   let mockCtx: ServerKitContext;
   let mockNext: Next;
-  let mockReq: { length: number; headers: Record<string, string> };
+  let mockBodyParser: { parse: Mock };
+  let mockContainer: { get: Mock };
   let mockRequest: {
     length: number;
     is: ReturnType<typeof vi.fn>;
@@ -25,10 +17,8 @@ describe('bodyParserMiddleware', () => {
   };
 
   beforeEach(() => {
-    mockReq = {
-      length: 0,
-      headers: {},
-    };
+    mockBodyParser = { parse: vi.fn() };
+    mockContainer = { get: vi.fn().mockReturnValue(mockBodyParser) };
 
     mockRequest = {
       length: 0,
@@ -40,8 +30,9 @@ describe('bodyParserMiddleware', () => {
 
     mockCtx = {
       request: mockRequest as any,
-      req: mockReq as any,
+      req: {} as any,
       body: undefined,
+      container: mockContainer as any,
     } as unknown as ServerKitContext;
 
     vi.clearAllMocks();
@@ -137,21 +128,12 @@ describe('bodyParserMiddleware', () => {
       it('should pass when content-type matches', async () => {
         const middleware = bodyParserMiddleware(['application/json']);
         mockRequest.length = 100;
-        mockRequest.is.mockImplementation((types: string | string[]) => {
-          if (Array.isArray(types)) {
-            // Content-type validation check
-            if (types.includes('application/json')) return true;
-          } else {
-            // Specific type check
-            if (types === 'json' || types === 'application/*+json') return true;
-          }
-          return false;
-        });
-
-        vi.mocked(coBody.json).mockResolvedValue({ key: 'value' });
+        mockRequest.is.mockReturnValue(true);
+        mockBodyParser.parse.mockResolvedValue({ parsed: { key: 'value' }, raw: '{"key":"value"}' });
 
         await middleware(mockCtx, mockNext);
 
+        expect(mockContainer.get).toHaveBeenCalledWith(ServerKitBodyParser);
         expect(mockNext).toHaveBeenCalledTimes(1);
       });
     });
@@ -160,48 +142,33 @@ describe('bodyParserMiddleware', () => {
       it('should parse JSON body', async () => {
         const middleware = bodyParserMiddleware(['application/json']);
         const jsonData = { name: 'test', value: 123 };
+        const rawJson = '{"name":"test","value":123}';
         mockRequest.length = 100;
-        mockRequest.is.mockImplementation((types: string | string[]) => {
-          if (Array.isArray(types)) {
-            // Content-type validation check
-            if (types.includes('application/json')) return true;
-          } else {
-            // Specific type check
-            if (types === 'json' || types === 'application/*+json') return true;
-          }
-          return false;
-        });
-
-        vi.mocked(coBody.json).mockResolvedValue(jsonData);
+        mockRequest.is.mockReturnValue(true);
+        mockBodyParser.parse.mockResolvedValue({ parsed: jsonData, raw: rawJson });
 
         await middleware(mockCtx, mockNext);
 
-        expect(coBody.json).toHaveBeenCalledWith(mockCtx);
+        expect(mockContainer.get).toHaveBeenCalledWith(ServerKitBodyParser);
+        expect(mockBodyParser.parse).toHaveBeenCalledWith(mockCtx);
         expect(mockCtx.body).toEqual(jsonData);
+        expect(mockCtx.rawBody).toBe(rawJson);
         expect(mockNext).toHaveBeenCalledTimes(1);
       });
 
       it('should parse application/*+json content types', async () => {
         const middleware = bodyParserMiddleware(['application/vnd.api+json']);
         const jsonData = { data: 'test' };
+        const rawJson = '{"data":"test"}';
         mockRequest.length = 100;
-        mockRequest.is.mockImplementation((types: string | string[]) => {
-          if (Array.isArray(types)) {
-            // Content-type validation check
-            if (types.includes('application/vnd.api+json')) return true;
-          } else {
-            // Specific type check
-            if (types === 'json' || types === 'application/*+json') return true;
-          }
-          return false;
-        });
-
-        vi.mocked(coBody.json).mockResolvedValue(jsonData);
+        mockRequest.is.mockReturnValue(true);
+        mockBodyParser.parse.mockResolvedValue({ parsed: jsonData, raw: rawJson });
 
         await middleware(mockCtx, mockNext);
 
-        expect(coBody.json).toHaveBeenCalledWith(mockCtx);
+        expect(mockBodyParser.parse).toHaveBeenCalledWith(mockCtx);
         expect(mockCtx.body).toEqual(jsonData);
+        expect(mockCtx.rawBody).toBe(rawJson);
       });
     });
 
@@ -209,24 +176,16 @@ describe('bodyParserMiddleware', () => {
       it('should parse urlencoded body', async () => {
         const middleware = bodyParserMiddleware(['application/x-www-form-urlencoded']);
         const formData = { field1: 'value1', field2: 'value2' };
+        const rawForm = 'field1=value1&field2=value2';
         mockRequest.length = 100;
-        mockRequest.is.mockImplementation((types: string | string[]) => {
-          if (Array.isArray(types)) {
-            // Content-type validation check
-            if (types.includes('application/x-www-form-urlencoded')) return true;
-          } else {
-            // Specific type check
-            if (types === 'urlencoded') return true;
-          }
-          return false;
-        });
-
-        vi.mocked(coBody.form).mockResolvedValue(formData);
+        mockRequest.is.mockReturnValue(true);
+        mockBodyParser.parse.mockResolvedValue({ parsed: formData, raw: rawForm });
 
         await middleware(mockCtx, mockNext);
 
-        expect(coBody.form).toHaveBeenCalledWith(mockCtx);
+        expect(mockBodyParser.parse).toHaveBeenCalledWith(mockCtx);
         expect(mockCtx.body).toEqual(formData);
+        expect(mockCtx.rawBody).toBe(rawForm);
         expect(mockNext).toHaveBeenCalledTimes(1);
       });
     });
@@ -236,101 +195,59 @@ describe('bodyParserMiddleware', () => {
         const middleware = bodyParserMiddleware(['text/plain']);
         const textData = 'plain text content';
         mockRequest.length = 100;
-        mockRequest.is.mockImplementation((types: string | string[]) => {
-          if (Array.isArray(types)) {
-            // Content-type validation check
-            if (types.includes('text/plain')) return true;
-          } else {
-            // Specific type check
-            if (types === 'text/*') return true;
-          }
-          return false;
-        });
-
-        vi.mocked(coBody.text).mockResolvedValue(textData);
+        mockRequest.is.mockReturnValue(true);
+        mockBodyParser.parse.mockResolvedValue({ parsed: textData, raw: textData });
 
         await middleware(mockCtx, mockNext);
 
-        expect(coBody.text).toHaveBeenCalledWith(mockCtx);
+        expect(mockBodyParser.parse).toHaveBeenCalledWith(mockCtx);
         expect(mockCtx.body).toBe(textData);
+        expect(mockCtx.rawBody).toBe(textData);
         expect(mockNext).toHaveBeenCalledTimes(1);
       });
     });
 
     describe('multipart body parsing', () => {
-      it('should create MultipartBody instance for multipart content', async () => {
+      it('should set parsed multipart body', async () => {
         const middleware = bodyParserMiddleware(['multipart/form-data']);
-        const mockMultipartBody = {} as MultipartBody;
+        const mockMultipartBody = { fields: {} };
         mockRequest.length = 100;
-        mockRequest.is.mockImplementation((types: string | string[]) => {
-          if (Array.isArray(types)) {
-            // Content-type validation check
-            if (types.includes('multipart/form-data')) return true;
-          } else {
-            // Specific type check
-            if (types === 'multipart') return true;
-          }
-          return false;
-        });
-
-        vi.mocked(MultipartBody).mockImplementation(function (this: MultipartBody) {
-          return mockMultipartBody;
-        });
+        mockRequest.is.mockReturnValue(true);
+        mockBodyParser.parse.mockResolvedValue({ parsed: mockMultipartBody, raw: undefined });
 
         await middleware(mockCtx, mockNext);
 
-        expect(MultipartBody).toHaveBeenCalledWith(mockReq);
+        expect(mockBodyParser.parse).toHaveBeenCalledWith(mockCtx);
         expect(mockCtx.body).toBe(mockMultipartBody);
+        expect(mockCtx.rawBody).toBeUndefined();
         expect(mockNext).toHaveBeenCalledTimes(1);
       });
     });
 
-    describe('PDF body parsing', () => {
-      it('should parse PDF body using raw-body', async () => {
+    describe('binary body parsing', () => {
+      it('should set parsed binary body', async () => {
         const middleware = bodyParserMiddleware(['application/pdf']);
         const pdfBuffer = Buffer.from('PDF content');
         mockRequest.length = 100;
-        mockRequest.is.mockImplementation((types: string | string[]) => {
-          if (Array.isArray(types)) {
-            // Content-type validation check
-            if (types.includes('application/pdf')) return true;
-          } else {
-            // Specific type check
-            if (types === 'pdf') return true;
-          }
-          return false;
-        });
-
-        vi.mocked(rawBody).mockResolvedValue(pdfBuffer);
+        mockRequest.is.mockReturnValue(true);
+        mockBodyParser.parse.mockResolvedValue({ parsed: pdfBuffer, raw: undefined });
 
         await middleware(mockCtx, mockNext);
 
-        expect(rawBody).toHaveBeenCalledWith(mockReq);
+        expect(mockBodyParser.parse).toHaveBeenCalledWith(mockCtx);
         expect(mockCtx.body).toBe(pdfBuffer);
+        expect(mockCtx.rawBody).toBeUndefined();
         expect(mockNext).toHaveBeenCalledTimes(1);
       });
     });
 
     describe('unsupported media type', () => {
-      it('should throw 422 error for unsupported content type', async () => {
+      it('should re-throw HttpError from parser for unsupported content type', async () => {
         const middleware = bodyParserMiddleware(['application/json']);
         mockRequest.length = 100;
-        mockRequest.is.mockImplementation((types: string[]) => {
-          // Return true for content-type check, but false for all specific type checks
-          if (Array.isArray(types) && types.includes('application/json')) return true;
-          return false;
-        });
-        // Make all specific type checks return false
-        mockRequest.is.mockImplementation((...args: unknown[]) => {
-          const types = args[0];
-          if (Array.isArray(types) && types.includes('application/json')) return true;
-          if (types === 'json' || types === 'application/*+json') return false;
-          if (types === 'urlencoded') return false;
-          if (types === 'text/*') return false;
-          if (types === 'multipart') return false;
-          if (types === 'pdf') return false;
-          return false;
-        });
+        mockRequest.is.mockReturnValue(true);
+        const parserError = httpError(415).withDetails({ body: 'Unsupported media type' });
+        mockBodyParser.parse.mockRejectedValue(parserError);
 
         await expect(middleware(mockCtx, mockNext)).rejects.toThrow();
 
@@ -338,7 +255,7 @@ describe('bodyParserMiddleware', () => {
           await middleware(mockCtx, mockNext);
         } catch (error) {
           expect(error).toBeInstanceOf(HttpError);
-          expect((error as HttpError).statusCode).toBe(422);
+          expect((error as HttpError).statusCode).toBe(415);
           expect((error as HttpError).details).toEqual({ body: 'Unsupported media type' });
         }
         expect(mockNext).not.toHaveBeenCalled();
@@ -350,13 +267,8 @@ describe('bodyParserMiddleware', () => {
         const middleware = bodyParserMiddleware(['application/json']);
         const httpErr = httpError(400).withDetails({ field: 'invalid' });
         mockRequest.length = 100;
-        mockRequest.is.mockImplementation((types: string[]) => {
-          if (types.includes('application/json')) return true;
-          if (types.includes('json') || types.includes('application/*+json')) return true;
-          return false;
-        });
-
-        vi.mocked(coBody.json).mockRejectedValue(httpErr);
+        mockRequest.is.mockReturnValue(true);
+        mockBodyParser.parse.mockRejectedValue(httpErr);
 
         await expect(middleware(mockCtx, mockNext)).rejects.toBe(httpErr);
         expect(mockNext).not.toHaveBeenCalled();
@@ -366,13 +278,8 @@ describe('bodyParserMiddleware', () => {
         const middleware = bodyParserMiddleware(['application/json']);
         const parseError = new Error('Parse failed');
         mockRequest.length = 100;
-        mockRequest.is.mockImplementation((types: string[]) => {
-          if (types.includes('application/json')) return true;
-          if (types.includes('json') || types.includes('application/*+json')) return true;
-          return false;
-        });
-
-        vi.mocked(coBody.json).mockRejectedValue(parseError);
+        mockRequest.is.mockReturnValue(true);
+        mockBodyParser.parse.mockRejectedValue(parseError);
 
         await expect(middleware(mockCtx, mockNext)).rejects.toThrow();
 

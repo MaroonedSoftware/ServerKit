@@ -48,8 +48,8 @@ importers:
         specifier: ^17.3.1
         version: 17.3.1
       injectkit:
-        specifier: ^1.0.3
-        version: 1.0.3
+        specifier: ^1.1.3
+        version: 1.1.3
     devDependencies:
       '@google-cloud/secret-manager':
         specifier: ^6.1.1
@@ -114,8 +114,8 @@ importers:
         specifier: workspace:*
         version: link:../logger
       injectkit:
-        specifier: ^1.0.3
-        version: 1.0.3
+        specifier: ^1.1.3
+        version: 1.1.3
     devDependencies:
       '@repo/config-eslint':
         specifier: workspace:*
@@ -135,6 +135,9 @@ importers:
 
   packages/koa:
     dependencies:
+      '@hapi/bourne':
+        specifier: ^3.0.0
+        version: 3.0.0
       '@maroonedsoftware/errors':
         specifier: workspace:*
         version: link:../errors
@@ -144,12 +147,21 @@ importers:
       '@maroonedsoftware/multipart':
         specifier: workspace:*
         version: link:../multipart
+      '@maroonedsoftware/utilities':
+        specifier: workspace:*
+        version: link:../utilities
       co-body:
         specifier: ^6.2.0
         version: 6.2.0
+      inflation:
+        specifier: ^2.1.0
+        version: 2.1.0
       injectkit:
-        specifier: ^1.0.3
-        version: 1.0.3
+        specifier: ^1.1.3
+        version: 1.1.3
+      qs:
+        specifier: ^6.15.0
+        version: 6.15.0
       rate-limiter-flexible:
         specifier: ^9.1.1
         version: 9.1.1
@@ -172,12 +184,18 @@ importers:
       '@types/co-body':
         specifier: ^6.1.3
         version: 6.1.3
+      '@types/inflation':
+        specifier: ^2.0.4
+        version: 2.0.4
       '@types/koa':
         specifier: ^3.0.1
         version: 3.0.1
       '@types/koa__cors':
         specifier: ^5.0.1
         version: 5.0.1
+      '@types/qs':
+        specifier: ^6.14.0
+        version: 6.14.0
       koa:
         specifier: ^3.1.1
         version: 3.1.1
@@ -185,8 +203,8 @@ importers:
   packages/logger:
     dependencies:
       injectkit:
-        specifier: ^1.0.3
-        version: 1.0.3
+        specifier: ^1.1.3
+        version: 1.1.3
     devDependencies:
       '@repo/config-eslint':
         specifier: workspace:*
@@ -933,6 +951,9 @@ packages:
 
   '@types/http-errors@2.0.5':
     resolution: {integrity: sha512-r8Tayk8HJnX0FztbZN7oVqGccWgw98T/0neJphO91KkmOzug1KkofZURD4UaD5uH8AqcFLfdPErnBod0u71/qg==}
+
+  '@types/inflation@2.0.4':
+    resolution: {integrity: sha512-daFI2atltBXImBIKT1FaETUQlEX3wAluTN0O4F0ukPA4CaK1DrYdGmqRU1CfWcyu/B7985DZ/28/Jk00R9pPOg==}
 
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
@@ -1826,8 +1847,8 @@ packages:
   inherits@2.0.4:
     resolution: {integrity: sha512-k/vGaX4/Yla3WzyMCvTQOXYeIHvqOKtnqBduzTHpzpQZzAskKMhZ2K+EnBiSM9zGSoIFeMpXKxa4dYeZIQqewQ==}
 
-  injectkit@1.0.3:
-    resolution: {integrity: sha512-gnTbz6U6B4gQZph05VhyOGUGqUi/3E1gT1UfVcvohacY+rJlsdbEV4DKteSUjQo0alF4T5CbrSsfRnRpVSoLMw==}
+  injectkit@1.1.3:
+    resolution: {integrity: sha512-kGJQDInf2XS1w7m1FmzWecGUMrV/CxZhfEp5QEhT5jKi33Bqy2qvLRCRA7tv9v3jPNJB4AsPf5z+RjJJdqQo4A==}
     engines: {node: '>=20'}
 
   internal-slot@1.1.0:
@@ -3755,6 +3776,10 @@ snapshots:
 
   '@types/http-errors@2.0.5': {}
 
+  '@types/inflation@2.0.4':
+    dependencies:
+      '@types/node': 25.3.0
+
   '@types/json-schema@7.0.15': {}
 
   '@types/keygrip@1.0.6': {}
@@ -4868,7 +4893,7 @@ snapshots:
 
   inherits@2.0.4: {}
 
-  injectkit@1.0.3:
+  injectkit@1.1.3:
     dependencies:
       reflect-metadata: 0.2.2
 
