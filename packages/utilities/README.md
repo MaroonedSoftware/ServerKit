@@ -11,7 +11,7 @@ pnpm add @maroonedsoftware/utilities
 ## Usage
 
 ```typescript
-import { isUuid, isEmail, isEmailDomain, base32Encode, base32Decode } from '@maroonedsoftware/utilities';
+import { isUuid, isEmail, isEmailDomain, base32Encode, base32Decode, unique } from '@maroonedsoftware/utilities';
 ```
 
 ## API Reference
@@ -76,6 +76,31 @@ new TextDecoder().decode(decoded); // "Hello"
 - Automatically removes spaces (for readability tolerance)
 - Case-insensitive
 - Handles optional padding
+
+### Array Utilities
+
+#### `unique<T>(array: T[], selector?: keyof T | ((t: T) => unknown)): T[]`
+
+Returns an array of unique items, deduplicated by the selector. When multiple items produce the same key, the first occurrence is kept.
+
+```typescript
+// By property key
+unique([{ id: 1, n: 'a' }, { id: 1, n: 'b' }], 'id');
+// => [{ id: 1, n: 'a' }]
+
+// By function
+unique([{ tag: 'x' }, { tag: 'y' }, { tag: 'x' }], t => t.tag);
+// => [{ tag: 'x' }, { tag: 'y' }]
+
+// No selector (identity; primitives by value, objects by reference)
+unique([1, 2, 1, 3]);
+// => [1, 2, 3]
+```
+
+**Parameters:**
+
+- `array` - The array to deduplicate.
+- `selector` - Optional. A property key of `T` or a function `(t: T) => unknown`. When omitted, uses the item itself (identity).
 
 ## License
 
