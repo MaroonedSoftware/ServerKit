@@ -19,6 +19,10 @@ export class ServerKitBodyParser {
     if (!mimeType) {
       throw httpError(415).withDetails({ body: 'Unsupported media type' });
     }
-    return this.parsers.get(mimeType)!.parse(ctx.req);
+    const parser = this.parsers.get(mimeType);
+    if (!parser) {
+      throw httpError(415).withDetails({ body: 'Unsupported media type' });
+    }
+    return parser.parse(ctx.req);
   }
 }

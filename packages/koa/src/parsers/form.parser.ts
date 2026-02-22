@@ -10,7 +10,7 @@ export type FormParserOptions = raw.Options & IParseOptions;
 
 @Injectable()
 export class FormParser extends ServerKitParser {
-  constructor(private readonly options: FormParserOptions) {
+  constructor(private readonly options: FormParserOptions = {}) {
     super();
   }
 
@@ -18,8 +18,8 @@ export class FormParser extends ServerKitParser {
     const len = req.headers['content-length'];
     const contentEncoding = req.headers['content-encoding'] || 'identity';
     const length: number | undefined = len && contentEncoding === 'identity' ? ~~len : undefined;
-    const encoding = this.options?.encoding ?? 'utf8';
-    const limit = this.options?.limit ?? '56kb';
+    const encoding = this.options.encoding ?? 'utf8';
+    const limit = this.options.limit ?? '56kb';
 
     const str = await raw(inflate(req), { encoding, limit, length });
 

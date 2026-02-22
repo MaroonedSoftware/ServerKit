@@ -19,7 +19,7 @@ export class ConsoleLogger implements Logger {
    */
   private log(level: 'error' | 'warn' | 'info' | 'debug' | 'trace', message: unknown, optionalParams: unknown[]) {
     if (optionalParams.length > 0) {
-      this._console[level](message, optionalParams);
+      this._console[level](message, ...optionalParams);
     } else {
       this._console[level](message);
     }

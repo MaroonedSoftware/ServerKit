@@ -58,6 +58,7 @@ export class AppConfigProviderDotenv implements AppConfigProvider {
    * @returns `true` if the value matches the provider's regex pattern, `false` otherwise.
    */
   canParse(value: string): boolean {
+    this.prefix.lastIndex = 0;
     return this.prefix.test(value);
   }
 

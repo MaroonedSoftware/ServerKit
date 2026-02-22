@@ -42,6 +42,12 @@ export class BusboyWrapper extends Busboy {
   /** Optional handler for processing file uploads */
   private fileHandler?: FileHandler;
 
+  /** Tracks the number of pending file handler operations */
+  private pendingFiles = 0;
+
+  /** Whether busboy has finished parsing the request */
+  private finished = false;
+
   /** A null stream used to drain file streams when errors occur */
   private readonly nullStream = new Writable({
     write(_chunk, _encding, callback) {
@@ -59,7 +65,7 @@ export class BusboyWrapper extends Busboy {
     super({ headers: req.headers as BusboyHeaders, limits });
 
     this.req = req;
-    this.req.on('close', () => this.cleanup);
+    this.req.on('close', () => this.cleanup());
 
     this.on('field', this.onField)
       .on('file', this.onFile)
@@ -135,9 +141,11 @@ export class BusboyWrapper extends Busboy {
   private onFile(fieldname: string, stream: BusboyFileStream, filename: string, encoding: string, mimeType: string) {
     this.setData(fieldname, { stream, filename, encoding, mimeType });
     if (this.fileHandler) {
+      this.pendingFiles++;
       this.fileHandler(fieldname, stream, filename, encoding, mimeType)
         .then(() => {
-          this.onEnd();
+          this.pendingFiles--;
+          this.tryResolve();
         })
         .catch(reason => {
           stream.pipe(this.nullStream);
@@ -146,19 +154,39 @@ export class BusboyWrapper extends Busboy {
     }
   }
 
+  /**
+   * Resolves the parse promise only when busboy has finished AND all file handlers have completed.
+   */
+  private tryResolve() {
+    if (this.finished && this.pendingFiles === 0) {
+      this.finalize();
+    }
+  }
+
   private resolve(_: Map<string, MultipartData | MultipartData[]>) {}
   private reject(_?: Error) {}
 
   /**
    * Handler called when parsing completes or an error occurs.
+   * When called without an error from the 'finish' event, marks parsing as finished
+   * and defers resolution until all pending file handlers have completed.
    */
   private onEnd(err?: Error) {
-    this.cleanup();
     if (err) {
+      this.cleanup();
       this.reject(err);
     } else {
-      this.resolve(this.fields);
+      this.finished = true;
+      this.tryResolve();
     }
+  }
+
+  /**
+   * Performs final cleanup and resolves the parse promise with collected fields.
+   */
+  private finalize() {
+    this.cleanup();
+    this.resolve(this.fields);
   }
 
   /**

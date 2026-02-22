@@ -26,17 +26,17 @@ export class JsonParser extends ServerKitParser {
     const len = req.headers['content-length'];
     const contentEncoding = req.headers['content-encoding'] || 'identity';
     const length: number | undefined = len && contentEncoding === 'identity' ? ~~len : undefined;
-    const encoding = this.options?.encoding ?? 'utf8';
-    const limit = this.options?.limit ?? '1mb';
+    const encoding = this.options.encoding ?? 'utf8';
+    const limit = this.options.limit ?? '1mb';
 
-    const strict = this.options?.strict ?? true;
-    const protoAction = this.options?.protoAction ?? 'error';
+    const strict = this.options.strict ?? true;
+    const protoAction = this.options.protoAction ?? 'error';
 
     const str = await raw(inflate(req), { encoding, limit, length });
 
     const doParse = (str: string) => {
       try {
-        if (this.options?.reviver) {
+        if (this.options.reviver) {
           return parse(str, this.options.reviver, { protoAction });
         }
         return parse(str, { protoAction });

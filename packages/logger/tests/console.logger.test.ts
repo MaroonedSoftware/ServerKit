@@ -56,7 +56,7 @@ describe('ConsoleLogger', () => {
       logger.error(message, param1, param2);
 
       expect(mockConsole.error).toHaveBeenCalledOnce();
-      expect(mockConsole.error).toHaveBeenCalledWith(message, [param1, param2]);
+      expect(mockConsole.error).toHaveBeenCalledWith(message, param1, param2);
     });
 
     it('should handle various message types', () => {
@@ -89,7 +89,7 @@ describe('ConsoleLogger', () => {
       logger.warn(message, param1, param2);
 
       expect(mockConsole.warn).toHaveBeenCalledOnce();
-      expect(mockConsole.warn).toHaveBeenCalledWith(message, [param1, param2]);
+      expect(mockConsole.warn).toHaveBeenCalledWith(message, param1, param2);
     });
 
     it('should handle various message types', () => {
@@ -119,7 +119,7 @@ describe('ConsoleLogger', () => {
       logger.info(message, param1, param2);
 
       expect(mockConsole.info).toHaveBeenCalledOnce();
-      expect(mockConsole.info).toHaveBeenCalledWith(message, [param1, param2]);
+      expect(mockConsole.info).toHaveBeenCalledWith(message, param1, param2);
     });
 
     it('should handle various message types', () => {
@@ -149,7 +149,7 @@ describe('ConsoleLogger', () => {
       logger.debug(message, param1, param2);
 
       expect(mockConsole.debug).toHaveBeenCalledOnce();
-      expect(mockConsole.debug).toHaveBeenCalledWith(message, [param1, param2]);
+      expect(mockConsole.debug).toHaveBeenCalledWith(message, param1, param2);
     });
 
     it('should handle various message types', () => {
@@ -178,7 +178,7 @@ describe('ConsoleLogger', () => {
       logger.trace(message, param1);
 
       expect(mockConsole.trace).toHaveBeenCalledOnce();
-      expect(mockConsole.trace).toHaveBeenCalledWith(message, [param1]);
+      expect(mockConsole.trace).toHaveBeenCalledWith(message, param1);
     });
 
     it('should handle various message types', () => {
@@ -235,11 +235,11 @@ describe('ConsoleLogger', () => {
       logger.debug(message, param);
       logger.trace(message, param);
 
-      expect(mockConsole.error).toHaveBeenCalledWith(message, [param]);
-      expect(mockConsole.warn).toHaveBeenCalledWith(message, [param]);
-      expect(mockConsole.info).toHaveBeenCalledWith(message, [param]);
-      expect(mockConsole.debug).toHaveBeenCalledWith(message, [param]);
-      expect(mockConsole.trace).toHaveBeenCalledWith(message, [param]);
+      expect(mockConsole.error).toHaveBeenCalledWith(message, param);
+      expect(mockConsole.warn).toHaveBeenCalledWith(message, param);
+      expect(mockConsole.info).toHaveBeenCalledWith(message, param);
+      expect(mockConsole.debug).toHaveBeenCalledWith(message, param);
+      expect(mockConsole.trace).toHaveBeenCalledWith(message, param);
     });
 
     it('should handle multiple optional params', () => {
@@ -254,11 +254,11 @@ describe('ConsoleLogger', () => {
       logger.debug(message, param1, param2, param3);
       logger.trace(message, param1, param2, param3);
 
-      expect(mockConsole.error).toHaveBeenCalledWith(message, [param1, param2, param3]);
-      expect(mockConsole.warn).toHaveBeenCalledWith(message, [param1, param2, param3]);
-      expect(mockConsole.info).toHaveBeenCalledWith(message, [param1, param2, param3]);
-      expect(mockConsole.debug).toHaveBeenCalledWith(message, [param1, param2, param3]);
-      expect(mockConsole.trace).toHaveBeenCalledWith(message, [param1, param2, param3]);
+      expect(mockConsole.error).toHaveBeenCalledWith(message, param1, param2, param3);
+      expect(mockConsole.warn).toHaveBeenCalledWith(message, param1, param2, param3);
+      expect(mockConsole.info).toHaveBeenCalledWith(message, param1, param2, param3);
+      expect(mockConsole.debug).toHaveBeenCalledWith(message, param1, param2, param3);
+      expect(mockConsole.trace).toHaveBeenCalledWith(message, param1, param2, param3);
     });
   });
 

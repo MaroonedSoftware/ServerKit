@@ -21,7 +21,7 @@ const generateDescriptor = (descriptor: PropertyDescriptor, handler: ErrorHandle
     const setter = descriptor.set;
 
     if (getter) {
-      descriptor.get = () => {
+      descriptor.get = function () {
         try {
           return getter.apply(this);
         } catch (error) {
@@ -31,7 +31,7 @@ const generateDescriptor = (descriptor: PropertyDescriptor, handler: ErrorHandle
     }
 
     if (setter) {
-      descriptor.set = (v: unknown) => {
+      descriptor.set = function (v: unknown) {
         try {
           return setter.apply(this, [v]);
         } catch (error) {
