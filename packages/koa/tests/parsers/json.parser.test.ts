@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { JsonParser } from '../../src/parsers/json.parser.js';
+import { JsonParser, JsonParserOptions } from '../../src/parsers/json.parser.js';
 import { makeReq } from './helpers.js';
 
 describe('JsonParser', () => {
   describe('strict mode (default)', () => {
-    const parser = new JsonParser();
+    const parser = new JsonParser(new JsonParserOptions());
 
     it('parses a valid JSON object', async () => {
       const body = '{"name":"test","value":123}';
@@ -84,7 +84,7 @@ describe('JsonParser', () => {
         'content-encoding': 'identity',
       });
 
-      const result = await new JsonParser().parse(req);
+      const result = await new JsonParser(new JsonParserOptions()).parse(req);
 
       expect(result.parsed).toEqual({ ok: true });
     });
@@ -93,7 +93,7 @@ describe('JsonParser', () => {
       const body = '{"ok":true}';
       const req = makeReq(body, {}); // no content-length → length is undefined
 
-      const result = await new JsonParser().parse(req);
+      const result = await new JsonParser(new JsonParserOptions()).parse(req);
 
       expect(result.parsed).toEqual({ ok: true });
     });

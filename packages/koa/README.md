@@ -1,6 +1,6 @@
 # @maroonedsoftware/koa
 
-Koa utilities and middleware for ServerKit: typed context, router, CORS, error handling, rate limiting, body parsing, and request-scoped DI via [injectkit](https://www.npmjs.com/package/injectkit).
+Koa utilities and middleware for ServerKit: typed context, router, CORS, error handling, rate limiting, authentication, body parsing, and request-scoped DI via [injectkit](https://www.npmjs.com/package/injectkit).
 
 ## Installation
 
@@ -12,14 +12,16 @@ Peer dependencies: `koa`, `@koa/router`, `@koa/cors`.
 
 ## Features
 
-- **ServerKitContext** — Koa context extended with `container`, `logger`, `requestId`, `correlationId`, and related request metadata
+- **ServerKitContext** — Koa context extended with `container`, `logger`, `requestId`, `correlationId`, `authenticationContext`, and related request metadata
 - **ServerKitRouter** — Router typed for `ServerKitContext`
 - **ServerKitMiddleware** — Middleware type bound to `ServerKitContext`
 - **serverKitContextMiddleware** — Populates context with scoped container, logger, and request/correlation IDs
 - **corsMiddleware** — CORS headers with `'*'`, string, or RegExp origin matching
 - **errorMiddleware** — Central error handler; maps HTTP errors to status/body, 404 for unmatched routes, 500 for unknown errors
 - **rateLimiterMiddleware** — Per-IP rate limiting via `rate-limiter-flexible` (429 when exceeded)
+- **authenticationMiddleware** — Resolves the `Authorization` header via `AuthenticationSchemeHandler` and populates `ctx.authenticationContext`
 - **bodyParserMiddleware** — Parses JSON, form, text, multipart, or raw body by allowed content types
+- **defaultParserMappings** — Pre-built MIME-type-to-parser map for use with `bodyParserMiddleware`
 
 ## Usage
 
@@ -29,7 +31,13 @@ Peer dependencies: `koa`, `@koa/router`, `@koa/cors`.
 import Koa from 'koa';
 import { InjectKitRegistry } from 'injectkit';
 import { Logger, ConsoleLogger } from '@maroonedsoftware/logger';
-import { ServerKitRouter, serverKitContextMiddleware, corsMiddleware, errorMiddleware, bodyParserMiddleware } from '@maroonedsoftware/koa';
+import {
+  ServerKitRouter,
+  serverKitContextMiddleware,
+  corsMiddleware,
+  errorMiddleware,
+  bodyParserMiddleware,
+} from '@maroonedsoftware/koa';
 
 const diRegistry = new InjectKitRegistry();
 diRegistry.register(Logger).useClass(ConsoleLogger).asSingleton();
@@ -61,6 +69,37 @@ router.get('/api/users/:id', async ctx => {
   const user = await ctx.container.get(UserService).findById(ctx.params.id);
   if (!user) throw httpError(404);
   ctx.body = user;
+});
+```
+
+### Authentication
+
+`authenticationMiddleware` reads the `Authorization` header, delegates resolution to the `AuthenticationSchemeHandler` registered in the DI container, and populates `ctx.authenticationContext`. The header is deleted from `ctx.req.headers` immediately after reading so it cannot be captured by downstream logging.
+
+```typescript
+import {
+  AuthenticationSchemeHandler,
+  AuthenticationHandlerMap,
+} from '@maroonedsoftware/authentication';
+import { authenticationMiddleware } from '@maroonedsoftware/koa';
+
+// Register your scheme handlers in DI
+diRegistry
+  .register(AuthenticationHandlerMap)
+  .useMap()
+  .add('Bearer', BearerAuthHandler);
+
+diRegistry.register(AuthenticationSchemeHandler).asSingleton();
+
+// Add to the middleware stack after serverKitContextMiddleware
+app.use(serverKitContextMiddleware(container));
+app.use(authenticationMiddleware());
+
+// Access the resolved context in route handlers
+router.get('/api/me', async ctx => {
+  const { subject, isAuthenticated } = ctx.authenticationContext;
+  if (!isAuthenticated) throw httpError(401);
+  ctx.body = { subject };
 });
 ```
 
@@ -110,28 +149,67 @@ router.post('/api/json', bodyParserMiddleware(['application/json']), async ctx =
 });
 ```
 
+### Custom parser mappings
+
+`defaultParserMappings` is the built-in MIME-type-to-parser map used by `bodyParserMiddleware`. You can extend or replace it to register additional parsers:
+
+```typescript
+import { defaultParserMappings, BinaryParser } from '@maroonedsoftware/koa';
+import { ServerKitBodyParser } from '@maroonedsoftware/koa';
+
+const customMappings = {
+  ...defaultParserMappings,
+  pdf: BinaryParser,
+};
+
+// Pass to bodyParserMiddleware via a custom ServerKitBodyParser instance
+```
+
+The default mappings are:
+
+| MIME subtype         | Parser          |
+| -------------------- | --------------- |
+| `json`               | `JsonParser`    |
+| `application/*+json` | `JsonParser`    |
+| `urlencoded`         | `FormParser`    |
+| `text`               | `TextParser`    |
+| `multipart`          | `MultipartParser` |
+
 ## API
 
 ### ServerKitContext
 
-| Property        | Type        | Description                          |
-| --------------- | ----------- | ------------------------------------ |
-| `container`     | `Container` | Request-scoped injectkit container   |
-| `logger`        | `Logger`    | Request-scoped logger                |
-| `loggerName`    | `string`    | Logger name (e.g. request path)      |
-| `userAgent`     | `string`    | `User-Agent` header value            |
-| `correlationId` | `string`    | From `X-Correlation-Id` or generated |
-| `requestId`     | `string`    | From `X-Request-Id` or generated     |
+| Property                | Type                    | Description                                            |
+| ----------------------- | ----------------------- | ------------------------------------------------------ |
+| `container`             | `Container`             | Request-scoped injectkit container                     |
+| `logger`                | `Logger`                | Request-scoped logger                                  |
+| `loggerName`            | `string`                | Logger name (e.g. request path)                        |
+| `userAgent`             | `string`                | `User-Agent` header value                              |
+| `correlationId`         | `string`                | From `X-Correlation-Id` header or generated            |
+| `requestId`             | `string`                | From `X-Request-Id` header or generated                |
+| `rawBody`               | `unknown`               | Raw (unparsed) request body                            |
+| `authenticationContext` | `AuthenticationContext` | Resolved authentication context; set by `authenticationMiddleware` |
 
 ### Middleware
 
-| Middleware                              | Description                                                                                       |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `serverKitContextMiddleware(container)` | Sets `ctx.container`, `ctx.logger`, IDs; sets `X-Correlation-Id`, `X-Request-Id` response headers |
-| `corsMiddleware(options?)`              | CORS via `@koa/cors`; `origin`: `'*'`, string, or `(string \| RegExp)[]`                          |
-| `errorMiddleware()`                     | Catches errors, maps HTTP errors to status/body, 404/500, emits app events                        |
-| `rateLimiterMiddleware(rateLimiter)`    | Consumes one token per request by IP; throws 429 when exceeded                                    |
-| `bodyParserMiddleware(contentTypes)`    | Parses body by allowed MIME types; throws 400/411/415/422 on invalid input                        |
+| Middleware                              | Description                                                                                        |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `serverKitContextMiddleware(container)` | Sets `ctx.container`, `ctx.logger`, IDs; sets `X-Correlation-Id`, `X-Request-Id` response headers  |
+| `corsMiddleware(options?)`              | CORS via `@koa/cors`; `origin`: `'*'`, string, or `(string \| RegExp)[]`                           |
+| `errorMiddleware()`                     | Catches errors, maps HTTP errors to status/body, 404/500, emits app events                         |
+| `rateLimiterMiddleware(rateLimiter)`    | Consumes one token per request by IP; throws 429 when exceeded                                     |
+| `authenticationMiddleware()`           | Resolves `Authorization` header via `AuthenticationSchemeHandler`; populates `ctx.authenticationContext` |
+| `bodyParserMiddleware(contentTypes)`    | Parses body by allowed MIME types; throws 400/411/415/422 on invalid input                         |
+
+### Parser options
+
+Parser options classes are registered with InjectKit and can be configured in the DI container:
+
+| Class                | Key options                                    |
+| -------------------- | ---------------------------------------------- |
+| `JsonParserOptions`  | `strict`, `protoAction`, `reviver`, `encoding`, `limit` |
+| `FormParserOptions`  | `allowDots`, `depth`, `parameterLimit`, `encoding`, `limit` |
+| `TextParserOptions`  | `encoding`, `limit`                            |
 
 ## License
 

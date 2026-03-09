@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { FormParser } from '../../src/parsers/form.parser.js';
+import { FormParser, FormParserOptions } from '../../src/parsers/form.parser.js';
 import { makeReq } from './helpers.js';
 
 describe('FormParser', () => {
-  const parser = new FormParser();
+  const parser = new FormParser(new FormParserOptions());
 
   it('parses a URL-encoded string', async () => {
     const body = 'field1=value1&field2=value2';

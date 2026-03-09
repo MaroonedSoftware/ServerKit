@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { TextParser } from '../../src/parsers/text.parser.js';
+import { TextParser, TextParserOptions } from '../../src/parsers/text.parser.js';
 import { makeReq } from './helpers.js';
 
 describe('TextParser', () => {
-  const parser = new TextParser();
+  const parser = new TextParser(new TextParserOptions());
 
   it('returns the raw text string as both parsed and raw', async () => {
     const body = 'hello world';
