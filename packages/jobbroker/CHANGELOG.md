@@ -1,5 +1,16 @@
 # @maroonedsoftware/jobbroker
 
+## 1.1.0
+
+### Minor Changes
+
+- dc9e6d1: update packages
+- 337289b: adding authentication package and middleware, this is mostly stubs to prep for future work
+
+### Patch Changes
+
+- @maroonedsoftware/logger@1.0.0
+
 ## 1.0.0
 
 ### Major Changes
