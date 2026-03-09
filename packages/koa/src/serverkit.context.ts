@@ -1,6 +1,7 @@
 import { Context } from 'koa';
 import { Container } from 'injectkit';
 import { Logger } from '@maroonedsoftware/logger';
+import { AuthenticationContext } from '@maroonedsoftware/authentication';
 
 /**
  * Koa context extended with ServerKit request-scoped services and metadata.
@@ -25,4 +26,6 @@ export interface ServerKitContext extends Context {
   requestId: string;
   /** Raw body for this request. */
   rawBody: unknown;
+  /** Authentication context. */
+  authenticationContext: AuthenticationContext;
 }

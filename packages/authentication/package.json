@@ -1,22 +1,10 @@
 {
-  "name": "@maroonedsoftware/jobbroker",
-  "version": "1.0.0",
-  "description": "A flexible background job processing library with support for scheduled and on-demand jobs.",
-  "author": {
-    "name": "Marooned Software",
-    "url": "https://github.com/MaroonedSoftware/serverkit"
-  },
-  "bugs": {
-    "url": "https://github.com/MaroonedSoftware/serverkit/issues"
-  },
-  "homepage": "https://github.com/MaroonedSoftware/serverkit/packages/jobbroker#readme",
+  "name": "@maroonedsoftware/authentication",
+  "version": "0.0.0",
+  "description": "Authentication utilities for ServerKit.",
   "keywords": [
     "backend",
-    "jobbroker",
-    "jobs",
-    "scheduled",
-    "pubsub",
-    "queues",
+    "authentication",
     "serverkit",
     "typescript"
   ],
@@ -43,16 +31,12 @@
   },
   "dependencies": {
     "@maroonedsoftware/logger": "workspace:*",
-    "injectkit": "^1.1.3"
+    "injectkit": "^1.1.3",
+    "luxon": "^3.7.2"
   },
   "devDependencies": {
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
-    "pg-boss": "^12.14.0",
-    "unplugin-swc": "^1.5.9",
-    "vitest": "^4.0.18"
-  },
-  "peerDependencies": {
-    "pg-boss": "^12.5.4"
+    "@types/luxon": "^3.7.1"
   }
 }
