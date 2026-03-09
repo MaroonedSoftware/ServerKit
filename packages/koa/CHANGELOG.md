@@ -1,5 +1,21 @@
 # @maroonedsoftware/koa
 
+## 1.2.0
+
+### Minor Changes
+
+- dc9e6d1: update packages
+- 337289b: adding authentication package and middleware, this is mostly stubs to prep for future work
+
+### Patch Changes
+
+- Updated dependencies [0eea499]
+  - @maroonedsoftware/utilities@1.1.0
+  - @maroonedsoftware/authentication@0.0.0
+  - @maroonedsoftware/errors@1.2.0
+  - @maroonedsoftware/logger@1.0.0
+  - @maroonedsoftware/multipart@1.0.2
+
 ## 1.1.1
 
 ### Patch Changes
