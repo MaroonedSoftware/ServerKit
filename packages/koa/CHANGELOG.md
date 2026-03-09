@@ -1,5 +1,11 @@
 # @maroonedsoftware/koa
 
+## 1.3.0
+
+### Minor Changes
+
+- fe1ea8f: updating how body parsers work
+
 ## 1.2.0
 
 ### Minor Changes
