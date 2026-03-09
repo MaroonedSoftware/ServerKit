@@ -5,6 +5,7 @@ export * from './middleware/server/cors.middleware.js';
 export * from './middleware/server/error.middleware.js';
 export * from './middleware/server/rate.limiter.middleware.js';
 export * from './middleware/server/serverkit.context.middleware.js';
+export * from './middleware/server/authentication.middleware.js';
 export * from './middleware/router/body.parser.middleware.js';
 export * from './parsers/serverkit.parser.js';
 export * from './serverkit.bodyparser.js';
