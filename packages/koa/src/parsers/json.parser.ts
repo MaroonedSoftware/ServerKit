@@ -14,6 +14,7 @@ export type JsonParserOptions = raw.Options & {
 
 // Allowed whitespace is defined in RFC 7159
 // http://www.rfc-editor.org/rfc/rfc7159.txt
+/* eslint-disable-next-line no-control-regex */
 const strictJSONReg = /^[\x20\x09\x0a\x0d]*(\[|\{)/;
 
 @Injectable()

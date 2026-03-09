@@ -2,8 +2,8 @@ import { IncomingMessage } from 'http';
 import { Injectable } from 'injectkit';
 
 export type ServerKitParserResult = {
-  parsed: any;
-  raw: any;
+  parsed: unknown;
+  raw: unknown;
 };
 
 @Injectable()
