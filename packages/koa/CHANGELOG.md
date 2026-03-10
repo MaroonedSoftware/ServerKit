@@ -1,5 +1,11 @@
 # @maroonedsoftware/koa
 
+## 1.4.0
+
+### Minor Changes
+
+- 75d121c: fix auth middleware bug
+
 ## 1.3.0
 
 ### Minor Changes
