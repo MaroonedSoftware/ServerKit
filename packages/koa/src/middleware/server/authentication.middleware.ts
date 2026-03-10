@@ -28,7 +28,7 @@ export const authenticationMiddleware = (): ServerKitMiddleware => {
     const authorizationHeader = ctx.req.headers.authorization;
     delete ctx.req.headers.authorization;
 
-    const schemeHandler = ctx.serviceLocator.get(AuthenticationSchemeHandler);
+    const schemeHandler = ctx.container.get(AuthenticationSchemeHandler);
 
     ctx.authenticationContext = await schemeHandler.handle(authorizationHeader);
 
