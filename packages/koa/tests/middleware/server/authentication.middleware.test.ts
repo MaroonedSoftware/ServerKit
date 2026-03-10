@@ -24,7 +24,7 @@ describe('authenticationMiddleware', () => {
 
     mockCtx = {
       req: { headers: { authorization: undefined } },
-      serviceLocator: { get: vi.fn().mockReturnValue(mockSchemeHandler) },
+      container: { get: vi.fn().mockReturnValue(mockSchemeHandler) },
     } as unknown as ServerKitContext;
   });
 
