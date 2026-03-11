@@ -1,5 +1,16 @@
 # @maroonedsoftware/koa
 
+## 1.5.0
+
+### Minor Changes
+
+- e5dc109: adding router security middleware
+
+### Patch Changes
+
+- Updated dependencies [e5dc109]
+  - @maroonedsoftware/authentication@0.1.0
+
 ## 1.4.0
 
 ### Minor Changes
