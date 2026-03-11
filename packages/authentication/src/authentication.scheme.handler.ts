@@ -42,12 +42,13 @@ export class AuthenticationSchemeHandler {
         this.logger.warn('Invalid authorization header');
         return invalidAuthenticationContext;
       }
-      const handler = this.handlers.get(scheme);
+      const normalizedScheme = scheme.toLowerCase();
+      const handler = this.handlers.get(normalizedScheme);
       if (!handler) {
-        this.logger.warn('No authentication handler found for scheme', { scheme });
+        this.logger.warn('No authentication handler found for scheme', { scheme: normalizedScheme });
         return invalidAuthenticationContext;
       }
-      return await handler.authenticate(scheme, value);
+      return await handler.authenticate(normalizedScheme, value);
     }
     return invalidAuthenticationContext;
   }

@@ -1,5 +1,5 @@
 import { httpError, IsHttpError } from '@maroonedsoftware/errors';
-import { ServerKitMiddleware } from '../../serverkit.middleware.js';
+import { ServerKitRouterMiddleware } from '../../serverkit.middleware.js';
 import { ServerKitBodyParser } from '../../serverkit.bodyparser.js';
 
 /**
@@ -11,13 +11,13 @@ import { ServerKitBodyParser } from '../../serverkit.bodyparser.js';
  *
  * @param contentTypes - Allowed MIME types (e.g. `['application/json', 'application/x-www-form-urlencoded']`).
  *   Use an empty array to disallow any request body.
- * @returns {@link ServerKitMiddleware} that parses the body and sets `ctx.body`.
+ * @returns {@link ServerKitRouterMiddleware} that parses the body and sets `ctx.body`.
  * @throws HTTP 400 if body is present when no content types are allowed.
  * @throws HTTP 411 if body is required but missing.
  * @throws HTTP 415 if `Content-Type` is not in `contentTypes`.
  * @throws HTTP 422 if body is invalid or media type is unsupported.
  */
-export const bodyParserMiddleware = (contentTypes: string[]): ServerKitMiddleware => {
+export const bodyParserMiddleware = (contentTypes: string[]): ServerKitRouterMiddleware => {
   return async (ctx, next) => {
     if (contentTypes.length === 0) {
       if (ctx.request.length > 0) {

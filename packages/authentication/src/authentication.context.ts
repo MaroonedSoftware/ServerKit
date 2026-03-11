@@ -39,6 +39,8 @@ export interface AuthenticationContext {
   factors: AuthenticationFactor[];
   /** Arbitrary key/value claims extracted from the credential. */
   claims: Record<string, unknown>;
+  /** Roles assigned to the authenticated user. */
+  roles: string[];
 }
 
 /**
@@ -53,4 +55,5 @@ export const invalidAuthenticationContext: AuthenticationContext = {
   expiresAt: DateTime.invalid('invalid'),
   factors: [],
   claims: {},
+  roles: [],
 } as const;

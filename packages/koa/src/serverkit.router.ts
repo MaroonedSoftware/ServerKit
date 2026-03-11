@@ -1,5 +1,5 @@
 import { DefaultState } from 'koa';
-import Router from '@koa/router';
+import Router, { RouterOptions } from '@koa/router';
 import { ServerKitContext } from './serverkit.context.js';
 
 /**
@@ -8,6 +8,7 @@ import { ServerKitContext } from './serverkit.context.js';
  *
  * @typeParam StateT - Koa state type (defaults to `DefaultState`).
  * @typeParam ContextT - Context type (defaults to `ServerKitContext`).
- * @returns A new {@link Router} instance.
+ * @param options - Router options (defaults to `undefined`).
+ * @returns A new {@link Router} instance with the given options.
  */
-export const ServerKitRouter = <StateT = DefaultState, ContextT = ServerKitContext>() => new Router<StateT, ContextT>();
+export const ServerKitRouter = <StateT = DefaultState, ContextT = ServerKitContext>(options?: RouterOptions) => new Router<StateT, ContextT>(options);

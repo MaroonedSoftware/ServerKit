@@ -19,8 +19,9 @@ const makeValidContext = (): AuthenticationContext => ({
   issuedAt: DateTime.now(),
   lastAccessedAt: DateTime.now(),
   expiresAt: DateTime.now().plus({ hours: 1 }),
-  factors: [{ method: 'password', type: 'password', lastAuthenticated: DateTime.now(), kind: 'knowledge' }],
+  factors: [{ method: 'password', lastAuthenticated: DateTime.now(), kind: 'knowledge' }],
   claims: { sub: 'user-1' },
+  roles: [],
 });
 
 describe('AuthenticationSchemeHandler', () => {
@@ -56,7 +57,7 @@ describe('AuthenticationSchemeHandler', () => {
     it('returns invalidAuthenticationContext and warns when scheme has no registered handler', async () => {
       const result = await handler.handle('Bearer sometoken');
       expect(result).toBe(invalidAuthenticationContext);
-      expect(logger.warn).toHaveBeenCalledWith('No authentication handler found for scheme', { scheme: 'Bearer' });
+      expect(logger.warn).toHaveBeenCalledWith('No authentication handler found for scheme', { scheme: 'bearer' });
     });
 
     it('calls the registered handler and returns its result', async () => {
@@ -64,11 +65,11 @@ describe('AuthenticationSchemeHandler', () => {
       const bearerHandler: AuthenticationHandler = {
         authenticate: vi.fn().mockResolvedValue(validContext),
       };
-      handlers.set('Bearer', bearerHandler);
+      handlers.set('bearer', bearerHandler);
 
       const result = await handler.handle('Bearer mytoken');
 
-      expect(bearerHandler.authenticate).toHaveBeenCalledWith('Bearer', 'mytoken');
+      expect(bearerHandler.authenticate).toHaveBeenCalledWith('bearer', 'mytoken');
       expect(result).toBe(validContext);
     });
 
@@ -77,19 +78,19 @@ describe('AuthenticationSchemeHandler', () => {
       const apiKeyHandler: AuthenticationHandler = {
         authenticate: vi.fn().mockResolvedValue(validContext),
       };
-      handlers.set('ApiKey', apiKeyHandler);
+      handlers.set('apikey', apiKeyHandler);
 
       const result = await handler.handle('ApiKey secretkey');
 
-      expect(apiKeyHandler.authenticate).toHaveBeenCalledWith('ApiKey', 'secretkey');
+      expect(apiKeyHandler.authenticate).toHaveBeenCalledWith('apikey', 'secretkey');
       expect(result).toBe(validContext);
     });
 
     it('does not call unrelated handlers', async () => {
       const bearerHandler: AuthenticationHandler = { authenticate: vi.fn() };
       const basicHandler: AuthenticationHandler = { authenticate: vi.fn() };
-      handlers.set('Bearer', bearerHandler);
-      handlers.set('Basic', basicHandler);
+      handlers.set('bearer', bearerHandler);
+      handlers.set('basic', basicHandler);
 
       await handler.handle('Bearer atoken');
 
@@ -102,7 +103,7 @@ describe('AuthenticationSchemeHandler', () => {
       const failingHandler: AuthenticationHandler = {
         authenticate: vi.fn().mockRejectedValue(error),
       };
-      handlers.set('Bearer', failingHandler);
+      handlers.set('bearer', failingHandler);
 
       await expect(handler.handle('Bearer token')).rejects.toThrow('auth failed');
     });

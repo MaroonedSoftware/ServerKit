@@ -25,4 +25,8 @@ describe('invalidAuthenticationContext', () => {
   it('has an empty claims object', () => {
     expect(invalidAuthenticationContext.claims).toEqual({});
   });
+
+  it('has an empty roles array', () => {
+    expect(invalidAuthenticationContext.roles).toEqual([]);
+  });
 });
