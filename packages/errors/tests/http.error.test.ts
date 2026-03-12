@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { HttpError, IsHttpError, httpError } from '../src/http/http.error.js';
+import { HttpError, IsHttpError, httpError, unauthorizedError } from '../src/http/http.error.js';
 import { HttpStatusMap } from '../src/http/http.status.map.js';
 
 describe('HttpError', () => {
@@ -145,6 +145,104 @@ describe('IsHttpError', () => {
       // TypeScript should know error is HttpError here
       expect(error.statusCode).toBe(500);
     }
+  });
+});
+
+describe('addHeader', () => {
+  it('should set a header and return the error instance', () => {
+    const error = new HttpError(401);
+    const result = error.addHeader('WWW-Authenticate', 'Bearer');
+
+    expect(result).toBe(error);
+    expect(error.headers).toEqual({ 'WWW-Authenticate': 'Bearer' });
+  });
+
+  it('should initialise the headers object when none exist', () => {
+    const error = new HttpError(401);
+    expect(error.headers).toBeUndefined();
+
+    error.addHeader('X-Custom', 'value');
+
+    expect(error.headers).toEqual({ 'X-Custom': 'value' });
+  });
+
+  it('should accumulate multiple headers with successive calls', () => {
+    const error = new HttpError(401);
+    error.addHeader('WWW-Authenticate', 'Bearer');
+    error.addHeader('X-Request-Id', 'abc-123');
+
+    expect(error.headers).toEqual({
+      'WWW-Authenticate': 'Bearer',
+      'X-Request-Id': 'abc-123',
+    });
+  });
+
+  it('should overwrite an existing header with the same key', () => {
+    const error = new HttpError(401);
+    error.addHeader('WWW-Authenticate', 'Bearer');
+    error.addHeader('WWW-Authenticate', 'Basic');
+
+    expect(error.headers).toEqual({ 'WWW-Authenticate': 'Basic' });
+  });
+
+  it('should not affect headers previously set via withHeaders', () => {
+    const error = new HttpError(401).withHeaders({ 'X-Existing': 'yes' });
+    error.addHeader('X-New', 'also-yes');
+
+    expect(error.headers).toEqual({ 'X-Existing': 'yes', 'X-New': 'also-yes' });
+  });
+
+  it('should allow chaining', () => {
+    const error = new HttpError(401)
+      .addHeader('WWW-Authenticate', 'Bearer')
+      .addHeader('X-Custom', 'value');
+
+    expect(error.headers).toEqual({
+      'WWW-Authenticate': 'Bearer',
+      'X-Custom': 'value',
+    });
+  });
+});
+
+describe('unauthorizedError factory function', () => {
+  it('should create an HttpError with status code 401', () => {
+    const error = unauthorizedError('Bearer realm="api"');
+
+    expect(error).toBeInstanceOf(HttpError);
+    expect(error.statusCode).toBe(401);
+  });
+
+  it('should set the WWW-Authenticate header to the provided value', () => {
+    const error = unauthorizedError('Bearer realm="api"');
+
+    expect(error.headers).toEqual({ 'WWW-Authenticate': 'Bearer realm="api"' });
+  });
+
+  it('should use the default 401 status message', () => {
+    const error = unauthorizedError('Bearer');
+
+    expect(error.message).toBe(HttpStatusMap[401]);
+  });
+
+  it('should work with a plain scheme string', () => {
+    const error = unauthorizedError('Bearer');
+
+    expect(error.headers?.['WWW-Authenticate']).toBe('Bearer');
+  });
+
+  it('should work with a Basic scheme string', () => {
+    const error = unauthorizedError('Basic realm="restricted"');
+
+    expect(error.headers?.['WWW-Authenticate']).toBe('Basic realm="restricted"');
+  });
+
+  it('should be chainable with other HttpError methods', () => {
+    const cause = new Error('token expired');
+    const error = unauthorizedError('Bearer error="invalid_token"').withCause(cause);
+
+    expect(error.statusCode).toBe(401);
+    expect(error.headers?.['WWW-Authenticate']).toBe('Bearer error="invalid_token"');
+    expect(error.cause).toBe(cause);
   });
 });
 

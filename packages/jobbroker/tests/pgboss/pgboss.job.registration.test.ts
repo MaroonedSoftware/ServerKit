@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PgBossJobRegistryMap, PgBossJobRegistration } from '../../src/pgboss/pgboss.job.registeration.js';
+import { PgBossJobRegistryMap, PgBossJobRegistration } from '../../src/pgboss/pgboss.job.registration.js';
 import { Job } from '../../src/job.js';
 
 class TestJob extends Job<{ message: string }> {

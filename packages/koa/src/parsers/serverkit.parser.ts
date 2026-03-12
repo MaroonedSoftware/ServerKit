@@ -1,3 +1,4 @@
+import { BinaryLike } from 'node:crypto';
 import { IncomingMessage } from 'http';
 import { Injectable } from 'injectkit';
 
@@ -5,12 +6,12 @@ import { Injectable } from 'injectkit';
  * The result returned by every {@link ServerKitParser}.
  *
  * @property parsed - The structured/deserialized value derived from the body (e.g. a plain object for JSON).
- * @property raw    - The unprocessed body as read from the stream (e.g. the original string or `Buffer`).
- *                    May be `undefined` for parsers that do not retain a raw representation (e.g. binary, multipart).
+ * @property raw    - The unprocessed body bytes as read from the stream. Parsers that do not retain a raw
+ *                    representation (e.g. binary, multipart) return an empty `Buffer`.
  */
 export type ServerKitParserResult = {
   parsed: unknown;
-  raw: unknown;
+  raw: BinaryLike;
 };
 
 /**

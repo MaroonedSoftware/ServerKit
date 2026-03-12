@@ -72,6 +72,28 @@ describe('AppConfig', () => {
     });
   });
 
+  describe('getAs()', () => {
+    it('should cast the value to the specified type', () => {
+      interface DbConfig { host: string; port: number }
+      const config = new AppConfig({ database: { host: 'localhost', port: 5432 } });
+      const db = config.getAs<DbConfig>('database');
+      expect(db.host).toBe('localhost');
+      expect(db.port).toBe(5432);
+    });
+
+    it('should return the raw value with no transformation', () => {
+      const config = new AppConfig({ count: 42 });
+      const count = config.getAs<number>('count');
+      expect(count).toBe(42);
+    });
+
+    it('should cast arrays to a typed array', () => {
+      const config = new AppConfig({ tags: ['a', 'b', 'c'] });
+      const tags = config.getAs<string[]>('tags');
+      expect(tags).toEqual(['a', 'b', 'c']);
+    });
+  });
+
   describe('getString()', () => {
     it('should convert number to string', () => {
       const config = { port: 3000, count: 42 };

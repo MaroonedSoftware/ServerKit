@@ -2,7 +2,7 @@ import { Job as PgJob, PgBoss } from 'pg-boss';
 import { Container, Injectable } from 'injectkit';
 import { Job } from '../job.js';
 import { JobRunner } from '../job.runner.js';
-import { PgBossJobRegistration, PgBossJobRegistryMap } from './pgboss.job.registeration.js';
+import { PgBossJobRegistration, PgBossJobRegistryMap } from './pgboss.job.registration.js';
 import { Logger } from '@maroonedsoftware/logger';
 
 /**

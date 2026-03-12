@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { PgBoss } from 'pg-boss';
 import { PgBossJobBroker } from '../../src/pgboss/pgboss.job.broker.js';
-import { PgBossJobRegistryMap } from '../../src/pgboss/pgboss.job.registeration.js';
+import { PgBossJobRegistryMap } from '../../src/pgboss/pgboss.job.registration.js';
 import { Job } from '../../src/job.js';
 
 class TestJob extends Job<{ message: string }> {

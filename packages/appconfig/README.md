@@ -28,8 +28,9 @@ const config = new AppConfig({
   api: { timeout: 5000 },
 });
 
-const host = config.get('database').host; // Type-safe access
-const port = config.getNumber('port'); // Returns as number
+const host = config.get('database');         // Type-safe access
+const port = config.getNumber('port');       // Returns as number
+const db = config.getAs<{ host: string }>('database'); // Cast to interface
 ```
 
 ### Using the Builder
@@ -130,13 +131,14 @@ const config = await new AppConfigBuilder()
 
 The configuration container providing type-safe access to configuration values.
 
-| Method            | Description                                         |
-| ----------------- | --------------------------------------------------- |
-| `get(key)`        | Returns the value for the key with full type safety |
-| `getString(key)`  | Returns the value converted to a string             |
-| `getNumber(key)`  | Returns the value converted to a number             |
-| `getBoolean(key)` | Returns the value converted to a boolean            |
-| `getObject(key)`  | Returns the value cast as an object                 |
+| Method             | Description                                         |
+| ------------------ | --------------------------------------------------- |
+| `get(key)`         | Returns the value for the key with full type safety |
+| `getAs<U>(key)`    | Returns the value cast to the specified type `U`    |
+| `getString(key)`   | Returns the value converted to a string             |
+| `getNumber(key)`   | Returns the value converted to a number             |
+| `getBoolean(key)`  | Returns the value converted to a boolean            |
+| `getObject(key)`   | Returns the value cast as an object                 |
 
 ### AppConfigBuilder
 

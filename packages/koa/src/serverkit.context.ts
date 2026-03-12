@@ -2,6 +2,7 @@ import { Context } from 'koa';
 import { Container } from 'injectkit';
 import { Logger } from '@maroonedsoftware/logger';
 import { AuthenticationContext } from '@maroonedsoftware/authentication';
+import { BinaryLike } from 'node:crypto';
 
 /**
  * Koa context extended with ServerKit request-scoped services and metadata.
@@ -25,7 +26,7 @@ export interface ServerKitContext extends Context {
   /** Request ID; from `X-Request-Id` header or generated. */
   requestId: string;
   /** Raw body for this request. */
-  rawBody: unknown;
+  rawBody: BinaryLike;
   /** Authentication context. */
   authenticationContext: AuthenticationContext;
 }

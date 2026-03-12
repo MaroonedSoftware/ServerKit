@@ -18,9 +18,9 @@ export class BinaryParser extends ServerKitParser {
    * Buffers the (optionally compressed) request body into a `Buffer`.
    *
    * @param req - Incoming HTTP request to read.
-   * @returns `{ parsed: Buffer, raw: undefined }`.
+   * @returns `{ parsed: Buffer, raw: Buffer(0) }`.
    */
   async parse(req: IncomingMessage): Promise<ServerKitParserResult> {
-    return { parsed: await raw(inflate(req)), raw: undefined };
+    return { parsed: await raw(inflate(req)), raw: Buffer.from('') };
   }
 }

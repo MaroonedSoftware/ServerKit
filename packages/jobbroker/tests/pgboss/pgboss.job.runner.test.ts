@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Job as PgJob, PgBoss } from 'pg-boss';
 import { Container } from 'injectkit';
 import { PgBossJobRunner } from '../../src/pgboss/pgboss.job.runner.js';
-import { PgBossJobRegistryMap } from '../../src/pgboss/pgboss.job.registeration.js';
+import { PgBossJobRegistryMap } from '../../src/pgboss/pgboss.job.registration.js';
 import { Job } from '../../src/job.js';
 import { Logger } from '@maroonedsoftware/logger';
 

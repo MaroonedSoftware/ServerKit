@@ -1,7 +1,7 @@
 import { PgBoss } from 'pg-boss';
 import { Injectable } from 'injectkit';
 import { JobBroker } from '../job.broker.js';
-import { PgBossJobRegistryMap } from './pgboss.job.registeration.js';
+import { PgBossJobRegistryMap } from './pgboss.job.registration.js';
 
 /**
  * PgBoss implementation of the {@link JobBroker} interface.

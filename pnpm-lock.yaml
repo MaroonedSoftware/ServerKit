@@ -166,6 +166,9 @@ importers:
       '@hapi/bourne':
         specifier: ^3.0.0
         version: 3.0.0
+      '@maroonedsoftware/appconfig':
+        specifier: workspace:*
+        version: link:../appconfig
       '@maroonedsoftware/authentication':
         specifier: workspace:*
         version: link:../authentication

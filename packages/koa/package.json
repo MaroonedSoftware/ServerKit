@@ -39,6 +39,7 @@
   },
   "dependencies": {
     "@hapi/bourne": "^3.0.0",
+    "@maroonedsoftware/appconfig": "workspace:*",
     "@maroonedsoftware/errors": "workspace:*",
     "@maroonedsoftware/logger": "workspace:*",
     "@maroonedsoftware/multipart": "workspace:*",

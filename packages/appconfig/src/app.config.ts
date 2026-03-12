@@ -34,8 +34,33 @@ export class AppConfig<T = Record<string, unknown>> {
    * const port = config.get('port'); // Returns 3000, typed as number
    * ```
    */
-  get<K extends keyof T>(key: K): T[K] {
+  get(key: keyof T): T[keyof T] {
     return this.config[key];
+  }
+
+  /**
+   * Retrieves a configuration value cast to a specific type.
+   *
+   * Unlike `get()`, which returns `T[keyof T]`, this method lets you cast the
+   * value to an arbitrary type `U`. Use this when the TypeScript type of the
+   * stored value differs from what you need at the call site — for example,
+   * when reading a nested object as a typed interface.
+   *
+   * @template U - The type to cast the value to.
+   * @param key - The configuration key to retrieve.
+   * @returns The configuration value cast to `U`.
+   *
+   * @example
+   * ```typescript
+   * interface DbConfig { host: string; port: number }
+   *
+   * const config = new AppConfig({ database: { host: 'localhost', port: 5432 } });
+   * const db = config.getAs<DbConfig>('database');
+   * console.log(db.host); // 'localhost'
+   * ```
+   */
+  getAs<U>(key: keyof T): U {
+    return this.config[key] as U;
   }
 
   /**
@@ -55,8 +80,8 @@ export class AppConfig<T = Record<string, unknown>> {
    * const enabledStr = config.getString('enabled'); // Returns "true"
    * ```
    */
-  getString<K extends keyof T>(key: K): string {
-    return String(this.config[key]);
+  getString(key: keyof T): string {
+    return String(this.get(key));
   }
 
   /**
@@ -77,7 +102,7 @@ export class AppConfig<T = Record<string, unknown>> {
    * const timeout = config.getNumber('timeout'); // Returns 5000
    * ```
    */
-  getNumber<K extends keyof T>(key: K): number {
+  getNumber(key: keyof T): number {
     return Number(this.config[key]);
   }
 
@@ -99,7 +124,7 @@ export class AppConfig<T = Record<string, unknown>> {
    * const debug = config.getBoolean('debug'); // Returns true
    * ```
    */
-  getBoolean<K extends keyof T>(key: K): boolean {
+  getBoolean(key: keyof T): boolean {
     return Boolean(this.config[key]);
   }
 
@@ -121,7 +146,7 @@ export class AppConfig<T = Record<string, unknown>> {
    * const db = config.getObject('database'); // Returns { host: 'localhost', port: 5432 }
    * ```
    */
-  getObject<K extends keyof T>(key: K): object {
+  getObject(key: keyof T): object {
     return this.config[key] as object;
   }
 }

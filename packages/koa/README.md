@@ -22,6 +22,8 @@ Peer dependencies: `koa`, `@koa/router`, `@koa/cors`.
 - **authenticationMiddleware** — Resolves the `Authorization` header via `AuthenticationSchemeHandler` and populates `ctx.authenticationContext`
 - **bodyParserMiddleware** — Parses JSON, form, text, multipart, or raw body by allowed content types
 - **defaultParserMappings** — Pre-built MIME-type-to-parser map for use with `bodyParserMiddleware`
+- **requireSignature** — Router middleware that verifies a request HMAC signature against `ctx.rawBody`
+- **requireSecurity** — Router middleware that enforces authentication and optional role-based authorization
 
 ## Usage
 
@@ -149,6 +151,39 @@ router.post('/api/json', bodyParserMiddleware(['application/json']), async ctx =
 });
 ```
 
+### Signature verification
+
+`requireSignature` validates that an incoming request was signed with a shared secret. It computes an HMAC over `ctx.rawBody` and compares it to a header value. Use it for webhook endpoints from GitHub, Stripe, and similar services.
+
+Store the options under a key in `AppConfig` and reference that key when adding the middleware:
+
+**config.json:**
+
+```json
+{
+  "webhook": {
+    "header": "X-Hub-Signature-256",
+    "secret": "${env:WEBHOOK_SECRET}",
+    "algorithm": "sha256",
+    "digest": "hex"
+  }
+}
+```
+
+```typescript
+import { requireSignature, bodyParserMiddleware } from '@maroonedsoftware/koa';
+
+// bodyParserMiddleware must run first so that ctx.rawBody is populated
+router.post(
+  '/webhooks/github',
+  bodyParserMiddleware(['application/json']),
+  requireSignature('webhook'),
+  async ctx => {
+    ctx.status = 204;
+  },
+);
+```
+
 ### Custom parser mappings
 
 `defaultParserMappings` is the built-in MIME-type-to-parser map used by `bodyParserMiddleware`. You can extend or replace it to register additional parsers:
@@ -187,7 +222,7 @@ The default mappings are:
 | `userAgent`             | `string`                | `User-Agent` header value                              |
 | `correlationId`         | `string`                | From `X-Correlation-Id` header or generated            |
 | `requestId`             | `string`                | From `X-Request-Id` header or generated                |
-| `rawBody`               | `unknown`               | Raw (unparsed) request body                            |
+| `rawBody`               | `BinaryLike`            | Raw request body bytes; set by `bodyParserMiddleware`  |
 | `authenticationContext` | `AuthenticationContext` | Resolved authentication context; set by `authenticationMiddleware` |
 
 ### Middleware
@@ -200,6 +235,8 @@ The default mappings are:
 | `rateLimiterMiddleware(rateLimiter)`    | Consumes one token per request by IP; throws 429 when exceeded                                     |
 | `authenticationMiddleware()`           | Resolves `Authorization` header via `AuthenticationSchemeHandler`; populates `ctx.authenticationContext` |
 | `bodyParserMiddleware(contentTypes)`    | Parses body by allowed MIME types; throws 400/411/415/422 on invalid input                         |
+| `requireSignature(optionsKey)`          | Verifies HMAC of `ctx.rawBody` against a request header; throws 401 on mismatch                   |
+| `requireSecurity(options?)`             | Throws 401 when unauthenticated; throws 403 when required role is missing                          |
 
 ### Parser options
 

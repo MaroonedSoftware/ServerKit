@@ -33,9 +33,9 @@ describe('MultipartParser', () => {
     expect(result.parsed).toEqual({ _req: mockReq });
   });
 
-  it('returns raw as undefined', async () => {
+  it('returns raw as an empty Buffer', async () => {
     const result = await parser.parse(mockReq);
 
-    expect(result.raw).toBeUndefined();
+    expect(result.raw).toBeInstanceOf(Buffer);
   });
 });

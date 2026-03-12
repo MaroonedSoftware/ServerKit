@@ -13,10 +13,10 @@ describe('BinaryParser', () => {
     expect(result.parsed).toEqual(content);
   });
 
-  it('returns raw as undefined', async () => {
+  it('returns raw as an empty Buffer', async () => {
     const result = await parser.parse(makeReq(Buffer.from('data')));
 
-    expect(result.raw).toBeUndefined();
+    expect(result.raw).toBeInstanceOf(Buffer);
   });
 
   it('handles an empty body', async () => {

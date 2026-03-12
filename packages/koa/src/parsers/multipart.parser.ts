@@ -16,9 +16,9 @@ export class MultipartParser extends ServerKitParser {
    * Creates a {@link MultipartBody} around the request stream.
    *
    * @param req - Incoming HTTP request containing the multipart body.
-   * @returns `{ parsed: MultipartBody, raw: undefined }`.
+   * @returns `{ parsed: MultipartBody, raw: Buffer(0) }`.
    */
   async parse(req: IncomingMessage): Promise<ServerKitParserResult> {
-    return { parsed: new MultipartBody(req), raw: undefined };
+    return { parsed: new MultipartBody(req), raw: Buffer.from('') };
   }
 }
