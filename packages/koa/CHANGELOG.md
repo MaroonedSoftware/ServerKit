@@ -1,5 +1,12 @@
 # @maroonedsoftware/koa
 
+## 1.6.2
+
+### Patch Changes
+
+- Updated dependencies [64fdc6c]
+  - @maroonedsoftware/appconfig@1.3.0
+
 ## 1.6.0
 
 ### Minor Changes
