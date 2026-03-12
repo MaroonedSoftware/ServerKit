@@ -1,5 +1,19 @@
 # @maroonedsoftware/koa
 
+## 1.6.0
+
+### Minor Changes
+
+- 5ded700: adding require signature middleware
+
+### Patch Changes
+
+- Updated dependencies [5ded700]
+- Updated dependencies [5ded700]
+  - @maroonedsoftware/errors@1.3.0
+  - @maroonedsoftware/appconfig@1.2.0
+  - @maroonedsoftware/multipart@1.0.3
+
 ## 1.5.0
 
 ### Minor Changes
