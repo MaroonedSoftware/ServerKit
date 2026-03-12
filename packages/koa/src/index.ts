@@ -8,6 +8,7 @@ export * from './middleware/server/serverkit.context.middleware.js';
 export * from './middleware/server/authentication.middleware.js';
 export * from './middleware/router/body.parser.middleware.js';
 export * from './middleware/router/require.security.middleware.js';
+export * from './middleware/router/require.signature.middleware.js';
 export * from './parsers/serverkit.parser.js';
 export * from './serverkit.bodyparser.js';
 export * from './parsers/json.parser.js';
