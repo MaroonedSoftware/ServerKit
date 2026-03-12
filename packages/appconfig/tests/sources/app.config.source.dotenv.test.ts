@@ -118,4 +118,84 @@ describe('AppConfigSourceDotenv', () => {
       expect(result).toBeInstanceOf(Promise);
     });
   });
+
+  describe('groupSeparator option', () => {
+    it('should group keys by the separator into nested objects', async () => {
+      writeFileSync(
+        testFile,
+        [
+          'MODERN_TREASURY_WEBHOOK__secret=blah',
+          'MODERN_TREASURY_WEBHOOK__header=X-Signature',
+          'MODERN_TREASURY_WEBHOOK__algorithm=sha256',
+          'MODERN_TREASURY_WEBHOOK__digest=hex',
+        ].join('\n'),
+        'utf8',
+      );
+
+      const source = new AppConfigSourceDotenv(testFile, { groupSeparator: '__' });
+      const config = await source.load();
+
+      expect(config).toEqual({
+        MODERN_TREASURY_WEBHOOK: {
+          secret: 'blah',
+          header: 'X-Signature',
+          algorithm: 'sha256',
+          digest: 'hex',
+        },
+      });
+    });
+
+    it('should pass ungrouped keys through unchanged', async () => {
+      writeFileSync(testFile, 'DATABASE_URL=postgres://localhost/db\nPORT=3000\n', 'utf8');
+
+      const source = new AppConfigSourceDotenv(testFile, { groupSeparator: '__' });
+      const config = await source.load();
+
+      expect(config).toEqual({ DATABASE_URL: 'postgres://localhost/db', PORT: '3000' });
+    });
+
+    it('should mix grouped and ungrouped keys', async () => {
+      writeFileSync(
+        testFile,
+        ['DATABASE_URL=postgres://localhost/db', 'WEBHOOK__secret=abc', 'WEBHOOK__header=X-Sig'].join('\n'),
+        'utf8',
+      );
+
+      const source = new AppConfigSourceDotenv(testFile, { groupSeparator: '__' });
+      const config = await source.load();
+
+      expect(config).toEqual({
+        DATABASE_URL: 'postgres://localhost/db',
+        WEBHOOK: { secret: 'abc', header: 'X-Sig' },
+      });
+    });
+
+    it('should support deep nesting via repeated separators', async () => {
+      writeFileSync(testFile, 'A__B__C=deep\n', 'utf8');
+
+      const source = new AppConfigSourceDotenv(testFile, { groupSeparator: '__' });
+      const config = await source.load();
+
+      expect(config).toEqual({ A: { B: { C: 'deep' } } });
+    });
+
+    it('should return a flat record when groupSeparator is not set', async () => {
+      writeFileSync(testFile, 'WEBHOOK__secret=abc\n', 'utf8');
+
+      const source = new AppConfigSourceDotenv(testFile);
+      const config = await source.load();
+
+      // Without the option the raw key name is preserved
+      expect(config).toEqual({ WEBHOOK__secret: 'abc' });
+    });
+
+    it('should not group when groupSeparator is undefined', async () => {
+      writeFileSync(testFile, 'A__B=value\n', 'utf8');
+
+      const source = new AppConfigSourceDotenv(testFile, {});
+      const config = await source.load();
+
+      expect(config).toEqual({ A__B: 'value' });
+    });
+  });
 });

@@ -8,6 +8,7 @@ A flexible, type-safe configuration management library with support for multiple
 - **Multiple sources** - Load configuration from JSON files, YAML files, `.env` files, and more
 - **Value transformation** - Resolve environment variables and GCP secrets in configuration values
 - **Deep merging** - Combine configurations from multiple sources with predictable override behavior
+- **Flat key grouping** - Collapse `KEY__sub=val` dotenv entries into nested objects automatically
 - **Extensible** - Create custom sources and providers for your specific needs
 
 ## Installation
@@ -220,7 +221,65 @@ const source = new AppConfigSourceDotenv();
 
 // Load from custom path
 const source = new AppConfigSourceDotenv('./config/.env.local');
+
+// Group keys with __ separator into nested objects
+const source = new AppConfigSourceDotenv('./.env', { groupSeparator: '__' });
 ```
+
+##### `groupSeparator` option
+
+When set, any key containing the separator is split into path segments and written into a nested object. Keys without the separator are passed through unchanged. Arbitrary nesting depth is supported.
+
+**.env:**
+
+```
+MODERN_TREASURY_WEBHOOK__secret=blah
+MODERN_TREASURY_WEBHOOK__header=X-Signature
+MODERN_TREASURY_WEBHOOK__algorithm=sha256
+MODERN_TREASURY_WEBHOOK__digest=hex
+DATABASE_URL=postgres://localhost/db
+```
+
+**app.ts:**
+
+```typescript
+const source = new AppConfigSourceDotenv('./.env', { groupSeparator: '__' });
+const config = await source.load();
+// →
+// {
+//   MODERN_TREASURY_WEBHOOK: {
+//     secret: 'blah',
+//     header: 'X-Signature',
+//     algorithm: 'sha256',
+//     digest: 'hex',
+//   },
+//   DATABASE_URL: 'postgres://localhost/db',
+// }
+```
+
+The `groupSeparator` option also integrates naturally with the builder. Because grouping happens at the source level, all downstream providers (e.g. `AppConfigProviderDotenv`) see the already-nested object:
+
+```typescript
+const config = await new AppConfigBuilder()
+  .addSource(new AppConfigSourceJson('./config.json'))
+  .addSource(new AppConfigSourceDotenv('./.env', { groupSeparator: '__' }))
+  .addProvider(new AppConfigProviderDotenv())
+  .build<MyConfig>();
+```
+
+You can also call `nestKeys` directly if you need to transform a plain record outside of a source:
+
+```typescript
+import { nestKeys } from '@maroonedsoftware/appconfig';
+
+const nested = nestKeys(process.env as Record<string, unknown>, '__');
+```
+
+##### AppConfigSourceDotenvOptions
+
+| Option           | Type     | Description                                                                                             |
+| ---------------- | -------- | ------------------------------------------------------------------------------------------------------- |
+| `groupSeparator` | `string` | Optional. When set, keys containing this string are split into nested objects (e.g. `'__'`). |
 
 ### Providers
 
@@ -261,6 +320,36 @@ The provider:
 - Automatically attempts to parse secret values as JSON
 - Requires valid GCP credentials (uses Application Default Credentials)
 - Is decorated with `@Injectable()` for dependency injection support
+
+## Utilities
+
+### nestKeys
+
+Transforms a flat key/value record into a nested object by splitting keys on a separator. Exported as a standalone utility for use outside of sources.
+
+```typescript
+import { nestKeys } from '@maroonedsoftware/appconfig';
+
+nestKeys(
+  {
+    WEBHOOK__secret: 'abc',
+    WEBHOOK__header: 'X-Sig',
+    WEBHOOK__signing__algorithm: 'sha256', // deep nesting
+    DATABASE_URL: 'postgres://localhost/db',
+  },
+  '__',
+);
+// →
+// {
+//   WEBHOOK: { secret: 'abc', header: 'X-Sig', signing: { algorithm: 'sha256' } },
+//   DATABASE_URL: 'postgres://localhost/db',
+// }
+```
+
+| Parameter   | Type                       | Description                                     |
+| ----------- | -------------------------- | ----------------------------------------------- |
+| `record`    | `Record<string, unknown>`  | The flat key/value record to transform           |
+| `separator` | `string`                   | The string used to delimit path segments         |
 
 ## Custom Sources and Providers
 
