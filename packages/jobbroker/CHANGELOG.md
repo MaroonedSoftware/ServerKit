@@ -1,5 +1,11 @@
 # @maroonedsoftware/jobbroker
 
+## 1.2.0
+
+### Minor Changes
+
+- 5ded700: updating tests
+
 ## 1.1.0
 
 ### Minor Changes

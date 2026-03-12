@@ -1,5 +1,11 @@
 # @maroonedsoftware/appconfig
 
+## 1.2.0
+
+### Minor Changes
+
+- 5ded700: adding getAs function to appconfig
+
 ## 1.1.0
 
 ### Minor Changes
