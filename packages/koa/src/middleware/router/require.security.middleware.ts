@@ -7,7 +7,7 @@ import { httpError, unauthorizedError } from '@maroonedsoftware/errors';
  */
 type SecurityOptions = {
   /** When set, the authenticated user must have this role in their `AuthenticationContext.roles` array. */
-  role?: string;
+  roles?: string[];
 };
 
 /**
@@ -39,11 +39,11 @@ export const requireSecurity = (options?: SecurityOptions): ServerKitRouterMiddl
       throw unauthorizedError('Bearer error="invalid_token"');
     }
 
-    if (options?.role && !authenticationContext.roles.includes(options.role)) {
+    if (options?.roles && options.roles.length > 0 && !options.roles.some(role => authenticationContext.roles.includes(role))) {
       throw httpError(403).withInternalDetails({
         message: 'Insufficient role',
-        requiredRole: options.role,
-        userRoles: authenticationContext.roles,
+        requiredRoles: options.roles,
+        userRoles: authenticationContext.roles.join(', '),
       });
     }
 

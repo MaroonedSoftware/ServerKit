@@ -71,7 +71,7 @@ describe('requireSecurity', () => {
     });
 
     it('calls next() when role is required and user has it', async () => {
-      const middleware = requireSecurity({ role: 'admin' });
+      const middleware = requireSecurity({ roles: ['admin'] });
       mockCtx.authenticationContext = makeValidContext(['admin', 'user']);
 
       await middleware(mockCtx, mockNext);
@@ -80,7 +80,7 @@ describe('requireSecurity', () => {
     });
 
     it('throws 403 when role is required and user does not have it', async () => {
-      const middleware = requireSecurity({ role: 'admin' });
+      const middleware = requireSecurity({ roles: ['admin'] });
       mockCtx.authenticationContext = makeValidContext(['user']);
 
       await expect(middleware(mockCtx, mockNext)).rejects.toThrow(HttpError);
@@ -94,7 +94,7 @@ describe('requireSecurity', () => {
     });
 
     it('does not call next() when role check fails', async () => {
-      const middleware = requireSecurity({ role: 'admin' });
+      const middleware = requireSecurity({ roles: ['admin'] });
       mockCtx.authenticationContext = makeValidContext(['user']);
 
       await expect(middleware(mockCtx, mockNext)).rejects.toThrow();
@@ -102,7 +102,7 @@ describe('requireSecurity', () => {
     });
 
     it('throws 403 when role is required and user has no roles', async () => {
-      const middleware = requireSecurity({ role: 'admin' });
+      const middleware = requireSecurity({ roles: ['admin'] });
       mockCtx.authenticationContext = makeValidContext([]);
 
       await expect(middleware(mockCtx, mockNext)).rejects.toThrow(HttpError);
@@ -126,6 +126,24 @@ describe('requireSecurity', () => {
     it('does not check roles when options object has no role property', async () => {
       const middleware = requireSecurity({});
       mockCtx.authenticationContext = makeValidContext([]);
+
+      await middleware(mockCtx, mockNext);
+
+      expect(mockNext).toHaveBeenCalledOnce();
+    });
+
+    it('calls next() when user has one of multiple required roles', async () => {
+      const middleware = requireSecurity({ roles: ['admin', 'moderator'] });
+      mockCtx.authenticationContext = makeValidContext(['moderator']);
+
+      await middleware(mockCtx, mockNext);
+
+      expect(mockNext).toHaveBeenCalledOnce();
+    });
+
+    it('calls next() when roles is an empty array', async () => {
+      const middleware = requireSecurity({ roles: [] });
+      mockCtx.authenticationContext = makeValidContext(['admin']);
 
       await middleware(mockCtx, mockNext);
 
