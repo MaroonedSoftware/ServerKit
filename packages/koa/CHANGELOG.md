@@ -1,5 +1,11 @@
 # @maroonedsoftware/koa
 
+## 1.7.0
+
+### Minor Changes
+
+- 42973b6: update requireSecurity options role to be string array
+
 ## 1.6.2
 
 ### Patch Changes
