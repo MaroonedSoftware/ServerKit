@@ -16,7 +16,10 @@ import { AppConfig } from '@maroonedsoftware/appconfig';
  *   async setup(registry, config) {
  *     registry.register(MyService, new MyService(config.myService));
  *   },
- *   async teardown(container) {
+ *   async start(container) {
+ *     await container.resolve(MyService).start();
+ *   },
+ *   async shutdown(container) {
  *     await container.resolve(MyService).close();
  *   },
  * };
@@ -38,18 +41,14 @@ export interface ServerKitModule<ConfigT = AppConfig> {
    *
    * @param container - The built InjectKit container for resolving services.
    */
-  teardown?: (container: Container) => Promise<void>;
+  shutdown?: (container: Container) => Promise<void>;
 
   /**
    * Called after the application is fully initialized and ready to serve
    * requests. Use this to begin background work (e.g. start polling, open
    * socket connections).
+   *
+   * @param container - The built InjectKit container for resolving services.
    */
-  start?: () => Promise<void>;
-
-  /**
-   * Called before the application begins shutting down. Use this to
-   * gracefully stop background work started in `start`.
-   */
-  stop?: () => Promise<void>;
+  start?: (container: Container) => Promise<void>;
 }
