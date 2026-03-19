@@ -1,5 +1,11 @@
 # @maroonedsoftware/koa
 
+## 1.8.0
+
+### Minor Changes
+
+- 97d5ffc: adding serverkit module
+
 ## 1.7.0
 
 ### Minor Changes
