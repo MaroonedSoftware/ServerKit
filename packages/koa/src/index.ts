@@ -17,3 +17,4 @@ export * from './parsers/form.parser.js';
 export * from './parsers/multipart.parser.js';
 export * from './parsers/binary.parser.js';
 export * from './parsers/serverkit.default.parsers.js';
+export * from './serverkit.module.js';
