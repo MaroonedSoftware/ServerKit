@@ -1,5 +1,16 @@
 # @maroonedsoftware/multipart
 
+## 1.1.0
+
+### Minor Changes
+
+- 922f585: upgrading to typescript 6
+
+### Patch Changes
+
+- Updated dependencies [922f585]
+  - @maroonedsoftware/errors@1.4.0
+
 ## 1.0.3
 
 ### Patch Changes

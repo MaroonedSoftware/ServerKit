@@ -1,5 +1,21 @@
 # @maroonedsoftware/koa
 
+## 1.9.0
+
+### Minor Changes
+
+- 922f585: upgrading to typescript 6
+
+### Patch Changes
+
+- Updated dependencies [922f585]
+  - @maroonedsoftware/authentication@0.2.0
+  - @maroonedsoftware/appconfig@1.4.0
+  - @maroonedsoftware/multipart@1.1.0
+  - @maroonedsoftware/utilities@1.2.0
+  - @maroonedsoftware/errors@1.4.0
+  - @maroonedsoftware/logger@1.1.0
+
 ## 1.8.0
 
 ### Minor Changes
