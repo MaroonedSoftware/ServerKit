@@ -2,10 +2,6 @@ name: Deploy
 
 on:
   workflow_call:
-    inputs:
-      tag:
-        required: false
-        type: string
 
 env:
   CI: true
@@ -29,7 +25,7 @@ jobs:
           fail-on-cache-miss: true
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5
 
       - name: Create and publish versions
         id: changesets
