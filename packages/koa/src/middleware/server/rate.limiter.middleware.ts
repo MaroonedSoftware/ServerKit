@@ -1,4 +1,4 @@
-import { RateLimiterAbstract } from 'rate-limiter-flexible';
+import { RateLimiterAbstract, RateLimiterRes } from 'rate-limiter-flexible';
 import { ServerKitMiddleware } from '../../serverkit.middleware.js';
 import { httpError } from '@maroonedsoftware/errors';
 
@@ -13,8 +13,20 @@ export const rateLimiterMiddleware = (rateLimiter: RateLimiterAbstract): ServerK
   return async (ctx, next) => {
     try {
       await rateLimiter.consume(ctx.ip);
-    } catch (error) {
-      throw httpError(429).withCause(error as Error);
+    } catch (error: unknown) {
+      let headers: Record<string, string> = {};
+      if (error instanceof RateLimiterRes) {
+        headers = {
+          'Retry-After': (error.msBeforeNext / 1000).toString(),
+          'X-RateLimit-Limit': rateLimiter.points.toString(),
+          'X-RateLimit-Remaining': error.remainingPoints.toString(),
+          'X-RateLimit-Reset': Math.ceil((Date.now() + error.msBeforeNext) / 1000).toString(),
+        };
+      }
+
+      throw httpError(429)
+        .withCause(error as Error)
+        .withHeaders(headers);
     }
 
     await next();
