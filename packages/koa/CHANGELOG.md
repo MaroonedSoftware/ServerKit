@@ -1,5 +1,11 @@
 # @maroonedsoftware/koa
 
+## 1.10.0
+
+### Minor Changes
+
+- fff5f18: added rate limit headers
+
 ## 1.9.0
 
 ### Minor Changes
