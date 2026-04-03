@@ -266,6 +266,22 @@ importers:
         specifier: workspace:*
         version: link:../config-typescript
 
+  packages/zod:
+    dependencies:
+      '@maroonedsoftware/errors':
+        specifier: workspace:*
+        version: link:../errors
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
+    devDependencies:
+      '@repo/config-eslint':
+        specifier: workspace:*
+        version: link:../config-eslint
+      '@repo/config-typescript':
+        specifier: workspace:*
+        version: link:../config-typescript
+
 packages:
 
   '@babel/code-frame@7.29.0':
