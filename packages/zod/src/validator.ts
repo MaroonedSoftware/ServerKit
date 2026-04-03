@@ -28,6 +28,31 @@ function formatZodErrors(error: ZodError) {
     return details;
 }
 
+/**
+ * Parses and validates `data` against a Zod schema, returning the typed result on success.
+ *
+ * On failure, throws an `HttpError` with status `400` whose `details` map field paths to
+ * human-readable error messages. Field paths use dot notation (e.g. `"user.email"`). Root-level
+ * errors are keyed as `"_root"`. When a field has multiple violations the value is a string array.
+ *
+ * Special cases:
+ * - Unrecognized keys (from `z.strictObject`) are each reported as `"Unrecognized key"`.
+ * - Enum violations produce a message listing the allowed values.
+ *
+ * @param data - The unknown input to validate.
+ * @param schema - The Zod schema to validate against.
+ * @returns The parsed and transformed output inferred from the schema.
+ * @throws {HttpError} 400 with field-level `details` when validation fails.
+ *
+ * @example
+ * ```typescript
+ * const body = await parseAndValidate(ctx.request.body, z.object({
+ *   email: z.string().email(),
+ *   age: z.number().min(0),
+ * }));
+ * // body is typed as { email: string; age: number }
+ * ```
+ */
 export const parseAndValidate = async <T extends ZodType>(data: unknown, schema: T): Promise<z.infer<T>> => {
     const parsed = await schema.safeParseAsync(data);
 

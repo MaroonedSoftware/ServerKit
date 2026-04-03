@@ -11,7 +11,7 @@ pnpm add @maroonedsoftware/utilities
 ## Usage
 
 ```typescript
-import { isUuid, isEmail, isEmailDomain, base32Encode, base32Decode, unique } from '@maroonedsoftware/utilities';
+import { isUuid, isEmail, isEmailDomain, base32Encode, base32Decode, unique, bigIntReplacer, bigIntReviver, nullToUndefined } from '@maroonedsoftware/utilities';
 ```
 
 ## API Reference
@@ -101,6 +101,37 @@ unique([1, 2, 1, 3]);
 
 - `array` - The array to deduplicate.
 - `selector` - Optional. A property key of `T` or a function `(t: T) => unknown`. When omitted, uses the item itself (identity).
+
+### BigInt JSON Serialization
+
+#### `bigIntReplacer(_: string, value: unknown): unknown`
+
+A `JSON.stringify` replacer that serializes `bigint` values as strings with a trailing `n` (e.g. `123n` → `"123n"`), since JSON does not natively support `bigint`. Pair with `bigIntReviver` to round-trip values through JSON.
+
+```typescript
+JSON.stringify({ id: 9007199254740993n }, bigIntReplacer);
+// '{"id":"9007199254740993n"}'
+```
+
+#### `bigIntReviver(_: string, value: unknown): unknown`
+
+A `JSON.parse` reviver that deserializes strings matching `/^-?\d+n$/` back to native `bigint` (e.g. `"123n"` → `123n`). Pair with `bigIntReplacer` to round-trip values through JSON.
+
+```typescript
+JSON.parse('{"id":"9007199254740993n"}', bigIntReviver);
+// { id: 9007199254740993n }
+```
+
+### Object Utilities
+
+#### `nullToUndefined<T>(obj: object): T`
+
+Performs a shallow replacement of all `null` values in an object with `undefined`. Non-null values and nested objects are passed through unchanged.
+
+```typescript
+nullToUndefined({ a: null, b: 1, c: null });
+// { a: undefined, b: 1, c: undefined }
+```
 
 ## License
 
