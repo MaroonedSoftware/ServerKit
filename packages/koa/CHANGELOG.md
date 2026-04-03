@@ -1,5 +1,12 @@
 # @maroonedsoftware/koa
 
+## 1.10.1
+
+### Patch Changes
+
+- Updated dependencies [b9940cc]
+  - @maroonedsoftware/utilities@1.3.0
+
 ## 1.10.0
 
 ### Minor Changes

@@ -1,5 +1,11 @@
 # @maroonedsoftware/utilities
 
+## 1.3.0
+
+### Minor Changes
+
+- b9940cc: added bigint and null to undefined helpers
+
 ## 1.2.0
 
 ### Minor Changes
