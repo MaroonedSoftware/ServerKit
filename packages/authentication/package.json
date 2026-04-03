@@ -31,7 +31,7 @@
   },
   "dependencies": {
     "@maroonedsoftware/logger": "workspace:*",
-    "injectkit": "^1.1.3",
+    "injectkit": "^1.2.0",
     "jsonwebtoken": "^9.0.3",
     "luxon": "^3.7.2"
   },
