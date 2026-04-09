@@ -1,9 +1,6 @@
 import { Injectable } from 'injectkit';
 import { Kysely, Transaction } from 'kysely';
 
-/** Infers the database schema type `DB` from a `Kysely<DB>` instance type. */
-type InferDatabase<T> = T extends Kysely<infer DB> ? DB : never;
-
 /**
  * Abstract base class for Kysely-backed repositories.
  *
@@ -11,8 +8,7 @@ type InferDatabase<T> = T extends Kysely<infer DB> ? DB : never;
  * if a transaction is already in progress it is reused, otherwise a new one is
  * started. Registers with the InjectKit DI container via `@Injectable()`.
  *
- * @typeParam TKysely - The concrete `Kysely<DB>` instance type. The database
- *   schema `DB` is inferred from it automatically via `InferDatabase`.
+ * @typeParam DB - The Kysely database schema type.
  *
  * @example
  * ```typescript
@@ -22,7 +18,7 @@ type InferDatabase<T> = T extends Kysely<infer DB> ? DB : never;
  * import { Database } from './database.js';
  *
  * @Injectable()
- * export class UserRepository extends KyselyRepository<Kysely<Database>> {
+ * export class UserRepository extends KyselyRepository<Database> {
  *   constructor(db: Kysely<Database>) {
  *     super(db);
  *   }
@@ -36,9 +32,8 @@ type InferDatabase<T> = T extends Kysely<infer DB> ? DB : never;
  * ```
  */
 @Injectable()
-/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-export abstract class KyselyRepository<TKysely extends Kysely<any>> {
-  constructor(protected readonly db: TKysely) {}
+export abstract class KyselyRepository<DB> {
+  constructor(protected readonly db: Kysely<DB>) {}
 
   /**
    * Executes a callback inside a database transaction.
@@ -66,10 +61,7 @@ export abstract class KyselyRepository<TKysely extends Kysely<any>> {
    * await this.withTransaction(async trx => { ... }, existingTrx);
    * ```
    */
-  async withTransaction<TResult>(
-    method: (transaction: Transaction<InferDatabase<TKysely>>) => Promise<TResult>,
-    transaction?: Transaction<InferDatabase<TKysely>>,
-  ): Promise<TResult> {
+  async withTransaction<TResult>(method: (transaction: Transaction<DB>) => Promise<TResult>, transaction?: Transaction<DB>): Promise<TResult> {
     if (!transaction) {
       return this.db.transaction().execute(async trx => {
         return await method(trx);
@@ -104,8 +96,8 @@ export abstract class KyselyRepository<TKysely extends Kysely<any>> {
    * ```
    */
   async withSerializedTransaction<TResult>(
-    method: (transaction: Transaction<InferDatabase<TKysely>>) => Promise<TResult>,
-    transaction?: Transaction<InferDatabase<TKysely>>,
+    method: (transaction: Transaction<DB>) => Promise<TResult>,
+    transaction?: Transaction<DB>,
   ): Promise<TResult> {
     if (!transaction) {
       return this.db

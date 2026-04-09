@@ -6,7 +6,7 @@ interface TestDB {
   users: { id: number; name: string };
 }
 
-class TestRepository extends KyselyRepository<Kysely<TestDB>> {
+class TestRepository extends KyselyRepository<TestDB> {
   constructor(db: Kysely<TestDB>) {
     super(db);
   }
@@ -29,9 +29,7 @@ describe('KyselyRepository', () => {
     it('should start a new transaction when none is provided', async () => {
       const { db, mockTransaction, mockExecute } = createMockDb();
       const repo = new TestRepository(db);
-      mockExecute.mockImplementation((fn: (trx: Transaction<TestDB>) => Promise<string>) =>
-        fn({} as Transaction<TestDB>),
-      );
+      mockExecute.mockImplementation((fn: (trx: Transaction<TestDB>) => Promise<string>) => fn({} as Transaction<TestDB>));
 
       await repo.withTransaction(async () => 'result');
 
@@ -54,9 +52,7 @@ describe('KyselyRepository', () => {
     it('should return the value from the callback', async () => {
       const { db, mockExecute } = createMockDb();
       const repo = new TestRepository(db);
-      mockExecute.mockImplementation((fn: (trx: Transaction<TestDB>) => Promise<string>) =>
-        fn({} as Transaction<TestDB>),
-      );
+      mockExecute.mockImplementation((fn: (trx: Transaction<TestDB>) => Promise<string>) => fn({} as Transaction<TestDB>));
 
       const result = await repo.withTransaction(async () => 'hello');
 
@@ -79,9 +75,7 @@ describe('KyselyRepository', () => {
       const { db, mockExecute } = createMockDb();
       const repo = new TestRepository(db);
       const error = new Error('transaction failed');
-      mockExecute.mockImplementation((fn: (trx: Transaction<TestDB>) => Promise<void>) =>
-        fn({} as Transaction<TestDB>),
-      );
+      mockExecute.mockImplementation((fn: (trx: Transaction<TestDB>) => Promise<void>) => fn({} as Transaction<TestDB>));
 
       await expect(
         repo.withTransaction(async () => {
@@ -105,9 +99,7 @@ describe('KyselyRepository', () => {
     it('should start a new serializable transaction when none is provided', async () => {
       const { db, mockTransaction, mockSetIsolationLevel, mockExecute } = createMockDb();
       const repo = new TestRepository(db);
-      mockExecute.mockImplementation((fn: (trx: Transaction<TestDB>) => Promise<string>) =>
-        fn({} as Transaction<TestDB>),
-      );
+      mockExecute.mockImplementation((fn: (trx: Transaction<TestDB>) => Promise<string>) => fn({} as Transaction<TestDB>));
 
       await repo.withSerializedTransaction(async () => 'result');
 
@@ -131,9 +123,7 @@ describe('KyselyRepository', () => {
     it('should return the value from the callback', async () => {
       const { db, mockExecute } = createMockDb();
       const repo = new TestRepository(db);
-      mockExecute.mockImplementation((fn: (trx: Transaction<TestDB>) => Promise<number>) =>
-        fn({} as Transaction<TestDB>),
-      );
+      mockExecute.mockImplementation((fn: (trx: Transaction<TestDB>) => Promise<number>) => fn({} as Transaction<TestDB>));
 
       const result = await repo.withSerializedTransaction(async () => 99);
 
@@ -144,9 +134,7 @@ describe('KyselyRepository', () => {
       const { db, mockExecute } = createMockDb();
       const repo = new TestRepository(db);
       const error = new Error('serialized transaction failed');
-      mockExecute.mockImplementation((fn: (trx: Transaction<TestDB>) => Promise<void>) =>
-        fn({} as Transaction<TestDB>),
-      );
+      mockExecute.mockImplementation((fn: (trx: Transaction<TestDB>) => Promise<void>) => fn({} as Transaction<TestDB>));
 
       await expect(
         repo.withSerializedTransaction(async () => {

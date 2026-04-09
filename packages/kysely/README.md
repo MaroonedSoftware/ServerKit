@@ -109,10 +109,6 @@ import { Database } from './database.js';
 @OnKyselyError()
 @Injectable()
 export class UserRepository extends KyselyRepository<Database> {
-  constructor(db: Kysely<Database>) {
-    super(db);
-  }
-
   async findById(id: number) {
     // NoResultError is automatically converted to HTTP 404
     return this.db.selectFrom('users').selectAll().where('id', '=', id).executeTakeFirstOrThrow();
