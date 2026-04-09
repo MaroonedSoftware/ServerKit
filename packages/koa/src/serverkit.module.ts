@@ -27,6 +27,10 @@ import { AppConfig } from '@maroonedsoftware/appconfig';
  */
 export interface ServerKitModule<ConfigT = AppConfig> {
   /**
+   * The name of the module.
+   */
+  name?: string;
+  /**
    * Called during application initialization to register services and
    * bindings into the DI registry before the container is built.
    *
