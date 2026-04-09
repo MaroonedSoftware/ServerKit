@@ -6,7 +6,7 @@ interface TestDB {
   users: { id: number; name: string };
 }
 
-class TestRepository extends KyselyRepository<TestDB> {
+class TestRepository extends KyselyRepository<Kysely<TestDB>> {
   constructor(db: Kysely<TestDB>) {
     super(db);
   }
