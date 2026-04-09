@@ -1,5 +1,11 @@
 # @maroonedsoftware/koa
 
+## 1.11.0
+
+### Minor Changes
+
+- 5004488: adding optional name to serverkit module
+
 ## 1.10.2
 
 ### Patch Changes
