@@ -25,6 +25,7 @@ describe('PgBossJobRunner', () => {
     vi.spyOn(testJobInstance, 'run').mockResolvedValue(undefined);
 
     mockPgBoss = {
+      start: vi.fn().mockResolvedValue(undefined),
       getQueue: vi.fn().mockResolvedValue(null),
       createQueue: vi.fn().mockResolvedValue(undefined),
       schedule: vi.fn().mockResolvedValue(undefined),

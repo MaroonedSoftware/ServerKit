@@ -80,6 +80,8 @@ export class PgBossJobRunner extends JobRunner {
    * @returns A promise that resolves when all workers are set up.
    */
   async start(): Promise<void> {
+    await this.pgboss.start();
+
     for (const [name, registration] of this.registrations.entries()) {
       const queue = await this.pgboss.getQueue(name);
       if (!queue) {
