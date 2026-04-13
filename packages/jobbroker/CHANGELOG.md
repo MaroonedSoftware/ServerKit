@@ -1,5 +1,11 @@
 # @maroonedsoftware/jobbroker
 
+## 1.4.0
+
+### Minor Changes
+
+- d7c5735: Call and await this.pgboss.start() at the beginning of PgBossJobRunner.start() to ensure the pgboss instance is running before calling getQueue/createQueue.
+
 ## 1.3.0
 
 ### Minor Changes
