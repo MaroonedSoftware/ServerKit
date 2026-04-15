@@ -18,9 +18,13 @@ export const serverKitContextMiddleware = (container: Container): ServerKitMiddl
     ctx.logger = container.get(Logger);
     ctx.loggerName = ctx.path;
 
-    ctx.userAgent = ctx.get('user-agent') ?? '';
-    ctx.correlationId = ctx.get('x-correlation-id') ?? crypto.randomUUID();
-    ctx.requestId = ctx.get('x-request-id') ?? crypto.randomUUID();
+    ctx.userAgent = ctx.get('user-agent');
+    ctx.ipAddress = ctx.ip;
+
+    const correlationId = ctx.headers['x-correlation-id'];
+    ctx.correlationId = Array.isArray(correlationId) ? (correlationId[0] ?? crypto.randomUUID()) : (correlationId ?? crypto.randomUUID());
+
+    ctx.requestId = crypto.randomUUID();
 
     ctx.headers['x-correlation-id'] = ctx.correlationId;
     ctx.set('x-correlation-id', ctx.correlationId);

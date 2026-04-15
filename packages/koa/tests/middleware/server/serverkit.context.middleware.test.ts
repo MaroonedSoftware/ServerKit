@@ -89,9 +89,7 @@ describe('serverKitContextMiddleware', () => {
 
   it('should set ctx.correlationId from x-correlation-id header when present', async () => {
     const correlationId = 'corr-123';
-    vi.mocked(mockCtx.get).mockImplementation((name: string) =>
-      name === 'x-correlation-id' ? correlationId : '',
-    );
+    mockCtx.headers['x-correlation-id'] = correlationId;
     const middleware = serverKitContextMiddleware(mockContainer as unknown as Container);
 
     await middleware(mockCtx, mockNext);
@@ -112,16 +110,16 @@ describe('serverKitContextMiddleware', () => {
     );
   });
 
-  it('should set ctx.requestId from x-request-id header when present', async () => {
-    const requestId = 'req-456';
-    vi.mocked(mockCtx.get).mockImplementation((name: string) =>
-      name === 'x-request-id' ? requestId : '',
-    );
+  it('should set ctx.requestId to a new UUID regardless of x-request-id header', async () => {
+    mockCtx.headers['x-request-id'] = 'req-456';
     const middleware = serverKitContextMiddleware(mockContainer as unknown as Container);
 
     await middleware(mockCtx, mockNext);
 
-    expect(mockCtx.requestId).toBe(requestId);
+    expect(mockCtx.requestId).toBeDefined();
+    expect(mockCtx.requestId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
   });
 
   it('should set ctx.requestId to new UUID when header absent', async () => {
@@ -139,9 +137,7 @@ describe('serverKitContextMiddleware', () => {
 
   it('should set x-correlation-id header on response', async () => {
     const correlationId = 'corr-789';
-    vi.mocked(mockCtx.get).mockImplementation((name: string) =>
-      name === 'x-correlation-id' ? correlationId : '',
-    );
+    mockCtx.headers['x-correlation-id'] = correlationId;
     const middleware = serverKitContextMiddleware(mockContainer as unknown as Container);
 
     await middleware(mockCtx, mockNext);
@@ -150,17 +146,15 @@ describe('serverKitContextMiddleware', () => {
     expect(mockCtx.set).toHaveBeenCalledWith('x-correlation-id', correlationId);
   });
 
-  it('should set x-request-id header on response', async () => {
-    const requestId = 'req-abc';
-    vi.mocked(mockCtx.get).mockImplementation((name: string) =>
-      name === 'x-request-id' ? requestId : '',
-    );
+  it('should set x-request-id header on response to a generated UUID', async () => {
     const middleware = serverKitContextMiddleware(mockContainer as unknown as Container);
 
     await middleware(mockCtx, mockNext);
 
-    expect(mockCtx.headers['x-request-id']).toBe(requestId);
-    expect(mockCtx.set).toHaveBeenCalledWith('x-request-id', requestId);
+    expect(mockCtx.headers['x-request-id']).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
+    expect(mockCtx.set).toHaveBeenCalledWith('x-request-id', mockCtx.headers['x-request-id']);
   });
 
   it('should call next()', async () => {

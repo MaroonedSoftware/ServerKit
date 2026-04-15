@@ -21,6 +21,8 @@ export interface ServerKitContext extends Context {
   loggerName: string;
   /** Value of the `User-Agent` request header, or empty string if absent. */
   userAgent: string;
+  /** IP address of the client. */
+  ipAddress: string;
   /** Correlation ID for tracing; from `X-Correlation-Id` header or generated. */
   correlationId: string;
   /** Request ID; from `X-Request-Id` header or generated. */
