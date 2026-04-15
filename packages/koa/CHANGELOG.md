@@ -1,5 +1,11 @@
 # @maroonedsoftware/koa
 
+## 1.12.0
+
+### Minor Changes
+
+- 320673a: Normalize response header names to lowercase in the rate limiter middleware. The middleware now emits 'retry-after', 'x-ratelimit-limit', 'x-ratelimit-remaining', and 'x-ratelimit-reset' instead of their PascalCase equivalents; no functional behavior changes to rate limiting logic.
+
 ## 1.11.0
 
 ### Minor Changes
