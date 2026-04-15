@@ -17,10 +17,10 @@ export const rateLimiterMiddleware = (rateLimiter: RateLimiterAbstract): ServerK
       let headers: Record<string, string> = {};
       if (error instanceof RateLimiterRes) {
         headers = {
-          'Retry-After': (error.msBeforeNext / 1000).toString(),
-          'X-RateLimit-Limit': rateLimiter.points.toString(),
-          'X-RateLimit-Remaining': error.remainingPoints.toString(),
-          'X-RateLimit-Reset': Math.ceil((Date.now() + error.msBeforeNext) / 1000).toString(),
+          'retry-after': (error.msBeforeNext / 1000).toString(),
+          'x-ratelimit-limit': rateLimiter.points.toString(),
+          'x-ratelimit-remaining': error.remainingPoints.toString(),
+          'x-ratelimit-reset': Math.ceil((Date.now() + error.msBeforeNext) / 1000).toString(),
         };
       }
 
