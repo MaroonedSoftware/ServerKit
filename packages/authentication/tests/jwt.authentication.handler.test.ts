@@ -21,7 +21,8 @@ const makeLogger = (): Logger => ({
 });
 
 const makeValidContext = (): AuthenticationContext => ({
-  authenticationId: 'auth-123',
+  actorId: 'auth-123',
+  actorType: 'user',
   issuedAt: DateTime.now(),
   lastAccessedAt: DateTime.now(),
   expiresAt: DateTime.now().plus({ hours: 1 }),

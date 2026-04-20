@@ -6,7 +6,8 @@ import type { BasicAuthenticationIssuer } from '../src/basic/basic.authenticatio
 import { DateTime } from 'luxon';
 
 const makeValidContext = (): AuthenticationContext => ({
-  authenticationId: 'auth-123',
+  actorId: 'auth-123',
+  actorType: 'user',
   issuedAt: DateTime.now(),
   lastAccessedAt: DateTime.now(),
   expiresAt: DateTime.now().plus({ hours: 1 }),
@@ -15,8 +16,7 @@ const makeValidContext = (): AuthenticationContext => ({
   roles: [],
 });
 
-const encodeBasic = (username: string, password: string) =>
-  Buffer.from(`${username}:${password}`).toString('base64');
+const encodeBasic = (username: string, password: string) => Buffer.from(`${username}:${password}`).toString('base64');
 
 describe('BasicAuthenticationHandler', () => {
   let issuer: BasicAuthenticationIssuer;

@@ -27,8 +27,10 @@ export interface AuthenticationFactor {
  * arbitrary claims extracted from the credential (e.g. JWT payload).
  */
 export interface AuthenticationContext {
-  /** Unique identifier for this authentication session. */
-  authenticationId: string;
+  /** Unique identifier for the actor that was authenticated. */
+  actorId: string;
+  /** The type of actor that was authenticated. */
+  actorType: string;
   /** When the session was originally issued. */
   issuedAt: DateTime;
   /** When the session was last accessed. */
@@ -49,7 +51,8 @@ export interface AuthenticationContext {
  * authentication has been resolved, or when authentication fails.
  */
 export const invalidAuthenticationContext: AuthenticationContext = {
-  authenticationId: '',
+  actorId: '',
+  actorType: '',
   issuedAt: DateTime.invalid('invalid'),
   lastAccessedAt: DateTime.invalid('invalid'),
   expiresAt: DateTime.invalid('invalid'),

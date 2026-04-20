@@ -7,7 +7,8 @@ import { DateTime } from 'luxon';
 import type { JwtPayload } from 'jsonwebtoken';
 
 const makeValidContext = (): AuthenticationContext => ({
-  authenticationId: 'auth-123',
+  actorId: 'auth-123',
+  actorType: 'user',
   issuedAt: DateTime.now(),
   lastAccessedAt: DateTime.now(),
   expiresAt: DateTime.now().plus({ hours: 1 }),
@@ -62,7 +63,7 @@ describe('JwtAuthenticationIssuer', () => {
       const result = await issuer.parse({ sub: 'user-1', iss: 'https://auth.example.com' });
 
       expect(result).toBeDefined();
-      expect(result.authenticationId).toBe('auth-123');
+      expect(result.actorId).toBe('auth-123');
     });
 
     it('should receive the full decoded JWT payload', async () => {

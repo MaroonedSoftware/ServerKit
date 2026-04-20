@@ -5,7 +5,8 @@ import { invalidAuthenticationContext } from '../src/authentication.context.js';
 import { DateTime } from 'luxon';
 
 const makeValidContext = (): AuthenticationContext => ({
-  authenticationId: 'auth-123',
+  actorId: 'auth-123',
+  actorType: 'user',
   issuedAt: DateTime.now(),
   lastAccessedAt: DateTime.now(),
   expiresAt: DateTime.now().plus({ hours: 1 }),
@@ -76,7 +77,7 @@ describe('AuthenticationHandler', () => {
       };
 
       const result = await handler.authenticate('bearer', 'secret');
-      expect(result.authenticationId).toBe('auth-123');
+      expect(result.actorId).toBe('auth-123');
     });
 
     it('should propagate errors thrown by authenticate', async () => {

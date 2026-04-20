@@ -2,8 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { invalidAuthenticationContext } from '../src/authentication.context.js';
 
 describe('invalidAuthenticationContext', () => {
-  it('has an empty authenticationId', () => {
-    expect(invalidAuthenticationContext.authenticationId).toBe('');
+  it('has an empty actorId', () => {
+    expect(invalidAuthenticationContext.actorId).toBe('');
+  });
+
+  it('has an empty actorType', () => {
+    expect(invalidAuthenticationContext.actorType).toBe('');
   });
 
   it('has invalid issuedAt', () => {
