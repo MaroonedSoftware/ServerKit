@@ -1,5 +1,11 @@
 # @maroonedsoftware/authentication
 
+## 0.4.0
+
+### Minor Changes
+
+- 66949c3: Replace the session-centric authenticationId with actorId and actorType in the authentication context and invalidAuthenticationContext. Export basic authentication handler and issuer from the package index.
+
 ## 0.3.0
 
 ### Minor Changes
