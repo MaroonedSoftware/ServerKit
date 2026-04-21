@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { JwtAuthenticationHandler, JwtAuthenticationIssuerMap } from '../src/jwt/jwt.authentication.handler.js';
-import { invalidAuthenticationContext } from '../src/authentication.context.js';
-import type { AuthenticationContext } from '../src/authentication.context.js';
-import type { JwtAuthenticationIssuer } from '../src/jwt/jwt.autentication.issuer.js';
+import { JwtAuthenticationHandler, JwtAuthenticationIssuerMap } from '../../src/jwt/jwt.authentication.handler.js';
+import { invalidAuthenticationContext } from '../../src/authentication.context.js';
+import type { AuthenticationContext } from '../../src/authentication.context.js';
+import type { JwtAuthenticationIssuer } from '../../src/jwt/jwt.autentication.issuer.js';
 import type { Logger } from '@maroonedsoftware/logger';
 import { DateTime } from 'luxon';
 

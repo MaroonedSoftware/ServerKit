@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
-import { JwtAuthenticationIssuer } from '../src/jwt/jwt.autentication.issuer.js';
-import { JwtAuthenticationIssuerMap } from '../src/jwt/jwt.authentication.handler.js';
-import type { AuthenticationContext } from '../src/authentication.context.js';
-import { invalidAuthenticationContext } from '../src/authentication.context.js';
+import { JwtAuthenticationIssuer } from '../../src/jwt/jwt.autentication.issuer.js';
+import { JwtAuthenticationIssuerMap } from '../../src/jwt/jwt.authentication.handler.js';
+import type { AuthenticationContext } from '../../src/authentication.context.js';
+import { invalidAuthenticationContext } from '../../src/authentication.context.js';
 import { DateTime } from 'luxon';
 import type { JwtPayload } from 'jsonwebtoken';
 

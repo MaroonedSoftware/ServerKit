@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { BasicAuthenticationHandler } from '../src/basic/basic.authentication.handler.js';
-import { invalidAuthenticationContext } from '../src/authentication.context.js';
-import type { AuthenticationContext } from '../src/authentication.context.js';
-import type { BasicAuthenticationIssuer } from '../src/basic/basic.authentication.issuer.js';
+import { BasicAuthenticationHandler } from '../../src/basic/basic.authentication.handler.js';
+import { invalidAuthenticationContext } from '../../src/authentication.context.js';
+import type { AuthenticationContext } from '../../src/authentication.context.js';
+import type { BasicAuthenticationIssuer } from '../../src/basic/basic.authentication.issuer.js';
 import { DateTime } from 'luxon';
 
 const makeValidContext = (): AuthenticationContext => ({
