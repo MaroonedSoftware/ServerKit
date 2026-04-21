@@ -11,7 +11,7 @@ pnpm add @maroonedsoftware/utilities
 ## Usage
 
 ```typescript
-import { isUuid, isEmail, isEmailDomain, base32Encode, base32Decode, unique, bigIntReplacer, bigIntReviver, nullToUndefined } from '@maroonedsoftware/utilities';
+import { isUuid, isEmail, isEmailDomain, isPhoneE164, base32Encode, base32Decode, unique, binarySearch, bigIntReplacer, bigIntReviver, nullToUndefined } from '@maroonedsoftware/utilities';
 ```
 
 ## API Reference
@@ -43,6 +43,17 @@ Validates whether a string is a valid email domain pattern. The string must star
 ```typescript
 isEmailDomain('@example.com'); // true
 isEmailDomain('example.com'); // false (missing @)
+```
+
+#### `isPhoneE164(phone: string): boolean`
+
+Validates whether a string is a valid phone number in [E.164 format](https://en.wikipedia.org/wiki/E.164): a leading `+`, a non-zero country code digit, and 1–13 additional digits (15 digits total maximum).
+
+```typescript
+isPhoneE164('+12025550123'); // true
+isPhoneE164('+447911123456'); // true
+isPhoneE164('12025550123');  // false (missing +)
+isPhoneE164('+1 202 555 0123'); // false (spaces not allowed)
 ```
 
 ### Base32 Encoding (RFC 4648)
@@ -121,6 +132,20 @@ A `JSON.parse` reviver that deserializes strings matching `/^-?\d+n$/` back to n
 JSON.parse('{"id":"9007199254740993n"}', bigIntReviver);
 // { id: 9007199254740993n }
 ```
+
+### Array Search
+
+#### `binarySearch<T>(array: T[], value: T): boolean`
+
+Performs a binary search on a **sorted** array and returns `true` if the value is found, `false` otherwise. Uses recursive halving with `<` / `>` comparison, so `T` must be a type that supports those operators (numbers, strings, etc.).
+
+```typescript
+binarySearch([1, 2, 3, 4, 5], 3); // true
+binarySearch([1, 2, 3, 4, 5], 6); // false
+binarySearch(['apple', 'banana', 'cherry'], 'banana'); // true
+```
+
+> The array must be sorted in ascending order. Passing an unsorted array produces undefined results.
 
 ### Object Utilities
 
