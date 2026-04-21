@@ -48,8 +48,8 @@
     "co-body": "^6.2.0",
     "inflation": "^2.1.0",
     "injectkit": "^1.2.0",
-    "qs": "^6.15.0",
-    "rate-limiter-flexible": "^10.0.1",
+    "qs": "^6.15.1",
+    "rate-limiter-flexible": "^11.0.1",
     "raw-body": "^3.0.2"
   },
   "peerDependencies": {
