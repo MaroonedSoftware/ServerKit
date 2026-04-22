@@ -1,6 +1,6 @@
 import { Injectable } from 'injectkit';
 import { toDataURL } from 'qrcode';
-import { OtpOptions, OtpProvider } from '../../providers/otp.provider.js';
+import { type OtpOptions, OtpProvider } from '../../providers/otp.provider.js';
 import { AuthenticatorFactorRepository } from './authenticator.factor.repository.js';
 import { httpError, unauthorizedError } from '@maroonedsoftware/errors';
 import { EncryptionProvider } from '@maroonedsoftware/encryption';
@@ -11,34 +11,25 @@ import crypto from 'node:crypto';
 /**
  * Configuration options for {@link AuthenticatorFactorService}.
  */
-export type AuthenticatorFactorServiceOptions = {
-  /** The issuer name embedded in provisioning URIs (shown in the authenticator app). */
-  issuer: string;
-  /**
-   * How long a pending registration stays valid before it must be completed.
-   * Defaults to 30 minutes.
-   */
-  registrationExpiration?: Duration;
-  /**
-   * How long a validated factor session remains cached.
-   * Defaults to 4 hours.
-   */
-  factorExpiration?: Duration;
-  /** Default OTP algorithm options applied when none are supplied per-call. */
-  defaults?: OtpOptions;
-};
-
-const AuthenticatorFactorServiceOptionsDefaults = {
-  registrationExpiration: Duration.fromDurationLike({ minutes: 30 }),
-  factorExpiration: Duration.fromDurationLike({ hours: 4 }),
-  defaults: {
-    type: 'totp',
-    algorithm: 'SHA1',
-    counter: 0,
-    periodSeconds: 30,
-    tokenLength: 6,
-  },
-} as const;
+@Injectable()
+export class AuthenticatorFactorServiceOptions {
+  constructor(
+    /** The issuer name embedded in provisioning URIs (shown in the authenticator app). */
+    public readonly issuer: string,
+    /** How long a pending registration stays valid before it must be completed. */
+    public readonly registrationExpiration: Duration = Duration.fromDurationLike({ minutes: 30 }),
+    /** How long a validated factor session remains cached. */
+    public readonly factorExpiration: Duration = Duration.fromDurationLike({ hours: 4 }),
+    /** Default OTP algorithm options applied when none are supplied per-call. */
+    public readonly defaults: OtpOptions = {
+      type: 'totp',
+      algorithm: 'SHA1',
+      counter: 0,
+      periodSeconds: 30,
+      tokenLength: 6,
+    },
+  ) {}
+}
 
 type RegistrationPayload = {
   id: string;
@@ -67,16 +58,13 @@ type RegistrationPayload = {
  */
 @Injectable()
 export class AuthenticatorFactorService {
-  private readonly options: Required<AuthenticatorFactorServiceOptions>;
   constructor(
-    options: AuthenticatorFactorServiceOptions,
+    private readonly options: AuthenticatorFactorServiceOptions,
     private readonly otpProvider: OtpProvider,
     private readonly authenticatorFactorRepository: AuthenticatorFactorRepository,
     private readonly encryptionProvider: EncryptionProvider,
     private readonly cache: CacheProvider,
-  ) {
-    this.options = { ...AuthenticatorFactorServiceOptionsDefaults, ...options };
-  }
+  ) {}
 
   private getRegistrationKey(key: string) {
     return `authenticator_factor_registration_${key}`;

@@ -25,11 +25,20 @@ type RegistrationPayload = EmailPayload & {
   value: string;
 };
 
-export type EmailFactorServiceOptions = {
-  denyList: string[];
-  otpExpiration: Duration;
-  magiclinkExpiration: Duration;
-};
+/**
+ * Configuration options for {@link EmailFactorService}.
+ */
+@Injectable()
+export class EmailFactorServiceOptions {
+  constructor(
+    /** Domains to reject during registration (e.g. disposable email providers). Checked via binary search — keep sorted. */
+    public readonly denyList: string[] = [],
+    /** How long an OTP code-based registration or verification challenge remains valid. */
+    public readonly otpExpiration: Duration = Duration.fromDurationLike({ minutes: 10 }),
+    /** How long a magic link token remains valid. */
+    public readonly magiclinkExpiration: Duration = Duration.fromDurationLike({ minutes: 30 }),
+  ) {}
+}
 
 /**
  * Manages the lifecycle of email-based authentication factors, supporting both

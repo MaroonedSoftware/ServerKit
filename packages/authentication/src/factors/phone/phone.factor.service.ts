@@ -9,12 +9,15 @@ import { PhoneFactorRepository } from './phone.factor.repository.js';
 /**
  * Configuration options for {@link PhoneFactorService}.
  */
-export type PhoneFactorServiceOptions = {
-  /**
-   * How long a pending registration remains valid before it must be completed.
-   */
-  otpExpiration: Duration;
-};
+@Injectable()
+export class PhoneFactorServiceOptions {
+  constructor(
+    /**
+     * How long a pending registration remains valid before it must be completed.
+     */
+    public readonly otpExpiration: Duration = Duration.fromDurationLike({ minutes: 10 }),
+  ) {}
+}
 
 type RegistrationPayload = {
   id: string;

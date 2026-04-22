@@ -76,6 +76,13 @@ export class OtpProvider {
     return base32Encode(crypto.randomBytes(numBytes), false);
   }
 
+  /**
+   * Generate an HOTP or TOTP one-time password.
+   *
+   * @param secret  - Base32-encoded secret (from {@link createSecret}).
+   * @param options - OTP options; missing fields fall back to {@link defaultOtpOptions}.
+   * @returns The generated OTP string, zero-padded to `tokenLength` digits.
+   */
   generate(secret: string, options: Partial<HotpOptions | TotpOptions>) {
     const otpOptions = { ...defaultOtpOptions, ...options };
 
@@ -109,6 +116,18 @@ export class OtpProvider {
     return this.generateHOTP(secret, counter, tokenLength, algorithm);
   }
 
+  /**
+   * Validate an HOTP or TOTP one-time password.
+   *
+   * Accepts codes within `±window` counter steps (HOTP) or time periods (TOTP) to
+   * account for clock drift or counter desync.
+   *
+   * @param otp     - The code submitted by the user.
+   * @param secret  - Base32-encoded secret.
+   * @param options - OTP options used when the code was generated.
+   * @param window  - Number of steps either side of the current counter/period to accept (default `1`).
+   * @returns `true` when the OTP is valid, `false` otherwise.
+   */
   validate(otp: string, secret: string, options: Partial<HotpOptions | TotpOptions>, window: number = 1) {
     const otpOptions = { ...defaultOtpOptions, ...options };
 
@@ -145,6 +164,14 @@ export class OtpProvider {
     return this.validateHOTP(otp, secret, { ...options, type: 'hotp', counter }, window);
   }
 
+  /**
+   * Build an `otpauth://` provisioning URI suitable for encoding as a QR code.
+   *
+   * @param secret     - Base32-encoded secret.
+   * @param options    - OTP algorithm options (type, algorithm, period/counter, token length).
+   * @param urlOptions - URI metadata: `issuer` (required) and an optional `label` (e.g. user email).
+   * @returns A fully-formed `otpauth://totp/...` or `otpauth://hotp/...` URI string.
+   */
   generateURI(secret: string, options: OtpOptions, urlOptions: OtpUrlOptions) {
     const values: Record<string, string | number> = {
       issuer: urlOptions.issuer,

@@ -6,14 +6,20 @@ import { AuthenticationSession, AuthenticationSessionFactor } from './authentica
 import { CacheProvider } from './providers/cache.provider.js';
 import { JwtProvider } from './providers/jwt.provider.js';
 
-export type AuthenticationSessionServiceOptions = {
-  /** The `iss` claim value to embed in issued JWTs (e.g. `"https://auth.example.com"`). */
-  issuer: string;
-  /** The `aud` claim value(s) to embed in issued JWTs. */
-  audience: string | string[];
-  /** Default session and token lifetime when no per-call expiration is provided. */
-  expiresIn: Duration;
-};
+/**
+ * Configuration options for {@link AuthenticationSessionService}.
+ */
+@Injectable()
+export class AuthenticationSessionServiceOptions {
+  constructor(
+    /** The `iss` claim value to embed in issued JWTs (e.g. `"https://auth.example.com"`). */
+    public readonly issuer: string,
+    /** The `aud` claim value(s) to embed in issued JWTs. */
+    public readonly audience: string | string[],
+    /** Default session and token lifetime when no per-call expiration is provided. */
+    public readonly expiresIn: Duration,
+  ) {}
+}
 
 /**
  * Manages server-side authentication sessions backed by a {@link CacheProvider}.
