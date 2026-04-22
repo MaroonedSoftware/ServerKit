@@ -1,5 +1,11 @@
 # @maroonedsoftware/utilities
 
+## 1.5.0
+
+### Minor Changes
+
+- 5c4756a: Add a recursive binarySearch<T>(array, value) utility and an isPhoneE164(phone) validator using an E.164 regex.
+
 ## 1.4.0
 
 ### Minor Changes
