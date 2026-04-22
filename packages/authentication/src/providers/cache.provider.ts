@@ -24,7 +24,7 @@ export abstract class CacheProvider {
    * Retrieve a cached value by key.
    * @returns The stored value cast to `T`, or `null` if the key does not exist or has expired.
    */
-  abstract get<T = unknown>(key: string): Promise<T | null>;
+  abstract get(key: string): Promise<string | null>;
 
   /**
    * Store a value under `key` with an explicit TTL.
@@ -32,7 +32,7 @@ export abstract class CacheProvider {
    * @param value - Value to store (implementations should serialise as needed).
    * @param ttl   - Time-to-live after which the entry expires automatically.
    */
-  abstract set(key: string, value: unknown, ttl: Duration): Promise<void>;
+  abstract set(key: string, value: string, ttl: Duration): Promise<void>;
 
   /**
    * Update an existing entry, optionally extending its TTL.
@@ -40,11 +40,11 @@ export abstract class CacheProvider {
    * @param value - Replacement value.
    * @param ttl   - New TTL; if omitted the implementation should preserve the original TTL.
    */
-  abstract update(key: string, value: unknown, ttl?: Duration): Promise<void>;
+  abstract update(key: string, value: string, ttl?: Duration): Promise<void>;
 
   /**
    * Remove a cached entry and return the value it held.
    * @returns The removed value cast to `T`, or `null` if the key did not exist.
    */
-  abstract delete<T = unknown>(key: string): Promise<T | null>;
+  abstract delete(key: string): Promise<string | null>;
 }

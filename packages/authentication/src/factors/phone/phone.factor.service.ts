@@ -55,12 +55,12 @@ export class PhoneFactorService {
   }
 
   private async lookupRegistration(registrationId: string) {
-    const response = await this.cache.get<string>(this.getRegistrationKey(registrationId));
+    const response = await this.cache.get(this.getRegistrationKey(registrationId));
     return response ? (JSON.parse(response) as RegistrationPayload) : undefined;
   }
 
   private async lookupRegistrationByValue(actorId: string, value: string) {
-    const registrationId = await this.cache.get<string>(this.getRegistrationKey(`${actorId}_${value}`));
+    const registrationId = await this.cache.get(this.getRegistrationKey(`${actorId}_${value}`));
     return registrationId ? await this.lookupRegistration(registrationId) : undefined;
   }
 

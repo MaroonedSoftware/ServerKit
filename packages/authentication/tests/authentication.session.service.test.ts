@@ -95,7 +95,7 @@ describe('AuthenticationSessionService', () => {
       cache.get = vi.fn().mockResolvedValue(null);
       vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue('test-uuid' as ReturnType<typeof crypto.randomUUID>);
       await service.createSession('user-1', {}, makeFactor());
-      expect(cache.set).toHaveBeenCalledWith('auth_session_subject_user-1', ['test-uuid'], expect.any(Duration));
+      expect(cache.set).toHaveBeenCalledWith('auth_session_subject_user-1', JSON.stringify(['test-uuid']), expect.any(Duration));
     });
   });
 
@@ -213,7 +213,7 @@ describe('AuthenticationSessionService', () => {
       const session = makeSession();
       cache.get = vi.fn().mockResolvedValueOnce(JSON.stringify(session)).mockResolvedValueOnce(JSON.stringify(['session-token']));
       await service.deleteSession('session-token');
-      expect(cache.update).toHaveBeenCalledWith('auth_session_subject_user-1', []);
+      expect(cache.update).toHaveBeenCalledWith('auth_session_subject_user-1', JSON.stringify([]));
     });
   });
 

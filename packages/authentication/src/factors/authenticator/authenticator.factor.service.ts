@@ -81,7 +81,7 @@ export class AuthenticatorFactorService {
   }
 
   private async lookupRegistration(registrationId: string) {
-    const response = await this.cache.get<string>(this.getRegistrationKey(registrationId));
+    const response = await this.cache.get(this.getRegistrationKey(registrationId));
 
     return response ? (JSON.parse(response) as RegistrationPayload) : undefined;
   }

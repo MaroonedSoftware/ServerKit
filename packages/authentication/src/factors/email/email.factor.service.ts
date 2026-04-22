@@ -74,12 +74,12 @@ export class EmailFactorService {
   }
 
   private async lookupRegistration(registrationId: string) {
-    const response = await this.cache.get<string>(this.getRegistrationKey(registrationId));
+    const response = await this.cache.get(this.getRegistrationKey(registrationId));
     return response ? (JSON.parse(response) as RegistrationPayload) : undefined;
   }
 
   private async lookupRegistrationByValue(value: string) {
-    const registrationId = await this.cache.get<string>(this.getRegistrationKey(value));
+    const registrationId = await this.cache.get(this.getRegistrationKey(value));
     return registrationId ? await this.lookupRegistration(registrationId) : undefined;
   }
 
@@ -95,7 +95,7 @@ export class EmailFactorService {
   }
 
   private async lookupVerification(verificationId: string) {
-    const response = await this.cache.get<string>(this.getVerificationKey(verificationId));
+    const response = await this.cache.get(this.getVerificationKey(verificationId));
     return response ? (JSON.parse(response) as VerificationPayload) : undefined;
   }
 

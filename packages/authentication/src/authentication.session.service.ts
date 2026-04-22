@@ -241,7 +241,7 @@ export class AuthenticationSessionService {
    * @returns The {@link AuthenticationSession}, or `undefined` if not found.
    */
   async getSession(sessionToken: string) {
-    const response = await this.cache.get<string>(this.getSessionKey(sessionToken));
+    const response = await this.cache.get(this.getSessionKey(sessionToken));
 
     if (response) {
       return JSON.parse(response) as AuthenticationSession;
@@ -263,7 +263,7 @@ export class AuthenticationSessionService {
   }
 
   private async getSubjectSessions(subject: string) {
-    const response = await this.cache.get<string>(this.getSubjectKey(subject));
+    const response = await this.cache.get(this.getSubjectKey(subject));
 
     if (response) {
       return JSON.parse(response) as Array<string>;
@@ -276,7 +276,7 @@ export class AuthenticationSessionService {
     const subjectSessions = await this.getSubjectSessions(subject);
     if (!subjectSessions.includes(sessionToken)) {
       subjectSessions.push(sessionToken);
-      await this.cache.set(this.getSubjectKey(subject), subjectSessions, expiration);
+      await this.cache.set(this.getSubjectKey(subject), JSON.stringify(subjectSessions), expiration);
     }
   }
 
@@ -285,7 +285,7 @@ export class AuthenticationSessionService {
     const idx = subjectSessions.indexOf(sessionToken);
     if (idx > -1) {
       subjectSessions.splice(idx, 1);
-      await this.cache.update(this.getSubjectKey(subject), subjectSessions);
+      await this.cache.update(this.getSubjectKey(subject), JSON.stringify(subjectSessions));
     }
   }
 
