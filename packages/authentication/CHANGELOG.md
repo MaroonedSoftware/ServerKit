@@ -1,5 +1,11 @@
 # @maroonedsoftware/authentication
 
+## 0.6.0
+
+### Minor Changes
+
+- 7b70566: - Updated EmailFactorServiceOptions, PhoneFactorServiceOptions, and AuthenticatorFactorServiceOptions to use class-based structure for better type safety and immutability.
+
 ## 0.5.0
 
 ### Minor Changes
