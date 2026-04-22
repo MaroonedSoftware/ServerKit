@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { Injectable } from 'injectkit';
-import { RateLimiterAbstract } from 'rate-limiter-flexible';
+import { RateLimiterCompatibleAbstract } from 'rate-limiter-flexible';
 import { httpError, unauthorizedError } from '@maroonedsoftware/errors';
 import { PasswordFactorRepository, PasswordValue } from './password.factor.repository.js';
 import { zxcvbnAsync, zxcvbnOptions } from '@zxcvbn-ts/core';
@@ -18,7 +18,7 @@ import zxcvbnCommonPackage from '@zxcvbn-ts/language-common';
 export class PasswordFactorService {
   constructor(
     private readonly passwordFactorRepository: PasswordFactorRepository,
-    private readonly rateLimiter: RateLimiterAbstract,
+    private readonly rateLimiter: RateLimiterCompatibleAbstract,
   ) {
     const matcherPwned = matcherPwnedFactory(fetch, zxcvbnOptions);
     zxcvbnOptions.setOptions({
