@@ -4,7 +4,7 @@ import { DateTime, Duration } from 'luxon';
 import { isEmail, binarySearch } from '@maroonedsoftware/utilities';
 import { OtpProvider } from '../../providers/otp.provider.js';
 import { httpError } from '@maroonedsoftware/errors';
-import { CacheProvider } from '../../providers/cache.provider.js';
+import { CacheProvider } from '@maroonedsoftware/cache';
 import { EmailFactorRepository } from './email.factor.repository.js';
 
 type EmailPayload = {

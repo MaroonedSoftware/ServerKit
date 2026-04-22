@@ -1,10 +1,10 @@
 {
-  "name": "@maroonedsoftware/authentication",
-  "version": "0.7.0",
-  "description": "Authentication utilities for ServerKit.",
+  "name": "@maroonedsoftware/cache",
+  "version": "0.0.1",
+  "description": "Cache utilities for ServerKit.",
   "keywords": [
     "backend",
-    "authentication",
+    "cache",
     "serverkit",
     "typescript"
   ],
@@ -30,28 +30,20 @@
     "test:ci": "vitest run --coverage"
   },
   "dependencies": {
-    "@maroonedsoftware/cache": "workspace:*",
-    "@maroonedsoftware/encryption": "workspace:*",
     "@maroonedsoftware/errors": "workspace:*",
     "@maroonedsoftware/logger": "workspace:*",
     "@maroonedsoftware/utilities": "workspace:*",
-    "@zxcvbn-ts/core": "^3.0.4",
-    "@zxcvbn-ts/language-common": "^3.0.4",
-    "@zxcvbn-ts/language-en": "^3.0.2",
-    "@zxcvbn-ts/matcher-pwned": "^3.0.4",
-    "deepmerge-ts": "^7.1.5",
     "injectkit": "^1.2.0",
-    "jsonwebtoken": "^9.0.3",
     "luxon": "^3.7.2",
-    "qrcode": "^1.5.4",
-    "rate-limiter-flexible": "^11.0.1",
-    "zxcvbn-ts": "^2.0.2"
+    "rate-limiter-flexible": "^11.0.1"
   },
   "devDependencies": {
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
-    "@types/jsonwebtoken": "^9.0.10",
     "@types/luxon": "^3.7.1",
-    "@types/qrcode": "^1.5.6"
+    "ioredis": "^5.10.1"
+  },
+  "peerDependencies": {
+    "ioredis": "^5.10.1"
   }
 }

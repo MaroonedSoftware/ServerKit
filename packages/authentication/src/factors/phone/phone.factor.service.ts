@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { DateTime, Duration } from 'luxon';
 import { Injectable } from 'injectkit';
 import { httpError } from '@maroonedsoftware/errors';
-import { CacheProvider } from '../../providers/cache.provider.js';
+import { CacheProvider } from '@maroonedsoftware/cache';
 import { isPhoneE164 } from '@maroonedsoftware/utilities';
 import { PhoneFactorRepository } from './phone.factor.repository.js';
 

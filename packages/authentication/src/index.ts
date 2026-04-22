@@ -14,7 +14,6 @@ export * from './factors/password/password.factor.service.js';
 export * from './factors/password/password.factor.repository.js';
 export * from './factors/phone/phone.factor.service.js';
 export * from './factors/phone/phone.factor.repository.js';
-export * from './providers/cache.provider.js';
 export * from './providers/otp.provider.js';
 export * from './providers/jwt.provider.js';
 export * from './providers/password.strength.provider.js';

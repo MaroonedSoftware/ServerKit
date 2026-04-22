@@ -1,0 +1,14 @@
+---
+'@maroonedsoftware/authentication': minor
+'@maroonedsoftware/utilities': minor
+'@maroonedsoftware/cache': minor
+'@maroonedsoftware/koa': minor
+---
+
+Implement cache provider for authentication services
+
+- Introduced a new `@maroonedsoftware/cache` package with a `CacheProvider` interface and an `IoRedisCacheProvider` implementation using ioredis.
+- Updated authentication services to utilize the new cache provider, replacing direct cache provider imports with the new package.
+- Removed the old cache provider implementation from the authentication package.
+- Added tests for the new cache provider to ensure functionality and reliability.
+- Updated README and documentation for the cache package to guide usage and implementation.

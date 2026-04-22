@@ -5,7 +5,7 @@ import { AuthenticatorFactorRepository } from './authenticator.factor.repository
 import { httpError, unauthorizedError } from '@maroonedsoftware/errors';
 import { EncryptionProvider } from '@maroonedsoftware/encryption';
 import { DateTime, Duration } from 'luxon';
-import { CacheProvider } from '../../providers/cache.provider.js';
+import { CacheProvider } from '@maroonedsoftware/cache';
 import crypto from 'node:crypto';
 
 /**

@@ -8,6 +8,12 @@ import { matcherPwnedFactory } from '@zxcvbn-ts/matcher-pwned';
 import zxcvbnEnPackage from '@zxcvbn-ts/language-en';
 import zxcvbnCommonPackage from '@zxcvbn-ts/language-common';
 
+/**
+ * Service for managing password-based authentication factors.
+ *
+ * Handles password strength validation (zxcvbn + HaveIBeenPwned), PBKDF2 hashing,
+ * reuse prevention, and rate-limited verification.
+ */
 @Injectable()
 export class PasswordFactorService {
   constructor(
@@ -28,6 +34,11 @@ export class PasswordFactorService {
     }
   }
 
+  /**
+   * Throws a 400 error if the password scores below 3 on zxcvbn or has been seen in known data breaches.
+   *
+   * @param userInputs - Additional context values (e.g. name, email) passed to zxcvbn to penalise obvious substitutions.
+   */
   async checkStrength(password: string, ...userInputs: (string | number)[]) {
     const result = await zxcvbnAsync(password, userInputs);
 
@@ -51,6 +62,11 @@ export class PasswordFactorService {
     return hashPwd.toString('base64') === hash;
   }
 
+  /**
+   * Creates a new password factor after validating strength. Throws 409 if the actor already has one.
+   *
+   * @returns The new factor's ID.
+   */
   async createPasswordFactor(actorId: string, password: string, needsReset: boolean = false) {
     await this.checkStrength(password);
 
@@ -64,6 +80,11 @@ export class PasswordFactorService {
     return factor.id;
   }
 
+  /**
+   * Replaces the actor's password after validating strength and checking the last 10 passwords for reuse.
+   *
+   * @returns The updated factor's ID.
+   */
   async updatePasswordFactor(actorId: string, password: string, needsReset: boolean = false) {
     await this.checkStrength(password);
 
@@ -80,10 +101,17 @@ export class PasswordFactorService {
     return factor.id;
   }
 
+  /** Permanently removes the actor's password factor. */
   async deleteFactor(actorId: string) {
     await this.passwordFactorRepository.deleteFactor(actorId);
   }
 
+  /**
+   * Verifies the actor's password against the stored hash, enforcing rate limiting.
+   * Throws 429 when rate-limited, 401 when the factor is missing/inactive, needs reset, or the password is wrong.
+   *
+   * @returns The factor's ID on success.
+   */
   async verifyPassword(actorId: string, password: string) {
     try {
       await this.rateLimiter.consume(actorId);
@@ -111,6 +139,11 @@ export class PasswordFactorService {
     return passwordFactor.id;
   }
 
+  /**
+   * Changes the actor's password and clears the `needsReset` flag. Validates strength before persisting.
+   *
+   * @returns The updated factor's ID.
+   */
   async changePassword(actorId: string, password: string) {
     await this.checkStrength(password);
 

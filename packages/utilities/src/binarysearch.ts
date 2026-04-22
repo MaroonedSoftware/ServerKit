@@ -1,3 +1,9 @@
+/**
+ * Returns true if `value` exists in a sorted `array` using binary search.
+ *
+ * @param array - A sorted array of comparable values.
+ * @param value - The value to search for.
+ */
 export const binarySearch = function <T>(array: Array<T>, value: T): boolean {
   const search = (start: number, end: number): boolean => {
     const range: number = end - start;

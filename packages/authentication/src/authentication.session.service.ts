@@ -3,7 +3,7 @@ import { unauthorizedError } from '@maroonedsoftware/errors';
 import { DateTime, Duration } from 'luxon';
 import { deepmergeCustom } from 'deepmerge-ts';
 import { AuthenticationSession, AuthenticationSessionFactor } from './authentication.context.js';
-import { CacheProvider } from './providers/cache.provider.js';
+import { CacheProvider } from '@maroonedsoftware/cache';
 import { JwtProvider } from './providers/jwt.provider.js';
 
 /**
