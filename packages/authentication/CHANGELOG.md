@@ -1,5 +1,18 @@
 # @maroonedsoftware/authentication
 
+## 0.5.0
+
+### Minor Changes
+
+- 79fde38: Introduce server-side session management and a suite of MFA features. Adds AuthenticationSessionService and related types (AuthenticationSession, AuthenticationSessionFactor, AuthenticationToken), authenticator/email/phone factor repositories and services, OTP/JWT/cache/password-strength providers, and encryption dependency.
+
+### Patch Changes
+
+- Updated dependencies [5c4756a]
+- Updated dependencies [bcbdcb8]
+  - @maroonedsoftware/utilities@1.5.0
+  - @maroonedsoftware/encryption@0.1.0
+
 ## 0.4.0
 
 ### Minor Changes
