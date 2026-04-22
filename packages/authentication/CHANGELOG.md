@@ -1,5 +1,11 @@
 # @maroonedsoftware/authentication
 
+## 0.7.0
+
+### Minor Changes
+
+- f9aa6d6: Updated cache retrieval methods in AuthenticationSessionService, AuthenticatorFactorService, EmailFactorService, and PhoneFactorService to remove generic type parameters for improved clarity.
+
 ## 0.6.0
 
 ### Minor Changes
