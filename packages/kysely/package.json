@@ -1,6 +1,6 @@
 {
   "name": "@maroonedsoftware/kysely",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Kysely utilities for ServerKit.",
   "author": {
     "name": "Marooned Software",
