@@ -125,7 +125,7 @@ export class EmailFactorService {
   }
 
   private createPayload<T extends EmailPayload>(verificationMethod: 'code' | 'magiclink') {
-    let payload = { verificationMethod } as T;
+    const payload = { verificationMethod } as T;
 
     const result = verificationMethod === 'code' ? this.createCode(this.options.otpExpiration) : this.createToken(this.options.magiclinkExpiration);
 

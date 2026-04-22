@@ -88,7 +88,9 @@ export class PasswordFactorService {
     try {
       await this.rateLimiter.consume(actorId);
     } catch (error) {
-      throw httpError(429).withInternalDetails({ message: `password authentication has been rate limited for actor: ${actorId}` });
+      throw httpError(429)
+        .withInternalDetails({ message: `password authentication has been rate limited for actor: ${actorId}` })
+        .withCause(error as Error);
     }
 
     const passwordFactor = await this.passwordFactorRepository.getFactor(actorId);

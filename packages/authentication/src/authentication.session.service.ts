@@ -118,7 +118,7 @@ export class AuthenticationSessionService {
         try {
           const set = new Set(values.flat());
           return Array.from(set);
-        } catch (_e) {
+        } catch {
           return values.flat();
         }
       },
