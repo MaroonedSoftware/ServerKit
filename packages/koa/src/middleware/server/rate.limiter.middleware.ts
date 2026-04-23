@@ -2,6 +2,7 @@ import { RateLimiterAbstract, RateLimiterRes } from 'rate-limiter-flexible';
 import { ServerKitMiddleware } from '../../serverkit.middleware.js';
 import { httpError } from '@maroonedsoftware/errors';
 
+/** Type guard that narrows `error` to a `RateLimiterRes` (i.e. a rate-limit exceeded response). */
 const isRateLimiterError = (error: unknown): error is RateLimiterRes => {
   return error instanceof RateLimiterRes || ('msBeforeNext' in (error as object) && 'remainingPoints' in (error as object));
 };

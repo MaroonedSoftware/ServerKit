@@ -99,9 +99,8 @@ app.use(authenticationMiddleware());
 
 // Access the resolved context in route handlers
 router.get('/api/me', async ctx => {
-  const { subject, isAuthenticated } = ctx.authenticationContext;
-  if (!isAuthenticated) throw httpError(401);
-  ctx.body = { subject };
+  const { actorId } = ctx.authenticationContext;
+  ctx.body = { actorId };
 });
 ```
 
@@ -220,6 +219,7 @@ The default mappings are:
 | `logger`                | `Logger`                | Request-scoped logger                                  |
 | `loggerName`            | `string`                | Logger name (e.g. request path)                        |
 | `userAgent`             | `string`                | `User-Agent` header value                              |
+| `ipAddress`             | `string`                | IP address of the client                               |
 | `correlationId`         | `string`                | From `X-Correlation-Id` header or generated            |
 | `requestId`             | `string`                | From `X-Request-Id` header or generated                |
 | `rawBody`               | `BinaryLike`            | Raw request body bytes; set by `bodyParserMiddleware`  |

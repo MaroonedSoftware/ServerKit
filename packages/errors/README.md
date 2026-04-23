@@ -165,7 +165,7 @@ All standard 4xx and 5xx status codes are supported with their default messages:
 
 | Method                         | Returns     | Description                 |
 | ------------------------------ | ----------- | --------------------------- |
-| `withErrors(errors)`           | `HttpError` | Add error details           |
+| `withDetails(details)`         | `HttpError` | Add error details           |
 | `withHeaders(headers)`         | `HttpError` | Add response headers        |
 | `addHeader(key, value)`        | `HttpError` | Add a single header         |
 | `withCause(error)`             | `HttpError` | Set the underlying cause    |
