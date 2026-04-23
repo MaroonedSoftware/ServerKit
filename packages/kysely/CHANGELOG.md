@@ -1,5 +1,22 @@
 # @maroonedsoftware/kysely
 
+## 0.4.0
+
+### Minor Changes
+
+- 4e9ccf4: Update error handling and type overrides
+  - Updated Kysely type overrides to include custom parsers for `INTERVAL` and `TINTERVAL`, improving PostgreSQL type handling.
+  - Renamed `withErrors(errors)` to `withDetails(details)` in the errors package documentation for clarity.
+  - Added a class decorator `OnPostgresError` to automatically map PostgreSQL errors to HTTP errors, enhancing error handling in services.
+  - Enhanced tests for Kysely type overrides to cover new interval parsing functionality.
+  - Added documentation for E.164 international phone number format in the utilities package.
+
+### Patch Changes
+
+- Updated dependencies [4e9ccf4]
+  - @maroonedsoftware/utilities@1.7.0
+  - @maroonedsoftware/errors@1.5.0
+
 ## 0.3.2
 
 ### Patch Changes
