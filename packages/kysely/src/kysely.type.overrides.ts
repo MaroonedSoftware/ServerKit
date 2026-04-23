@@ -1,6 +1,8 @@
 import { DateTime, Interval } from 'luxon';
 import * as pg from 'pg';
 
+const TSTZRANGE_OID = 3910;
+
 /** Parses a SQL timestamp string as a UTC Luxon `DateTime`. */
 const parseTimestamp = (value: string) => {
   return DateTime.fromSQL(value, { zone: 'utc' });
@@ -28,6 +30,7 @@ const parseInterval = (value: string) => {
  * | `INT8` / bigint | `string`        | `BigInt`        |
  * | `INTERVAL`      | `string`        | `Interval`      |
  * | `TINTERVAL`     | `string`        | `Interval`      |
+ * | `TSTZRANGE`     | `string`        | `Interval`      |
  *
  * Timestamps are parsed as [Luxon](https://moment.github.io/luxon/) `DateTime`
  * objects in the UTC zone. Large integers are parsed as native `BigInt` values
@@ -51,3 +54,4 @@ KyselyPgTypeOverrides.setTypeParser(pg.types.builtins.TIMESTAMP, parseTimestamp)
 KyselyPgTypeOverrides.setTypeParser(pg.types.builtins.INT8, parseBigInt);
 KyselyPgTypeOverrides.setTypeParser(pg.types.builtins.TINTERVAL, parseInterval);
 KyselyPgTypeOverrides.setTypeParser(pg.types.builtins.INTERVAL, parseInterval);
+KyselyPgTypeOverrides.setTypeParser(TSTZRANGE_OID, parseInterval);

@@ -3,8 +3,7 @@ import { DateTime, Interval } from 'luxon';
 import * as pg from 'pg';
 import { KyselyPgTypeOverrides } from '../src/kysely.type.overrides.js';
 
-const getParser = (oid: number) =>
-  KyselyPgTypeOverrides.getTypeParser(oid, 'text') as unknown as (value: string) => unknown;
+const getParser = (oid: number) => KyselyPgTypeOverrides.getTypeParser(oid, 'text') as unknown as (value: string) => unknown;
 
 describe('KyselyPgTypeOverrides', () => {
   it('should be a pg.TypeOverrides instance', () => {
@@ -49,6 +48,9 @@ describe('KyselyPgTypeOverrides', () => {
       expect(result.year).toBe(2023);
       expect(result.month).toBe(6);
       expect(result.day).toBe(15);
+      expect(result.hour).toBe(10);
+      expect(result.minute).toBe(30);
+      expect(result.second).toBe(45);
     });
   });
 
@@ -80,10 +82,13 @@ describe('KyselyPgTypeOverrides', () => {
   });
 
   describe('INTERVAL parser', () => {
-    it('should return a Luxon Interval for a bracket-delimited range string', () => {
-      const result = getParser(pg.types.builtins.INTERVAL)('["2023-01-01 00:00:00","2023-12-31 23:59:59"]');
-      expect(result).toBeInstanceOf(Interval);
-    });
+    it.each(['["2023-01-01 00:00:00","2023-12-31 23:59:59"]', '["2026-04-22 19:19:22.728762+00","2026-04-22 19:19:48.394022+00")'])(
+      'should return a Luxon Interval for a bracket-delimited range string',
+      value => {
+        const result = getParser(pg.types.builtins.INTERVAL)(value);
+        expect(result).toBeInstanceOf(Interval);
+      },
+    );
 
     it('should parse start and end DateTimes correctly', () => {
       const result = getParser(pg.types.builtins.INTERVAL)('["2023-01-01 00:00:00","2023-12-31 23:59:59"]') as Interval;
@@ -130,6 +135,40 @@ describe('KyselyPgTypeOverrides', () => {
     it('should return the original string when the format does not match', () => {
       const raw = '["1970-01-01 00:00:00" "1970-01-02 00:00:00"]';
       expect(getParser(pg.types.builtins.TINTERVAL)(raw)).toBe(raw);
+    });
+  });
+
+  describe('TSTZRANGE parser (OID 3910)', () => {
+    const TSTZRANGE_OID = 3910;
+
+    it('should parse a bracket-delimited tstzrange as a Luxon Interval', () => {
+      const result = getParser(TSTZRANGE_OID)('["2023-01-01 00:00:00","2023-12-31 23:59:59"]');
+      expect(result).toBeInstanceOf(Interval);
+    });
+
+    it('should parse start and end DateTimes correctly', () => {
+      const result = getParser(TSTZRANGE_OID)('["2023-06-01 08:00:00","2023-06-01 17:30:00"]') as Interval;
+      expect(result.start?.year).toBe(2023);
+      expect(result.start?.month).toBe(6);
+      expect(result.start?.day).toBe(1);
+      expect(result.start?.hour).toBe(8);
+      expect(result.end?.hour).toBe(17);
+      expect(result.end?.minute).toBe(30);
+    });
+
+    it('should support half-open ranges', () => {
+      const result = getParser(TSTZRANGE_OID)('["2023-06-01 00:00:00","2023-06-30 00:00:00")');
+      expect(result).toBeInstanceOf(Interval);
+    });
+
+    it('should support timestamps with fractional seconds and timezone offset', () => {
+      const result = getParser(TSTZRANGE_OID)('["2026-04-22 19:19:22.728762+00","2026-04-22 19:19:48.394022+00")');
+      expect(result).toBeInstanceOf(Interval);
+    });
+
+    it('should return the original string when the format does not match', () => {
+      const raw = 'empty';
+      expect(getParser(TSTZRANGE_OID)(raw)).toBe(raw);
     });
   });
 });

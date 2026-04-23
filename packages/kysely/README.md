@@ -30,7 +30,8 @@ Use [kysely-codegen](https://github.com/RobinBlomberg/kysely-codegen) to generat
   "camelCase": true,
   "customImports": {
     "DateTime": "luxon",
-    "Duration": "luxon"
+    "Duration": "luxon",
+    "Interval": "luxon"
   },
   "dateParser": "timestamp",
   "defaultSchemas": ["public"],
@@ -51,6 +52,7 @@ Use [kysely-codegen](https://github.com/RobinBlomberg/kysely-codegen) to generat
     "date": "DateTime",
     "timestamptz": "DateTime",
     "interval": "Duration",
+    "tstzrange": "Interval",
     "int8": "bigint"
   },
   "typeOnlyImports": true,
@@ -62,7 +64,7 @@ Use [kysely-codegen](https://github.com/RobinBlomberg/kysely-codegen) to generat
 Key options explained:
 
 - **`camelCase: true`** — Matches `CamelCasePlugin` so column names are consistent between generated types and runtime results
-- **`typeMapping`** — Maps `timestamptz` to `DateTime` and `int8` to `bigint`, matching the runtime parsers in `KyselyPgTypeOverrides`
+- **`typeMapping`** — Maps `timestamptz` → `DateTime`, `tstzrange` → `Interval`, and `int8` → `bigint`, matching the runtime parsers in `KyselyPgTypeOverrides`
 - **`customImports`** — Imports `DateTime` and `Duration` from `luxon` rather than generating inline type aliases
 - **`outFile`** — Path to the generated `Database` type used throughout your repositories
 
@@ -169,7 +171,7 @@ if (isKyselyNoResultError(error)) {
 
 ## PostgreSQL Type Overrides
 
-`KyselyPgTypeOverrides` registers custom parsers for five types:
+`KyselyPgTypeOverrides` registers custom parsers for six types:
 
 | PostgreSQL type   | Default JS type | Override               |
 | ----------------- | --------------- | ---------------------- |
@@ -178,6 +180,7 @@ if (isKyselyNoResultError(error)) {
 | `INT8` / `bigint` | `string`        | `BigInt`               |
 | `INTERVAL`        | `string`        | Luxon `Interval`       |
 | `TINTERVAL`       | `string`        | Luxon `Interval`       |
+| `TSTZRANGE`       | `string`        | Luxon `Interval`       |
 
 Pass it to the `types` option of `KyselyPool`:
 
@@ -235,7 +238,7 @@ Type guard that returns `true` when `error` is a Kysely `NoResultError`.
 
 ### `KyselyPgTypeOverrides`
 
-`pg.TypeOverrides` — Custom parsers for `TIMESTAMP`, `TIMESTAMPTZ`, `INT8`, `INTERVAL`, and `TINTERVAL`.
+`pg.TypeOverrides` — Custom parsers for `TIMESTAMP`, `TIMESTAMPTZ`, `INT8`, `INTERVAL`, `TINTERVAL`, and `TSTZRANGE`.
 
 ### `NullToUndefinedPlugin`
 
