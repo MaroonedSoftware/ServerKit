@@ -1,4 +1,4 @@
-import { DateTime, Duration, Interval } from 'luxon';
+import { DateTime, Interval } from 'luxon';
 import * as pg from 'pg';
 
 /** Parses a SQL timestamp string as a UTC Luxon `DateTime`. */
