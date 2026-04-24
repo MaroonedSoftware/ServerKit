@@ -1,6 +1,6 @@
 {
   "name": "@maroonedsoftware/kms",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "A library for managing KMS keys.",
   "author": {
     "name": "Marooned Software",
