@@ -244,6 +244,22 @@ importers:
         specifier: ^12.15.0
         version: 12.15.0
 
+  packages/kms:
+    dependencies:
+      '@maroonedsoftware/logger':
+        specifier: workspace:*
+        version: link:../logger
+      injectkit:
+        specifier: ^1.2.0
+        version: 1.2.0
+    devDependencies:
+      '@repo/config-eslint':
+        specifier: workspace:*
+        version: link:../config-eslint
+      '@repo/config-typescript':
+        specifier: workspace:*
+        version: link:../config-typescript
+
   packages/koa:
     dependencies:
       '@hapi/bourne':
