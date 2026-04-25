@@ -1,5 +1,13 @@
 # @maroonedsoftware/authentication
 
+## 0.14.0
+
+### Minor Changes
+
+- 5151eac: refactor: convert expiresAt to DateTime in Email and Phone factor services
+  - Updated the EmailFactorService and PhoneFactorService to return expiresAt as a DateTime object instead of a raw timestamp.
+  - Adjusted unit tests for both services to validate the type of expiresAt and ensure it matches the expected value.
+
 ## 0.13.0
 
 ### Minor Changes
