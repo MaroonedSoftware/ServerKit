@@ -1,3 +1,4 @@
+import { Injectable } from 'injectkit';
 import { OtpOptions } from '../../providers/otp.provider.js';
 
 /**
@@ -49,3 +50,6 @@ export interface AuthenticatorFactorRepository {
    */
   deleteFactor(actorId: string, factorId: string): Promise<void>;
 }
+
+@Injectable()
+export abstract class AuthenticatorFactorRepository implements AuthenticatorFactorRepository {}

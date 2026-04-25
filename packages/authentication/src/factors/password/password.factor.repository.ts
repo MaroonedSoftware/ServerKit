@@ -1,3 +1,5 @@
+import { Injectable } from 'injectkit';
+
 /** PBKDF2-derived password hash and its associated salt, both base64-encoded. */
 export type PasswordValue = {
   /** The PBKDF2-derived password hash, base64-encoded. */
@@ -32,3 +34,6 @@ export interface PasswordFactorRepository {
   /** Permanently removes the actor's password factor. */
   deleteFactor(actorId: string): Promise<void>;
 }
+
+@Injectable()
+export abstract class PasswordFactorRepository implements PasswordFactorRepository {}

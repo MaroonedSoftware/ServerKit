@@ -1,3 +1,5 @@
+import { Injectable } from 'injectkit';
+
 /**
  * A persisted email authentication factor record.
  */
@@ -46,3 +48,6 @@ export interface EmailFactorRepository {
    */
   deleteFactor(actorId: string, factorId: string): Promise<void>;
 }
+
+@Injectable()
+export abstract class EmailFactorRepository implements EmailFactorRepository {}

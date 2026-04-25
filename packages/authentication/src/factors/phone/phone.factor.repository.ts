@@ -1,3 +1,5 @@
+import { Injectable } from 'injectkit';
+
 /**
  * A persisted phone number factor record.
  */
@@ -47,3 +49,6 @@ export interface PhoneFactorRepository {
    */
   deleteFactor(actorId: string, factorId: string): Promise<void>;
 }
+
+@Injectable()
+export abstract class PhoneFactorRepository implements PhoneFactorRepository {}
