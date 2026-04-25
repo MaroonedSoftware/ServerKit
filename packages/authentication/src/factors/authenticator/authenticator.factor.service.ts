@@ -1,7 +1,7 @@
 import { Injectable } from 'injectkit';
 import { toDataURL } from 'qrcode';
 import { type OtpOptions, OtpProvider } from '../../providers/otp.provider.js';
-import { AuthenticatorFactorRepository } from './authenticator.factor.repository.js';
+import type { AuthenticatorFactorRepository } from './authenticator.factor.repository.js';
 import { httpError, unauthorizedError } from '@maroonedsoftware/errors';
 import { EncryptionProvider } from '@maroonedsoftware/encryption';
 import { DateTime, Duration } from 'luxon';

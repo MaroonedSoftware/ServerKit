@@ -1,5 +1,3 @@
-import { Injectable } from 'injectkit';
-
 /** PBKDF2-derived password hash and its associated salt, both base64-encoded. */
 export type PasswordValue = {
   hash: string;
@@ -16,17 +14,16 @@ export interface PasswordFactor {
   needsReset: boolean;
 }
 
-/** Abstract repository for persisting and retrieving password factors. Implement this for your storage backend. */
-@Injectable()
-export abstract class PasswordFactorRepository {
+/** Repository interface for persisting and retrieving password factors. */
+export interface PasswordFactorRepository {
   /** Creates a new password factor for the given actor. */
-  abstract createFactor(subject: string, value: PasswordValue, needsReset: boolean): Promise<PasswordFactor>;
+  createFactor(subject: string, value: PasswordValue, needsReset: boolean): Promise<PasswordFactor>;
   /** Returns the most recent `limit` historical password hashes for the actor, used to enforce password reuse policy. */
-  abstract listPreviousPasswords(actorId: string, limit: number): Promise<PasswordValue[]>;
+  listPreviousPasswords(actorId: string, limit: number): Promise<PasswordValue[]>;
   /** Replaces the actor's current password factor value. */
-  abstract updateFactor(actorId: string, value: PasswordValue, needsReset: boolean): Promise<PasswordFactor>;
+  updateFactor(actorId: string, value: PasswordValue, needsReset: boolean): Promise<PasswordFactor>;
   /** Returns the active password factor for the actor, or null if none exists. */
-  abstract getFactor(actorId: string): Promise<PasswordFactor>;
+  getFactor(actorId: string): Promise<PasswordFactor>;
   /** Permanently removes the actor's password factor. */
-  abstract deleteFactor(actorId: string): Promise<void>;
+  deleteFactor(actorId: string): Promise<void>;
 }

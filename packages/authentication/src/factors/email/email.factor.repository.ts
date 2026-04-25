@@ -1,4 +1,3 @@
-import { Injectable } from 'injectkit';
 import { DateTime } from 'luxon';
 
 /**
@@ -18,14 +17,9 @@ export type EmailFactor = {
 };
 
 /**
- * Abstract repository for persisting email authentication factors.
- *
- * Extend this class and register your concrete implementation (e.g. using a
- * PostgreSQL table) in the DI container so that {@link EmailFactorService} can
- * resolve it at runtime.
+ * Repository interface for persisting email authentication factors.
  */
-@Injectable()
-export abstract class EmailFactorRepository {
+export interface EmailFactorRepository {
   /**
    * Persist a new email factor for an actor.
    * @param actorId            - The actor to associate the factor with.
@@ -33,14 +27,14 @@ export abstract class EmailFactorRepository {
    * @param verificationMethod - The method used to verify the address (`"code"` or `"magiclink"`).
    * @returns The newly created {@link EmailFactor}.
    */
-  abstract createFactor(actorId: string, value: string, verificationMethod?: string): Promise<EmailFactor>;
+  createFactor(actorId: string, value: string, verificationMethod?: string): Promise<EmailFactor>;
 
   /**
    * Check whether an email address already has a factor registered.
    * @param value - The email address to look up.
    * @returns `true` if an existing factor was found, `false` otherwise.
    */
-  abstract doesEmailExist(value: string): Promise<boolean>;
+  doesEmailExist(value: string): Promise<boolean>;
 
   /**
    * Retrieve a specific email factor for an actor.
@@ -48,12 +42,12 @@ export abstract class EmailFactorRepository {
    * @param factorId - The factor record id.
    * @returns The matching {@link EmailFactor}.
    */
-  abstract getFactor(actorId: string, factorId: string): Promise<EmailFactor>;
+  getFactor(actorId: string, factorId: string): Promise<EmailFactor>;
 
   /**
    * Remove an email factor.
    * @param actorId  - The actor that owns the factor.
    * @param factorId - The factor record id to delete.
    */
-  abstract deleteFactor(actorId: string, factorId: string): Promise<void>;
+  deleteFactor(actorId: string, factorId: string): Promise<void>;
 }

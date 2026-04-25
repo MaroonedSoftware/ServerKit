@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AuthenticationSessionService } from '../src/authentication.session.service.js';
-import type { CacheProvider } from '../src/providers/cache.provider.js';
+import type { CacheProvider } from '@maroonedsoftware/cache';
 import type { JwtProvider } from '../src/providers/jwt.provider.js';
 import type { AuthenticationSessionFactor } from '../src/authentication.context.js';
 import { Duration } from 'luxon';

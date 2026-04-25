@@ -9,7 +9,7 @@ import { isEmail, binarySearch } from '@maroonedsoftware/utilities';
 import { EmailFactorService } from '../../../src/factors/email/email.factor.service.js';
 import type { EmailFactorRepository, EmailFactor } from '../../../src/factors/email/email.factor.repository.js';
 import type { OtpProvider } from '../../../src/providers/otp.provider.js';
-import type { CacheProvider } from '../../../src/providers/cache.provider.js';
+import type { CacheProvider } from '@maroonedsoftware/cache';
 import { Duration, DateTime } from 'luxon';
 
 const makeCacheProvider = () =>
@@ -144,8 +144,8 @@ describe('EmailFactorService', () => {
 
       // Ensure a registration was cached (secret is empty for magiclink)
       expect(cache.set).toHaveBeenCalled();
-      const [[, payloadJson]] = vi.mocked(cache.set).mock.calls;
-      const payload = JSON.parse(payloadJson as string);
+      const [firstCall] = vi.mocked(cache.set).mock.calls;
+      const payload = JSON.parse(firstCall![1] as string);
       expect(payload.verificationMethod).toBe('magiclink');
       expect(payload.secret).toBe('');
     });
@@ -240,7 +240,8 @@ describe('EmailFactorService', () => {
       await service.createEmailVerification('actor-1', 'factor-1', 'code');
 
       expect(cache.set).toHaveBeenCalledOnce();
-      const [[key, payloadJson]] = vi.mocked(cache.set).mock.calls;
+      const [firstCall] = vi.mocked(cache.set).mock.calls;
+      const [key, payloadJson] = firstCall!;
       expect(key).toMatch(/^email_factor_verification_/);
       const payload = JSON.parse(payloadJson as string);
       expect(payload.actorId).toBe('actor-1');
@@ -252,8 +253,8 @@ describe('EmailFactorService', () => {
 
       await service.createEmailVerification('actor-1', 'factor-1', 'magiclink');
 
-      const [[, payloadJson]] = vi.mocked(cache.set).mock.calls;
-      const payload = JSON.parse(payloadJson as string);
+      const [firstCall] = vi.mocked(cache.set).mock.calls;
+      const payload = JSON.parse(firstCall![1] as string);
       expect(payload.verificationMethod).toBe('magiclink');
     });
   });

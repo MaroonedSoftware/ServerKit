@@ -7,7 +7,7 @@ vi.mock('@maroonedsoftware/utilities', () => ({
 import { isPhoneE164 } from '@maroonedsoftware/utilities';
 import { PhoneFactorService } from '../../../src/factors/phone/phone.factor.service.js';
 import type { PhoneFactorRepository, PhoneFactor } from '../../../src/factors/phone/phone.factor.repository.js';
-import type { CacheProvider } from '../../../src/providers/cache.provider.js';
+import type { CacheProvider } from '@maroonedsoftware/cache';
 import { Duration } from 'luxon';
 
 const makeCacheProvider = () =>
@@ -101,24 +101,25 @@ describe('PhoneFactorService', () => {
 
     it('caches the registration payload under a random key', async () => {
       await service.registerPhoneFactor('actor-1', '+12025550123');
-      const calls = vi.mocked(cache.set).mock.calls;
+      const calls = vi.mocked(cache.set).mock.calls as unknown as [string, string][];
       const payloadCall = calls.find(([, value]) => {
         try {
-          return !!(value && JSON.parse(value as string).actorId);
+          return !!(value && JSON.parse(value).actorId);
         } catch {
           return false;
         }
       });
       expect(payloadCall).toBeDefined();
-      const payload = JSON.parse(payloadCall![1] as string);
+      const payload = JSON.parse(payloadCall![1]);
       expect(payload.actorId).toBe('actor-1');
       expect(payload.value).toBe('+12025550123');
     });
 
     it('caches a lookup entry mapping actor+value to registrationId', async () => {
       await service.registerPhoneFactor('actor-1', '+12025550123');
-      const keys = vi.mocked(cache.set).mock.calls.map(([key]) => key as string);
-      expect(keys.some(k => k.includes('actor-1_+12025550123'))).toBe(true);
+      const calls = vi.mocked(cache.set).mock.calls as unknown as [string, string][];
+      const keys = calls.map(([key]) => key);
+      expect(keys.some((k: string) => k.includes('actor-1_+12025550123'))).toBe(true);
     });
 
     it('stores the payload and lookup under separate cache keys (two set calls)', async () => {

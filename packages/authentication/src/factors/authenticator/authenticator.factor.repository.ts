@@ -1,4 +1,3 @@
-import { Injectable } from 'injectkit';
 import { OtpOptions } from '../../providers/otp.provider.js';
 
 /**
@@ -22,21 +21,16 @@ export type AuthenticatorFactor = Required<AuthenticatorFactorOptions> & {
 };
 
 /**
- * Abstract repository for persisting authenticator (TOTP/HOTP) factors.
- *
- * Extend this class and register your concrete implementation (e.g. a PostgreSQL
- * table) in the DI container so that {@link AuthenticatorFactorService} can
- * resolve it at runtime.
+ * Repository interface for persisting authenticator (TOTP/HOTP) factors.
  */
-@Injectable()
-export abstract class AuthenticatorFactorRepository {
+export interface AuthenticatorFactorRepository {
   /**
    * Persist a new authenticator factor for an actor.
    * @param actorId - The actor to associate the factor with.
    * @param options - OTP configuration and encrypted secret for the factor.
    * @returns The newly created {@link AuthenticatorFactor}.
    */
-  abstract createFactor(actorId: string, options: AuthenticatorFactorOptions): Promise<AuthenticatorFactor>;
+  createFactor(actorId: string, options: AuthenticatorFactorOptions): Promise<AuthenticatorFactor>;
 
   /**
    * Retrieve a specific authenticator factor for an actor.
@@ -44,12 +38,12 @@ export abstract class AuthenticatorFactorRepository {
    * @param factorId - The factor record id.
    * @returns The matching {@link AuthenticatorFactor}, or `undefined` if not found.
    */
-  abstract getFactor(actorId: string, factorId: string): Promise<AuthenticatorFactor | undefined>;
+  getFactor(actorId: string, factorId: string): Promise<AuthenticatorFactor | undefined>;
 
   /**
    * Remove an authenticator factor.
    * @param actorId  - The actor that owns the factor.
    * @param factorId - The factor record id to delete.
    */
-  abstract deleteFactor(actorId: string, factorId: string): Promise<void>;
+  deleteFactor(actorId: string, factorId: string): Promise<void>;
 }
