@@ -148,6 +148,20 @@ describe('EmailFactorService', () => {
       expect(payload.verificationMethod).toBe('magiclink');
       expect(payload.secret).toBe('');
     });
+
+    it('normalizes the email by trimming whitespace and lowercasing before validating', async () => {
+      await service.registerEmailFactor('  USER@Example.COM  ', 'code');
+
+      expect(isEmail).toHaveBeenCalledWith('user@example.com');
+    });
+
+    it('persists the normalized email in the registration payload', async () => {
+      await service.registerEmailFactor('  USER@Example.COM  ', 'code');
+
+      const [firstCall] = vi.mocked(cache.set).mock.calls;
+      const payload = JSON.parse(firstCall![1] as string);
+      expect(payload.value).toBe('user@example.com');
+    });
   });
 
   describe('createEmailFactorFromRegistration', () => {

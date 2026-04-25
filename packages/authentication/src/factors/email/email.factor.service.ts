@@ -182,6 +182,7 @@ export class EmailFactorService {
    * @throws HTTP 409 when `doesEmailExist` returns `false` (email not registered in the system).
    */
   async registerEmailFactor(value: string, verificationMethod: 'code' | 'magiclink', ignoreExisting: boolean = false) {
+    value = value.trim().toLowerCase();
     if (!isEmail(value)) {
       throw httpError(400).withDetails({ value: 'invalid email format' });
     }
