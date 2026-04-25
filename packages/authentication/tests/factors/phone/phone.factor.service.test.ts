@@ -8,7 +8,7 @@ import { isPhoneE164 } from '@maroonedsoftware/utilities';
 import { PhoneFactorService } from '../../../src/factors/phone/phone.factor.service.js';
 import type { PhoneFactorRepository, PhoneFactor } from '../../../src/factors/phone/phone.factor.repository.js';
 import type { CacheProvider } from '@maroonedsoftware/cache';
-import { Duration } from 'luxon';
+import { Duration, DateTime } from 'luxon';
 
 const makeCacheProvider = () =>
   ({
@@ -83,6 +83,8 @@ describe('PhoneFactorService', () => {
       const result = await service.registerPhoneFactor('actor-1', '+12025550123');
 
       expect(result.registrationId).toBe('reg-id-1');
+      expect(DateTime.isDateTime(result.expiresAt)).toBe(true);
+      expect(result.expiresAt.toUnixInteger()).toBe(payload.expiresAt);
       expect(repo.findFactor).not.toHaveBeenCalled();
       expect(cache.set).not.toHaveBeenCalled();
     });
@@ -128,10 +130,10 @@ describe('PhoneFactorService', () => {
       expect(cache.set).toHaveBeenCalledTimes(2);
     });
 
-    it('returns a registrationId and expiresAt', async () => {
+    it('returns a registrationId and expiresAt as a DateTime', async () => {
       const result = await service.registerPhoneFactor('actor-1', '+12025550123');
       expect(result.registrationId).toBeTruthy();
-      expect(result.expiresAt).toBeDefined();
+      expect(DateTime.isDateTime(result.expiresAt)).toBe(true);
     });
   });
 

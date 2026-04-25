@@ -189,7 +189,11 @@ export class EmailFactorService {
 
     const existingRegistration = await this.lookupRegistrationByValue(value);
     if (ignoreExisting && existingRegistration) {
-      return { registrationId: existingRegistration.id, code: existingRegistration.code, expiresAt: existingRegistration.expiresAt };
+      return {
+        registrationId: existingRegistration.id,
+        code: existingRegistration.code,
+        expiresAt: DateTime.fromSeconds(existingRegistration.expiresAt),
+      };
     }
 
     const domain = value.split('@')[1];

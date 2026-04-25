@@ -99,7 +99,7 @@ export class PhoneFactorService {
 
     const existingRegistration = await this.lookupRegistrationByValue(actorId, value);
     if (existingRegistration) {
-      return { registrationId: existingRegistration.id, expiresAt: existingRegistration.expiresAt };
+      return { registrationId: existingRegistration.id, expiresAt: DateTime.fromSeconds(existingRegistration.expiresAt) };
     }
 
     const existingFactor = await this.phoneFactorRepository.findFactor(actorId, value);
@@ -119,7 +119,7 @@ export class PhoneFactorService {
 
     return {
       registrationId,
-      expiresAt: payload.expiresAt,
+      expiresAt: DateTime.fromSeconds(payload.expiresAt),
     };
   }
 

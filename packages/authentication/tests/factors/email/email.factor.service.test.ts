@@ -106,6 +106,8 @@ describe('EmailFactorService', () => {
 
       expect(result.registrationId).toBe('reg-id-1');
       expect(result.code).toBe('123456');
+      expect(DateTime.isDateTime(result.expiresAt)).toBe(true);
+      expect(result.expiresAt.toUnixInteger()).toBe(payload.expiresAt);
     });
 
     it('throws 400 when the domain is on the deny list', async () => {
