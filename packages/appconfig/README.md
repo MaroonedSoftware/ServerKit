@@ -27,11 +27,12 @@ import { AppConfig } from '@maroonedsoftware/appconfig';
 const config = new AppConfig({
   database: { host: 'localhost', port: 5432 },
   api: { timeout: 5000 },
+  port: '3000',
 });
 
-const host = config.get('database');         // Type-safe access
-const port = config.getNumber('port');       // Returns as number
-const db = config.getAs<{ host: string }>('database'); // Cast to interface
+const database = config.get('database');                // Type-safe access
+const port = config.getNumber('port');                  // Returns 3000 as number
+const db = config.getAs<{ host: string }>('database');  // Cast to interface
 ```
 
 ### Using the Builder
@@ -309,10 +310,10 @@ const provider = new AppConfigProviderGcpSecrets('my-project-id');
 const provider = new AppConfigProviderGcpSecrets('my-project-id', /\$\{secret:([^}]+)\}/g);
 ```
 
-| Parameter   | Type               | Description                                                            |
-| ----------- | ------------------ | ---------------------------------------------------------------------- |
-| `projectId` | `string`           | The GCP project ID where secrets are stored                            |
-| `prefix`    | `string \| RegExp` | Optional regex pattern to match secret references. Default: `${gcp:*}` |
+| Parameter   | Type               | Description                                                                                  |
+| ----------- | ------------------ | -------------------------------------------------------------------------------------------- |
+| `projectId` | `string`           | The GCP project ID where secrets are stored                                                  |
+| `prefix`    | `string \| RegExp` | Optional pattern to match secret references. Default: `/\$\{gcp:(.+)\}/g` (matches `${gcp:NAME}`) |
 
 The provider:
 
@@ -369,19 +370,21 @@ class MyCustomSource implements AppConfigSource {
 ### Creating a Custom Provider
 
 ```typescript
-import { AppConfigProvider, ObjectVisitorMeta } from '@maroonedsoftware/appconfig';
+import { AppConfigProvider } from '@maroonedsoftware/appconfig';
 
 class MyCustomProvider implements AppConfigProvider {
   canParse(value: string): boolean {
     return value.startsWith('custom:');
   }
 
-  async parse(value: string, meta: ObjectVisitorMeta): Promise<void> {
+  async parse(value: string, meta): Promise<void> {
     const transformed = value.replace('custom:', '');
     (meta.owner as Record<string, unknown>)[meta.propertyPath] = transformed;
   }
 }
 ```
+
+The `meta` parameter is an `ObjectVisitorMeta` describing where the value lives in the configuration object (`owner`, `propertyPath`, `arrayIndex`, etc.). Mutate `meta.owner[meta.propertyPath]` (or `meta.owner[meta.arrayIndex]` for array entries) to write the transformed value back.
 
 ## Configuration Merging
 

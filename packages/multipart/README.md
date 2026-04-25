@@ -212,7 +212,7 @@ try {
 
 ```typescript
 type ParsedMultipartBody = {
-  fields: Map<string, MultipartData>;
+  fields: Map<string, MultipartData | MultipartData[]>;
   file: {
     filename: string;
     stream: Readable;

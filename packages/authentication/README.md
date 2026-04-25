@@ -1,6 +1,6 @@
 # @maroonedsoftware/authentication
 
-Authentication utilities for ServerKit. Provides scheme-based handler dispatch, session management, JWT issuance, OTP generation, password strength checking, email factor flows, authenticator app (TOTP/HOTP) factor flows, and phone number factor flows — all with full dependency injection support via [injectkit](https://www.npmjs.com/package/injectkit).
+Authentication utilities for ServerKit. Provides scheme-based handler dispatch, session management, JWT issuance, OTP generation, password strength checking, password factor flows, email factor flows, authenticator app (TOTP/HOTP) factor flows, and phone number factor flows — all with full dependency injection support via [injectkit](https://www.npmjs.com/package/injectkit).
 
 ## Installation
 
@@ -18,6 +18,7 @@ pnpm add @maroonedsoftware/authentication
 - **Built-in Basic support** — `BasicAuthenticationHandler` and `BasicAuthenticationIssuer` for username/password flows
 - **OTP/TOTP** — RFC 4226/6238 compliant HOTP and TOTP generation and validation, plus `otpauth://` URI generation for QR codes
 - **Password strength** — zxcvbn-ts powered strength checking with HaveIBeenPwned integration
+- **Password factors** — strength-validated, PBKDF2-hashed, rate-limited password factor lifecycle via `PasswordFactorService`
 - **Email factors** — two-step email factor registration and verification via OTP code or magic link
 - **Authenticator app factors** — TOTP/HOTP registration with QR code provisioning via `AuthenticatorFactorService`
 - **Phone number factors** — two-step phone factor registration via `PhoneFactorService` (send the OTP out-of-band via SMS)
@@ -36,8 +37,8 @@ import { DateTime } from 'luxon';
 
 @Injectable()
 class MyJwtHandler implements AuthenticationHandler {
-  async authenticate(scheme: string, token: string): Promise<AuthenticationContext> {
-    const payload = await verifyJwt(token); // your JWT verification logic
+  async authenticate(scheme: string, value: string): Promise<AuthenticationContext> {
+    const payload = await verifyJwt(value); // your JWT verification logic
 
     return {
       actorId: payload.sub,
@@ -138,11 +139,12 @@ registry.register(AuthenticationHandlerMap).useMap().set('basic', BasicAuthentic
 
 ```typescript
 import { AuthenticationSessionService } from '@maroonedsoftware/authentication';
-import { Duration } from 'luxon';
+import { DateTime } from 'luxon';
 
 const sessionService = container.get(AuthenticationSessionService);
 
 // Create a session after the user authenticates
+const now = DateTime.utc().toUnixInteger();
 const session = await sessionService.createSession(
   user.id,
   { plan: 'pro' },
@@ -194,6 +196,33 @@ const result = await strength.checkStrength(password, user.email, user.name);
 
 // Throwing check — throws HTTP 400 with feedback details if score < 3
 await strength.ensureStrength(password, user.email);
+```
+
+---
+
+### Password factors
+
+`PasswordFactorService` handles the full lifecycle of password-based factors: zxcvbn-based strength validation, PBKDF2-SHA512 hashing, reuse prevention against the last 10 passwords, and rate-limited verification (via an injected `RateLimiterCompatibleAbstract`).
+
+```typescript
+import { PasswordFactorService } from '@maroonedsoftware/authentication';
+
+const passwordFactors = container.get(PasswordFactorService);
+
+// Create a new factor (validates strength, throws 409 if one already exists)
+const factorId = await passwordFactors.createPasswordFactor(user.id, password);
+
+// Verify on sign-in (rate-limited; throws 401 on bad credentials, 429 if rate-limited)
+await passwordFactors.verifyPassword(user.id, submittedPassword);
+
+// Replace the password (validates strength, rejects reuse of the last 10)
+await passwordFactors.updatePasswordFactor(user.id, newPassword);
+
+// Change password and clear the `needsReset` flag
+await passwordFactors.changePassword(user.id, newPassword);
+
+// Remove the factor
+await passwordFactors.deleteFactor(user.id);
 ```
 
 ---
@@ -436,14 +465,62 @@ Abstract base class. Implement `get`, `set`, `update`, and `delete` to plug in a
 | `checkStrength(password, ...userInputs)`    | `Promise<{ valid, score, feedback }>`            | Evaluate strength without throwing               |
 | `ensureStrength(password, ...userInputs)`   | `Promise<void>`                                  | Throw HTTP 400 if score < 3                      |
 
+### `PasswordFactorService`
+
+Manages password factors with PBKDF2-SHA512 hashing, zxcvbn + HaveIBeenPwned strength validation, password-reuse prevention, and rate-limited verification. Requires a `RateLimiterCompatibleAbstract` (from `rate-limiter-flexible`) registered in the DI container.
+
+| Method                                                | Returns           | Description                                                                                  |
+| ----------------------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------- |
+| `checkStrength(password, ...userInputs)`              | `Promise<void>`   | Throw HTTP 400 if zxcvbn score < 3 or the password appears in HaveIBeenPwned                 |
+| `createPasswordFactor(actorId, password, needsReset?)` | `Promise<string>` | Validate strength and persist a new factor; throws HTTP 409 if one already exists. Returns `factorId` |
+| `updatePasswordFactor(actorId, password, needsReset?)` | `Promise<string>` | Replace the password after strength check and reuse check against the last 10 passwords. Returns `factorId` |
+| `verifyPassword(actorId, password)`                   | `Promise<string>` | Verify against the stored hash with rate limiting; throws HTTP 401 on bad credentials, HTTP 429 if rate-limited. Returns `factorId` |
+| `changePassword(actorId, password)`                   | `Promise<string>` | Set a new password and clear the `needsReset` flag                                           |
+| `deleteFactor(actorId)`                               | `Promise<void>`   | Permanently remove the actor's password factor                                               |
+
+### `PasswordFactorRepository`
+
+Abstract base class. Extend and register a concrete implementation so that `PasswordFactorService` can resolve it at runtime.
+
+| Method                                                  | Returns                          | Description                                              |
+| ------------------------------------------------------- | -------------------------------- | -------------------------------------------------------- |
+| `createFactor(subject, value, needsReset)`              | `Promise<PasswordFactor>`        | Persist a new password factor                            |
+| `updateFactor(actorId, value, needsReset)`              | `Promise<PasswordFactor>`        | Replace the actor's current password factor value        |
+| `getFactor(actorId)`                                    | `Promise<PasswordFactor>`        | Retrieve the active password factor for the actor        |
+| `listPreviousPasswords(actorId, limit)`                 | `Promise<PasswordValue[]>`       | Return the most recent `limit` historical password hashes |
+| `deleteFactor(actorId)`                                 | `Promise<void>`                  | Permanently remove the actor's password factor           |
+
+`PasswordFactor`: `{ id: string; actorId: string; active: boolean; value: PasswordValue; needsReset: boolean }`. `PasswordValue`: `{ hash: string; salt: string }` — both base64-encoded.
+
 ### `EmailFactorService`
 
 | Method                                                              | Returns                                                     | Description                             |
 | ------------------------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------- |
-| `registerEmailFactor(value, verificationMethod, ignoreExisting?)`   | `Promise<{ registrationId, code, expiresAt }>`             | Initiate email factor registration      |
+| `registerEmailFactor(value, verificationMethod, ignoreExisting?)`   | `Promise<{ registrationId, code, expiresAt: DateTime }>`             | Initiate email factor registration      |
 | `createEmailFactorFromRegistration(actorId, registrationId, code)`  | `Promise<EmailFactor>`                                      | Complete registration                   |
-| `createEmailVerification(actorId, factorId, verificationMethod)`    | `Promise<{ email, verificationId, code, expiresAt }>`      | Initiate a sign-in challenge            |
+| `createEmailVerification(actorId, factorId, verificationMethod)`    | `Promise<{ email, verificationId, code, expiresAt: DateTime }>`      | Initiate a sign-in challenge            |
 | `verifyEmailVerification(verificationId, code)`                     | `Promise<{ actorId, factorId }>`                            | Complete a sign-in challenge            |
+
+`EmailFactorServiceOptions`:
+
+| Option                | Type       | Default    | Description                                                                              |
+| --------------------- | ---------- | ---------- | ---------------------------------------------------------------------------------------- |
+| `denyList`            | `string[]` | `[]`       | Sorted list of email domains to reject (checked via binary search; e.g. disposable mail) |
+| `otpExpiration`       | `Duration` | 10 minutes | How long an OTP-code registration or verification challenge stays valid                  |
+| `magiclinkExpiration` | `Duration` | 30 minutes | How long a magic link token stays valid                                                  |
+
+### `EmailFactorRepository`
+
+Abstract base class. Extend and register a concrete implementation so that `EmailFactorService` can resolve it at runtime.
+
+| Method                              | Returns                  | Description                                          |
+| ----------------------------------- | ------------------------ | ---------------------------------------------------- |
+| `createFactor(actorId, value)`      | `Promise<EmailFactor>`   | Persist a new email factor                           |
+| `doesEmailExist(value)`             | `Promise<boolean>`       | Check whether an email address is already registered |
+| `getFactor(actorId, factorId)`      | `Promise<EmailFactor>`   | Retrieve a factor by id                              |
+| `deleteFactor(actorId, factorId)`   | `Promise<void>`          | Remove a factor                                      |
+
+`EmailFactor`: `{ id: string; actorId: string; active: boolean; value: string }` where `value` is the verified email address.
 
 ### `AuthenticatorFactorService`
 
@@ -451,7 +528,7 @@ Manages TOTP/HOTP authenticator app factors. Requires an `AuthenticatorFactorSer
 
 | Method                                                                   | Returns                                                           | Description                                                    |
 | ------------------------------------------------------------------------ | ----------------------------------------------------------------- | -------------------------------------------------------------- |
-| `registerAuthenticatorFactor(actorId, options?)`                         | `Promise<{ registrationId, secret, uri, qrCode, expiresAt }>`   | Generate a secret, QR code, and cache the pending registration |
+| `registerAuthenticatorFactor(actorId, options?)`                         | `Promise<{ registrationId, secret, uri, qrCode, expiresAt: DateTime }>`   | Generate a secret, QR code, and cache the pending registration |
 | `createAuthenticatorFactorFromRegistration(actorId, registrationId, code)` | `Promise<string>`                                               | Verify the first OTP code and persist the factor; returns `factorId` |
 | `validateFactor(actorId, factorId, code)`                                | `Promise<void>`                                                  | Verify a TOTP/HOTP code; throws HTTP 401 on failure            |
 | `deleteFactor(actorId, factorId)`                                        | `Promise<void>`                                                  | Remove a factor                                                |
@@ -475,7 +552,7 @@ Abstract base class. Extend and register a concrete implementation (e.g. backed 
 | `getFactor(actorId, factorId)`                  | `Promise<AuthenticatorFactor \| undefined>`  | Retrieve a factor by id                     |
 | `deleteFactor(actorId, factorId)`               | `Promise<void>`                              | Remove a factor                             |
 
-`AuthenticatorFactor` extends `OtpOptions` with `id: string`, `active: boolean`, and `secretHash: string` (the encrypted OTP secret).
+`AuthenticatorFactor` extends `OtpOptions` with `id: string`, `actorId: string`, `active: boolean`, and `secretHash: string` (the encrypted OTP secret).
 
 ### `PhoneFactorService`
 
@@ -483,7 +560,7 @@ Manages phone number factor registration. Requires a `PhoneFactorServiceOptions`
 
 | Method                                               | Returns                              | Description                                                                |
 | ---------------------------------------------------- | ------------------------------------ | -------------------------------------------------------------------------- |
-| `registerPhoneFactor(actorId, value)`                | `Promise<{ registrationId, expiresAt }>` | Validate the E.164 number and cache a pending registration (idempotent) |
+| `registerPhoneFactor(actorId, value)`                | `Promise<{ registrationId, expiresAt: DateTime }>` | Validate the E.164 number and cache a pending registration (idempotent) |
 | `createPhoneFactorFromRegistration(actorId, registrationId)` | `Promise<string>`            | Persist the factor; returns `factorId`                                     |
 
 `PhoneFactorServiceOptions`:
@@ -505,7 +582,7 @@ Abstract base class. Extend and register a concrete implementation so that `Phon
 | `getFactor(actorId, factorId)`      | `Promise<PhoneFactor \| undefined>`   | Look up a factor by id                            |
 | `deleteFactor(actorId, factorId)`   | `Promise<void>`                       | Remove a factor                                   |
 
-`PhoneFactor`: `{ id: string; active: boolean; value: string }` where `value` is the E.164-formatted phone number.
+`PhoneFactor`: `{ id: string; actorId: string; active: boolean; value: string }` where `value` is the E.164-formatted phone number.
 
 ## License
 

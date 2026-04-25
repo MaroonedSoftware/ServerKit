@@ -5,8 +5,10 @@ Kysely utilities for ServerKit — type-safe PostgreSQL integration with depende
 ## Installation
 
 ```bash
-pnpm add @maroonedsoftware/kysely kysely pg reflect-metadata
+pnpm add @maroonedsoftware/kysely reflect-metadata
 ```
+
+`kysely`, `pg`, `luxon`, and `injectkit` are bundled as direct dependencies — you do not need to install them separately, but you may import from them directly.
 
 > **Note:** InjectKit requires `reflect-metadata` to be imported at your application entry point and TypeScript configured with `experimentalDecorators: true` and `emitDecoratorMetadata: true`.
 
@@ -244,11 +246,13 @@ Type guard that returns `true` when `error` is a Kysely `NoResultError`.
 
 Kysely plugin that shallowly converts `null` values to `undefined` in every query result row.
 
-## Peer Dependencies
+## Dependencies
 
-- `kysely` ^0.28.15 — Type-safe SQL query builder
+- `kysely` ^0.28.16 — Type-safe SQL query builder
 - `pg` ^8.20.0 — PostgreSQL driver
-- `reflect-metadata` — Required by InjectKit for decorator metadata
+- `luxon` ^3.7.2 — Used by `KyselyPgTypeOverrides` for `DateTime` and `Interval` parsing
+- `injectkit` ^1.2.0 — Dependency injection (`@Injectable()`)
+- `reflect-metadata` — Required by InjectKit for decorator metadata (install separately)
 
 ## License
 

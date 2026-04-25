@@ -63,15 +63,19 @@ class MyService {
 
 ## API
 
-### Logger Interface
+### Logger
 
-| Method                      | Description                   |
-| --------------------------- | ----------------------------- |
-| `error(message, ...params)` | Logs an error message         |
-| `warn(message, ...params)`  | Logs a warning message        |
-| `info(message, ...params)`  | Logs an informational message |
-| `debug(message, ...params)` | Logs a debug message          |
-| `trace(message, ...params)` | Logs a trace message          |
+`Logger` is exported both as an interface and as an `@Injectable()` abstract class with the same shape, so it can be used as either a type or a DI token.
+
+| Method                              | Description                   |
+| ----------------------------------- | ----------------------------- |
+| `error(message, ...optionalParams)` | Logs an error message         |
+| `warn(message, ...optionalParams)`  | Logs a warning message        |
+| `info(message, ...optionalParams)`  | Logs an informational message |
+| `debug(message, ...optionalParams)` | Logs a debug message          |
+| `trace(message, ...optionalParams)` | Logs a trace message          |
+
+All parameters are typed as `unknown`/`unknown[]` and methods return `void`.
 
 ### ConsoleLogger
 

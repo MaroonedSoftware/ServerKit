@@ -104,6 +104,20 @@ router.get('/api/me', async ctx => {
 });
 ```
 
+### Authorization
+
+`requireSecurity` is router middleware that runs after `authenticationMiddleware`. It throws 401 when the request is unauthenticated and, if `roles` is provided, throws 403 unless the authenticated context has at least one of the listed roles.
+
+```typescript
+import { requireSecurity } from '@maroonedsoftware/koa';
+
+// Require any authenticated user
+router.get('/api/profile', requireSecurity(), handler);
+
+// Require at least one of the given roles
+router.delete('/api/users/:id', requireSecurity({ roles: ['admin'] }), handler);
+```
+
 ### CORS
 
 ```typescript
@@ -188,26 +202,35 @@ router.post(
 `defaultParserMappings` is the built-in MIME-type-to-parser map used by `bodyParserMiddleware`. You can extend or replace it to register additional parsers:
 
 ```typescript
-import { defaultParserMappings, BinaryParser } from '@maroonedsoftware/koa';
-import { ServerKitBodyParser } from '@maroonedsoftware/koa';
+import {
+  defaultParserMappings,
+  BinaryParser,
+  ServerKitParserMappings,
+} from '@maroonedsoftware/koa';
 
 const customMappings = {
   ...defaultParserMappings,
   pdf: BinaryParser,
 };
 
-// Pass to bodyParserMiddleware via a custom ServerKitBodyParser instance
+// Register the mappings in the DI container; ServerKitBodyParser will resolve them.
+const builder = diRegistry.register(ServerKitParserMappings).useMap();
+for (const [mimeType, parser] of Object.entries(customMappings)) {
+  builder.add(mimeType, parser);
+}
 ```
 
 The default mappings are:
 
-| MIME subtype         | Parser          |
-| -------------------- | --------------- |
-| `json`               | `JsonParser`    |
-| `application/*+json` | `JsonParser`    |
-| `urlencoded`         | `FormParser`    |
-| `text`               | `TextParser`    |
+| MIME subtype         | Parser            |
+| -------------------- | ----------------- |
+| `json`               | `JsonParser`      |
+| `application/*+json` | `JsonParser`      |
+| `urlencoded`         | `FormParser`      |
+| `text`               | `TextParser`      |
 | `multipart`          | `MultipartParser` |
+
+`BinaryParser` is exported but not registered in `defaultParserMappings`; add it explicitly to handle raw payloads such as PDFs or images.
 
 ## API
 
@@ -236,7 +259,7 @@ The default mappings are:
 | `authenticationMiddleware()`           | Resolves `Authorization` header via `AuthenticationSchemeHandler`; populates `ctx.authenticationContext` |
 | `bodyParserMiddleware(contentTypes)`    | Parses body by allowed MIME types; throws 400/411/415/422 on invalid input                         |
 | `requireSignature(optionsKey)`          | Verifies HMAC of `ctx.rawBody` against a request header; throws 401 on mismatch                   |
-| `requireSecurity(options?)`             | Throws 401 when unauthenticated; throws 403 when required role is missing                          |
+| `requireSecurity(options?)`             | Throws 401 when unauthenticated; throws 403 when none of the `options.roles` are present           |
 
 ### Parser options
 

@@ -71,24 +71,25 @@ registry.set('daily-report', {
 import 'reflect-metadata';
 import { PgBoss } from 'pg-boss';
 import { InjectKitRegistry } from 'injectkit';
+import { ConsoleLogger, Logger } from '@maroonedsoftware/logger';
 import { PgBossJobBroker, PgBossJobRunner, PgBossJobRegistryMap, JobBroker, JobRunner } from '@maroonedsoftware/jobbroker';
 
 // Initialize pg-boss
 const pgboss = new PgBoss('postgres://user:pass@localhost/mydb');
-await pgboss.start();
 
 // Set up dependency injection registry
 const diRegistry = new InjectKitRegistry();
 
 diRegistry.register(PgBossJobRegistryMap).useInstance(registry);
 diRegistry.register(PgBoss).useInstance(pgboss);
+diRegistry.register(Logger).useClass(ConsoleLogger).asSingleton();
 diRegistry.register(JobBroker).useClass(PgBossJobBroker).asSingleton();
 diRegistry.register(JobRunner).useClass(PgBossJobRunner).asSingleton();
 
 // Build the container
 const container = diRegistry.build();
 
-// Start the job runner
+// Start the job runner (this also calls pgboss.start() internally)
 const runner = container.get(JobRunner);
 await runner.start();
 ```
@@ -126,7 +127,7 @@ Abstract base class for job handlers.
 
 ### `JobBroker`
 
-Abstract interface for sending jobs to the queue.
+Abstract base class for sending jobs to the queue.
 
 | Method                                                                | Description                          |
 | --------------------------------------------------------------------- | ------------------------------------ |
@@ -136,7 +137,7 @@ Abstract interface for sending jobs to the queue.
 
 ### `JobRunner`
 
-Abstract interface for processing jobs from the queue.
+Abstract base class for processing jobs from the queue.
 
 | Method                   | Description                |
 | ------------------------ | -------------------------- |
@@ -152,14 +153,30 @@ Entries can be either:
 - A job class identifier (for on-demand jobs)
 - A `PgBossJobRegistration` object with `job` and `cron` properties (for scheduled jobs)
 
+### `PgBossJobRegistration`
+
+Configuration object for a scheduled job.
+
+| Property | Type               | Description                                                |
+| -------- | ------------------ | ---------------------------------------------------------- |
+| `job`    | `Identifier<Job>`  | The job class identifier to instantiate when the job runs. |
+| `cron`   | `string`           | A cron expression defining when the job should run.        |
+
+### `PgBossJobBroker`
+
+Concrete `JobBroker` implementation backed by pg-boss. Constructor signature: `new PgBossJobBroker(registrations: PgBossJobRegistryMap, pgboss: PgBoss)`. Typically resolved through the DI container rather than instantiated directly.
+
+### `PgBossJobRunner`
+
+Concrete `JobRunner` implementation backed by pg-boss. Constructor signature: `new PgBossJobRunner(container: Container, registrations: PgBossJobRegistryMap, pgboss: PgBoss, logger: Logger)`. Calls `pgboss.start()` during `start()` and `pgboss.stop()` during `stop()`. Job instances are resolved from the DI container on each invocation. Typically resolved through the DI container rather than instantiated directly.
+
 ## Graceful Shutdown
 
 Ensure you stop the runner during application shutdown:
 
 ```typescript
 process.on('SIGTERM', async () => {
-  await runner.stop();
-  await pgboss.stop();
+  await runner.stop(); // Stops pg-boss internally
   process.exit(0);
 });
 ```

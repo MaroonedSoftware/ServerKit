@@ -21,7 +21,6 @@ pnpm add @maroonedsoftware/encryption
 ### Set up the provider
 
 ```typescript
-import { randomBytes } from 'crypto';
 import { EncryptionProvider } from '@maroonedsoftware/encryption';
 
 // The master key must be exactly 32 bytes (256 bits).

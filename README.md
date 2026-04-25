@@ -18,6 +18,41 @@ Flexible, type-safe configuration management with support for multiple sources a
 
 ---
 
+### Authentication
+
+Authentication primitives for ServerKit applications.
+
+- Pluggable authentication factors (email, password, TOTP)
+- JWT-based session handling
+- Password strength validation and rate limiting
+
+[View documentation →](./packages/authentication/README.md)
+
+---
+
+### Cache
+
+Cache utilities with pluggable backends.
+
+- DI-friendly cache interface
+- Redis (ioredis) backend support
+- Rate limiting helpers
+
+[View documentation →](./packages/cache/README.md)
+
+---
+
+### Encryption
+
+A collection of encryption functions for ServerKit applications.
+
+- DI-friendly encryption services
+- Integrates with the errors package for consistent failures
+
+[View documentation →](./packages/encryption/README.md)
+
+---
+
 ### Errors
 
 Comprehensive error handling with fluent API design and database integration.
@@ -39,6 +74,40 @@ Background job processing powered by PostgreSQL-backed queues.
 - Simple runner abstraction
 
 [View documentation →](./packages/jobbroker/README.md)
+
+---
+
+### KMS
+
+Key management service abstractions.
+
+- DI-friendly key management interfaces
+- Pluggable provider implementations
+
+[View documentation →](./packages/kms/README.md)
+
+---
+
+### Koa
+
+Koa middleware, body parsing, and utilities for ServerKit.
+
+- Typed `ServerKitContext` with request-scoped DI container
+- Error, CORS, rate limiting, and context middleware
+- Type-safe router and middleware wrappers
+
+[View documentation →](./packages/koa/README.md)
+
+---
+
+### Kysely
+
+Kysely utilities for ServerKit applications backed by PostgreSQL.
+
+- DI-friendly database client setup
+- Shared helpers for `pg` and Luxon types
+
+[View documentation →](./packages/kysely/README.md)
 
 ---
 
@@ -78,9 +147,20 @@ Common utility functions for everyday server development.
 
 ---
 
+### Zod
+
+Zod utilities for ServerKit, integrated with the errors package.
+
+- Helpers for translating Zod issues into HTTP errors
+- Shared schema utilities
+
+[View documentation →](./packages/zod/README.md)
+
+---
+
 ## Requirements
 
-- Node.js 20+
+- Node.js 22+
 - pnpm 10.24.0+
 
 ## Development

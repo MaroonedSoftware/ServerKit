@@ -27,8 +27,8 @@ import { HttpError, httpError, unauthorizedError } from '@maroonedsoftware/error
 // Using the factory function
 throw httpError(404);
 
-// With custom message
-throw httpError(400, 'Validation failed');
+// With the default status message (must match the status code's mapped message)
+throw httpError(400, 'Bad Request');
 
 // With error details
 throw httpError(400).withDetails({
@@ -112,9 +112,11 @@ try {
   PostgresErrorHandler(error);
   // 23505 (unique violation) → 409 Conflict
   // 23503 (foreign key violation) → 404 Not Found
-  // 23502, 22P02, 22003, 23514 (validation) → 400 Bad Request
+  // 22000, 22003, 22004, 22023, 23502, 22P02, 23514 (validation) → 400 Bad Request
   // 40000, 40001, 40002 (transaction rollback) → 500 Internal Server Error
   // 40P01 (deadlock) → 500 Internal Server Error
+  // Unknown PostgreSQL codes → 500 Internal Server Error
+  // Non-PostgreSQL errors are re-thrown as-is
 }
 
 // Using the decorator (recommended)

@@ -37,13 +37,13 @@ const body = await parseAndValidate(ctx.request.body, z.object({
 { email: 'Invalid email' }
 
 // Multiple violations on one field
-{ password: ['Too short', 'Must contain a number'] }
+{ password: ['Must be at least 8', 'Invalid string: must match pattern /\\d/'] }
 
 // Unrecognized key (z.strictObject)
 { extra: 'Unrecognized key' }
 
 // Root-level error (non-object schema)
-{ _root: 'Expected string, received number' }
+{ _root: 'Expected string' }
 ```
 
 **Parameters:**
