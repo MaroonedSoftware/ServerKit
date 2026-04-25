@@ -1,31 +1,85 @@
-import { z, type ZodError, type ZodType } from 'zod';
+import { z, type ZodError, type ZodIssue, type ZodType } from 'zod';
 import { httpError } from '@maroonedsoftware/errors';
 
-function formatZodErrors(error: ZodError) {
-    const details: Record<string, string | string[]> = {};
-
-    for (const issue of error.issues) {
-        const path = issue.path.join('.');
-        const key = path || '_root';
-
-        if (issue.code === 'unrecognized_keys') {
-            issue.keys.forEach(key => {
-                details[key] = 'Unrecognized key';
-            });
-            continue;
-        } else if (issue.code === 'invalid_value') {
-            details[key] = `Expected one of '${issue.values.join(', ')}'`;
-            continue;
-        }
-
-        if (!details[key]) {
-            details[key] = issue.message;
-        } else {
-            details[key] = [details[key] as string, issue.message];
-        }
+function describeIssue(issue: ZodIssue): string {
+  switch (issue.code) {
+    case 'invalid_type':
+      return `Expected ${issue.expected}`;
+    case 'too_big': {
+      const bound = issue.inclusive === false ? `less than ${issue.maximum}` : `at most ${issue.maximum}`;
+      return `Must be ${bound}`;
     }
+    case 'too_small': {
+      const bound = issue.inclusive === false ? `greater than ${issue.minimum}` : `at least ${issue.minimum}`;
+      return `Must be ${bound}`;
+    }
+    case 'invalid_format':
+      return `Invalid ${issue.format}`;
+    case 'not_multiple_of':
+      return `Must be a multiple of ${issue.divisor}`;
+    case 'custom':
+      return issue.message || 'Invalid value';
+    default:
+      return issue.message;
+  }
+}
 
-    return details;
+function addDetail(details: Record<string, string | string[]>, key: string, message: string) {
+  const existing = details[key];
+  if (existing === undefined) {
+    details[key] = message;
+  } else if (Array.isArray(existing)) {
+    if (!existing.includes(message)) existing.push(message);
+  } else if (existing !== message) {
+    details[key] = [existing, message];
+  }
+}
+
+function processIssue(issue: ZodIssue, basePath: PropertyKey[], details: Record<string, string | string[]>) {
+  const fullPath = [...basePath, ...issue.path];
+
+  if (issue.code === 'unrecognized_keys') {
+    issue.keys.forEach(k => {
+      details[k] = 'Unrecognized key';
+    });
+    return;
+  }
+
+  if (issue.code === 'invalid_key' || issue.code === 'invalid_element') {
+    issue.issues.forEach(nested => processIssue(nested, fullPath, details));
+    return;
+  }
+
+  if (issue.code === 'invalid_union') {
+    const key = fullPath.join('.') || '_root';
+    if (issue.errors.length === 0) {
+      addDetail(details, key, 'Matched multiple variants ambiguously');
+      return;
+    }
+    issue.errors.forEach(branchIssues => {
+      branchIssues.forEach(nested => processIssue(nested, fullPath, details));
+    });
+    return;
+  }
+
+  const key = fullPath.join('.') || '_root';
+
+  if (issue.code === 'invalid_value') {
+    addDetail(details, key, `Expected one of '${issue.values.join(', ')}'`);
+    return;
+  }
+
+  addDetail(details, key, describeIssue(issue));
+}
+
+function formatZodErrors(error: ZodError) {
+  const details: Record<string, string | string[]> = {};
+
+  for (const issue of error.issues) {
+    processIssue(issue, [], details);
+  }
+
+  return details;
 }
 
 /**
@@ -54,11 +108,11 @@ function formatZodErrors(error: ZodError) {
  * ```
  */
 export const parseAndValidate = async <T extends ZodType>(data: unknown, schema: T): Promise<z.infer<T>> => {
-    const parsed = await schema.safeParseAsync(data);
+  const parsed = await schema.safeParseAsync(data);
 
-    if (!parsed.success) {
-        throw httpError(400).withDetails(formatZodErrors(parsed.error));
-    }
+  if (!parsed.success) {
+    throw httpError(400).withDetails(formatZodErrors(parsed.error));
+  }
 
-    return parsed.data;
+  return parsed.data;
 };
