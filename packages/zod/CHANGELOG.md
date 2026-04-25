@@ -1,5 +1,14 @@
 # @maroonedsoftware/zod
 
+## 0.3.0
+
+### Minor Changes
+
+- 0ef3fb0: feat: enhance error formatting in Zod validation
+  - Introduced detailed error descriptions for various validation issues, including type mismatches, size constraints, and custom messages.
+  - Refactored error processing logic to improve clarity and maintainability.
+  - Added comprehensive unit tests to ensure accurate error formatting and handling for different validation scenarios.
+
 ## 0.2.1
 
 ### Patch Changes
