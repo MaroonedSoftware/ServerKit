@@ -1,5 +1,12 @@
 # @maroonedsoftware/koa
 
+## 1.15.1
+
+### Patch Changes
+
+- Updated dependencies [d1270bb]
+  - @maroonedsoftware/authentication@0.10.0
+
 ## 1.15.0
 
 ### Minor Changes
