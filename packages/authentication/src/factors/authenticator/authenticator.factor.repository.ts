@@ -26,6 +26,7 @@ export type AuthenticatorFactor = Required<AuthenticatorFactorOptions> & {
 /**
  * Repository interface for persisting authenticator (TOTP/HOTP) factors.
  */
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export interface AuthenticatorFactorRepository {
   /**
    * Persist a new authenticator factor for an actor.
@@ -52,4 +53,5 @@ export interface AuthenticatorFactorRepository {
 }
 
 @Injectable()
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export abstract class AuthenticatorFactorRepository implements AuthenticatorFactorRepository {}

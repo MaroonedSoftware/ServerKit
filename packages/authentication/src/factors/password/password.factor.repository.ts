@@ -22,6 +22,7 @@ export interface PasswordFactor {
 }
 
 /** Repository interface for persisting and retrieving password factors. */
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export interface PasswordFactorRepository {
   /** Creates a new password factor for the given actor. */
   createFactor(subject: string, value: PasswordValue, needsReset: boolean): Promise<PasswordFactor>;
@@ -36,4 +37,5 @@ export interface PasswordFactorRepository {
 }
 
 @Injectable()
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export abstract class PasswordFactorRepository implements PasswordFactorRepository {}

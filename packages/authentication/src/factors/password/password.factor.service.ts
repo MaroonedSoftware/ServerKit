@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { Injectable } from 'injectkit';
 import { RateLimiterCompatibleAbstract } from 'rate-limiter-flexible';
 import { httpError, unauthorizedError } from '@maroonedsoftware/errors';
-import type { PasswordFactorRepository, PasswordValue } from './password.factor.repository.js';
+import { PasswordFactorRepository, PasswordValue } from './password.factor.repository.js';
 import { zxcvbnAsync, zxcvbnOptions } from '@zxcvbn-ts/core';
 import { matcherPwnedFactory } from '@zxcvbn-ts/matcher-pwned';
 import zxcvbnEnPackage from '@zxcvbn-ts/language-en';

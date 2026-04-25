@@ -4,7 +4,7 @@ import { Injectable } from 'injectkit';
 import { httpError } from '@maroonedsoftware/errors';
 import { CacheProvider } from '@maroonedsoftware/cache';
 import { isPhoneE164 } from '@maroonedsoftware/utilities';
-import type { PhoneFactorRepository } from './phone.factor.repository.js';
+import { PhoneFactorRepository } from './phone.factor.repository.js';
 
 /**
  * Configuration options for {@link PhoneFactorService}.

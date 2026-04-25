@@ -17,6 +17,7 @@ export interface PhoneFactor {
 /**
  * Repository interface for persisting phone number factors.
  */
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export interface PhoneFactorRepository {
   /**
    * Persist a new phone factor for an actor.
@@ -51,4 +52,5 @@ export interface PhoneFactorRepository {
 }
 
 @Injectable()
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export abstract class PhoneFactorRepository implements PhoneFactorRepository {}

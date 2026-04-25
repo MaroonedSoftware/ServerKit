@@ -17,6 +17,7 @@ export type EmailFactor = {
 /**
  * Repository interface for persisting email authentication factors.
  */
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export interface EmailFactorRepository {
   /**
    * Persist a new email factor for an actor.
@@ -50,4 +51,5 @@ export interface EmailFactorRepository {
 }
 
 @Injectable()
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export abstract class EmailFactorRepository implements EmailFactorRepository {}
