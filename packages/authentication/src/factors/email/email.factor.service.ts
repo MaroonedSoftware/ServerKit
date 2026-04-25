@@ -200,7 +200,7 @@ export class EmailFactorService {
 
     const existingFactor = await this.emailFactorRepository.doesEmailExist(value);
 
-    if (!existingFactor) {
+    if (existingFactor) {
       throw httpError(409).withDetails({ method: 'already registered' });
     }
 

@@ -30,7 +30,7 @@ const makeOtpProvider = () =>
 const makeEmailFactorRepository = () =>
   ({
     createFactor: vi.fn(),
-    doesEmailExist: vi.fn().mockResolvedValue(true),
+    doesEmailExist: vi.fn().mockResolvedValue(false),
     getFactor: vi.fn(),
     deleteFactor: vi.fn(),
   }) as unknown as EmailFactorRepository;
@@ -116,10 +116,11 @@ describe('EmailFactorService', () => {
       });
     });
 
-    it('throws 409 when doesEmailExist returns false', async () => {
-      repo.doesEmailExist = vi.fn().mockResolvedValue(false);
+    it('throws 409 when doesEmailExist returns true', async () => {
+      repo.doesEmailExist = vi.fn().mockResolvedValue(true);
       await expect(service.registerEmailFactor('user@example.com', 'code')).rejects.toMatchObject({
         statusCode: 409,
+        details: { method: 'already registered' },
       });
     });
 
