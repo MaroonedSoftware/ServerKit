@@ -231,7 +231,7 @@ export class EmailFactorService {
 
     this.verifyPayload(payload, code);
 
-    return await this.emailFactorRepository.createFactor(actorId, payload.value, payload.verificationMethod);
+    return await this.emailFactorRepository.createFactor(actorId, payload.value);
   }
 
   /**

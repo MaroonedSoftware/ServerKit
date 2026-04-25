@@ -4,6 +4,8 @@
 export interface PhoneFactor {
   /** Unique identifier for this factor record. */
   id: string;
+  /** The actor this factor belongs to. */
+  actorId: string;
   /** Whether this factor is currently active and may be used for authentication. */
   active: boolean;
   /** The E.164-formatted phone number associated with this factor. */

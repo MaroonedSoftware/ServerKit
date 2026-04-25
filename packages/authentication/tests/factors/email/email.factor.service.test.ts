@@ -40,7 +40,6 @@ const makeEmailFactor = (overrides: Partial<EmailFactor> = {}): EmailFactor => (
   actorId: 'actor-1',
   active: true,
   value: 'user@example.com',
-  verifiedAt: DateTime.now(),
   ...overrides,
 });
 
@@ -190,7 +189,7 @@ describe('EmailFactorService', () => {
 
       const result = await service.createEmailFactorFromRegistration('actor-1', 'reg-id-1', '123456');
 
-      expect(repo.createFactor).toHaveBeenCalledWith('actor-1', 'user@example.com', 'code');
+      expect(repo.createFactor).toHaveBeenCalledWith('actor-1', 'user@example.com');
       expect(result).toBe(factor);
     });
 
@@ -202,7 +201,7 @@ describe('EmailFactorService', () => {
 
       const result = await service.createEmailFactorFromRegistration('actor-1', 'reg-id-1', 'my-magic-token');
 
-      expect(repo.createFactor).toHaveBeenCalledWith('actor-1', 'user@example.com', 'magiclink');
+      expect(repo.createFactor).toHaveBeenCalledWith('actor-1', 'user@example.com');
       expect(result).toBe(factor);
     });
   });

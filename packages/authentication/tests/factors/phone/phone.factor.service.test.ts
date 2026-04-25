@@ -28,6 +28,7 @@ const makeRepository = () =>
 
 const makePhoneFactor = (overrides: Partial<PhoneFactor> = {}): PhoneFactor => ({
   id: 'factor-1',
+  actorId: 'actor-1',
   active: true,
   value: '+12025550123',
   ...overrides,

@@ -1,14 +1,19 @@
 /** PBKDF2-derived password hash and its associated salt, both base64-encoded. */
 export type PasswordValue = {
+  /** The PBKDF2-derived password hash, base64-encoded. */
   hash: string;
+  /** The PBKDF2-derived password salt, base64-encoded. */
   salt: string;
 };
 
 /** A persisted password authentication factor for an actor. */
 export interface PasswordFactor {
   id: string;
+  /** The actor this factor belongs to. */
+  actorId: string;
   /** Whether this factor is currently enabled for authentication. */
   active: boolean;
+  /** The PBKDF2-derived password hash and its associated salt, both base64-encoded. */
   value: PasswordValue;
   /** When true the actor must change their password before authenticating. */
   needsReset: boolean;

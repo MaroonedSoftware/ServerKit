@@ -63,6 +63,7 @@ const makeRateLimiter = () =>
 
 const makePasswordFactor = (overrides: Partial<PasswordFactor> = {}): PasswordFactor => ({
   id: 'factor-1',
+  actorId: 'actor-1',
   active: true,
   needsReset: false,
   value: hashPassword('correct-horse-battery-staple'),

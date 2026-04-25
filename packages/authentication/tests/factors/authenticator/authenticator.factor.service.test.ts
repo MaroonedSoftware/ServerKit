@@ -43,6 +43,7 @@ const makeRepository = () =>
 
 const makeAuthenticatorFactor = (overrides: Partial<AuthenticatorFactor> = {}): AuthenticatorFactor => ({
   id: 'factor-1',
+  actorId: 'actor-1',
   active: true,
   secretHash: 'encrypted-secret',
   type: 'totp',

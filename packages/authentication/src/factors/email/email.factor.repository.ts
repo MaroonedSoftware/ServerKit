@@ -1,19 +1,15 @@
-import { DateTime } from 'luxon';
-
 /**
  * A persisted email authentication factor record.
  */
 export type EmailFactor = {
   /** Unique identifier for this factor record. */
   id: string;
-  /** The actor (user) this factor belongs to. */
+  /** The actor this factor belongs to. */
   actorId: string;
   /** Whether this factor is currently active and may be used for authentication. */
   active: boolean;
   /** The email address associated with this factor. */
   value: string;
-  /** When the email address was verified, or `undefined` if not yet verified. */
-  verifiedAt: DateTime | undefined;
 };
 
 /**
@@ -24,10 +20,9 @@ export interface EmailFactorRepository {
    * Persist a new email factor for an actor.
    * @param actorId            - The actor to associate the factor with.
    * @param value              - The verified email address.
-   * @param verificationMethod - The method used to verify the address (`"code"` or `"magiclink"`).
    * @returns The newly created {@link EmailFactor}.
    */
-  createFactor(actorId: string, value: string, verificationMethod?: string): Promise<EmailFactor>;
+  createFactor(actorId: string, value: string): Promise<EmailFactor>;
 
   /**
    * Check whether an email address already has a factor registered.
