@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ServerKit is a modular TypeScript monorepo for building Node.js server applications. It consists of independent packages that can be used together or separately, with a focus on Koa-based HTTP APIs, configuration management, error handling, and background jobs.
 
 **Tech Stack:**
-- Node.js 20+
+- Node.js 22+
 - TypeScript 5.9.3
 - pnpm 10.24.0+ (workspace monorepo)
 - Turbo (build orchestration)
@@ -50,12 +50,18 @@ pnpm changeset
 ```
 packages/
 ├── appconfig/       # Configuration management with multiple sources
+├── authentication/  # Scheme dispatch, sessions, JWT, OTP, password/email/phone/authenticator factors
+├── cache/           # CacheProvider abstraction with an ioredis implementation
+├── encryption/      # AES-GCM envelope encryption
 ├── errors/          # HTTP error handling and PostgreSQL error mapping
 ├── jobbroker/       # Background job processing (pg-boss wrapper)
+├── kms/             # Per-id key derivation, AAD-bound AES-GCM, in-memory KMS provider
 ├── koa/             # Koa middleware and utilities
+├── kysely/          # Kysely repository base, transaction helpers, PG type overrides
 ├── logger/          # Logger interface and console implementation
 ├── multipart/       # Multipart form-data parsing
 ├── utilities/       # Common utilities (UUID, email, base32)
+├── zod/             # Zod-to-httpError validation helper
 ├── config-eslint/   # Shared ESLint configuration
 └── config-typescript/ # Shared TypeScript configuration
 ```
@@ -66,10 +72,16 @@ packages/
 
 The monorepo uses workspace references (`workspace:*`). Key dependency relationships:
 
-- **koa** depends on: `errors`, `logger`, `multipart`
-- **errors** is standalone (no internal deps)
-- **appconfig** is standalone
-- **jobbroker** is standalone
+- **koa** depends on: `appconfig`, `authentication`, `errors`, `logger`, `multipart`, `utilities`
+- **authentication** depends on: `cache`, `encryption`, `errors`, `logger`, `utilities`
+- **cache** depends on: `errors`, `logger`, `utilities`
+- **encryption** depends on: `errors`
+- **jobbroker** depends on: `logger`
+- **kms** depends on: `logger`
+- **kysely** depends on: `errors`, `utilities`
+- **multipart** depends on: `errors`
+- **zod** depends on: `errors`
+- **errors**, **appconfig**, **logger**, **utilities** are standalone (no internal deps)
 - All packages use `config-eslint` and `config-typescript`
 
 ### Error Handling Pattern
