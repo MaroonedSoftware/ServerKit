@@ -10,12 +10,33 @@ pnpm add @maroonedsoftware/errors
 
 ## Features
 
-- **HttpError** — Fluent HTTP error class with support for status codes, headers, details, and error chaining
+- **ServerkitError** — Base error class with `details`, `cause`, `internalDetails`, and chainable setters
+- **HttpError** — `ServerkitError` subclass that adds an HTTP status code and response headers
 - **OnError** — Class decorator for automatic error handling on all methods
 - **PostgresErrorHandler** — Maps PostgreSQL error codes to appropriate HTTP errors
 - **Type-safe** — Full TypeScript support with inferred status messages
 
 ## Usage
+
+### ServerkitError
+
+The base class for all ServerKit-aware errors. Use it directly when an error isn't HTTP-shaped (e.g. a domain rule violation in a worker), or extend it to build your own typed error hierarchy. The `errorMiddleware` in `@maroonedsoftware/koa` recognises `ServerkitError` and renders its `details` in the 500 response body — bare `Error` instances get a generic "Internal Server Error" with no details.
+
+```ts
+import { ServerkitError } from '@maroonedsoftware/errors';
+
+throw new ServerkitError('Quota exceeded')
+  .withDetails({ resource: 'invoices', limit: 100 })
+  .withInternalDetails({ accountId: 'acct_42' });
+```
+
+To build your own:
+
+```ts
+class DomainError extends ServerkitError {}
+
+throw new DomainError('Pricing rule violated').withDetails({ rule: 'min-margin' });
+```
 
 ### HttpError
 
@@ -57,22 +78,27 @@ throw httpError(500).withInternalDetails({
 throw httpError(409).withDetails({ username: 'Already taken' }).withCause(dbError).withInternalDetails({ attemptedUsername: 'john_doe' });
 ```
 
-### Type Guard
+### Type Guards
 
-Check if an error is an HttpError:
+Check if an error is an `HttpError` (subclass) or any `ServerkitError`:
 
 ```ts
-import { IsHttpError } from '@maroonedsoftware/errors';
+import { IsHttpError, IsServerkitError } from '@maroonedsoftware/errors';
 
 try {
   await someOperation();
 } catch (error) {
   if (IsHttpError(error)) {
-    console.log(error.statusCode); // Typed access
+    console.log(error.statusCode); // typed
+    console.log(error.details);
+  } else if (IsServerkitError(error)) {
+    // Any non-HTTP ServerkitError — still has details/cause/internalDetails.
     console.log(error.details);
   }
 }
 ```
+
+`IsServerkitError` is true for `HttpError`, `KmsError` (from `@maroonedsoftware/encryption`), and any subclass you define.
 
 ### OnError Decorator
 
@@ -152,26 +178,42 @@ All standard 4xx and 5xx status codes are supported with their default messages:
 
 ## API Reference
 
+### ServerkitError
+
+Base class for all ServerKit errors.
+
+| Property          | Type                      | Description                                              |
+| ----------------- | ------------------------- | -------------------------------------------------------- |
+| `message`         | `string`                  | Error message                                            |
+| `details`         | `Record<string, unknown>` | Response-shaped details (rendered by `errorMiddleware`)  |
+| `cause`           | `Error`                   | Underlying error for chaining                            |
+| `internalDetails` | `Record<string, unknown>` | Internal debugging info (never rendered to the response) |
+
+Methods (all return the instance for chaining):
+
+| Method                         | Description                                  |
+| ------------------------------ | -------------------------------------------- |
+| `withDetails(details)`         | Set response-shaped details                  |
+| `withCause(error)`             | Set the underlying cause                     |
+| `withInternalDetails(details)` | Set internal debug info (not exposed to API) |
+
+`IsServerkitError(value)` — type guard. Returns `true` for `ServerkitError` and any subclass (including `HttpError` and `KmsError`).
+
 ### HttpError
 
-| Property          | Type                      | Description                               |
-| ----------------- | ------------------------- | ----------------------------------------- |
-| `statusCode`      | `HttpStatusCodes`         | The HTTP status code                      |
-| `message`         | `string`                  | Error message                             |
-| `details`         | `Record<string, unknown>` | Validation/error details for response     |
-| `headers`         | `Record<string, string>`  | HTTP headers to include in response       |
-| `cause`           | `Error`                   | Underlying error (for error chaining)     |
-| `internalDetails` | `Record<string, unknown>` | Internal debugging info (not for clients) |
+Extends `ServerkitError`. Inherits all of the above and adds:
 
-### Methods
+| Property      | Type                     | Description                         |
+| ------------- | ------------------------ | ----------------------------------- |
+| `statusCode`  | `HttpStatusCodes`        | The HTTP status code                |
+| `headers`     | `Record<string, string>` | HTTP headers to include in response |
 
-| Method                         | Returns     | Description                 |
-| ------------------------------ | ----------- | --------------------------- |
-| `withDetails(details)`         | `HttpError` | Add error details           |
-| `withHeaders(headers)`         | `HttpError` | Add response headers        |
-| `addHeader(key, value)`        | `HttpError` | Add a single header         |
-| `withCause(error)`             | `HttpError` | Set the underlying cause    |
-| `withInternalDetails(details)` | `HttpError` | Add internal debugging info |
+| Method                          | Description                                 |
+| ------------------------------- | ------------------------------------------- |
+| `withHeaders(headers)`          | Replace the headers map                     |
+| `addHeader(key, value)`         | Set or overwrite a single header (chainable)|
+
+`IsHttpError(value)` — type guard for `HttpError` instances specifically.
 
 ## License
 

@@ -1,3 +1,4 @@
+export * from './serverkit.error.js';
 export * from './http/http.error.js';
 export { OnError } from './on.error.decorator.js';
 export { PostgresErrorHandler } from './postgres/postgres.error.handler.js';

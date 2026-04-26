@@ -1,3 +1,4 @@
+import { ServerkitError } from '../serverkit.error.js';
 import { HttpStatusMap } from './http.status.map.js';
 
 /**
@@ -12,8 +13,15 @@ export type HttpStatusCodes = keyof typeof HttpStatusMap;
 export type HttpStatusMessage<T extends HttpStatusCodes> = (typeof HttpStatusMap)[T];
 
 /**
- * Custom error class for HTTP errors with support for status codes, details, headers, and error chaining.
- * Extends the native Error class and provides a fluent API for building error responses.
+ * HTTP error with status code and optional response headers.
+ *
+ * Extends {@link ServerkitError}, so instances also carry `details`, `cause`,
+ * and `internalDetails`, and inherit the fluent setters
+ * `withDetails` / `withCause` / `withInternalDetails` in addition to the
+ * HTTP-specific {@link withHeaders} and {@link addHeader}.
+ *
+ * The {@link errorMiddleware} in `@maroonedsoftware/koa` recognises instances
+ * via {@link IsHttpError} and serialises them to the response.
  *
  * @example
  * ```ts
@@ -27,30 +35,12 @@ export type HttpStatusMessage<T extends HttpStatusCodes> = (typeof HttpStatusMap
  *   .withCause(originalError);
  * ```
  */
-export class HttpError extends Error {
-  /**
-   * Optional validation or error details to include in the response.
-   * Typically used for 400-level errors to provide field-specific error information.
-   */
-  details?: Record<string, unknown>;
-
+export class HttpError extends ServerkitError {
   /**
    * Optional HTTP headers to include in the error response.
    * Useful for authentication errors (e.g., WWW-Authenticate header).
    */
   headers?: Record<string, string>;
-
-  /**
-   * Optional underlying error that caused this HTTP error.
-   * Follows the Error.cause pattern for error chaining.
-   */
-  cause?: Error;
-
-  /**
-   * Optional internal details that should not be exposed to clients.
-   * Useful for debugging and logging purposes.
-   */
-  internalDetails?: Record<string, unknown>;
 
   /**
    * Creates a new HttpError instance.
@@ -63,28 +53,8 @@ export class HttpError extends Error {
     message?: HttpStatusMessage<HttpStatusCodes>,
   ) {
     super(message ?? HttpStatusMap[statusCode]);
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (this as any)[Symbol.toStringTag] = 'Object';
-
     // 👇️ because we are extending a built-in class
     Object.setPrototypeOf(this, HttpError.prototype);
-  }
-
-  /**
-   * Adds error details to the HTTP error and returns the instance for method chaining.
-   *
-   * @param details - Object containing field-specific error information.
-   * @returns The HttpError instance for method chaining.
-   *
-   * @example
-   * ```ts
-   * error.withDetails({ email: 'Invalid email format', password: 'Too short' });
-   * ```
-   */
-  withDetails(details: Record<string, unknown>): HttpError {
-    this.details = details;
-    return this;
   }
 
   /**
@@ -100,38 +70,6 @@ export class HttpError extends Error {
    */
   withHeaders(headers: Record<string, string>): HttpError {
     this.headers = headers;
-    return this;
-  }
-
-  /**
-   * Sets the underlying cause of this error and returns the instance for method chaining.
-   *
-   * @param cause - The original error that caused this HTTP error.
-   * @returns The HttpError instance for method chaining.
-   *
-   * @example
-   * ```ts
-   * error.withCause(new Error('Database connection failed'));
-   * ```
-   */
-  withCause(cause: Error): HttpError {
-    this.cause = cause;
-    return this;
-  }
-
-  /**
-   * Adds internal details that should not be exposed to clients and returns the instance for method chaining.
-   *
-   * @param internalDetails - Object containing internal debugging information.
-   * @returns The HttpError instance for method chaining.
-   *
-   * @example
-   * ```ts
-   * error.withInternalDetails({ userId: 123, requestId: 'abc-123' });
-   * ```
-   */
-  withInternalDetails(internalDetails: Record<string, unknown>): HttpError {
-    this.internalDetails = internalDetails;
     return this;
   }
 
