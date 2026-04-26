@@ -43,7 +43,7 @@ const makeOptions = () => ({
  * reads. Times are Unix integers.
  */
 const makeStoredSession = (overrides: Record<string, unknown> = {}) => ({
-  token: 'session-token',
+  sessionToken: 'session-token',
   subject: 'user-1',
   issuedAt: 1700000000,
   expiresAt: 1700003600,
@@ -73,7 +73,7 @@ describe('AuthenticationSessionService', () => {
       const factor = makeFactor();
       const session = await service.createSession('user-1', { role: 'admin' }, factor);
 
-      expect(session.token).toBe('test-uuid');
+      expect(session.sessionToken).toBe('test-uuid');
       expect(session.subject).toBe('user-1');
       expect(session.claims).toEqual({ role: 'admin' });
     });
@@ -198,7 +198,7 @@ describe('AuthenticationSessionService', () => {
       jwtProvider.decode = vi.fn().mockReturnValue(payload);
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(session));
       const result = await service.lookupSessionFromJwt('valid.jwt');
-      expect(result.session.token).toBe('session-token');
+      expect(result.session.sessionToken).toBe('session-token');
       expect(result.jwtPayload).toBe(payload);
     });
   });
@@ -238,7 +238,7 @@ describe('AuthenticationSessionService', () => {
       const result = await service.getSession('session-token');
 
       expect(result).toBeDefined();
-      expect(result!.token).toBe(stored.token);
+      expect(result!.sessionToken).toBe(stored.sessionToken);
       expect(result!.subject).toBe(stored.subject);
       expect(result!.claims).toEqual(stored.claims);
       expect(result!.issuedAt.toUnixInteger()).toBe(stored.issuedAt);
@@ -265,7 +265,7 @@ describe('AuthenticationSessionService', () => {
       cache.get = vi.fn().mockResolvedValueOnce(JSON.stringify(['session-token'])).mockResolvedValueOnce(JSON.stringify(session));
       const result = await service.getSessionsForSubject('user-1');
       expect(result).toHaveLength(1);
-      expect(result[0]!.token).toBe('session-token');
+      expect(result[0]!.sessionToken).toBe('session-token');
     });
 
     it('omits sessions that no longer exist in cache', async () => {
@@ -275,10 +275,10 @@ describe('AuthenticationSessionService', () => {
     });
   });
 
-  describe('generateAuthToken', () => {
+  describe('issueTokenForSession', () => {
     it('throws 401 when the session does not exist', async () => {
       cache.get = vi.fn().mockResolvedValue(null);
-      await expect(service.generateAuthToken('missing-token')).rejects.toMatchObject({ statusCode: 401 });
+      await expect(service.issueTokenForSession('missing-token')).rejects.toMatchObject({ statusCode: 401 });
     });
 
     it('calls jwtProvider.create with the session data', async () => {
@@ -286,7 +286,7 @@ describe('AuthenticationSessionService', () => {
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(session));
       jwtProvider.create = vi.fn().mockReturnValue({ token: 'jwt', decoded: { exp: 3600 } });
 
-      await service.generateAuthToken('session-token');
+      await service.issueTokenForSession('session-token');
 
       expect(jwtProvider.create).toHaveBeenCalledWith(
         expect.objectContaining({ sessionToken: 'session-token', role: 'admin' }),
@@ -306,7 +306,7 @@ describe('AuthenticationSessionService', () => {
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(session));
       jwtProvider.create = vi.fn().mockReturnValue({ token: 'my-jwt', decoded: { exp: 1700003600 } });
 
-      const result = await service.generateAuthToken('session-token');
+      const result = await service.issueTokenForSession('session-token');
 
       expect(result.accessToken).toBe('my-jwt');
       expect(result.tokenType).toBe('Bearer');
@@ -318,7 +318,7 @@ describe('AuthenticationSessionService', () => {
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(session));
       jwtProvider.create = vi.fn().mockReturnValue({ token: 'my-jwt', decoded: {} });
 
-      const result = await service.generateAuthToken('session-token');
+      const result = await service.issueTokenForSession('session-token');
 
       expect(result.expiresIn).toBe(0);
     });
@@ -328,7 +328,7 @@ describe('AuthenticationSessionService', () => {
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(session));
       jwtProvider.create = vi.fn().mockReturnValue({ token: 'my-jwt', decoded: { exp: 3600, scope: ['read', 'write'] } });
 
-      const result = await service.generateAuthToken('session-token');
+      const result = await service.issueTokenForSession('session-token');
 
       expect(result.scope).toBe('read write');
     });
@@ -338,7 +338,7 @@ describe('AuthenticationSessionService', () => {
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(session));
       jwtProvider.create = vi.fn().mockReturnValue({ token: 'my-jwt', decoded: { exp: 3600 } });
 
-      const result = await service.generateAuthToken('session-token');
+      const result = await service.issueTokenForSession('session-token');
 
       expect(result.scope).toBe('');
     });
@@ -362,10 +362,10 @@ describe('AuthenticationSessionService', () => {
       });
 
       const created = await service.createSession('user-1', { plan: 'pro', roles: ['admin'] }, factor);
-      const reloaded = await service.getSession(created.token);
+      const reloaded = await service.getSession(created.sessionToken);
 
       expect(reloaded).toBeDefined();
-      expect(reloaded!.token).toBe(created.token);
+      expect(reloaded!.sessionToken).toBe(created.sessionToken);
       expect(reloaded!.subject).toBe('user-1');
       expect(reloaded!.claims).toEqual({ plan: 'pro', roles: ['admin'] });
       expect(reloaded!.issuedAt.toUnixInteger()).toBe(created.issuedAt.toUnixInteger());
@@ -392,7 +392,7 @@ describe('AuthenticationSessionService', () => {
       });
 
       const created = await service.createSession('user-1', {}, makeFactor());
-      const updated = await service.updateSession(created.token, 'user-1', Duration.fromObject({ minutes: 30 }));
+      const updated = await service.updateSession(created.sessionToken, 'user-1', Duration.fromObject({ minutes: 30 }));
 
       expect(updated.expiresAt.toUnixInteger()).toBe(created.expiresAt.toUnixInteger() + 30 * 60);
       expect(updated.lastAccessedAt.toUnixInteger()).toBeGreaterThanOrEqual(created.lastAccessedAt.toUnixInteger());

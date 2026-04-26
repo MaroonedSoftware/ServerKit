@@ -86,7 +86,7 @@ export interface AuthenticationSessionFactor {
  */
 export interface AuthenticationSession {
   /** Opaque random token used as the cache key and embedded in JWTs. */
-  token: string;
+  sessionToken: string;
   /** Subject identifier (typically a user id). */
   subject: string;
   /** When the session was originally issued. */
@@ -109,11 +109,7 @@ export type AuthenticationToken = {
   accessToken: string;
   /** The type of token this is, typically just the string `Bearer`. */
   tokenType: string;
-  /**
-   * Unix timestamp (seconds) at which the access token expires — taken
-   * directly from the JWT's `exp` claim. Note that this differs from the
-   * OAuth 2.0 `expires_in` convention of seconds-from-now.
-   */
+  /** Unix timestamp (seconds) at which the access token expires. */
   expiresIn: number;
   /** A refresh token which applications can use to obtain another access token. */
   refreshToken?: string;

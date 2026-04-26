@@ -31,7 +31,7 @@ export class AuthenticationSessionServiceOptions {
  * @example
  * ```typescript
  * const session = await sessionService.createSession(userId, { plan: 'pro' }, passwordFactor);
- * const token   = await sessionService.generateAuthToken(session.token);
+ * const token   = await sessionService.issueTokenForSession(session.sessionToken);
  * ```
  */
 @Injectable()
@@ -52,7 +52,7 @@ export class AuthenticationSessionService {
 
   private serializeSession(session: AuthenticationSession): string {
     return JSON.stringify({
-      token: session.token,
+      sessionToken: session.sessionToken,
       subject: session.subject,
       issuedAt: session.issuedAt.toUnixInteger(),
       expiresAt: session.expiresAt.toUnixInteger(),
@@ -71,7 +71,7 @@ export class AuthenticationSessionService {
   private deserializeSession(data: string): AuthenticationSession {
     const session = JSON.parse(data);
     return {
-      token: session.token,
+      sessionToken: session.sessionToken,
       subject: session.subject,
       issuedAt: DateTime.fromSeconds(session.issuedAt),
       expiresAt: DateTime.fromSeconds(session.expiresAt),
@@ -107,7 +107,7 @@ export class AuthenticationSessionService {
     expiration ??= this.options.expiresIn;
 
     const session: AuthenticationSession = {
-      token: sessionToken,
+      sessionToken: sessionToken,
       subject,
       issuedAt: now,
       expiresAt: now.plus(expiration),
@@ -130,7 +130,7 @@ export class AuthenticationSessionService {
    * For factors, an existing entry with the same `methodId` has its `authenticatedAt`
    * updated; a new `methodId` is appended.
    *
-   * @param sessionToken - The opaque session token from {@link AuthenticationSession.token}.
+   * @param sessionToken - The opaque session token from {@link AuthenticationSession.sessionToken}.
    * @param subject      - Must match the session's recorded subject; throws 401 otherwise.
    * @param expiration   - Additional time to extend the session by; defaults to {@link AuthenticationSessionServiceOptions.expiresIn}.
    * @param claims       - Additional claims to deep-merge into the session.
@@ -336,7 +336,7 @@ export class AuthenticationSessionService {
    * @returns An {@link AuthenticationToken} (Bearer token response).
    * @throws 401 when no session exists for the given token.
    */
-  async generateAuthToken(sessionToken: string): Promise<AuthenticationToken> {
+  async issueTokenForSession(sessionToken: string): Promise<AuthenticationToken> {
     const session = await this.getSession(sessionToken);
     if (!session) {
       throw unauthorizedError('Bearer error="invalid_token"');

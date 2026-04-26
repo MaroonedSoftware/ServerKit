@@ -153,14 +153,14 @@ const session = await sessionService.createSession(
 );
 
 // Issue a signed JWT
-const token = await sessionService.generateAuthToken(session.token);
+const token = await sessionService.issueTokenForSession(session.sessionToken);
 // token.accessToken → "eyJhbGci..."
 
 // Validate a JWT and retrieve the session on subsequent requests
 const { session, jwtPayload } = await sessionService.lookupSessionFromJwt(incomingJwt);
 
 // Revoke (logout)
-await sessionService.deleteSession(session.token);
+await sessionService.deleteSession(session.sessionToken);
 ```
 
 ---
@@ -529,7 +529,7 @@ Abstract base class. Implement `verify(username: string, password: string): Prom
 | `lookupSessionFromJwt(jwt, ignoreExpiration?)`                      | `Promise<{ session, jwtPayload }>`               | Validate a JWT and retrieve its session                    |
 | `getSession(token)`                                                 | `Promise<AuthenticationSession \| undefined>`    | Retrieve a session by token                                |
 | `getSessionsForSubject(subject)`                                    | `Promise<AuthenticationSession[]>`               | Get all active sessions for a subject                      |
-| `generateAuthToken(token)`                                          | `Promise<AuthenticationToken>`                   | Issue a signed JWT for an existing session                 |
+| `issueTokenForSession(sessionToken)`                                | `Promise<AuthenticationToken>`                   | Issue a signed JWT for an existing session                 |
 | `deleteSession(token)`                                              | `Promise<void>`                                  | Revoke a session                                           |
 
 ### `AuthenticationSession`
@@ -538,7 +538,7 @@ Server-side session record stored in cache. Time fields are Luxon `DateTime` ins
 
 | Field            | Type                              | Description                                                              |
 | ---------------- | --------------------------------- | ------------------------------------------------------------------------ |
-| `token`          | `string`                          | Opaque session token, embedded in JWTs as `sessionToken`.                |
+| `sessionToken`   | `string`                          | Opaque session token, also embedded in issued JWTs as `sessionToken`.    |
 | `subject`        | `string`                          | Subject identifier (typically a user id).                                |
 | `issuedAt`       | `DateTime`                        | When the session was originally created.                                 |
 | `expiresAt`      | `DateTime`                        | When the session expires.                                                |
@@ -558,7 +558,7 @@ Server-side session record stored in cache. Time fields are Luxon `DateTime` ins
 
 ### `AuthenticationToken`
 
-OAuth 2.0-style Bearer token response returned by `generateAuthToken`.
+OAuth 2.0-style Bearer token response returned by `issueTokenForSession`.
 
 | Field          | Type     | Description                                                                                                                          |
 | -------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------ |
