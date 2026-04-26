@@ -1,5 +1,5 @@
 import { ServerKitMiddleware } from '../../serverkit.middleware.js';
-import { IsHttpError } from '@maroonedsoftware/errors';
+import { IsHttpError, IsServerkitError } from '@maroonedsoftware/errors';
 
 /**
  * Central error handler: catches thrown errors, sets status/body from HTTP errors,
@@ -35,6 +35,13 @@ export const errorMiddleware = (): ServerKitMiddleware => {
             ctx.set(entry[0], entry[1]);
           }
         }
+      } else if (IsServerkitError(error)) {
+        ctx.status = 500;
+        ctx.body = {
+          statusCode: 500,
+          message: error.message,
+          details: error.details,
+        };
       } else {
         ctx.status = 500;
         ctx.body = {

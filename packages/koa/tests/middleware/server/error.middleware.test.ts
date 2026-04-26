@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { errorMiddleware } from '../../../src/middleware/server/error.middleware.js';
-import { httpError, HttpError, IsHttpError } from '@maroonedsoftware/errors';
+import { httpError, HttpError, IsHttpError, ServerkitError } from '@maroonedsoftware/errors';
 import type { ServerKitContext } from '../../../src/serverkit.context.js';
 import type { Next } from 'koa';
 
@@ -165,6 +165,68 @@ describe('errorMiddleware', () => {
           details: undefined,
         });
       }
+    });
+  });
+
+  describe('ServerkitError handling (non-HTTP)', () => {
+    it('returns 500 with the message and details for a bare ServerkitError', async () => {
+      const middleware = errorMiddleware();
+      const error = new ServerkitError('quota exceeded').withDetails({ resource: 'invoices', limit: 100 });
+      mockNext.mockRejectedValue(error);
+
+      await middleware(mockCtx, mockNext);
+
+      expect(mockCtx.status).toBe(500);
+      expect(mockCtx.body).toEqual({
+        statusCode: 500,
+        message: 'quota exceeded',
+        details: { resource: 'invoices', limit: 100 },
+      });
+      expect(mockApp.emit).toHaveBeenCalledWith('error', error, mockCtx);
+    });
+
+    it('returns 500 with undefined details when none were attached', async () => {
+      const middleware = errorMiddleware();
+      const error = new ServerkitError('something broke');
+      mockNext.mockRejectedValue(error);
+
+      await middleware(mockCtx, mockNext);
+
+      expect(mockCtx.status).toBe(500);
+      expect(mockCtx.body).toEqual({
+        statusCode: 500,
+        message: 'something broke',
+        details: undefined,
+      });
+    });
+
+    it('routes a ServerkitError subclass through the same branch', async () => {
+      class DomainError extends ServerkitError {}
+
+      const middleware = errorMiddleware();
+      const error = new DomainError('domain failure').withDetails({ kind: 'pricing' });
+      mockNext.mockRejectedValue(error);
+
+      await middleware(mockCtx, mockNext);
+
+      expect(mockCtx.status).toBe(500);
+      expect(mockCtx.body).toEqual({
+        statusCode: 500,
+        message: 'domain failure',
+        details: { kind: 'pricing' },
+      });
+    });
+
+    it('prefers the HttpError branch when the error is also an HttpError', async () => {
+      const middleware = errorMiddleware();
+      const error = httpError(400).withDetails({ field: 'invalid' });
+      mockNext.mockRejectedValue(error);
+
+      await middleware(mockCtx, mockNext);
+
+      // Status comes from HttpError, not the ServerkitError fallthrough.
+      expect(mockCtx.status).toBe(400);
+      expect(mockCtx.body).toMatchObject({ statusCode: 400, details: { field: 'invalid' } });
     });
   });
 
