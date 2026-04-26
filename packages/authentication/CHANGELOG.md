@@ -1,5 +1,24 @@
 # @maroonedsoftware/authentication
 
+## 0.15.0
+
+### Minor Changes
+
+- 1d79133: feat: integrate FIDO2/WebAuthn support into authentication package
+  - Added FIDO2/WebAuthn factors to the authentication utilities, enabling passkey and security-key registration and sign-in via `FidoFactorService`.
+  - Updated README to include FIDO2/WebAuthn usage details and examples.
+  - Enhanced email factor service to check for invite-only domains during registration.
+  - Refactored password strength validation to utilize a dedicated `PasswordStrengthProvider`.
+  - Introduced unit tests for new FIDO factor service and updated email factor service tests to cover new domain checks.
+
+### Patch Changes
+
+- Updated dependencies [7624166]
+- Updated dependencies [e9a18b6]
+  - @maroonedsoftware/errors@1.6.0
+  - @maroonedsoftware/encryption@0.3.0
+  - @maroonedsoftware/cache@0.1.2
+
 ## 0.14.1
 
 ### Patch Changes

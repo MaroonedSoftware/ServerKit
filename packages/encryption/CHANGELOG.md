@@ -1,5 +1,18 @@
 # @maroonedsoftware/encryption
 
+## 0.3.0
+
+### Minor Changes
+
+- e9a18b6: refactor: extend KmsError to inherit from ServerkitError
+  - Updated KmsError to extend ServerkitError, enhancing error handling capabilities.
+  - This change allows KmsError to utilize the additional properties and methods provided by ServerkitError, improving consistency in error management across the application.
+
+### Patch Changes
+
+- Updated dependencies [7624166]
+  - @maroonedsoftware/errors@1.6.0
+
 ## 0.2.0
 
 ### Minor Changes
