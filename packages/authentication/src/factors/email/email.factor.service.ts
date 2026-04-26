@@ -139,13 +139,14 @@ export class EmailFactorService {
     const result = verificationMethod === 'code' ? this.createCode(this.options.otpExpiration) : this.createToken(this.options.magiclinkExpiration);
 
     const expiresAt = result.expiresAt;
+    const issuedAt = result.issuedAt;
 
     payload.secret = result.secret;
     payload.code = result.code;
-    payload.expiresAt = result.expiresAt.toUnixInteger();
-    payload.issuedAt = result.issuedAt.toUnixInteger();
+    payload.expiresAt = expiresAt.toUnixInteger();
+    payload.issuedAt = issuedAt.toUnixInteger();
 
-    return { payload, expiresAt, expiration: result.expiration };
+    return { payload, expiresAt, issuedAt, expiration: result.expiration };
   }
 
   private verifyPayload(payload: EmailPayload, code: string) {
@@ -172,28 +173,37 @@ export class EmailFactorService {
    * The caller is responsible for sending the `code` to the user (e.g. via email).
    * Complete registration by calling {@link createEmailFactorFromRegistration}.
    *
+   * Idempotent: if a pending registration is already cached for this email, the
+   * existing `registrationId` and `code` are returned and `alreadyRegistered` is
+   * set to `true`. Use this flag to throttle "we just emailed you" UX without
+   * re-sending the code, or to suppress duplicate notifications.
+   *
    * @param value              - The email address to register.
    * @param verificationMethod - `"code"` for a TOTP-style numeric code; `"magiclink"` for a random token.
-   * @param ignoreExisting     - When `true`, returns the existing pending registration instead of
-   *   creating a duplicate if one is already cached.
-   * @returns `{ registrationId, code, expiresAt }` — the registration reference, the code/token to send,
-   *   and when the registration expires.
+   * @returns `{ registrationId, code, expiresAt, issuedAt, alreadyRegistered }` —
+   *   the registration reference, the code/token to send, when the registration
+   *   expires, when it was originally issued (useful for "we sent the email N
+   *   seconds ago" UX), and whether this call hit a previously-cached pending
+   *   registration.
    * @throws HTTP 400 when the email format is invalid or the domain is on the deny list.
    * @throws HTTP 403 when the email's domain is invite-only (per `isDomainInviteOnly`).
-   * @throws HTTP 409 when an active factor already exists for the email.
+   * @throws HTTP 409 when an active factor already exists for the email
+   *   (only checked on a fresh registration; cache-hit paths return early).
    */
-  async registerEmailFactor(value: string, verificationMethod: 'code' | 'magiclink', ignoreExisting: boolean = false) {
+  async registerEmailFactor(value: string, verificationMethod: 'code' | 'magiclink') {
     value = value.trim().toLowerCase();
     if (!isEmail(value)) {
       throw httpError(400).withDetails({ value: 'invalid email format' });
     }
 
     const existingRegistration = await this.lookupRegistrationByValue(value);
-    if (ignoreExisting && existingRegistration) {
+    if (existingRegistration) {
       return {
         registrationId: existingRegistration.id,
         code: existingRegistration.code,
         expiresAt: DateTime.fromSeconds(existingRegistration.expiresAt),
+        alreadyRegistered: true,
+        issuedAt: DateTime.fromSeconds(existingRegistration.issuedAt),
       };
     }
 
@@ -214,13 +224,13 @@ export class EmailFactorService {
       throw httpError(409).withDetails({ method: 'already registered' });
     }
 
-    const { payload, expiresAt, expiration } = this.createPayload<RegistrationPayload>(verificationMethod);
+    const { payload, expiresAt, issuedAt, expiration } = this.createPayload<RegistrationPayload>(verificationMethod);
 
     payload.value = value;
 
     const registrationId = await this.cacheRegistration(value, payload, expiration);
 
-    return { registrationId, code: payload.code, expiresAt };
+    return { registrationId, code: payload.code, expiresAt, issuedAt, alreadyRegistered: false };
   }
 
   /**

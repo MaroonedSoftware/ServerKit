@@ -209,6 +209,35 @@ To override the policy (e.g. raise the threshold or swap the matcher), subclass 
 
 ---
 
+### PKCE state storage
+
+`PkceProvider` is cache-backed storage for the OAuth 2.0 [PKCE](https://datatracker.ietf.org/doc/html/rfc7636) flow. It binds an arbitrary string `value` (a redirect URL, upstream auth params, a transaction id, etc.) to the code challenge a client sent at the start of an authorization flow, so the matching verifier can later retrieve it at the token endpoint. Entries are namespaced under the `pkce_` cache key prefix and expire automatically via the cache TTL.
+
+Each method comes in two forms — `*Challenge` takes the SHA-256/base64url challenge, `*Verifier` takes the verifier and derives the challenge for you (using `pkceCreateChallenge` from `@maroonedsoftware/encryption`).
+
+```typescript
+import { PkceProvider } from '@maroonedsoftware/authentication';
+import { pkceCreateChallenge, pkceCreateVerifier } from '@maroonedsoftware/encryption';
+import { Duration } from 'luxon';
+
+const pkce = container.get(PkceProvider);
+
+// --- Authorization step (client → /authorize) ---
+// The client generates a verifier and challenge, sends the challenge to us
+const codeChallenge = ctx.query.code_challenge;
+await pkce.storeChallenge(codeChallenge, JSON.stringify({ redirectUrl, scope }), Duration.fromObject({ minutes: 10 }));
+
+// --- Token step (client → /token) ---
+// The client sends back the verifier
+const stateJson = await pkce.getVerifier(ctx.body.code_verifier);
+if (!stateJson) throw httpError(400);
+await pkce.deleteVerifier(ctx.body.code_verifier); // single-use
+```
+
+If you control both halves of the pair (e.g. issuing your own download links), use `storeVerifier` / `getVerifier` / `deleteVerifier` and skip the manual `pkceCreateChallenge` call.
+
+---
+
 ### Password factors
 
 `PasswordFactorService` handles the full lifecycle of password-based factors: PBKDF2-SHA512 hashing, reuse prevention against the last 10 passwords, and rate-limited verification (via an injected `RateLimiterCompatibleAbstract`). Strength validation is delegated to an injected `PasswordStrengthProvider` (zxcvbn + HaveIBeenPwned by default) — register your own implementation to override the policy.
@@ -245,12 +274,16 @@ const emailFactors = container.get(EmailFactorService);
 
 // --- Registration ---
 
-// Step 1: generate a code and cache the registration
-const { registrationId, code, expiresAt } = await emailFactors.registerEmailFactor(
+// Step 1: generate a code and cache the registration. Idempotent — `alreadyRegistered`
+// is true when a pending registration was already cached, so the caller can skip
+// re-sending the email and avoid spamming the user during the registration window.
+const { registrationId, code, expiresAt, alreadyRegistered } = await emailFactors.registerEmailFactor(
   'user@example.com',
   'code', // or 'magiclink'
 );
-await mailer.sendOtp(user.email, code);
+if (!alreadyRegistered) {
+  await mailer.sendOtp(user.email, code);
+}
 
 // Step 2: user submits the code; persist the factor
 const factor = await emailFactors.createEmailFactorFromRegistration(user.id, registrationId, submittedCode);
@@ -326,7 +359,7 @@ await authenticatorFactors.deleteFactor(user.id, factorId);
 
 ### Phone number factors
 
-`PhoneFactorService` handles two-step phone number factor registration. It caches a pending registration and returns a `registrationId` — your application is responsible for sending an OTP to that number out-of-band (e.g. via SMS). Registration is idempotent: calling `registerPhoneFactor` again with the same actor and number returns the existing pending registration.
+`PhoneFactorService` handles two-step phone number factor registration. It caches a pending registration and returns a `registrationId` — your application is responsible for sending an OTP to that number out-of-band (e.g. via SMS). Registration is idempotent: calling `registerPhoneFactor` again with the same actor and number returns the existing pending registration with `alreadyRegistered: true` so the caller can skip a duplicate SMS send.
 
 ```typescript
 import { PhoneFactorService } from '@maroonedsoftware/authentication';
@@ -335,9 +368,12 @@ const phoneFactors = container.get(PhoneFactorService);
 
 // --- Registration ---
 
-// Step 1: cache a pending registration and get the registrationId
-const { registrationId, expiresAt } = await phoneFactors.registerPhoneFactor(user.id, '+12025550123');
-// Send an OTP to the phone number via your SMS provider, referencing registrationId
+// Step 1: cache a pending registration and get the registrationId. `alreadyRegistered`
+// is true when a pending registration was already cached — skip the SMS to avoid duplicates.
+const { registrationId, expiresAt, alreadyRegistered } = await phoneFactors.registerPhoneFactor(user.id, '+12025550123');
+if (!alreadyRegistered) {
+  await sms.sendOtp('+12025550123', registrationId);
+}
 
 // Step 2: user confirms their number; persist the factor
 const factorId = await phoneFactors.createPhoneFactorFromRegistration(user.id, registrationId);
@@ -529,6 +565,19 @@ Evaluates password strength via zxcvbn-ts with the HaveIBeenPwned matcher enable
 
 `userInputs` are extra strings or numbers (name, email, date of birth, etc.) that zxcvbn penalises if they appear in the password.
 
+### `PkceProvider`
+
+Cache-backed storage for PKCE state (RFC 7636). Wraps an injected `CacheProvider`; entries are namespaced under the `pkce_` key prefix and expire on the cache TTL.
+
+| Method                                                       | Returns                  | Description                                                                  |
+| ------------------------------------------------------------ | ------------------------ | ---------------------------------------------------------------------------- |
+| `storeChallenge(codeChallenge, value, expiration: Duration)` | `Promise<void>`          | Bind `value` to a code challenge for `expiration`                            |
+| `storeVerifier(codeVerifier, value, expiration: Duration)`   | `Promise<void>`          | Same as `storeChallenge`, but derives the challenge from the verifier        |
+| `getChallenge(codeChallenge)`                                | `Promise<string \| null>` | Look up the stored value for a challenge; `null` when missing/expired        |
+| `getVerifier(codeVerifier)`                                  | `Promise<string \| null>` | Look up the value for the verifier-derived challenge — the standard PKCE op  |
+| `deleteChallenge(codeChallenge)`                             | `Promise<void>`          | Remove the entry — call after a successful exchange for single-use semantics |
+| `deleteVerifier(codeVerifier)`                               | `Promise<void>`          | Same as `deleteChallenge`, but derives the challenge from the verifier       |
+
 ### `PasswordFactorService`
 
 Manages password factors with PBKDF2-SHA512 hashing, password-reuse prevention, and rate-limited verification. Strength checks are delegated to an injected `PasswordStrengthProvider`. Requires both that provider and a `RateLimiterCompatibleAbstract` (from `rate-limiter-flexible`) registered in the DI container.
@@ -559,7 +608,7 @@ Abstract base class. Extend and register a concrete implementation so that `Pass
 
 | Method                                                              | Returns                                                     | Description                             |
 | ------------------------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------- |
-| `registerEmailFactor(value, verificationMethod, ignoreExisting?)`   | `Promise<{ registrationId, code, expiresAt: DateTime }>`             | Initiate email factor registration      |
+| `registerEmailFactor(value, verificationMethod)`                    | `Promise<{ registrationId, code, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>` | Initiate email factor registration (idempotent — `alreadyRegistered` is `true` on a cache hit) |
 | `createEmailFactorFromRegistration(actorId, registrationId, code)`  | `Promise<EmailFactor>`                                      | Complete registration                   |
 | `createEmailVerification(actorId, factorId, verificationMethod)`    | `Promise<{ email, verificationId, code, expiresAt: DateTime }>`      | Initiate a sign-in challenge            |
 | `verifyEmailVerification(verificationId, code)`                     | `Promise<{ actorId, factorId }>`                            | Complete a sign-in challenge            |
@@ -624,7 +673,7 @@ Manages phone number factor registration. Requires a `PhoneFactorServiceOptions`
 
 | Method                                               | Returns                              | Description                                                                |
 | ---------------------------------------------------- | ------------------------------------ | -------------------------------------------------------------------------- |
-| `registerPhoneFactor(actorId, value)`                | `Promise<{ registrationId, expiresAt: DateTime }>` | Validate the E.164 number and cache a pending registration (idempotent) |
+| `registerPhoneFactor(actorId, value)`                | `Promise<{ registrationId, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>` | Validate the E.164 number and cache a pending registration (idempotent — `alreadyRegistered` is `true` on a cache hit) |
 | `createPhoneFactorFromRegistration(actorId, registrationId)` | `Promise<string>`            | Persist the factor; returns `factorId`                                     |
 
 `PhoneFactorServiceOptions`:

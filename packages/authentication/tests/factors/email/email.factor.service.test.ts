@@ -99,16 +99,34 @@ describe('EmailFactorService', () => {
       });
     });
 
-    it('returns the existing registration when ignoreExisting is true and a registration exists', async () => {
+    it('returns the existing pending registration with alreadyRegistered=true when one is cached', async () => {
       const payload = makeRegistrationPayload();
       cache.get = vi.fn().mockResolvedValueOnce('reg-id-1').mockResolvedValueOnce(JSON.stringify(payload));
 
-      const result = await service.registerEmailFactor('user@example.com', 'code', true);
+      const result = await service.registerEmailFactor('user@example.com', 'code');
 
       expect(result.registrationId).toBe('reg-id-1');
       expect(result.code).toBe('123456');
+      expect(result.alreadyRegistered).toBe(true);
       expect(DateTime.isDateTime(result.expiresAt)).toBe(true);
       expect(result.expiresAt.toUnixInteger()).toBe(payload.expiresAt);
+      expect(DateTime.isDateTime(result.issuedAt)).toBe(true);
+      expect(result.issuedAt.toUnixInteger()).toBe(payload.issuedAt);
+    });
+
+    it('skips deny list, invite-only, and existence checks when a pending registration is cached', async () => {
+      const payload = makeRegistrationPayload();
+      cache.get = vi.fn().mockResolvedValueOnce('reg-id-1').mockResolvedValueOnce(JSON.stringify(payload));
+      vi.mocked(binarySearch).mockReturnValue(true);
+      repo.isDomainInviteOnly = vi.fn().mockResolvedValue(true);
+      repo.doesEmailExist = vi.fn().mockResolvedValue(true);
+
+      const result = await service.registerEmailFactor('user@example.com', 'code');
+
+      expect(result.alreadyRegistered).toBe(true);
+      expect(binarySearch).not.toHaveBeenCalled();
+      expect(repo.isDomainInviteOnly).not.toHaveBeenCalled();
+      expect(repo.doesEmailExist).not.toHaveBeenCalled();
     });
 
     it('throws 400 when the domain is on the deny list', async () => {
@@ -156,12 +174,18 @@ describe('EmailFactorService', () => {
       });
     });
 
-    it('creates a registration and returns registrationId, code, and expiresAt for code method', async () => {
+    it('creates a registration and returns registrationId, code, expiresAt, issuedAt, and alreadyRegistered=false', async () => {
       const result = await service.registerEmailFactor('user@example.com', 'code');
 
       expect(result.code).toBe('123456');
       expect(result.registrationId).toBeTruthy();
-      expect(result.expiresAt).toBeDefined();
+      expect(DateTime.isDateTime(result.expiresAt)).toBe(true);
+      expect(DateTime.isDateTime(result.issuedAt)).toBe(true);
+      // expiresAt is otpExpiration after issuedAt.
+      expect(result.expiresAt.toUnixInteger() - result.issuedAt.toUnixInteger()).toBe(
+        Math.round(makeOptions().otpExpiration.as('seconds')),
+      );
+      expect(result.alreadyRegistered).toBe(false);
     });
 
     it('caches the registration payload under the registration id and value keys', async () => {

@@ -32,9 +32,9 @@ type RegistrationPayload = {
  *
  * **Registration flow:**
  * 1. Call {@link registerPhoneFactor} — validates the phone number and caches a
- *    pending registration. Returns a `registrationId` and `expiresAt`. Send an
- *    OTP to the phone number out-of-band using the `registrationId` as the
- *    reference.
+ *    pending registration. Returns a `registrationId`, `expiresAt`, `issuedAt`,
+ *    and `alreadyRegistered`. Send an OTP to the phone number out-of-band using
+ *    the `registrationId` as the reference.
  * 2. Call {@link createPhoneFactorFromRegistration} once the user has verified
  *    their number — persists the factor.
  *
@@ -87,8 +87,10 @@ export class PhoneFactorService {
    *
    * @param actorId - The actor registering the factor.
    * @param value   - The phone number in E.164 format (e.g. `+12025550123`).
-   * @returns `{ registrationId, expiresAt }` — the registration reference and
-   *   when it expires (Unix timestamp).
+   * @returns `{ registrationId, expiresAt, issuedAt, alreadyRegistered }` —
+   *   the registration reference, when it expires and was originally issued
+   *   (both as Luxon `DateTime`s), and whether this call hit a previously-cached
+   *   pending registration (use this flag to suppress duplicate SMS sends).
    * @throws HTTP 400 when `value` is not a valid E.164 phone number.
    * @throws HTTP 409 when the phone number is already registered as a factor for this actor.
    */
@@ -99,7 +101,12 @@ export class PhoneFactorService {
 
     const existingRegistration = await this.lookupRegistrationByValue(actorId, value);
     if (existingRegistration) {
-      return { registrationId: existingRegistration.id, expiresAt: DateTime.fromSeconds(existingRegistration.expiresAt) };
+      return {
+        registrationId: existingRegistration.id,
+        expiresAt: DateTime.fromSeconds(existingRegistration.expiresAt),
+        issuedAt: DateTime.fromSeconds(existingRegistration.issuedAt),
+        alreadyRegistered: true,
+      };
     }
 
     const existingFactor = await this.phoneFactorRepository.findFactor(actorId, value);
@@ -120,6 +127,8 @@ export class PhoneFactorService {
     return {
       registrationId,
       expiresAt: DateTime.fromSeconds(payload.expiresAt),
+      issuedAt: DateTime.fromSeconds(payload.issuedAt),
+      alreadyRegistered: false,
     };
   }
 

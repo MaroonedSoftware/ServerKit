@@ -1,11 +1,12 @@
 import { httpError } from '@maroonedsoftware/errors';
-import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
+import { createCipheriv, createDecipheriv, randomBytes, pbkdf2Sync } from 'crypto';
 import { Injectable } from 'injectkit';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12; // 96-bit IV — recommended for GCM
 const TAG_LENGTH = 16; // 128-bit auth tag — GCM default
 const SEPARATOR = ':';
+const ITERATION = 65535;
 
 /**
  * Provides AES-256-GCM authenticated encryption and decryption.
@@ -49,6 +50,39 @@ export class EncryptionProvider {
     if (key.length !== 32) {
       throw httpError(400).withDetails({ key: 'must be 32 bytes' });
     }
+  }
+
+  /**
+   * Derive a 32-byte master key from a passphrase using PBKDF2 (HMAC-SHA-512,
+   * 65,535 iterations).
+   *
+   * Use this to bootstrap an `EncryptionProvider` from a passphrase rather
+   * than from raw key material. The salt must be persisted on first derivation
+   * and passed back in on subsequent runs — without it, previously-encrypted
+   * data cannot be recovered. The salt itself is not secret and can be stored
+   * next to the ciphertext or in plain config.
+   *
+   * @param secret - The passphrase to stretch.
+   * @param salt   - 16-byte salt. Omit on first derivation to get a fresh
+   *   random salt back; pass the previously-persisted salt to re-derive the
+   *   same key deterministically.
+   * @returns `{ key, salt }` — the 32-byte derived key and the salt that
+   *   produced it.
+   *
+   * @example
+   * ```typescript
+   * // First boot: derive and persist the salt
+   * const { key, salt } = EncryptionProvider.createKey(process.env.SECRET!);
+   * await persistSalt(salt);
+   *
+   * // Subsequent boots: re-derive with the stored salt
+   * const { key } = EncryptionProvider.createKey(process.env.SECRET!, await loadSalt());
+   * const enc = new EncryptionProvider(key);
+   * ```
+   */
+  static createKey(secret: string, salt: Buffer = randomBytes(16)): { key: Buffer; salt: Buffer } {
+    const key = pbkdf2Sync(secret, salt, ITERATION, 32, 'sha512');
+    return { key, salt };
   }
 
   /**

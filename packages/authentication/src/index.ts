@@ -19,3 +19,4 @@ export * from './factors/phone/phone.factor.repository.js';
 export * from './providers/otp.provider.js';
 export * from './providers/jwt.provider.js';
 export * from './providers/password.strength.provider.js';
+export * from './providers/pkce.provider.js';

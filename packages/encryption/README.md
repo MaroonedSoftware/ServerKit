@@ -14,6 +14,8 @@ pnpm add @maroonedsoftware/encryption
 - **Random IVs** — a fresh 96-bit IV per encryption means identical plaintexts always produce different ciphertexts
 - **Direct encryption** — `encrypt` / `decrypt` for straightforward use cases
 - **Envelope encryption** — `encryptWithNewDek` / `decryptWithDek` for per-record key isolation and efficient key rotation
+- **Passphrase-derived keys** — `EncryptionProvider.createKey(secret)` stretches a passphrase into a 32-byte key with PBKDF2
+- **PKCE helpers** — `pkceCreateVerifier` / `pkceCreateChallenge` for OAuth 2.0 PKCE (RFC 7636) flows
 - **DI-friendly** — decorated with `@Injectable()` for injectkit containers
 
 ## Usage
@@ -38,6 +40,22 @@ registry.register(EncryptionProvider).useFactory(() => {
   return new EncryptionProvider(key);
 }).asSingleton();
 ```
+
+#### Deriving a key from a passphrase
+
+If you don't have raw key material — only a human-supplied passphrase — use `EncryptionProvider.createKey(secret, salt?)` to stretch it into a 32-byte master key with PBKDF2 (HMAC-SHA-512, 65 535 iterations).
+
+```typescript
+// First boot: derive and persist the salt alongside whatever the key protects
+const { key, salt } = EncryptionProvider.createKey(process.env.SECRET!);
+await persistSalt(salt); // salt is not secret — store it next to ciphertext
+
+// Subsequent boots: re-derive the same key by passing the stored salt back in
+const { key } = EncryptionProvider.createKey(process.env.SECRET!, await loadSalt());
+const enc = new EncryptionProvider(key);
+```
+
+When called without a `salt`, `createKey` generates a fresh random one — you **must** persist it. Without the original salt, previously-encrypted data cannot be recovered.
 
 ---
 
@@ -108,6 +126,19 @@ Constructs the provider with a 256-bit master key.
 | `key`     | `Buffer` | A 32-byte (256-bit) master encryption key |
 
 Throws HTTP 400 when the key is not exactly 32 bytes.
+
+---
+
+### `EncryptionProvider.createKey(secret: string, salt?: Buffer): { key: Buffer; salt: Buffer }`
+
+Static helper that derives a 32-byte master key from a passphrase using PBKDF2 (HMAC-SHA-512, 65 535 iterations).
+
+| Parameter | Type     | Description                                                                                                            |
+| --------- | -------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `secret`  | `string` | The passphrase to stretch.                                                                                             |
+| `salt`    | `Buffer` | Optional 16-byte salt. Omit to generate a fresh random salt; pass the previously-persisted salt to re-derive the same key. |
+
+Returns `{ key, salt }`. **Persist the salt** when generated — without it you cannot re-derive the same key on the next boot, and existing ciphertext becomes unrecoverable. The salt is not secret; store it alongside the ciphertext or in plain config.
 
 ---
 
@@ -243,6 +274,31 @@ To plug in your own backend, extend `KmsProvider` and implement `encryptForId`, 
 ```
 
 The AAD is a sorted-keys JSON serialization of the encryption context — matches AWS KMS semantics so swapping providers later doesn't change decrypt behavior.
+
+---
+
+## PKCE helpers
+
+Stateless helpers for the OAuth 2.0 [Proof Key for Code Exchange](https://datatracker.ietf.org/doc/html/rfc7636) (RFC 7636) flow.
+
+```ts
+import { pkceCreateChallenge, pkceCreateVerifier } from '@maroonedsoftware/encryption';
+
+// Authorization request: generate a verifier, derive the challenge
+const codeVerifier = pkceCreateVerifier();             // 43-char base64url, 256 bits
+const codeChallenge = pkceCreateChallenge(codeVerifier); // SHA-256, base64url
+// → redirect user with `code_challenge` + `code_challenge_method=S256`
+
+// Token request (later): send `code_verifier` back; the server recomputes
+// pkceCreateChallenge(verifier) and compares it to the stored challenge
+```
+
+| Function                              | Returns  | Description                                                                |
+| ------------------------------------- | -------- | -------------------------------------------------------------------------- |
+| `pkceCreateVerifier()`                | `string` | Fresh 43-character base64url verifier (256 bits of entropy).               |
+| `pkceCreateChallenge(codeVerifier)`   | `string` | `S256` challenge — `SHA256(verifier)` base64url-encoded, no padding.       |
+
+For server-side PKCE state storage (binding a value to a challenge for the duration of an auth flow), see `PkceProvider` in [`@maroonedsoftware/authentication`](../authentication/README.md).
 
 ---
 

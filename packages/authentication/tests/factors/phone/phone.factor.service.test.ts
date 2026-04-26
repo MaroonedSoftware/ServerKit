@@ -74,7 +74,7 @@ describe('PhoneFactorService', () => {
       expect(isPhoneE164).toHaveBeenCalledWith('+12025550123');
     });
 
-    it('returns the existing pending registration when one is already cached', async () => {
+    it('returns the existing pending registration with alreadyRegistered=true when one is cached', async () => {
       const payload = makeRegistrationPayload();
       cache.get = vi.fn()
         .mockResolvedValueOnce('reg-id-1')
@@ -83,8 +83,11 @@ describe('PhoneFactorService', () => {
       const result = await service.registerPhoneFactor('actor-1', '+12025550123');
 
       expect(result.registrationId).toBe('reg-id-1');
+      expect(result.alreadyRegistered).toBe(true);
       expect(DateTime.isDateTime(result.expiresAt)).toBe(true);
       expect(result.expiresAt.toUnixInteger()).toBe(payload.expiresAt);
+      expect(DateTime.isDateTime(result.issuedAt)).toBe(true);
+      expect(result.issuedAt.toUnixInteger()).toBe(payload.issuedAt);
       expect(repo.findFactor).not.toHaveBeenCalled();
       expect(cache.set).not.toHaveBeenCalled();
     });
@@ -130,10 +133,16 @@ describe('PhoneFactorService', () => {
       expect(cache.set).toHaveBeenCalledTimes(2);
     });
 
-    it('returns a registrationId and expiresAt as a DateTime', async () => {
+    it('returns registrationId, expiresAt, issuedAt, and alreadyRegistered=false on a fresh registration', async () => {
       const result = await service.registerPhoneFactor('actor-1', '+12025550123');
       expect(result.registrationId).toBeTruthy();
       expect(DateTime.isDateTime(result.expiresAt)).toBe(true);
+      expect(DateTime.isDateTime(result.issuedAt)).toBe(true);
+      // expiresAt should be otpExpiration after issuedAt.
+      expect(result.expiresAt.toUnixInteger() - result.issuedAt.toUnixInteger()).toBe(
+        Math.round(makeOptions().otpExpiration.as('seconds')),
+      );
+      expect(result.alreadyRegistered).toBe(false);
     });
   });
 
