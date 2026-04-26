@@ -22,9 +22,10 @@ Flexible, type-safe configuration management with support for multiple sources a
 
 Authentication primitives for ServerKit applications.
 
-- Pluggable authentication factors (email, password, TOTP)
-- JWT-based session handling
-- Password strength validation and rate limiting
+- Pluggable authentication factors: password, email (OTP/magic link), phone (OTP), authenticator app (TOTP/HOTP), FIDO2/WebAuthn
+- Scheme-based handler dispatch with built-in JWT (multi-issuer Bearer) and Basic support
+- Server-side session lifecycle and JWT issuance
+- Password strength validation (zxcvbn + HaveIBeenPwned) and rate-limited verification
 
 [View documentation →](./packages/authentication/README.md)
 
@@ -59,7 +60,8 @@ Encryption primitives for ServerKit applications, including envelope encryption 
 
 Comprehensive error handling with fluent API design and database integration.
 
-- HTTP error classes with chainable methods
+- `ServerkitError` base class with chainable `withDetails` / `withCause` / `withInternalDetails`
+- `HttpError` subclass with status codes and response headers
 - PostgreSQL error mapping and handling
 - Class-level error decorators
 
