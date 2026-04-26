@@ -1,5 +1,11 @@
 # @maroonedsoftware/koa
 
+## 1.15.6
+
+### Patch Changes
+
+- @maroonedsoftware/authentication@0.14.1
+
 ## 1.15.5
 
 ### Patch Changes

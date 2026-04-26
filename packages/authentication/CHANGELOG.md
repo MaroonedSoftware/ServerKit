@@ -1,5 +1,12 @@
 # @maroonedsoftware/authentication
 
+## 0.14.1
+
+### Patch Changes
+
+- Updated dependencies [4996c32]
+  - @maroonedsoftware/encryption@0.2.0
+
 ## 0.14.0
 
 ### Minor Changes
