@@ -1,5 +1,22 @@
 # @maroonedsoftware/koa
 
+## 1.16.0
+
+### Minor Changes
+
+- 69ef4b3: feat: enhance error handling in errorMiddleware to support ServerkitError
+  - Updated errorMiddleware to handle ServerkitError, returning a 500 status with message and details.
+  - Added unit tests for ServerkitError handling, including cases for bare errors, subclass errors, and preference for HttpError.
+  - Improved error response structure for better clarity in error handling.
+
+### Patch Changes
+
+- Updated dependencies [7624166]
+- Updated dependencies [1d79133]
+  - @maroonedsoftware/errors@1.6.0
+  - @maroonedsoftware/authentication@0.15.0
+  - @maroonedsoftware/multipart@1.1.2
+
 ## 1.15.6
 
 ### Patch Changes
