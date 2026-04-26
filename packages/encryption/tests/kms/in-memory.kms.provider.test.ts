@@ -1,11 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { randomBytes } from 'crypto';
-import { InMemoryKmsKeyMaterial, InMemoryKmsProvider } from '../src/in-memory.kms.provider.js';
-import { asNormalizedValue } from '../src/kms.provider.js';
-import { KeyNotFoundError, KeyRetiredError, KmsError } from '../src/types.js';
+import { InMemoryKmsKeyMaterial, InMemoryKmsProvider } from '../../src/kms/in-memory.kms.provider.js';
+import { asNormalizedValue } from '../../src/kms/kms.provider.js';
+import { KeyNotFoundError, KeyRetiredError, KmsError } from '../../src/kms/kms.errors.js';
 
-const makeProvider = () =>
-  new InMemoryKmsProvider(new InMemoryKmsKeyMaterial(randomBytes(32), randomBytes(32)));
+const makeProvider = () => new InMemoryKmsProvider(new InMemoryKmsKeyMaterial(randomBytes(32), randomBytes(32)));
 
 describe('InMemoryKmsKeyMaterial', () => {
   it('rejects non-32-byte root key', () => {
@@ -57,9 +56,7 @@ describe('InMemoryKmsProvider', () => {
 
     it('rejects decrypt with mismatched context', async () => {
       const { ciphertext, keyId } = await provider.encryptForId('id', Buffer.from('secret'), { tenant: 'acme' });
-      await expect(
-        provider.decryptForId('id', ciphertext, keyId, 'test', { tenant: 'evil' }),
-      ).rejects.toThrow(/AAD mismatch/);
+      await expect(provider.decryptForId('id', ciphertext, keyId, 'test', { tenant: 'evil' })).rejects.toThrow(/AAD mismatch/);
     });
 
     it('treats context as order-independent (canonicalized AAD)', async () => {
@@ -69,16 +66,12 @@ describe('InMemoryKmsProvider', () => {
     });
 
     it('throws KeyNotFoundError for unknown keyId', async () => {
-      await expect(
-        provider.decryptForId('id', Buffer.alloc(64), 'local:id:v1:nope', 'test', {}),
-      ).rejects.toThrow(KeyNotFoundError);
+      await expect(provider.decryptForId('id', Buffer.alloc(64), 'local:id:v1:nope', 'test', {})).rejects.toThrow(KeyNotFoundError);
     });
 
     it('throws if keyId belongs to a different id', async () => {
       const { ciphertext, keyId } = await provider.encryptForId('id-a', Buffer.from('x'), {});
-      await expect(provider.decryptForId('id-b', ciphertext, keyId, 'test', {})).rejects.toThrow(
-        /does not belong to id/,
-      );
+      await expect(provider.decryptForId('id-b', ciphertext, keyId, 'test', {})).rejects.toThrow(/does not belong to id/);
     });
 
     it('appends to decrypt audit log on success', async () => {
@@ -133,18 +126,12 @@ describe('InMemoryKmsProvider', () => {
       const row = (provider as unknown as { keysByKeyId: Map<string, { status: string }> }).keysByKeyId.get(keyId)!;
       row.status = 'retired';
 
-      await expect(provider.decryptForId('id', ciphertext, keyId, 'test', {})).rejects.toThrow(
-        KeyRetiredError,
-      );
+      await expect(provider.decryptForId('id', ciphertext, keyId, 'test', {})).rejects.toThrow(KeyRetiredError);
     });
 
     it('serializes concurrent rotates — no duplicate versions', async () => {
       await provider.encryptForId('id', Buffer.from('seed'), {});
-      const results = await Promise.all([
-        provider.rotateIdKey('id'),
-        provider.rotateIdKey('id'),
-        provider.rotateIdKey('id'),
-      ]);
+      const results = await Promise.all([provider.rotateIdKey('id'), provider.rotateIdKey('id'), provider.rotateIdKey('id')]);
       const keyIds = results.map(r => r.newKeyId);
       expect(new Set(keyIds).size).toBe(3);
       const versions = keyIds.map(k => Number(k.match(/:v(\d+):/)![1]));

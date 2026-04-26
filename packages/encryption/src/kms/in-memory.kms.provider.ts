@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, createHmac, randomBytes, randomUUID } from 'crypto';
 import { Injectable } from 'injectkit';
-import { KeyNotFoundError, KeyRetiredError, KmsError } from './types.js';
+import { KeyNotFoundError, KeyRetiredError, KmsError } from './kms.errors.js';
 import { EncryptionContext, EncryptResult, KmsProvider, NormalizedValue } from './kms.provider.js';
 
 const ALGORITHM = 'aes-256-gcm';

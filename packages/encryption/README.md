@@ -159,6 +159,93 @@ Throws when either ciphertext is malformed or any auth tag does not match.
 
 ---
 
+## KMS provider
+
+For per-id key management with rotation and deterministic fingerprinting (blind-index lookups), this package also ships a `KmsProvider` abstraction and an `InMemoryKmsProvider` reference implementation.
+
+### Concepts
+
+- **Per-id keys.** Each logical owner (a tenant, user, or any domain id) gets its own data encryption key (DEK). Bootstrapped lazily on first encrypt.
+- **Envelope encryption.** The DEK encrypts your payload with AES-256-GCM. A root key wraps the DEK at rest.
+- **Encryption context.** A `Record<string, string>` bound to every ciphertext as AAD. Must match exactly at decrypt time. Semantics mirror AWS KMS `EncryptionContext` — key order doesn't matter.
+- **Rotation.** `rotateIdKey(id)` mints a new active key. The previous active key is marked `retiring` — it still decrypts existing ciphertexts, but new encrypts use the new key.
+- **Fingerprint.** HMAC-SHA256 over a normalized value, for blind-index lookups without exposing plaintext.
+
+### Basic encrypt / decrypt
+
+```ts
+import { randomBytes } from 'crypto';
+import { InMemoryKmsKeyMaterial, InMemoryKmsProvider } from '@maroonedsoftware/encryption';
+
+const kms = new InMemoryKmsProvider(new InMemoryKmsKeyMaterial(randomBytes(32), randomBytes(32)));
+
+const { ciphertext, keyId } = await kms.encryptForId('user-1', Buffer.from('123-45-6789'), {
+  tenant: 'acme',
+  field: 'ssn',
+});
+
+const plaintext = await kms.decryptForId('user-1', ciphertext, keyId, 'reveal-ssn', {
+  tenant: 'acme',
+  field: 'ssn',
+});
+```
+
+### Rotation
+
+```ts
+const { newKeyId } = await kms.rotateIdKey('user-1');
+// Future encryptForId('user-1', ...) uses newKeyId.
+// Old ciphertexts still decrypt until the old key is marked `retired`.
+```
+
+### Fingerprint (blind index)
+
+```ts
+import { asNormalizedValue } from '@maroonedsoftware/encryption';
+
+const normalize = (email: string) => asNormalizedValue(Buffer.from(email.trim().toLowerCase()));
+
+const fp = await kms.fingerprint(normalize('Alice@Example.com'));
+```
+
+`NormalizedValue` is a branded `Buffer` — only produced by `asNormalizedValue` — so you can't accidentally fingerprint un-canonicalized input.
+
+### Errors
+
+```ts
+import { KeyNotFoundError, KeyRetiredError, KmsError } from '@maroonedsoftware/encryption';
+
+try {
+  await kms.decryptForId(id, ciphertext, keyId, 'reveal', context);
+} catch (err) {
+  if (err instanceof KeyNotFoundError) {
+    // keyId not recognized
+  } else if (err instanceof KeyRetiredError) {
+    // key fully retired, ciphertext must be re-encrypted
+  } else if (err instanceof KmsError) {
+    // AAD mismatch, tampered ciphertext, etc.
+  }
+}
+```
+
+### `InMemoryKmsProvider`
+
+Reference implementation — all key state and the decrypt audit log live in process memory. Concurrent `rotateIdKey` / bootstrap calls are serialized per id via a promise-chain lock. Suitable for tests and local development; **not for production** (no durability, no replication, root key passed in plaintext).
+
+To plug in your own backend, extend `KmsProvider` and implement `encryptForId`, `decryptForId`, `fingerprint`, and `rotateIdKey`.
+
+### Ciphertext layout
+
+`InMemoryKmsProvider` produces ciphertexts of the form:
+
+```
+[ iv (12 bytes) | tag (16 bytes) | aad_len (4 bytes, BE) | aad (json) | body ]
+```
+
+The AAD is a sorted-keys JSON serialization of the encryption context — matches AWS KMS semantics so swapping providers later doesn't change decrypt behavior.
+
+---
+
 ## Key management tips
 
 - Generate keys with `crypto.randomBytes(32)` and store them as 64-character hex strings in a secrets manager (AWS Secrets Manager, GCP Secret Manager, HashiCorp Vault, etc.)

@@ -52,10 +52,9 @@ packages/
 ├── appconfig/       # Configuration management with multiple sources
 ├── authentication/  # Scheme dispatch, sessions, JWT, OTP, password/email/phone/authenticator factors
 ├── cache/           # CacheProvider abstraction with an ioredis implementation
-├── encryption/      # AES-GCM envelope encryption
+├── encryption/      # AES-GCM envelope encryption and per-id KMS provider
 ├── errors/          # HTTP error handling and PostgreSQL error mapping
 ├── jobbroker/       # Background job processing (pg-boss wrapper)
-├── kms/             # Per-id key derivation, AAD-bound AES-GCM, in-memory KMS provider
 ├── koa/             # Koa middleware and utilities
 ├── kysely/          # Kysely repository base, transaction helpers, PG type overrides
 ├── logger/          # Logger interface and console implementation
@@ -77,7 +76,6 @@ The monorepo uses workspace references (`workspace:*`). Key dependency relations
 - **cache** depends on: `errors`, `logger`, `utilities`
 - **encryption** depends on: `errors`
 - **jobbroker** depends on: `logger`
-- **kms** depends on: `logger`
 - **kysely** depends on: `errors`, `utilities`
 - **multipart** depends on: `errors`
 - **zod** depends on: `errors`

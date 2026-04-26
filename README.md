@@ -44,9 +44,11 @@ Cache utilities with pluggable backends.
 
 ### Encryption
 
-A collection of encryption functions for ServerKit applications.
+Encryption primitives for ServerKit applications, including envelope encryption and a pluggable KMS provider interface.
 
 - DI-friendly encryption services
+- Per-id KMS provider with key rotation and deterministic fingerprinting
+- In-memory KMS provider for tests and local development
 - Integrates with the errors package for consistent failures
 
 [View documentation →](./packages/encryption/README.md)
@@ -74,17 +76,6 @@ Background job processing powered by PostgreSQL-backed queues.
 - Simple runner abstraction
 
 [View documentation →](./packages/jobbroker/README.md)
-
----
-
-### KMS
-
-Key management service abstractions.
-
-- DI-friendly key management interfaces
-- Pluggable provider implementations
-
-[View documentation →](./packages/kms/README.md)
 
 ---
 
