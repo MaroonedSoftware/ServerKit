@@ -7,6 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ServerKit is a modular TypeScript monorepo for building Node.js server applications. It consists of independent packages that can be used together or separately, with a focus on Koa-based HTTP APIs, configuration management, error handling, and background jobs.
 
 **Tech Stack:**
+
 - Node.js 22+
 - TypeScript 5.9.3
 - pnpm 10.24.0+ (workspace monorepo)
@@ -50,7 +51,7 @@ pnpm changeset
 ```
 packages/
 ├── appconfig/       # Configuration management with multiple sources
-├── authentication/  # Scheme dispatch, sessions, JWT, OTP, password/email/phone/authenticator factors
+├── authentication/  # Scheme dispatch, sessions, JWT, OTP, password/email/phone/authenticator/FIDO factors
 ├── cache/           # CacheProvider abstraction with an ioredis implementation
 ├── encryption/      # AES-GCM envelope encryption and per-id KMS provider
 ├── errors/          # HTTP error handling and PostgreSQL error mapping
@@ -107,6 +108,8 @@ throw httpError(500).withInternalDetails({ userId: 123 });
 
 The `errorMiddleware` in the koa package catches these errors and serializes them to appropriate HTTP responses.
 
+For errors that aren't HTTP-shaped (domain rule violations, background-job failures, etc.), throw or subclass `ServerkitError` — `HttpError` extends it, so the same `withDetails` / `withCause` / `withInternalDetails` setters apply. `errorMiddleware` recognises a bare `ServerkitError` and renders it as a 500 with the attached `details` (a plain `Error` gets a generic 500 with no details).
+
 ### Koa Integration
 
 The **koa** package provides a typed context pattern:
@@ -122,11 +125,11 @@ The **koa** package provides a typed context pattern:
 
 3. **Middleware order** is critical:
    ```typescript
-   app.use(errorMiddleware());           // First: catch all errors
+   app.use(errorMiddleware()); // First: catch all errors
    app.use(serverKitContextMiddleware(container)); // Set up context
-   app.use(corsMiddleware({ origin: ['*'] }));    // CORS
+   app.use(corsMiddleware({ origin: ['*'] })); // CORS
    // ... other middleware
-   app.use(router.routes());             // Last: route handlers
+   app.use(router.routes()); // Last: route handlers
    ```
 
 ### Configuration Pattern
@@ -174,6 +177,7 @@ These are used on service classes to handle database errors consistently.
 ### Fluent API Design
 
 Many packages use method chaining for configuration:
+
 ```typescript
 throw httpError(400).withDetails({}).withCause(err);
 config.addSource(s1).addSource(s2).addProvider(p1).build();
@@ -186,9 +190,3 @@ The koa package integrates with **InjectKit** for request-scoped services. The `
 ### Type Safety
 
 All packages are fully typed. The koa package uses generic types (`ServerKitContext`, `ServerKitMiddleware<ResponseBody>`) to ensure type safety in route handlers.
-
-## Recent Changes
-
-- Removed `injectkit` middleware in favor of direct context middleware
-- Added CORS, rate limiting, and context middleware
-- Refactored `withErrors` to `withDetails` for clarity in error handling
