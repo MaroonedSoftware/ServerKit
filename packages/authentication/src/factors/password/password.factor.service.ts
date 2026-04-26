@@ -3,52 +3,23 @@ import { Injectable } from 'injectkit';
 import { RateLimiterCompatibleAbstract } from 'rate-limiter-flexible';
 import { httpError, unauthorizedError } from '@maroonedsoftware/errors';
 import { PasswordFactorRepository, PasswordValue } from './password.factor.repository.js';
-import { zxcvbnAsync, zxcvbnOptions } from '@zxcvbn-ts/core';
-import { matcherPwnedFactory } from '@zxcvbn-ts/matcher-pwned';
-import zxcvbnEnPackage from '@zxcvbn-ts/language-en';
-import zxcvbnCommonPackage from '@zxcvbn-ts/language-common';
+import { PasswordStrengthProvider } from '../../providers/password.strength.provider.js';
 
 /**
  * Service for managing password-based authentication factors.
  *
- * Handles password strength validation (zxcvbn + HaveIBeenPwned), PBKDF2 hashing,
- * reuse prevention, and rate-limited verification.
+ * Handles PBKDF2-SHA512 hashing, reuse prevention, and rate-limited
+ * verification. Strength validation is delegated to {@link PasswordStrengthProvider}
+ * (zxcvbn + HaveIBeenPwned by default) — register your own implementation to
+ * override the policy.
  */
 @Injectable()
 export class PasswordFactorService {
   constructor(
     private readonly passwordFactorRepository: PasswordFactorRepository,
     private readonly rateLimiter: RateLimiterCompatibleAbstract,
-  ) {
-    const matcherPwned = matcherPwnedFactory(fetch, zxcvbnOptions);
-    zxcvbnOptions.setOptions({
-      translations: zxcvbnEnPackage.translations,
-      graphs: zxcvbnCommonPackage.adjacencyGraphs,
-      dictionary: {
-        ...zxcvbnCommonPackage.dictionary,
-        ...zxcvbnEnPackage.dictionary,
-      },
-    });
-    if (!zxcvbnOptions.matchers['pwned']) {
-      zxcvbnOptions.addMatcher('pwned', matcherPwned);
-    }
-  }
-
-  /**
-   * Throws a 400 error if the password scores below 3 on zxcvbn or has been seen in known data breaches.
-   *
-   * @param userInputs - Additional context values (e.g. name, email) passed to zxcvbn to penalise obvious substitutions.
-   */
-  async checkStrength(password: string, ...userInputs: (string | number)[]) {
-    const result = await zxcvbnAsync(password, userInputs);
-
-    if (result.score < 3) {
-      throw httpError(400).withDetails({
-        password: result.feedback.warning,
-        suggestions: result.feedback.suggestions,
-      });
-    }
-  }
+    private readonly passwordStrengthProvider: PasswordStrengthProvider,
+  ) {}
 
   private hashPassword(password: string, salt?: Buffer): PasswordValue {
     salt ??= crypto.randomBytes(32);
@@ -68,7 +39,7 @@ export class PasswordFactorService {
    * @returns The new factor's ID.
    */
   async createPasswordFactor(actorId: string, password: string, needsReset: boolean = false) {
-    await this.checkStrength(password);
+    await this.passwordStrengthProvider.ensureStrength(password);
 
     const existingFactor = await this.passwordFactorRepository.getFactor(actorId);
     if (existingFactor) {
@@ -86,7 +57,7 @@ export class PasswordFactorService {
    * @returns The updated factor's ID.
    */
   async updatePasswordFactor(actorId: string, password: string, needsReset: boolean = false) {
-    await this.checkStrength(password);
+    await this.passwordStrengthProvider.ensureStrength(password);
 
     let factor = await this.passwordFactorRepository.getFactor(actorId);
     if (!factor) {
@@ -145,7 +116,7 @@ export class PasswordFactorService {
    * @returns The updated factor's ID.
    */
   async changePassword(actorId: string, password: string) {
-    await this.checkStrength(password);
+    await this.passwordStrengthProvider.ensureStrength(password);
 
     const passwordFactor = await this.passwordFactorRepository.getFactor(actorId);
     if (!passwordFactor) {

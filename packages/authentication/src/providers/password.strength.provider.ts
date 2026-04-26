@@ -15,17 +15,15 @@ import { httpError } from '@maroonedsoftware/errors';
 @Injectable()
 export class PasswordStrengthProvider {
   constructor() {
-    const options = {
+    const matcherPwned = matcherPwnedFactory(fetch, zxcvbnOptions);
+    zxcvbnOptions.setOptions({
       translations: zxcvbnEnPackage.translations,
       graphs: zxcvbnCommonPackage.adjacencyGraphs,
       dictionary: {
         ...zxcvbnCommonPackage.dictionary,
         ...zxcvbnEnPackage.dictionary,
       },
-    };
-
-    const matcherPwned = matcherPwnedFactory(fetch, zxcvbnOptions);
-    zxcvbnOptions.setOptions(options);
+    });
     if (!zxcvbnOptions.matchers['pwned']) {
       zxcvbnOptions.addMatcher('pwned', matcherPwned);
     }
@@ -52,13 +50,13 @@ export class PasswordStrengthProvider {
    * Assert that a password meets the minimum strength threshold (score ≥ 3).
    * @param password   - The password to evaluate.
    * @param userInputs - Additional context values to penalise (see {@link checkStrength}).
-   * @throws HTTP 400 with `{ password: [warning, ...suggestions] }` details when the score is below 3.
+   * @throws HTTP 400 with `{ password: warning, suggestions: [...] }` details when the score is below 3.
    */
   async ensureStrength(password: string, ...userInputs: (string | number)[]) {
     const result = await this.checkStrength(password, ...userInputs);
 
     if (!result.valid) {
-      throw httpError(400).withDetails({ password: [result.feedback.warning, ...result.feedback.suggestions] });
+      throw httpError(400).withDetails({ password: result.feedback.warning, suggestions: result.feedback.suggestions });
     }
   }
 }

@@ -35,6 +35,13 @@ export interface EmailFactorRepository {
   doesEmailExist(value: string): Promise<boolean>;
 
   /**
+   * Check whether a domain is invite-only.
+   * @param domain - The domain to look up.
+   * @returns `true` if the domain is invite-only, `false` otherwise.
+   */
+  isDomainInviteOnly(domain: string): Promise<boolean>;
+
+  /**
    * Retrieve a specific email factor for an actor.
    * @param actorId  - The actor that owns the factor.
    * @param factorId - The factor record id.

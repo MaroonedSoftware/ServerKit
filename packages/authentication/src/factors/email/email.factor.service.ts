@@ -179,7 +179,8 @@ export class EmailFactorService {
    * @returns `{ registrationId, code, expiresAt }` — the registration reference, the code/token to send,
    *   and when the registration expires.
    * @throws HTTP 400 when the email format is invalid or the domain is on the deny list.
-   * @throws HTTP 409 when `doesEmailExist` returns `false` (email not registered in the system).
+   * @throws HTTP 403 when the email's domain is invite-only (per `isDomainInviteOnly`).
+   * @throws HTTP 409 when an active factor already exists for the email.
    */
   async registerEmailFactor(value: string, verificationMethod: 'code' | 'magiclink', ignoreExisting: boolean = false) {
     value = value.trim().toLowerCase();
@@ -196,10 +197,15 @@ export class EmailFactorService {
       };
     }
 
-    const domain = value.split('@')[1];
+    const domain = value.split('@')[1]!;
 
     if (binarySearch(this.options.denyList, domain)) {
       throw httpError(400).withDetails({ email: 'Must not be a disposable email' });
+    }
+
+    const isInviteOnly = await this.emailFactorRepository.isDomainInviteOnly(domain);
+    if (isInviteOnly) {
+      throw httpError(403).withDetails({ email: 'Must be invited to register' });
     }
 
     const existingFactor = await this.emailFactorRepository.doesEmailExist(value);

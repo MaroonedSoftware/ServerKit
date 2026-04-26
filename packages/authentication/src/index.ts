@@ -10,6 +10,8 @@ export * from './factors/authenticator/authenticator.factor.service.js';
 export * from './factors/authenticator/authenticator.factor.repository.js';
 export * from './factors/email/email.factor.service.js';
 export * from './factors/email/email.factor.repository.js';
+export * from './factors/fido/fido.factor.service.js';
+export * from './factors/fido/fido.factor.repository.js';
 export * from './factors/password/password.factor.service.js';
 export * from './factors/password/password.factor.repository.js';
 export * from './factors/phone/phone.factor.service.js';

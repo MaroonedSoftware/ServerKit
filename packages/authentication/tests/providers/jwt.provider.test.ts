@@ -1,13 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-vi.mock('jsonwebtoken', () => ({
-  default: {
-    sign: vi.fn(),
-    decode: vi.fn(),
-    verify: vi.fn(),
-  },
-}));
-
+import crypto from 'node:crypto';
 import jsonwebtoken from 'jsonwebtoken';
 import { JwtProvider } from '../../src/providers/jwt.provider.js';
 import type { Logger } from '@maroonedsoftware/logger';
@@ -21,120 +13,162 @@ const makeLogger = (): Logger => ({
   trace: vi.fn(),
 });
 
+const generateRsaPem = () => {
+  const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  return privateKey.export({ type: 'pkcs8', format: 'pem' }) as string;
+};
+
 describe('JwtProvider', () => {
   let logger: Logger;
   let provider: JwtProvider;
+  let pem: string;
 
   beforeEach(() => {
-    vi.clearAllMocks();
     logger = makeLogger();
-    provider = new JwtProvider(logger, 'fake-pem-key');
+    pem = generateRsaPem();
+    provider = new JwtProvider(logger, pem);
   });
 
   describe('create', () => {
-    it('calls jsonwebtoken.sign with RS256 algorithm and correct options', () => {
-      vi.mocked(jsonwebtoken.sign).mockReturnValue('signed-token' as never);
-      vi.mocked(jsonwebtoken.decode).mockReturnValue({ sub: 'user-1', exp: 3600 });
-
-      provider.create({ claim: 'value' }, 'user-1', 'https://auth.example.com', 'https://api.example.com', Duration.fromObject({ hours: 1 }));
-
-      expect(jsonwebtoken.sign).toHaveBeenCalledWith(
-        { claim: 'value' },
-        'fake-pem-key',
-        expect.objectContaining({
-          algorithm: 'RS256',
-          issuer: 'https://auth.example.com',
-          subject: 'user-1',
-          audience: 'https://api.example.com',
-        }),
+    it('signs an RS256 token whose claims round-trip through verify', () => {
+      const { token, decoded } = provider.create(
+        { role: 'admin' },
+        'user-1',
+        'https://auth.example.com',
+        'https://api.example.com',
+        Duration.fromObject({ hours: 1 }),
       );
-    });
 
-    it('returns the token and decoded payload', () => {
-      const decoded = { sub: 'user-1', exp: 3600 };
-      vi.mocked(jsonwebtoken.sign).mockReturnValue('my-jwt' as never);
-      vi.mocked(jsonwebtoken.decode).mockReturnValue(decoded);
+      // The token's header advertises RS256 — guard against alg downgrade.
+      const header = JSON.parse(Buffer.from(token.split('.')[0]!, 'base64url').toString('utf8'));
+      expect(header.alg).toBe('RS256');
 
-      const result = provider.create({}, 'user-1', 'issuer', 'audience', Duration.fromObject({ hours: 1 }));
-
-      expect(result.token).toBe('my-jwt');
-      expect(result.decoded).toBe(decoded);
-    });
-
-    it('throws an HTTP 500 error when sign throws', () => {
-      vi.mocked(jsonwebtoken.sign).mockImplementation(() => {
-        throw new Error('signing failed');
+      // The decoded payload reflects the claims we passed in.
+      expect(decoded).toMatchObject({
+        role: 'admin',
+        sub: 'user-1',
+        iss: 'https://auth.example.com',
+        aud: 'https://api.example.com',
       });
+      expect(typeof (decoded as { exp: number }).exp).toBe('number');
 
-      expect(() => provider.create({}, 'user-1', 'issuer', 'audience', Duration.fromObject({ hours: 1 }))).toThrow();
+      // An independent verify with the same key succeeds.
+      const independentlyVerified = jsonwebtoken.verify(token, pem, { issuer: 'https://auth.example.com' });
+      expect(independentlyVerified).toMatchObject({ role: 'admin', sub: 'user-1' });
     });
 
-    it('throws an HTTP 500 error when decode returns null', () => {
-      vi.mocked(jsonwebtoken.sign).mockReturnValue('my-jwt' as never);
-      vi.mocked(jsonwebtoken.decode).mockReturnValue(null);
+    it('embeds expiresIn as an exp claim relative to issuedAt', () => {
+      const lifetime = Duration.fromObject({ minutes: 15 });
+      const { decoded } = provider.create({}, 'user-1', 'iss', 'aud', lifetime);
 
-      expect(() => provider.create({}, 'user-1', 'issuer', 'audience', Duration.fromObject({ hours: 1 }))).toThrow();
+      const { iat, exp } = decoded as { iat: number; exp: number };
+      expect(exp - iat).toBe(lifetime.as('seconds'));
+    });
+
+    it('throws an HTTP 500 error when the signing key is malformed', () => {
+      const broken = new JwtProvider(logger, 'not-a-real-pem-key');
+      expect(() => broken.create({}, 'user-1', 'iss', 'aud', Duration.fromObject({ hours: 1 }))).toThrow();
     });
   });
 
   describe('decode', () => {
-    it('calls jsonwebtoken.verify with the issuer', () => {
-      vi.mocked(jsonwebtoken.verify).mockReturnValue({ sub: 'user-1' } as never);
+    const create = (overrides: { issuer?: string; expiresIn?: Duration; claims?: Record<string, unknown> } = {}) =>
+      provider.create(
+        overrides.claims ?? {},
+        'user-1',
+        overrides.issuer ?? 'https://auth.example.com',
+        'https://api.example.com',
+        overrides.expiresIn ?? Duration.fromObject({ hours: 1 }),
+      ).token;
 
-      provider.decode('my-jwt', 'https://auth.example.com');
+    it('verifies and returns the payload for a token signed by this provider', () => {
+      const token = create({ claims: { role: 'admin' } });
 
-      expect(jsonwebtoken.verify).toHaveBeenCalledWith('my-jwt', 'fake-pem-key', expect.objectContaining({ issuer: 'https://auth.example.com' }));
+      const result = provider.decode(token, 'https://auth.example.com');
+
+      expect(result).toMatchObject({ role: 'admin', sub: 'user-1' });
     });
 
-    it('returns the decoded payload on success', () => {
-      const payload = { sub: 'user-1', iat: 1700000000 };
-      vi.mocked(jsonwebtoken.verify).mockReturnValue(payload as never);
+    it('returns undefined and logs when the issuer claim does not match', () => {
+      const token = create({ issuer: 'https://other.example.com' });
 
-      const result = provider.decode('my-jwt', 'https://auth.example.com');
-
-      expect(result).toBe(payload);
-    });
-
-    it('returns undefined and logs the error when verification fails', () => {
-      vi.mocked(jsonwebtoken.verify).mockImplementation(() => {
-        throw new Error('invalid signature');
-      });
-
-      const result = provider.decode('bad-jwt', 'issuer');
+      const result = provider.decode(token, 'https://auth.example.com');
 
       expect(result).toBeUndefined();
       expect(logger.error).toHaveBeenCalled();
     });
 
-    it('returns undefined and logs when verify returns a string', () => {
-      vi.mocked(jsonwebtoken.verify).mockReturnValue('unexpected-string' as never);
+    it('returns undefined and logs when the signature is tampered with', () => {
+      const token = create();
+      const [header, payload, signature] = token.split('.');
+      const flipped = signature!.slice(0, -2) + (signature!.slice(-2) === 'AA' ? 'BB' : 'AA');
+      const tampered = `${header}.${payload}.${flipped}`;
 
-      const result = provider.decode('my-jwt', 'issuer');
+      const result = provider.decode(tampered, 'https://auth.example.com');
 
       expect(result).toBeUndefined();
-      expect(logger.error).toHaveBeenCalledWith('Unexpected string for jwt');
+      expect(logger.error).toHaveBeenCalled();
     });
 
-    it('throws a 401 error when verification fails and reThrow is true', async () => {
-      vi.mocked(jsonwebtoken.verify).mockImplementation(() => {
-        throw new Error('expired');
+    it('returns undefined and logs when the token was signed by a different key', () => {
+      const otherPem = generateRsaPem();
+      const foreignToken = jsonwebtoken.sign({ sub: 'attacker' }, otherPem, {
+        algorithm: 'RS256',
+        issuer: 'https://auth.example.com',
+        expiresIn: 3600,
       });
 
-      expect(() => provider.decode('bad-jwt', 'issuer', false, true)).toThrow();
+      const result = provider.decode(foreignToken, 'https://auth.example.com');
+
+      expect(result).toBeUndefined();
+      expect(logger.error).toHaveBeenCalled();
     });
 
-    it('throws a 401 error when verify returns a string and reThrow is true', () => {
-      vi.mocked(jsonwebtoken.verify).mockReturnValue('unexpected' as never);
+    it('returns undefined for an expired token by default', () => {
+      const token = create({ expiresIn: Duration.fromObject({ seconds: -10 }) });
 
-      expect(() => provider.decode('my-jwt', 'issuer', false, true)).toThrow();
+      const result = provider.decode(token, 'https://auth.example.com');
+
+      expect(result).toBeUndefined();
     });
 
-    it('passes ignoreExpiration to jsonwebtoken.verify', () => {
-      vi.mocked(jsonwebtoken.verify).mockReturnValue({ sub: 'user-1' } as never);
+    it('decodes an expired token when ignoreExpiration is true', () => {
+      const token = create({ expiresIn: Duration.fromObject({ seconds: -10 }), claims: { role: 'admin' } });
 
-      provider.decode('my-jwt', 'issuer', true);
+      const result = provider.decode(token, 'https://auth.example.com', true);
 
-      expect(jsonwebtoken.verify).toHaveBeenCalledWith('my-jwt', 'fake-pem-key', expect.objectContaining({ ignoreExpiration: true }));
+      expect(result).toMatchObject({ role: 'admin' });
+    });
+
+    it('throws HTTP 401 when verification fails and reThrow is true', () => {
+      const otherPem = generateRsaPem();
+      const foreignToken = jsonwebtoken.sign({ sub: 'attacker' }, otherPem, {
+        algorithm: 'RS256',
+        issuer: 'https://auth.example.com',
+        expiresIn: 3600,
+      });
+
+      expect(() => provider.decode(foreignToken, 'https://auth.example.com', false, true)).toThrow();
+    });
+
+    it('throws HTTP 401 for an expired token when reThrow is true', () => {
+      const token = create({ expiresIn: Duration.fromObject({ seconds: -10 }) });
+
+      expect(() => provider.decode(token, 'https://auth.example.com', false, true)).toThrow();
+    });
+
+    it('rejects an HS256 token that mimics the issuer (alg confusion guard)', () => {
+      const hsToken = jsonwebtoken.sign({ sub: 'attacker' }, 'shared-secret', {
+        algorithm: 'HS256',
+        issuer: 'https://auth.example.com',
+        expiresIn: 3600,
+      });
+
+      const result = provider.decode(hsToken, 'https://auth.example.com');
+
+      // jsonwebtoken's verify with a PEM key refuses the HS256 alg, so this must fail.
+      expect(result).toBeUndefined();
+      expect(logger.error).toHaveBeenCalled();
     });
   });
 });

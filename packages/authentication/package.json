@@ -40,6 +40,7 @@
     "@zxcvbn-ts/language-en": "^3.0.2",
     "@zxcvbn-ts/matcher-pwned": "^3.0.4",
     "deepmerge-ts": "^7.1.5",
+    "fido2-lib": "^3.5.9",
     "injectkit": "^1.2.0",
     "jsonwebtoken": "^9.0.3",
     "luxon": "^3.7.2",

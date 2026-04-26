@@ -31,6 +31,7 @@ const makeEmailFactorRepository = () =>
   ({
     createFactor: vi.fn(),
     doesEmailExist: vi.fn().mockResolvedValue(false),
+    isDomainInviteOnly: vi.fn().mockResolvedValue(false),
     getFactor: vi.fn(),
     deleteFactor: vi.fn(),
   }) as unknown as EmailFactorRepository;
@@ -116,6 +117,35 @@ describe('EmailFactorService', () => {
         statusCode: 400,
         details: { email: 'Must not be a disposable email' },
       });
+    });
+
+    it('throws 403 when the email domain is invite-only', async () => {
+      repo.isDomainInviteOnly = vi.fn().mockResolvedValue(true);
+      await expect(service.registerEmailFactor('user@invite-only.com', 'code')).rejects.toMatchObject({
+        statusCode: 403,
+        details: { email: 'Must be invited to register' },
+      });
+      expect(repo.isDomainInviteOnly).toHaveBeenCalledWith('invite-only.com');
+    });
+
+    it('checks the deny list before checking invite-only', async () => {
+      vi.mocked(binarySearch).mockReturnValue(true);
+      repo.isDomainInviteOnly = vi.fn().mockResolvedValue(true);
+
+      await expect(service.registerEmailFactor('user@disposable.com', 'code')).rejects.toMatchObject({
+        statusCode: 400,
+      });
+      expect(repo.isDomainInviteOnly).not.toHaveBeenCalled();
+    });
+
+    it('checks invite-only before checking whether the email already exists', async () => {
+      repo.isDomainInviteOnly = vi.fn().mockResolvedValue(true);
+      repo.doesEmailExist = vi.fn().mockResolvedValue(true);
+
+      await expect(service.registerEmailFactor('user@invite-only.com', 'code')).rejects.toMatchObject({
+        statusCode: 403,
+      });
+      expect(repo.doesEmailExist).not.toHaveBeenCalled();
     });
 
     it('throws 409 when doesEmailExist returns true', async () => {

@@ -1,6 +1,6 @@
 # @maroonedsoftware/authentication
 
-Authentication utilities for ServerKit. Provides scheme-based handler dispatch, session management, JWT issuance, OTP generation, password strength checking, password factor flows, email factor flows, authenticator app (TOTP/HOTP) factor flows, and phone number factor flows — all with full dependency injection support via [injectkit](https://www.npmjs.com/package/injectkit).
+Authentication utilities for ServerKit. Provides scheme-based handler dispatch, session management, JWT issuance, OTP generation, password strength checking, password factor flows, email factor flows, authenticator app (TOTP/HOTP) factor flows, phone number factor flows, and FIDO2/WebAuthn factor flows — all with full dependency injection support via [injectkit](https://www.npmjs.com/package/injectkit).
 
 ## Installation
 
@@ -22,6 +22,7 @@ pnpm add @maroonedsoftware/authentication
 - **Email factors** — two-step email factor registration and verification via OTP code or magic link
 - **Authenticator app factors** — TOTP/HOTP registration with QR code provisioning via `AuthenticatorFactorService`
 - **Phone number factors** — two-step phone factor registration via `PhoneFactorService` (send the OTP out-of-band via SMS)
+- **FIDO2/WebAuthn factors** — passkey/security-key registration and sign-in via `FidoFactorService` (built on [`fido2-lib`](https://www.npmjs.com/package/fido2-lib))
 - **DI-friendly** — all classes are decorated with `@Injectable()` and designed for an injectkit container
 
 ## Usage
@@ -185,24 +186,32 @@ const valid = otp.validate(submittedCode, secret, { type: 'totp', periodSeconds:
 
 ### Password strength
 
+`PasswordStrengthProvider` wraps [zxcvbn-ts](https://zxcvbn-ts.github.io/zxcvbn/) with the English dictionary, common adjacency graphs, and a [HaveIBeenPwned](https://haveibeenpwned.com/) leak matcher. Scores range from 0 (very weak) to 4 (very strong); a score of 3 or higher is considered acceptable.
+
 ```typescript
 import { PasswordStrengthProvider } from '@maroonedsoftware/authentication';
 
 const strength = container.get(PasswordStrengthProvider);
 
-// Non-throwing check
+// Non-throwing check — pass user-specific context (email, name, etc.) so zxcvbn
+// can penalise obvious substitutions like "alice123" for user "alice".
 const result = await strength.checkStrength(password, user.email, user.name);
-// result.valid → boolean, result.score → 0–4, result.feedback → { warning, suggestions }
+// result.valid    → boolean (score >= 3)
+// result.score    → 0–4
+// result.feedback → { warning: string, suggestions: string[] }
 
-// Throwing check — throws HTTP 400 with feedback details if score < 3
+// Throwing check — throws HTTP 400 with
+// { password: feedback.warning, suggestions: feedback.suggestions } when score < 3
 await strength.ensureStrength(password, user.email);
 ```
+
+To override the policy (e.g. raise the threshold or swap the matcher), subclass `PasswordStrengthProvider` and register your subclass in the DI container — `PasswordFactorService` resolves the base class.
 
 ---
 
 ### Password factors
 
-`PasswordFactorService` handles the full lifecycle of password-based factors: zxcvbn-based strength validation, PBKDF2-SHA512 hashing, reuse prevention against the last 10 passwords, and rate-limited verification (via an injected `RateLimiterCompatibleAbstract`).
+`PasswordFactorService` handles the full lifecycle of password-based factors: PBKDF2-SHA512 hashing, reuse prevention against the last 10 passwords, and rate-limited verification (via an injected `RateLimiterCompatibleAbstract`). Strength validation is delegated to an injected `PasswordStrengthProvider` (zxcvbn + HaveIBeenPwned by default) — register your own implementation to override the policy.
 
 ```typescript
 import { PasswordFactorService } from '@maroonedsoftware/authentication';
@@ -255,6 +264,12 @@ await mailer.sendOtp(email, code);
 // Step 2: user submits the code
 const { actorId, factorId } = await emailFactors.verifyEmailVerification(verificationId, submittedCode);
 ```
+
+`registerEmailFactor` rejects the request before issuing a code when:
+- the email format is invalid (HTTP 400),
+- the domain is on `denyList` (HTTP 400, e.g. disposable mail providers),
+- `EmailFactorRepository.isDomainInviteOnly(domain)` returns `true` (HTTP 403 — implement this to gate registration to allow-listed domains, e.g. workspaces that require an invite),
+- an active factor already exists for the email (HTTP 409).
 
 ---
 
@@ -327,6 +342,51 @@ const { registrationId, expiresAt } = await phoneFactors.registerPhoneFactor(use
 // Step 2: user confirms their number; persist the factor
 const factorId = await phoneFactors.createPhoneFactorFromRegistration(user.id, registrationId);
 ```
+
+---
+
+### FIDO2 / WebAuthn factors
+
+`FidoFactorService` handles passkey and security-key flows on top of [`fido2-lib`](https://www.npmjs.com/package/fido2-lib). Relying party identifiers (`rpId`, `rpOrigin`, `rpName`) are passed per call rather than configured statically, so a single service can serve multiple hosts. Both registration and sign-in are two-step: the server emits a challenge, caches the expectations for `FidoFactorServiceOptions.timeout` (5 minutes by default), and verifies the browser's response in step two.
+
+```typescript
+import { FidoFactorService } from '@maroonedsoftware/authentication';
+
+const fidoFactors = container.get(FidoFactorService);
+
+// --- Registration ---
+
+// Step 1: emit an attestation challenge to the browser
+const attestation = await fidoFactors.registerFidoFactor(user.id, {
+  rpId: 'example.com',
+  rpName: 'Example',
+  rpOrigin: 'https://example.com',
+  userName: user.email,
+  userDisplayName: user.name,
+});
+// Send `attestation` to the browser; client decodes `challenge` and `user.id`
+// from base64 to ArrayBuffers, calls navigator.credentials.create({ publicKey: ... }),
+// and posts the resulting credential back.
+
+// Step 2: verify the attestation and persist the factor
+const factorId = await fidoFactors.createFidoFactorFromRegistration(user.id, credential);
+
+// --- Authorization (sign-in) ---
+
+// Step 1: emit an assertion challenge — `allowCredentials` is populated from
+// the actor's active factors, so the browser only prompts for ones they have
+const assertion = await fidoFactors.createFidoAuthorizationChallenge(user.id, {
+  rpId: 'example.com',
+  rpOrigin: 'https://example.com',
+});
+// Client decodes the challenge and each allowCredentials[].id to ArrayBuffers,
+// calls navigator.credentials.get({ publicKey: ... }), and posts back.
+
+// Step 2: verify the signature and bump the stored counter
+const { actorId, factorId } = await fidoFactors.verifyFidoAuthorizationChallenge(user.id, credential);
+```
+
+Failed attestations and assertions both throw HTTP 401 with a `WWW-Authenticate: Bearer error="invalid_credentials"` header (or `"invalid_registration"` when no pending registration is cached). The original `fido2-lib` error is attached as the cause and the raw inputs as internal details for logging.
 
 ---
 
@@ -460,19 +520,22 @@ Abstract base class. Implement `get`, `set`, `update`, and `delete` to plug in a
 
 ### `PasswordStrengthProvider`
 
-| Method                                      | Returns                                           | Description                                      |
-| ------------------------------------------- | ------------------------------------------------- | ------------------------------------------------ |
-| `checkStrength(password, ...userInputs)`    | `Promise<{ valid, score, feedback }>`            | Evaluate strength without throwing               |
-| `ensureStrength(password, ...userInputs)`   | `Promise<void>`                                  | Throw HTTP 400 if score < 3                      |
+Evaluates password strength via zxcvbn-ts with the HaveIBeenPwned matcher enabled. Subclass and register your subclass in the DI container to override the policy.
+
+| Method                                      | Returns                                                                   | Description                                                                                                  |
+| ------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `checkStrength(password, ...userInputs)`    | `Promise<{ valid: boolean, score: 0–4, feedback: { warning, suggestions } }>` | Evaluate strength without throwing. `valid` is `true` when `score >= 3`                                      |
+| `ensureStrength(password, ...userInputs)`   | `Promise<void>`                                                           | Throw HTTP 400 with `{ password: warning, suggestions }` when `score < 3`                                    |
+
+`userInputs` are extra strings or numbers (name, email, date of birth, etc.) that zxcvbn penalises if they appear in the password.
 
 ### `PasswordFactorService`
 
-Manages password factors with PBKDF2-SHA512 hashing, zxcvbn + HaveIBeenPwned strength validation, password-reuse prevention, and rate-limited verification. Requires a `RateLimiterCompatibleAbstract` (from `rate-limiter-flexible`) registered in the DI container.
+Manages password factors with PBKDF2-SHA512 hashing, password-reuse prevention, and rate-limited verification. Strength checks are delegated to an injected `PasswordStrengthProvider`. Requires both that provider and a `RateLimiterCompatibleAbstract` (from `rate-limiter-flexible`) registered in the DI container.
 
 | Method                                                | Returns           | Description                                                                                  |
 | ----------------------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------- |
-| `checkStrength(password, ...userInputs)`              | `Promise<void>`   | Throw HTTP 400 if zxcvbn score < 3 or the password appears in HaveIBeenPwned                 |
-| `createPasswordFactor(actorId, password, needsReset?)` | `Promise<string>` | Validate strength and persist a new factor; throws HTTP 409 if one already exists. Returns `factorId` |
+| `createPasswordFactor(actorId, password, needsReset?)` | `Promise<string>` | Validate strength via `PasswordStrengthProvider` and persist a new factor; throws HTTP 409 if one already exists. Returns `factorId` |
 | `updatePasswordFactor(actorId, password, needsReset?)` | `Promise<string>` | Replace the password after strength check and reuse check against the last 10 passwords. Returns `factorId` |
 | `verifyPassword(actorId, password)`                   | `Promise<string>` | Verify against the stored hash with rate limiting; throws HTTP 401 on bad credentials, HTTP 429 if rate-limited. Returns `factorId` |
 | `changePassword(actorId, password)`                   | `Promise<string>` | Set a new password and clear the `needsReset` flag                                           |
@@ -517,6 +580,7 @@ Abstract base class. Extend and register a concrete implementation so that `Emai
 | ----------------------------------- | ------------------------ | ---------------------------------------------------- |
 | `createFactor(actorId, value)`      | `Promise<EmailFactor>`   | Persist a new email factor                           |
 | `doesEmailExist(value)`             | `Promise<boolean>`       | Check whether an email address is already registered |
+| `isDomainInviteOnly(domain)`        | `Promise<boolean>`       | Check whether a domain is invite-only (gates registration) |
 | `getFactor(actorId, factorId)`      | `Promise<EmailFactor>`   | Retrieve a factor by id                              |
 | `deleteFactor(actorId, factorId)`   | `Promise<void>`          | Remove a factor                                      |
 
@@ -583,6 +647,43 @@ Abstract base class. Extend and register a concrete implementation so that `Phon
 | `deleteFactor(actorId, factorId)`   | `Promise<void>`                       | Remove a factor                                   |
 
 `PhoneFactor`: `{ id: string; actorId: string; active: boolean; value: string }` where `value` is the E.164-formatted phone number.
+
+### `FidoFactorService`
+
+Manages FIDO2/WebAuthn factors. Wraps `fido2-lib` and accepts relying party identifiers per call.
+
+| Method                                                         | Returns                                                | Description                                                                          |
+| -------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| `registerFidoFactor(actorId, options)`                         | `Promise<FidoAttestation>`                             | Generate an attestation challenge and cache the expectations                         |
+| `createFidoFactorFromRegistration(actorId, credential)`        | `Promise<string>`                                      | Verify the attestation and persist the factor; returns `factorId`                    |
+| `createFidoAuthorizationChallenge(actorId, options)`           | `Promise<{ challenge, allowCredentials, ... }>`        | Emit an assertion challenge (`allowCredentials` from the actor's active factors)     |
+| `verifyFidoAuthorizationChallenge(actorId, credential)`        | `Promise<{ actorId, factorId }>`                       | Verify the assertion signature and bump the stored counter                           |
+
+`FidoFactorServiceOptions`:
+
+| Option    | Type       | Default   | Description                                                                                              |
+| --------- | ---------- | --------- | -------------------------------------------------------------------------------------------------------- |
+| `timeout` | `Duration` | 5 minutes | How long a pending registration or authorization challenge stays valid (also forwarded to the browser)   |
+
+`RegisterFidoFactorOptions`: `{ rpId, rpName, rpOrigin, rpIcon?, userName, userDisplayName }`.
+
+`AuthorizeFidoFactorOptions`: `{ rpId, rpOrigin }`.
+
+`createFidoFactorFromRegistration` throws HTTP 401 with `WWW-Authenticate: Bearer error="invalid_registration"` when no pending registration is cached, or `error="invalid_credentials"` on attestation failure. `createFidoAuthorizationChallenge` throws HTTP 404 when the actor has no active factors. `verifyFidoAuthorizationChallenge` throws HTTP 401 with `error="invalid_credentials"` when the challenge is missing/expired, the credential id is unknown, or the signature is invalid.
+
+### `FidoFactorRepository`
+
+Abstract base class. Extend and register a concrete implementation so that `FidoFactorService` can resolve it at runtime.
+
+| Method                                                                | Returns                              | Description                                                                                       |
+| --------------------------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| `createFactor(actorId, publicKey, publicKeyId, counter, active)`      | `Promise<FidoFactor>`                | Persist a new factor                                                                              |
+| `listFactors(actorId, active)`                                        | `Promise<FidoFactor[]>`              | List the actor's factors, used to populate `allowCredentials`                                     |
+| `getFactor(actorId, factorId)`                                        | `Promise<FidoFactor \| undefined>`   | Look up a factor by credential id (the `id` field of `PublicKeyCredential`)                       |
+| `updateFactorCounter(actorId, factorId, counter)`                     | `Promise<void>`                      | Persist the latest signature counter; must be strictly increasing (regression = cloned authenticator) |
+| `deleteFactor(actorId, factorId)`                                     | `Promise<void>`                      | Remove a factor                                                                                   |
+
+`FidoFactor`: `{ id: string; actorId: string; active: boolean; publicKey: string; publicKeyId: string; counter: number }`.
 
 ## License
 
