@@ -2,7 +2,7 @@ import { Injectable } from 'injectkit';
 import { unauthorizedError } from '@maroonedsoftware/errors';
 import { DateTime, Duration } from 'luxon';
 import { deepmergeCustom } from 'deepmerge-ts';
-import { AuthenticationSession, AuthenticationSessionFactor } from './authentication.context.js';
+import { AuthenticationSession, AuthenticationSessionFactor, AuthenticationToken } from './authentication.context.js';
 import { CacheProvider } from '@maroonedsoftware/cache';
 import { JwtProvider } from './providers/jwt.provider.js';
 
@@ -50,6 +50,43 @@ export class AuthenticationSessionService {
     return `auth_session_subject_${id}`;
   }
 
+  private serializeSession(session: AuthenticationSession): string {
+    return JSON.stringify({
+      token: session.token,
+      subject: session.subject,
+      issuedAt: session.issuedAt.toUnixInteger(),
+      expiresAt: session.expiresAt.toUnixInteger(),
+      lastAccessedAt: session.lastAccessedAt.toUnixInteger(),
+      factors: session.factors.map(factor => ({
+        method: factor.method,
+        methodId: factor.methodId,
+        kind: factor.kind,
+        issuedAt: factor.issuedAt.toUnixInteger(),
+        authenticatedAt: factor.authenticatedAt.toUnixInteger(),
+      })),
+      claims: session.claims,
+    });
+  }
+
+  private deserializeSession(data: string): AuthenticationSession {
+    const session = JSON.parse(data);
+    return {
+      token: session.token,
+      subject: session.subject,
+      issuedAt: DateTime.fromSeconds(session.issuedAt),
+      expiresAt: DateTime.fromSeconds(session.expiresAt),
+      lastAccessedAt: DateTime.fromSeconds(session.lastAccessedAt),
+      factors: session.factors.map((factor: Record<string, unknown>) => ({
+        method: factor.method,
+        methodId: factor.methodId,
+        kind: factor.kind,
+        issuedAt: DateTime.fromSeconds(factor.issuedAt as number),
+        authenticatedAt: DateTime.fromSeconds(factor.authenticatedAt as number),
+      })),
+      claims: session.claims,
+    };
+  }
+
   /**
    * Create a new session and store it in cache.
    *
@@ -72,14 +109,14 @@ export class AuthenticationSessionService {
     const session: AuthenticationSession = {
       token: sessionToken,
       subject,
-      issuedAt: now.toUnixInteger(),
-      expiresAt: now.plus(expiration).toUnixInteger(),
-      lastAccessedAt: now.toUnixInteger(),
+      issuedAt: now,
+      expiresAt: now.plus(expiration),
+      lastAccessedAt: now,
       factors: Array.isArray(factors) ? factors : [factors],
       claims,
     };
 
-    await this.cache.set(this.getSessionKey(sessionToken), JSON.stringify(session), expiration);
+    await this.cache.set(this.getSessionKey(sessionToken), this.serializeSession(session), expiration);
 
     await this.ensureSubjectSession(subject, sessionToken, expiration);
 
@@ -145,10 +182,10 @@ export class AuthenticationSessionService {
 
     expiration ??= this.options.expiresIn;
 
-    session.expiresAt = DateTime.fromSeconds(session.expiresAt).plus(expiration).toUnixInteger();
-    session.lastAccessedAt = DateTime.utc().toUnixInteger();
+    session.expiresAt = session.expiresAt.plus(expiration);
+    session.lastAccessedAt = DateTime.utc();
 
-    await this.cache.update(this.getSessionKey(sessionToken), JSON.stringify(session), expiration);
+    await this.cache.update(this.getSessionKey(sessionToken), this.serializeSession(session), expiration);
     await this.ensureSubjectSession(session.subject, sessionToken, expiration);
 
     return session;
@@ -244,7 +281,7 @@ export class AuthenticationSessionService {
     const response = await this.cache.get(this.getSessionKey(sessionToken));
 
     if (response) {
-      return JSON.parse(response) as AuthenticationSession;
+      return this.deserializeSession(response);
     }
   }
 
@@ -299,7 +336,7 @@ export class AuthenticationSessionService {
    * @returns An {@link AuthenticationToken} (Bearer token response).
    * @throws 401 when no session exists for the given token.
    */
-  async generateAuthToken(sessionToken: string) {
+  async generateAuthToken(sessionToken: string): Promise<AuthenticationToken> {
     const session = await this.getSession(sessionToken);
     if (!session) {
       throw unauthorizedError('Bearer error="invalid_token"');
@@ -319,12 +356,10 @@ export class AuthenticationSessionService {
       this.options.expiresIn,
     );
 
-    const future = DateTime.utc().plus(decoded.exp ?? 0);
-
     return {
       accessToken: token,
       tokenType: 'Bearer',
-      expiresIn: future.toUnixInteger(),
+      expiresIn: decoded.exp ?? 0,
       scope: decoded.scope ? decoded.scope.join(' ') : '',
     };
   }

@@ -145,7 +145,7 @@ import { DateTime } from 'luxon';
 const sessionService = container.get(AuthenticationSessionService);
 
 // Create a session after the user authenticates
-const now = DateTime.utc().toUnixInteger();
+const now = DateTime.utc();
 const session = await sessionService.createSession(
   user.id,
   { plan: 'pro' },
@@ -531,6 +531,42 @@ Abstract base class. Implement `verify(username: string, password: string): Prom
 | `getSessionsForSubject(subject)`                                    | `Promise<AuthenticationSession[]>`               | Get all active sessions for a subject                      |
 | `generateAuthToken(token)`                                          | `Promise<AuthenticationToken>`                   | Issue a signed JWT for an existing session                 |
 | `deleteSession(token)`                                              | `Promise<void>`                                  | Revoke a session                                           |
+
+### `AuthenticationSession`
+
+Server-side session record stored in cache. Time fields are Luxon `DateTime` instances in your code; the service serializes them to Unix integers at the cache boundary.
+
+| Field            | Type                              | Description                                                              |
+| ---------------- | --------------------------------- | ------------------------------------------------------------------------ |
+| `token`          | `string`                          | Opaque session token, embedded in JWTs as `sessionToken`.                |
+| `subject`        | `string`                          | Subject identifier (typically a user id).                                |
+| `issuedAt`       | `DateTime`                        | When the session was originally created.                                 |
+| `expiresAt`      | `DateTime`                        | When the session expires.                                                |
+| `lastAccessedAt` | `DateTime`                        | When the session was most recently accessed.                             |
+| `factors`        | `AuthenticationSessionFactor[]`   | Factors satisfied during this session.                                   |
+| `claims`         | `Record<string, unknown>`         | Arbitrary claims to embed in tokens issued from this session.            |
+
+### `AuthenticationSessionFactor`
+
+| Field             | Type                                                            | Description                                            |
+| ----------------- | --------------------------------------------------------------- | ------------------------------------------------------ |
+| `issuedAt`        | `DateTime`                                                      | When this factor entry was first added to the session. |
+| `authenticatedAt` | `DateTime`                                                      | When the factor was most recently re-verified.         |
+| `method`          | `'phone' \| 'password' \| 'authenticator' \| 'email' \| 'fido'` | The verification method used.                          |
+| `methodId`        | `string`                                                        | Stable identifier for the specific factor record.      |
+| `kind`            | `AuthenticationFactorKind`                                      | MFA category.                                          |
+
+### `AuthenticationToken`
+
+OAuth 2.0-style Bearer token response returned by `generateAuthToken`.
+
+| Field          | Type     | Description                                                                                                                          |
+| -------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `accessToken`  | `string` | The signed JWT to send as a `Bearer` credential.                                                                                     |
+| `tokenType`    | `string` | Always `"Bearer"`.                                                                                                                   |
+| `expiresIn`    | `number` | Unix timestamp (seconds) at which the access token expires — taken directly from the JWT's `exp` claim, **not** seconds-from-now.    |
+| `refreshToken` | `string` (optional) | A refresh token, when issued.                                                                                             |
+| `scope`        | `string` | Space-separated list of granted scopes.                                                                                              |
 
 ### `CacheProvider`
 

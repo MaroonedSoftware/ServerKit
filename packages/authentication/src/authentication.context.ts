@@ -67,12 +67,12 @@ export const invalidAuthenticationContext: AuthenticationContext = {
  * expiry policies can be enforced at the application layer.
  */
 export interface AuthenticationSessionFactor {
-  /** Unix timestamp (seconds) when this factor entry was first created. */
-  issuedAt: number;
-  /** Unix timestamp (seconds) of the most recent successful verification. */
-  authenticatedAt: number;
-  /** The verification method used (e.g. `"password"`, `"authenticator"`). */
-  method: 'phone' | 'password' | 'authenticator' | 'email' | 'fido' | 'exchange';
+  /** When this factor entry was first added to the session. */
+  issuedAt: DateTime;
+  /** When the factor was most recently re-verified. */
+  authenticatedAt: DateTime;
+  /** The verification method used. */
+  method: 'phone' | 'password' | 'authenticator' | 'email' | 'fido';
   /** Stable identifier for the specific factor record (e.g. a DB row id). */
   methodId: string;
   /** MFA category this factor belongs to. */
@@ -89,12 +89,12 @@ export interface AuthenticationSession {
   token: string;
   /** Subject identifier (typically a user id). */
   subject: string;
-  /** Unix timestamp (seconds) when the session was created. */
-  issuedAt: number;
-  /** Unix timestamp (seconds) when the session expires. */
-  expiresAt: number;
-  /** Unix timestamp (seconds) of the most recent access. */
-  lastAccessedAt: number;
+  /** When the session was originally issued. */
+  issuedAt: DateTime;
+  /** When the session expires. */
+  expiresAt: DateTime;
+  /** When the session was last accessed. */
+  lastAccessedAt: DateTime;
   /** Factors that have been satisfied in this session. */
   factors: AuthenticationSessionFactor[];
   /** Arbitrary claims to embed in tokens issued from this session. */
@@ -105,13 +105,17 @@ export interface AuthenticationSession {
  * OAuth 2.0-style token response returned after generating a JWT from a session.
  */
 export type AuthenticationToken = {
-  /** Signed JWT that clients present as a `Bearer` credential. */
+  /** The access token string as issued by the authorization server. */
   accessToken: string;
-  /** Always `"Bearer"`. */
+  /** The type of token this is, typically just the string `Bearer`. */
   tokenType: string;
-  /** Unix timestamp (seconds) when the access token expires. */
+  /**
+   * Unix timestamp (seconds) at which the access token expires — taken
+   * directly from the JWT's `exp` claim. Note that this differs from the
+   * OAuth 2.0 `expires_in` convention of seconds-from-now.
+   */
   expiresIn: number;
-  /** Optional refresh token for obtaining a new access token. */
+  /** A refresh token which applications can use to obtain another access token. */
   refreshToken?: string;
   /** Space-separated list of scopes granted to this token. */
   scope: string;
