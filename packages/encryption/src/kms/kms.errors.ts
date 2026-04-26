@@ -1,10 +1,12 @@
+import { ServerkitError } from '@maroonedsoftware/errors';
+
 /**
  * Base class for all errors thrown by a {@link KmsProvider}.
  *
  * Catch this to handle any KMS failure generically; catch a subclass to
  * distinguish specific conditions (missing key, retired key, upstream outage).
  */
-export class KmsError extends Error {
+export class KmsError extends ServerkitError {
   constructor(message: string, options?: { cause?: unknown }) {
     super(message, options);
     this.name = 'KmsError';
