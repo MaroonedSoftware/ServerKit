@@ -1,5 +1,11 @@
 # @maroonedsoftware/koa
 
+## 1.17.0
+
+### Minor Changes
+
+- 65e60f5: Expose `ServerKitContext` as an injectkit token. `serverKitContextMiddleware` now registers the live Koa context against it in the request-scoped container, so request-scoped services can declare `ServerKitContext` as a constructor dependency.
+
 ## 1.16.6
 
 ### Patch Changes
