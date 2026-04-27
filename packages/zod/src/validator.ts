@@ -53,7 +53,7 @@ function processIssue(issue: ZodIssue, basePath: PropertyKey[], details: Record<
   if (issue.code === 'invalid_union') {
     const key = fullPath.join('.') || '_root';
     if (issue.errors.length === 0) {
-      addDetail(details, key, 'Matched multiple variants ambiguously');
+      addDetail(details, key, issue.message);
       return;
     }
     issue.errors.forEach(branchIssues => {

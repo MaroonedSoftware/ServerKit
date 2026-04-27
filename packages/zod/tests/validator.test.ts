@@ -203,6 +203,21 @@ describe('parseAndValidate', () => {
     }
   });
 
+  it('should use the issue message when invalid_union has no branch errors', async () => {
+    const schema = z.object({
+      value: z.string().superRefine((_val, ctx) => {
+        ctx.addIssue({ code: 'invalid_union', errors: [], message: 'No matching variant' });
+      }),
+    });
+    try {
+      await parseAndValidate({ value: 'anything' }, schema);
+      expect.fail('should have thrown');
+    } catch (err) {
+      const details = (err as HttpError).details!;
+      expect(details['value']).toBe('No matching variant');
+    }
+  });
+
   it('should deduplicate identical messages from union branches', async () => {
     const schema = z.object({
       value: z.union([z.object({ id: z.string() }), z.object({ id: z.string(), extra: z.number() })]),
