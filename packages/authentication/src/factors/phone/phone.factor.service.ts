@@ -87,10 +87,11 @@ export class PhoneFactorService {
    *
    * @param actorId - The actor registering the factor.
    * @param value   - The phone number in E.164 format (e.g. `+12025550123`).
-   * @returns `{ registrationId, expiresAt, issuedAt, alreadyRegistered }` —
-   *   the registration reference, when it expires and was originally issued
-   *   (both as Luxon `DateTime`s), and whether this call hit a previously-cached
-   *   pending registration (use this flag to suppress duplicate SMS sends).
+   * @returns `{ value, registrationId, expiresAt, issuedAt, alreadyRegistered }` —
+   *   the (normalized) phone number, the registration reference, when it
+   *   expires and was originally issued (both as Luxon `DateTime`s), and
+   *   whether this call hit a previously-cached pending registration (use this
+   *   flag to suppress duplicate SMS sends).
    * @throws HTTP 400 when `value` is not a valid E.164 phone number.
    * @throws HTTP 409 when the phone number is already registered as a factor for this actor.
    */
@@ -102,6 +103,7 @@ export class PhoneFactorService {
     const existingRegistration = await this.lookupRegistrationByValue(actorId, value);
     if (existingRegistration) {
       return {
+        value: existingRegistration.value,
         registrationId: existingRegistration.id,
         expiresAt: DateTime.fromSeconds(existingRegistration.expiresAt),
         issuedAt: DateTime.fromSeconds(existingRegistration.issuedAt),
@@ -125,6 +127,7 @@ export class PhoneFactorService {
     const registrationId = await this.cacheRegistration(actorId, payload, this.options.otpExpiration);
 
     return {
+      value,
       registrationId,
       expiresAt: DateTime.fromSeconds(payload.expiresAt),
       issuedAt: DateTime.fromSeconds(payload.issuedAt),
@@ -134,6 +137,9 @@ export class PhoneFactorService {
 
   /**
    * Complete phone factor registration by persisting the factor.
+   *
+   * On success the cached registration entries (under both the registration id
+   * and the actor+value pair) are deleted so the registration cannot be replayed.
    *
    * @param actorId        - The actor completing the registration (must match
    *   the actor that initiated it).
@@ -153,6 +159,9 @@ export class PhoneFactorService {
     }
 
     const factor = await this.phoneFactorRepository.createFactor(payload.actorId, payload.value);
+
+    await this.cache.delete(this.getRegistrationKey(registrationId));
+    await this.cache.delete(this.getRegistrationKey(`${payload.actorId}_${payload.value}`));
 
     return factor.id;
   }

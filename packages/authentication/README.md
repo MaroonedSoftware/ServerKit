@@ -290,9 +290,12 @@ const factor = await emailFactors.createEmailFactorFromRegistration(user.id, reg
 
 // --- Verification (sign-in) ---
 
-// Step 1: send a challenge
-const { email, verificationId, code } = await emailFactors.createEmailVerification(user.id, factor.id, 'code');
-await mailer.sendOtp(email, code);
+// Step 1: send a challenge. Idempotent — `alreadyIssued` is true when a pending
+// verification was already cached, so the caller can skip re-sending the email.
+const { email, verificationId, code, alreadyIssued } = await emailFactors.createEmailVerification(user.id, factor.id, 'code');
+if (!alreadyIssued) {
+  await mailer.sendOtp(email, code);
+}
 
 // Step 2: user submits the code
 const { actorId, factorId } = await emailFactors.verifyEmailVerification(verificationId, submittedCode);
@@ -370,9 +373,9 @@ const phoneFactors = container.get(PhoneFactorService);
 
 // Step 1: cache a pending registration and get the registrationId. `alreadyRegistered`
 // is true when a pending registration was already cached — skip the SMS to avoid duplicates.
-const { registrationId, expiresAt, alreadyRegistered } = await phoneFactors.registerPhoneFactor(user.id, '+12025550123');
+const { value, registrationId, expiresAt, alreadyRegistered } = await phoneFactors.registerPhoneFactor(user.id, '+12025550123');
 if (!alreadyRegistered) {
-  await sms.sendOtp('+12025550123', registrationId);
+  await sms.sendOtp(value, registrationId);
 }
 
 // Step 2: user confirms their number; persist the factor
@@ -646,7 +649,7 @@ Abstract base class. Extend and register a concrete implementation so that `Pass
 | ------------------------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------- |
 | `registerEmailFactor(value, verificationMethod)`                    | `Promise<{ registrationId, code, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>` | Initiate email factor registration (idempotent — `alreadyRegistered` is `true` on a cache hit) |
 | `createEmailFactorFromRegistration(actorId, registrationId, code)`  | `Promise<EmailFactor>`                                      | Complete registration                   |
-| `createEmailVerification(actorId, factorId, verificationMethod)`    | `Promise<{ email, verificationId, code, expiresAt: DateTime }>`      | Initiate a sign-in challenge            |
+| `createEmailVerification(actorId, factorId, verificationMethod)`    | `Promise<{ email, verificationId, code, expiresAt: DateTime, issuedAt: DateTime, alreadyIssued: boolean }>` | Initiate a sign-in challenge (idempotent — `alreadyIssued` is `true` on a cache hit) |
 | `verifyEmailVerification(verificationId, code)`                     | `Promise<{ actorId, factorId }>`                            | Complete a sign-in challenge            |
 
 `EmailFactorServiceOptions`:
@@ -709,7 +712,7 @@ Manages phone number factor registration. Requires a `PhoneFactorServiceOptions`
 
 | Method                                               | Returns                              | Description                                                                |
 | ---------------------------------------------------- | ------------------------------------ | -------------------------------------------------------------------------- |
-| `registerPhoneFactor(actorId, value)`                | `Promise<{ registrationId, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>` | Validate the E.164 number and cache a pending registration (idempotent — `alreadyRegistered` is `true` on a cache hit) |
+| `registerPhoneFactor(actorId, value)`                | `Promise<{ value, registrationId, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>` | Validate the E.164 number and cache a pending registration (idempotent — `alreadyRegistered` is `true` on a cache hit) |
 | `createPhoneFactorFromRegistration(actorId, registrationId)` | `Promise<string>`            | Persist the factor; returns `factorId`                                     |
 
 `PhoneFactorServiceOptions`:

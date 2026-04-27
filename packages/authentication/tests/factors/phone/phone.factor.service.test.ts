@@ -83,6 +83,7 @@ describe('PhoneFactorService', () => {
       const result = await service.registerPhoneFactor('actor-1', '+12025550123');
 
       expect(result.registrationId).toBe('reg-id-1');
+      expect(result.value).toBe('+12025550123');
       expect(result.alreadyRegistered).toBe(true);
       expect(DateTime.isDateTime(result.expiresAt)).toBe(true);
       expect(result.expiresAt.toUnixInteger()).toBe(payload.expiresAt);
@@ -133,8 +134,9 @@ describe('PhoneFactorService', () => {
       expect(cache.set).toHaveBeenCalledTimes(2);
     });
 
-    it('returns registrationId, expiresAt, issuedAt, and alreadyRegistered=false on a fresh registration', async () => {
+    it('returns value, registrationId, expiresAt, issuedAt, and alreadyRegistered=false on a fresh registration', async () => {
       const result = await service.registerPhoneFactor('actor-1', '+12025550123');
+      expect(result.value).toBe('+12025550123');
       expect(result.registrationId).toBeTruthy();
       expect(DateTime.isDateTime(result.expiresAt)).toBe(true);
       expect(DateTime.isDateTime(result.issuedAt)).toBe(true);
@@ -182,6 +184,17 @@ describe('PhoneFactorService', () => {
       const result = await service.createPhoneFactorFromRegistration('actor-1', 'reg-id-1');
 
       expect(result).toBe('new-factor-id');
+    });
+
+    it('deletes the cached registration entries after a successful registration', async () => {
+      const payload = makeRegistrationPayload();
+      cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
+      repo.createFactor = vi.fn().mockResolvedValue(makePhoneFactor());
+
+      await service.createPhoneFactorFromRegistration('actor-1', 'reg-id-1');
+
+      expect(cache.delete).toHaveBeenCalledWith('phone_factor_registration_reg-id-1');
+      expect(cache.delete).toHaveBeenCalledWith('phone_factor_registration_actor-1_+12025550123');
     });
   });
 });

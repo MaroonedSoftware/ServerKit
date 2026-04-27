@@ -261,6 +261,8 @@ export class FidoFactorService {
    * Complete FIDO factor registration by verifying the authenticator's
    * attestation against the cached challenge and persisting the new factor.
    *
+   * On success the cached registration challenge is deleted so it cannot be replayed.
+   *
    * @param actorId    - The actor the registration was started for.
    * @param credential - The `PublicKeyCredential` returned by the browser, with
    *   `id`/`rawId` and the attestation response fields base64-encoded.
@@ -292,6 +294,8 @@ export class FidoFactorService {
         result.authnrData.get('counter'),
         true,
       );
+
+      await this.cache.delete(this.getRegistrationKey(actorId));
 
       return factor.id;
     } catch (ex) {
@@ -357,7 +361,8 @@ export class FidoFactorService {
    *
    * Loads the cached assertion expectations, looks up the credential the user
    * picked, verifies the assertion via `fido2-lib`, and persists the updated
-   * signature counter on success.
+   * signature counter on success. The cached challenge is deleted on success
+   * so it cannot be replayed.
    *
    * @param actorId    - The actor that started the challenge.
    * @param credential - The `PublicKeyCredential` returned by the browser, with
@@ -392,6 +397,7 @@ export class FidoFactorService {
     try {
       const result = await this.fido2.assertionResult(assertionResult, expectedAssertionResult);
       await this.fidoFactorRepository.updateFactorCounter(actorId, factor.id, result.authnrData.get('counter'));
+      await this.cache.delete(this.getAuthorizationKey(actorId));
       return { actorId, factorId: factor.id };
     } catch (ex) {
       throw unauthorizedError('Bearer error="invalid_credentials"')

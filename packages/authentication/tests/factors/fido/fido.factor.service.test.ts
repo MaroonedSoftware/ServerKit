@@ -354,6 +354,17 @@ describe('FidoFactorService', () => {
       expect(stored.publicKey).toContain('-----BEGIN PUBLIC KEY-----');
       expect(stored.counter).toBe(0);
     });
+
+    it('deletes the cached registration challenge after a successful registration', async () => {
+      const attestation = await service.registerFidoFactor('actor-1', makeRegisterOptions());
+      expect(cache._store.has('fido_factor_registration_actor-1')).toBe(true);
+
+      const authenticator = createAuthenticator();
+      const credential = buildAttestationCredential({ authenticator, rpId: RP_ID, origin: RP_ORIGIN, challenge: attestation.challenge });
+      await service.createFidoFactorFromRegistration('actor-1', credential);
+
+      expect(cache._store.has('fido_factor_registration_actor-1')).toBe(false);
+    });
   });
 
   describe('createFidoAuthorizationChallenge', () => {
@@ -501,6 +512,23 @@ describe('FidoFactorService', () => {
 
       expect(result).toEqual({ actorId: 'actor-1', factorId });
       expect(repo._factors.get(factorId)!.counter).toBe(7);
+    });
+
+    it('deletes the cached authorization challenge after a successful verification', async () => {
+      const { authenticator } = await seedFactor('actor-1');
+      const challenge = await service.createFidoAuthorizationChallenge('actor-1', makeAuthorizeOptions());
+      expect(cache._store.has('fido_factor_authorization_actor-1')).toBe(true);
+
+      const credential = buildAssertionCredential({
+        authenticator,
+        rpId: RP_ID,
+        origin: RP_ORIGIN,
+        challenge: challenge.challenge,
+        signCount: 1,
+      });
+      await service.verifyFidoAuthorizationChallenge('actor-1', credential);
+
+      expect(cache._store.has('fido_factor_authorization_actor-1')).toBe(false);
     });
 
     it('rejects an assertion whose signCount is not strictly greater than the stored counter', async () => {

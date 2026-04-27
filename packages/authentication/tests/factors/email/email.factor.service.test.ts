@@ -275,6 +275,18 @@ describe('EmailFactorService', () => {
       expect(repo.createFactor).toHaveBeenCalledWith('actor-1', 'user@example.com');
       expect(result).toBe(factor);
     });
+
+    it('deletes the cached registration entries after a successful registration', async () => {
+      const payload = makeRegistrationPayload({ verificationMethod: 'code', value: 'user@example.com' });
+      cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
+      vi.mocked(otpProvider.validate).mockReturnValue(true);
+      repo.createFactor = vi.fn().mockResolvedValue(makeEmailFactor());
+
+      await service.createEmailFactorFromRegistration('actor-1', 'reg-id-1', '123456');
+
+      expect(cache.delete).toHaveBeenCalledWith('email_factor_registration_reg-id-1');
+      expect(cache.delete).toHaveBeenCalledWith('email_factor_registration_user@example.com');
+    });
   });
 
   describe('createEmailVerification', () => {
@@ -294,7 +306,7 @@ describe('EmailFactorService', () => {
       });
     });
 
-    it('returns email, verificationId, code, and expiresAt for a code-based verification', async () => {
+    it('returns email, verificationId, code, expiresAt, issuedAt, and alreadyIssued=false for a code-based verification', async () => {
       repo.getFactor = vi.fn().mockResolvedValue(makeEmailFactor());
 
       const result = await service.createEmailVerification('actor-1', 'factor-1', 'code');
@@ -302,20 +314,41 @@ describe('EmailFactorService', () => {
       expect(result.email).toBe('user@example.com');
       expect(result.verificationId).toBeTruthy();
       expect(result.code).toBe('123456');
+      expect(DateTime.isDateTime(result.expiresAt)).toBe(true);
+      expect(DateTime.isDateTime(result.issuedAt)).toBe(true);
+      expect(result.alreadyIssued).toBe(false);
     });
 
-    it('caches the verification payload', async () => {
+    it('caches the verification payload under both the verification id and actor+factor keys', async () => {
       repo.getFactor = vi.fn().mockResolvedValue(makeEmailFactor());
 
       await service.createEmailVerification('actor-1', 'factor-1', 'code');
 
-      expect(cache.set).toHaveBeenCalledOnce();
-      const [firstCall] = vi.mocked(cache.set).mock.calls;
-      const [key, payloadJson] = firstCall!;
-      expect(key).toMatch(/^email_factor_verification_/);
+      // Two cache.set calls: one for the payload, one for the actor_factor → id lookup
+      expect(cache.set).toHaveBeenCalledTimes(2);
+      const [firstCall, secondCall] = vi.mocked(cache.set).mock.calls;
+      const [payloadKey, payloadJson] = firstCall!;
+      expect(payloadKey).toMatch(/^email_factor_verification_/);
       const payload = JSON.parse(payloadJson as string);
       expect(payload.actorId).toBe('actor-1');
       expect(payload.factorId).toBe('factor-1');
+      expect(secondCall![0]).toBe('email_factor_verification_actor-1_factor-1');
+    });
+
+    it('returns the existing pending verification with alreadyIssued=true when one is cached', async () => {
+      const payload = makeVerificationPayload();
+      repo.getFactor = vi.fn().mockResolvedValue(makeEmailFactor());
+      cache.get = vi.fn().mockResolvedValueOnce('ver-id-1').mockResolvedValueOnce(JSON.stringify(payload));
+
+      const result = await service.createEmailVerification('actor-1', 'factor-1', 'code');
+
+      expect(result.email).toBe('user@example.com');
+      expect(result.verificationId).toBe('ver-id-1');
+      expect(result.code).toBe('123456');
+      expect(result.alreadyIssued).toBe(true);
+      expect(result.expiresAt.toUnixInteger()).toBe(payload.expiresAt);
+      expect(result.issuedAt.toUnixInteger()).toBe(payload.issuedAt);
+      expect(cache.set).not.toHaveBeenCalled();
     });
 
     it('uses magic link for magiclink verification method', async () => {
@@ -378,6 +411,17 @@ describe('EmailFactorService', () => {
 
       expect(result.actorId).toBe('actor-1');
       expect(result.factorId).toBe('factor-1');
+    });
+
+    it('deletes the cached verification entries after a successful verification', async () => {
+      const payload = makeVerificationPayload({ verificationMethod: 'code' });
+      cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
+      vi.mocked(otpProvider.validate).mockReturnValue(true);
+
+      await service.verifyEmailVerification('ver-id-1', '123456');
+
+      expect(cache.delete).toHaveBeenCalledWith('email_factor_verification_ver-id-1');
+      expect(cache.delete).toHaveBeenCalledWith('email_factor_verification_actor-1_factor-1');
     });
   });
 });

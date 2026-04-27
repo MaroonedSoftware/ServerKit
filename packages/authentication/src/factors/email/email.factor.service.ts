@@ -99,10 +99,16 @@ export class EmailFactorService {
     return response ? (JSON.parse(response) as VerificationPayload) : undefined;
   }
 
+  private async lookupVerificationByActorAndFactor(actorId: string, factorId: string) {
+    const verificationId = await this.cache.get(this.getVerificationKey(`${actorId}_${factorId}`));
+    return verificationId ? await this.lookupVerification(verificationId) : undefined;
+  }
+
   private async cacheVerification(payload: VerificationPayload, expiration: Duration) {
     const verificationId = crypto.randomBytes(32).toString('base64url');
     payload.id = verificationId;
     await this.cache.set(this.getVerificationKey(verificationId), JSON.stringify(payload), expiration);
+    await this.cache.set(this.getVerificationKey(`${payload.actorId}_${payload.factorId}`), verificationId, expiration);
     return verificationId;
   }
 
@@ -236,6 +242,9 @@ export class EmailFactorService {
   /**
    * Complete email factor registration by verifying the code/token and persisting the factor.
    *
+   * On success the cached registration entries (under both the registration id
+   * and the email value) are deleted so the code/token cannot be replayed.
+   *
    * @param actorId        - The actor to attach the factor to.
    * @param registrationId - The registration reference returned by {@link registerEmailFactor}.
    * @param code           - The code or magic link token submitted by the user.
@@ -252,6 +261,9 @@ export class EmailFactorService {
 
     this.verifyPayload(payload, code);
 
+    await this.cache.delete(this.getRegistrationKey(registrationId));
+    await this.cache.delete(this.getRegistrationKey(payload.value));
+
     return await this.emailFactorRepository.createFactor(actorId, payload.value);
   }
 
@@ -262,10 +274,19 @@ export class EmailFactorService {
    * The caller is responsible for sending the `code` to the `email` address returned.
    * Complete verification by calling {@link verifyEmailVerification}.
    *
+   * Idempotent: if a pending verification is already cached for this
+   * actor+factor pair, the existing `verificationId` and `code` are returned
+   * and `alreadyIssued` is set to `true`. Use this flag to suppress duplicate
+   * "we just emailed you" notifications.
+   *
    * @param actorId            - The actor that owns the factor.
    * @param factorId           - The id of the email factor to verify against.
    * @param verificationMethod - `"code"` or `"magiclink"`.
-   * @returns `{ email, verificationId, code, expiresAt }`.
+   * @returns `{ email, verificationId, code, expiresAt, issuedAt, alreadyIssued }` —
+   *   the verified email address, verification reference, code/token to send,
+   *   when the verification expires and was originally issued (both as Luxon
+   *   `DateTime`s), and whether this call hit a previously-cached pending
+   *   verification.
    * @throws HTTP 404 when the factor does not exist or is not active.
    */
   async createEmailVerification(actorId: string, factorId: string, verificationMethod: 'code' | 'magiclink') {
@@ -275,18 +296,33 @@ export class EmailFactorService {
     }
     const email = factor.value;
 
-    const { payload, expiresAt, expiration } = this.createPayload<VerificationPayload>(verificationMethod);
+    const existingVerification = await this.lookupVerificationByActorAndFactor(actorId, factorId);
+    if (existingVerification) {
+      return {
+        email,
+        verificationId: existingVerification.id,
+        code: existingVerification.code,
+        expiresAt: DateTime.fromSeconds(existingVerification.expiresAt),
+        issuedAt: DateTime.fromSeconds(existingVerification.issuedAt),
+        alreadyIssued: true,
+      };
+    }
+
+    const { payload, expiresAt, issuedAt, expiration } = this.createPayload<VerificationPayload>(verificationMethod);
 
     payload.actorId = actorId;
     payload.factorId = factorId;
 
     const verificationId = await this.cacheVerification(payload, expiration);
 
-    return { email, verificationId, code: payload.code, expiresAt };
+    return { email, verificationId, code: payload.code, expiresAt, issuedAt, alreadyIssued: false };
   }
 
   /**
    * Complete an email verification challenge.
+   *
+   * On success the cached verification entries (under both the verification id
+   * and the actor+factor pair) are deleted so the code/token cannot be replayed.
    *
    * @param verificationId - The verification reference returned by {@link createEmailVerification}.
    * @param code           - The code or magic link token submitted by the user.
@@ -299,7 +335,12 @@ export class EmailFactorService {
     if (!payload) {
       throw httpError(404).withDetails({ verificationId: 'not found' });
     }
+
     this.verifyPayload(payload, code);
+
+    await this.cache.delete(this.getVerificationKey(verificationId));
+    await this.cache.delete(this.getVerificationKey(`${payload.actorId}_${payload.factorId}`));
+
     return { actorId: payload.actorId, factorId: payload.factorId };
   }
 }
