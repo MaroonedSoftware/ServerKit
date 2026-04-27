@@ -196,6 +196,24 @@ describe('AuthenticatorFactorService', () => {
     });
   });
 
+  describe('hasPendingRegistration', () => {
+    it('returns true when the registration is cached', async () => {
+      cache.get = vi.fn().mockResolvedValue(JSON.stringify(makeRegistrationPayload()));
+      await expect(service.hasPendingRegistration('reg-id-1')).resolves.toBe(true);
+    });
+
+    it('returns false when the registration is not cached', async () => {
+      cache.get = vi.fn().mockResolvedValue(null);
+      await expect(service.hasPendingRegistration('missing-reg')).resolves.toBe(false);
+    });
+
+    it('looks up under the registration cache key namespace', async () => {
+      cache.get = vi.fn().mockResolvedValue(null);
+      await service.hasPendingRegistration('reg-id-1');
+      expect(cache.get).toHaveBeenCalledWith(expect.stringMatching(/^authenticator_factor_registration_/));
+    });
+  });
+
   describe('validateFactor', () => {
     it('throws 401 when the factor does not exist', async () => {
       repo.getFactor = vi.fn().mockResolvedValue(undefined);

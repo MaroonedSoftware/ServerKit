@@ -424,4 +424,40 @@ describe('EmailFactorService', () => {
       expect(cache.delete).toHaveBeenCalledWith('email_factor_challenge_actor-1_factor-1');
     });
   });
+
+  describe('hasPendingChallenge', () => {
+    it('returns true when the challenge is cached', async () => {
+      cache.get = vi.fn().mockResolvedValue(JSON.stringify(makeChallengePayload()));
+      await expect(service.hasPendingChallenge('chal-id-1')).resolves.toBe(true);
+    });
+
+    it('returns false when the challenge is not cached', async () => {
+      cache.get = vi.fn().mockResolvedValue(null);
+      await expect(service.hasPendingChallenge('missing-id')).resolves.toBe(false);
+    });
+
+    it('looks up under the challenge cache key namespace', async () => {
+      cache.get = vi.fn().mockResolvedValue(null);
+      await service.hasPendingChallenge('chal-id-1');
+      expect(cache.get).toHaveBeenCalledWith('email_factor_challenge_chal-id-1');
+    });
+  });
+
+  describe('hasPendingRegistration', () => {
+    it('returns true when the registration is cached', async () => {
+      cache.get = vi.fn().mockResolvedValue(JSON.stringify(makeRegistrationPayload()));
+      await expect(service.hasPendingRegistration('reg-id-1')).resolves.toBe(true);
+    });
+
+    it('returns false when the registration is not cached', async () => {
+      cache.get = vi.fn().mockResolvedValue(null);
+      await expect(service.hasPendingRegistration('missing-reg')).resolves.toBe(false);
+    });
+
+    it('looks up under the registration cache key namespace', async () => {
+      cache.get = vi.fn().mockResolvedValue(null);
+      await service.hasPendingRegistration('reg-id-1');
+      expect(cache.get).toHaveBeenCalledWith('email_factor_registration_reg-id-1');
+    });
+  });
 });

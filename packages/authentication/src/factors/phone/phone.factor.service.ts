@@ -165,4 +165,17 @@ export class PhoneFactorService {
 
     return factor.id;
   }
+
+  /**
+   * Check whether a registration is still pending (i.e. cached and not yet expired).
+   *
+   * Useful for UI flows that want to skip re-sending the SMS when the user has merely
+   * navigated back to the verification screen.
+   *
+   * @param registrationId - The registration reference returned by {@link registerPhoneFactor}.
+   * @returns `true` if the registration exists and has not expired, `false` otherwise.
+   */
+  async hasPendingRegistration(registrationId: string) {
+    return (await this.lookupRegistration(registrationId)) !== undefined;
+  }
 }

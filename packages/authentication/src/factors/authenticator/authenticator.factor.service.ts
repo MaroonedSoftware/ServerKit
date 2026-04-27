@@ -159,6 +159,19 @@ export class AuthenticatorFactorService {
   }
 
   /**
+   * Check whether a registration is still pending (i.e. cached and not yet expired).
+   *
+   * Useful for UI flows that want to re-display the QR code or guide the user back to
+   * {@link createAuthenticatorFactorFromRegistration} without re-issuing a new secret.
+   *
+   * @param registrationId - The registration reference from {@link registerAuthenticatorFactor}.
+   * @returns `true` if the registration exists and has not expired, `false` otherwise.
+   */
+  async hasPendingRegistration(registrationId: string) {
+    return (await this.lookupRegistration(registrationId)) !== undefined;
+  }
+
+  /**
    * Verify a TOTP/HOTP code against an existing authenticator factor.
    *
    * @param actorId  - The actor that owns the factor.

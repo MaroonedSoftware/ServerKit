@@ -343,4 +343,27 @@ export class EmailFactorService {
 
     return { actorId: payload.actorId, factorId: payload.factorId };
   }
+
+  /**
+   * Check whether a challenge is still pending (i.e. cached and not yet expired).
+   *
+   * Useful for UI flows that want to skip re-issuing a code when the user has merely
+   * navigated away and come back to the verification screen.
+   *
+   * @param challengeId - The challenge reference returned by {@link issueEmailChallenge}.
+   * @returns `true` if the challenge exists and has not expired, `false` otherwise.
+   */
+  async hasPendingChallenge(challengeId: string) {
+    return (await this.lookupChallenge(challengeId)) !== undefined;
+  }
+
+  /**
+   * Check whether a registration is still pending (i.e. cached and not yet expired).
+   *
+   * @param registrationId - The registration reference returned by {@link registerEmailFactor}.
+   * @returns `true` if the registration exists and has not expired, `false` otherwise.
+   */
+  async hasPendingRegistration(registrationId: string) {
+    return (await this.lookupRegistration(registrationId)) !== undefined;
+  }
 }

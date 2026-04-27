@@ -197,4 +197,22 @@ describe('PhoneFactorService', () => {
       expect(cache.delete).toHaveBeenCalledWith('phone_factor_registration_actor-1_+12025550123');
     });
   });
+
+  describe('hasPendingRegistration', () => {
+    it('returns true when the registration is cached', async () => {
+      cache.get = vi.fn().mockResolvedValue(JSON.stringify(makeRegistrationPayload()));
+      await expect(service.hasPendingRegistration('reg-id-1')).resolves.toBe(true);
+    });
+
+    it('returns false when the registration is not cached', async () => {
+      cache.get = vi.fn().mockResolvedValue(null);
+      await expect(service.hasPendingRegistration('missing-reg')).resolves.toBe(false);
+    });
+
+    it('looks up under the registration cache key namespace', async () => {
+      cache.get = vi.fn().mockResolvedValue(null);
+      await service.hasPendingRegistration('reg-id-1');
+      expect(cache.get).toHaveBeenCalledWith('phone_factor_registration_reg-id-1');
+    });
+  });
 });

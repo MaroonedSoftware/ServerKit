@@ -649,8 +649,10 @@ Abstract base class. Extend and register a concrete implementation so that `Pass
 | ------------------------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------- |
 | `registerEmailFactor(value, verificationMethod)`                    | `Promise<{ registrationId, code, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>` | Initiate email factor registration (idempotent — `alreadyRegistered` is `true` on a cache hit) |
 | `createEmailFactorFromRegistration(actorId, registrationId, code)`  | `Promise<EmailFactor>`                                      | Complete registration                   |
+| `hasPendingRegistration(registrationId)`                            | `Promise<boolean>`                                          | Check whether a registration is still cached and unexpired |
 | `issueEmailChallenge(actorId, factorId, issueMethod)`               | `Promise<{ email, challengeId, code, expiresAt: DateTime, issuedAt: DateTime, alreadyIssued: boolean }>` | Initiate a sign-in challenge (idempotent — `alreadyIssued` is `true` on a cache hit) |
 | `verifyEmailChallenge(challengeId, code)`                           | `Promise<{ actorId, factorId }>`                            | Complete a sign-in challenge            |
+| `hasPendingChallenge(challengeId)`                                  | `Promise<boolean>`                                          | Check whether a challenge is still cached and unexpired    |
 
 `EmailFactorServiceOptions`:
 
@@ -682,6 +684,7 @@ Manages TOTP/HOTP authenticator app factors. Requires an `AuthenticatorFactorSer
 | ------------------------------------------------------------------------ | ----------------------------------------------------------------- | -------------------------------------------------------------- |
 | `registerAuthenticatorFactor(actorId, options?)`                         | `Promise<{ registrationId, secret, uri, qrCode, expiresAt: DateTime }>`   | Generate a secret, QR code, and cache the pending registration |
 | `createAuthenticatorFactorFromRegistration(actorId, registrationId, code)` | `Promise<string>`                                               | Verify the first OTP code and persist the factor; returns `factorId` |
+| `hasPendingRegistration(registrationId)`                                 | `Promise<boolean>`                                               | Check whether a registration is still cached and unexpired     |
 | `validateFactor(actorId, factorId, code)`                                | `Promise<void>`                                                  | Verify a TOTP/HOTP code; throws HTTP 401 on failure            |
 | `deleteFactor(actorId, factorId)`                                        | `Promise<void>`                                                  | Remove a factor                                                |
 
@@ -714,6 +717,7 @@ Manages phone number factor registration. Requires a `PhoneFactorServiceOptions`
 | ---------------------------------------------------- | ------------------------------------ | -------------------------------------------------------------------------- |
 | `registerPhoneFactor(actorId, value)`                | `Promise<{ value, registrationId, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>` | Validate the E.164 number and cache a pending registration (idempotent — `alreadyRegistered` is `true` on a cache hit) |
 | `createPhoneFactorFromRegistration(actorId, registrationId)` | `Promise<string>`            | Persist the factor; returns `factorId`                                     |
+| `hasPendingRegistration(registrationId)`             | `Promise<boolean>`                   | Check whether a registration is still cached and unexpired                 |
 
 `PhoneFactorServiceOptions`:
 
