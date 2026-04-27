@@ -30,7 +30,7 @@ const makeOtpProvider = () =>
 const makeEmailFactorRepository = () =>
   ({
     createFactor: vi.fn(),
-    doesEmailExist: vi.fn().mockResolvedValue(false),
+    lookupFactor: vi.fn().mockResolvedValue(undefined),
     isDomainInviteOnly: vi.fn().mockResolvedValue(false),
     getFactor: vi.fn(),
     deleteFactor: vi.fn(),
@@ -119,14 +119,14 @@ describe('EmailFactorService', () => {
       cache.get = vi.fn().mockResolvedValueOnce('reg-id-1').mockResolvedValueOnce(JSON.stringify(payload));
       vi.mocked(binarySearch).mockReturnValue(true);
       repo.isDomainInviteOnly = vi.fn().mockResolvedValue(true);
-      repo.doesEmailExist = vi.fn().mockResolvedValue(true);
+      repo.lookupFactor = vi.fn().mockResolvedValue(makeEmailFactor());
 
       const result = await service.registerEmailFactor('user@example.com', 'code');
 
       expect(result.alreadyRegistered).toBe(true);
       expect(binarySearch).not.toHaveBeenCalled();
       expect(repo.isDomainInviteOnly).not.toHaveBeenCalled();
-      expect(repo.doesEmailExist).not.toHaveBeenCalled();
+      expect(repo.lookupFactor).not.toHaveBeenCalled();
     });
 
     it('throws 400 when the domain is on the deny list', async () => {
@@ -158,16 +158,16 @@ describe('EmailFactorService', () => {
 
     it('checks invite-only before checking whether the email already exists', async () => {
       repo.isDomainInviteOnly = vi.fn().mockResolvedValue(true);
-      repo.doesEmailExist = vi.fn().mockResolvedValue(true);
+      repo.lookupFactor = vi.fn().mockResolvedValue(makeEmailFactor());
 
       await expect(service.registerEmailFactor('user@invite-only.com', 'code')).rejects.toMatchObject({
         statusCode: 403,
       });
-      expect(repo.doesEmailExist).not.toHaveBeenCalled();
+      expect(repo.lookupFactor).not.toHaveBeenCalled();
     });
 
-    it('throws 409 when doesEmailExist returns true', async () => {
-      repo.doesEmailExist = vi.fn().mockResolvedValue(true);
+    it('throws 409 when lookupFactor returns an existing factor', async () => {
+      repo.lookupFactor = vi.fn().mockResolvedValue(makeEmailFactor());
       await expect(service.registerEmailFactor('user@example.com', 'code')).rejects.toMatchObject({
         statusCode: 409,
         details: { method: 'already registered' },

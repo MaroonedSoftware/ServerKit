@@ -28,11 +28,11 @@ export interface EmailFactorRepository {
   createFactor(actorId: string, value: string): Promise<EmailFactor>;
 
   /**
-   * Check whether an email address already has a factor registered.
+   * Look up an email factor by email address.
    * @param value - The email address to look up.
-   * @returns `true` if an existing factor was found, `false` otherwise.
+   * @returns The matching {@link EmailFactor}, or `undefined` if not found.
    */
-  doesEmailExist(value: string): Promise<boolean>;
+  lookupFactor(value: string): Promise<EmailFactor | undefined>;
 
   /**
    * Check whether a domain is invite-only.

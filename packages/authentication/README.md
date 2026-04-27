@@ -664,7 +664,7 @@ Abstract base class. Extend and register a concrete implementation so that `Emai
 | Method                              | Returns                  | Description                                          |
 | ----------------------------------- | ------------------------ | ---------------------------------------------------- |
 | `createFactor(actorId, value)`      | `Promise<EmailFactor>`   | Persist a new email factor                           |
-| `doesEmailExist(value)`             | `Promise<boolean>`       | Check whether an email address is already registered |
+| `lookupFactor(value)`               | `Promise<EmailFactor \| undefined>` | Look up an email factor by email address             |
 | `isDomainInviteOnly(domain)`        | `Promise<boolean>`       | Check whether a domain is invite-only (gates registration) |
 | `getFactor(actorId, factorId)`      | `Promise<EmailFactor>`   | Retrieve a factor by id                              |
 | `deleteFactor(actorId, factorId)`   | `Promise<void>`          | Remove a factor                                      |

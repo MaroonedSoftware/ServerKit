@@ -218,7 +218,7 @@ export class EmailFactorService {
       throw httpError(403).withDetails({ email: 'Must be invited to register' });
     }
 
-    const existingFactor = await this.emailFactorRepository.doesEmailExist(value);
+    const existingFactor = await this.emailFactorRepository.lookupFactor(value);
 
     if (existingFactor) {
       throw httpError(409).withDetails({ method: 'already registered' });
