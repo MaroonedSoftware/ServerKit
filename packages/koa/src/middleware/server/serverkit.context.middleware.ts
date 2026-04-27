@@ -2,11 +2,14 @@ import crypto from 'crypto';
 import { Container } from 'injectkit';
 import { Logger } from '@maroonedsoftware/logger';
 import { ServerKitMiddleware } from '../../serverkit.middleware.js';
+import { ServerKitContext } from '../../serverkit.context.js';
 
 /**
  * Populates {@link ServerKitContext} for each request: scoped container, logger,
  * logger name, user-agent, correlation ID, and request ID.
  * Reads or generates `X-Correlation-Id` and `X-Request-Id` and sets response headers.
+ * Registers the live `ctx` against the {@link ServerKitContext} injection token in the
+ * request-scoped container so downstream services can inject the current context.
  * Should be applied early so downstream middleware and routes can use `ctx.container` and `ctx.logger`.
  *
  * @param container - Root injectkit {@link Container} used to create a scoped container and resolve {@link Logger}.
@@ -14,8 +17,12 @@ import { ServerKitMiddleware } from '../../serverkit.middleware.js';
  */
 export const serverKitContextMiddleware = (container: Container): ServerKitMiddleware => {
   return async (ctx, next) => {
-    ctx.container = container.createScopedContainer();
-    ctx.logger = container.get(Logger);
+    const scopedContainer = container.createScopedContainer();
+    ctx.container = scopedContainer;
+
+    scopedContainer.override(ServerKitContext, ctx);
+
+    ctx.logger = ctx.container.get(Logger);
     ctx.loggerName = ctx.path;
 
     ctx.userAgent = ctx.get('user-agent');

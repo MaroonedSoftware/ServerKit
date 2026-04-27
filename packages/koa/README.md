@@ -15,7 +15,7 @@ Peer dependencies: `koa`, `@koa/router`, `@koa/cors`.
 - **ServerKitContext** — Koa context extended with `container`, `logger`, `requestId`, `correlationId`, `authenticationContext`, and related request metadata
 - **ServerKitRouter** — Router typed for `ServerKitContext`
 - **ServerKitMiddleware** — Middleware type bound to `ServerKitContext`
-- **serverKitContextMiddleware** — Populates context with scoped container, logger, and request/correlation IDs
+- **serverKitContextMiddleware** — Populates context with scoped container, logger, and request/correlation IDs; registers the live context against the `ServerKitContext` injection token so request-scoped services can inject it
 - **corsMiddleware** — CORS headers with `'*'`, string, or RegExp origin matching
 - **errorMiddleware** — Central error handler; maps HTTP errors to status/body, 404 for unmatched routes, 500 for unknown errors
 - **rateLimiterMiddleware** — Per-IP rate limiting via `rate-limiter-flexible` (429 when exceeded)
@@ -72,6 +72,24 @@ router.get('/api/users/:id', async ctx => {
   if (!user) throw httpError(404);
   ctx.body = user;
 });
+```
+
+### Injecting the context
+
+`ServerKitContext` is also exported as an injectkit token. After `serverKitContextMiddleware` runs, the live `ctx` is registered against this token in the request-scoped container, so services resolved from `ctx.container` can declare it as a dependency:
+
+```typescript
+import { Injectable } from 'injectkit';
+import { ServerKitContext } from '@maroonedsoftware/koa';
+
+@Injectable()
+class CurrentUserService {
+  constructor(private readonly ctx: ServerKitContext) {}
+
+  get actorId() {
+    return this.ctx.authenticationContext?.actorId;
+  }
+}
 ```
 
 ### Authentication

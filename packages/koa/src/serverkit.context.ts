@@ -1,5 +1,5 @@
 import { Context } from 'koa';
-import { Container } from 'injectkit';
+import { Container, Injectable } from 'injectkit';
 import { Logger } from '@maroonedsoftware/logger';
 import { AuthenticationContext } from '@maroonedsoftware/authentication';
 import { BinaryLike } from 'node:crypto';
@@ -12,6 +12,7 @@ import { BinaryLike } from 'node:crypto';
  * @extends Context
  * @see {@link serverKitContextMiddleware} – middleware that populates this context on each request
  */
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export interface ServerKitContext extends Context {
   /** Scoped injectkit container for this request; use for request-scoped DI. */
   container: Container;
@@ -32,3 +33,13 @@ export interface ServerKitContext extends Context {
   /** Authentication context. */
   authenticationContext: AuthenticationContext;
 }
+
+/**
+ * Abstract class merged with the {@link ServerKitContext} interface so it can serve as an
+ * injectkit injection token. {@link serverKitContextMiddleware} registers the live `ctx`
+ * against this token in the request-scoped container, allowing services to declare
+ * `ServerKitContext` as a constructor dependency and receive the current Koa context.
+ */
+@Injectable()
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
+export abstract class ServerKitContext implements ServerKitContext {}

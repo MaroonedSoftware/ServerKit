@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Mock } from 'vitest';
 import { serverKitContextMiddleware } from '../../../src/middleware/server/serverkit.context.middleware.js';
-import type { ServerKitContext } from '../../../src/serverkit.context.js';
+import { ServerKitContext } from '../../../src/serverkit.context.js';
 import type { Next } from 'koa';
 import type { Container } from 'injectkit';
 import type { Logger } from '@maroonedsoftware/logger';
@@ -9,18 +9,24 @@ import type { Logger } from '@maroonedsoftware/logger';
 describe('serverKitContextMiddleware', () => {
   let mockCtx: ServerKitContext;
   let mockNext: Next;
+  let mockScopedContainer: {
+    get: Mock;
+    override: Mock;
+  };
   let mockContainer: {
     createScopedContainer: Mock;
-    get: Mock;
   };
   let mockLogger: Logger;
 
   beforeEach(() => {
     vi.clearAllMocks();
     mockLogger = {} as Logger;
-    mockContainer = {
-      createScopedContainer: vi.fn().mockReturnValue({}),
+    mockScopedContainer = {
       get: vi.fn().mockReturnValue(mockLogger),
+      override: vi.fn(),
+    };
+    mockContainer = {
+      createScopedContainer: vi.fn().mockReturnValue(mockScopedContainer),
     };
     mockNext = vi.fn().mockResolvedValue(undefined);
     mockCtx = {
@@ -39,22 +45,28 @@ describe('serverKitContextMiddleware', () => {
   });
 
   it('should set ctx.container from container.createScopedContainer()', async () => {
-    const scopedContainer = { scope: 'request' };
-    mockContainer.createScopedContainer.mockReturnValue(scopedContainer);
     const middleware = serverKitContextMiddleware(mockContainer as unknown as Container);
 
     await middleware(mockCtx, mockNext);
 
     expect(mockContainer.createScopedContainer).toHaveBeenCalledTimes(1);
-    expect(mockCtx.container).toBe(scopedContainer);
+    expect(mockCtx.container).toBe(mockScopedContainer);
   });
 
-  it('should set ctx.logger from container.get(Logger)', async () => {
+  it('should register the live ctx against ServerKitContext on the scoped container', async () => {
     const middleware = serverKitContextMiddleware(mockContainer as unknown as Container);
 
     await middleware(mockCtx, mockNext);
 
-    expect(mockContainer.get).toHaveBeenCalledWith(expect.anything());
+    expect(mockScopedContainer.override).toHaveBeenCalledWith(ServerKitContext, mockCtx);
+  });
+
+  it('should resolve ctx.logger from the scoped container', async () => {
+    const middleware = serverKitContextMiddleware(mockContainer as unknown as Container);
+
+    await middleware(mockCtx, mockNext);
+
+    expect(mockScopedContainer.get).toHaveBeenCalledWith(expect.anything());
     expect(mockCtx.logger).toBe(mockLogger);
   });
 
