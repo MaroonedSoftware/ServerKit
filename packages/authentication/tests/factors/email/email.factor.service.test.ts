@@ -61,8 +61,8 @@ const makeRegistrationPayload = (overrides = {}) => ({
   ...overrides,
 });
 
-const makeVerificationPayload = (overrides = {}) => ({
-  id: 'ver-id-1',
+const makeChallengePayload = (overrides = {}) => ({
+  id: 'chal-id-1',
   verificationMethod: 'code' as const,
   secret: 'TESTSECRET',
   code: '123456',
@@ -289,10 +289,10 @@ describe('EmailFactorService', () => {
     });
   });
 
-  describe('createEmailVerification', () => {
+  describe('issueEmailChallenge', () => {
     it('throws 404 when the factor does not exist', async () => {
       repo.getFactor = vi.fn().mockResolvedValue(null);
-      await expect(service.createEmailVerification('actor-1', 'factor-1', 'code')).rejects.toMatchObject({
+      await expect(service.issueEmailChallenge('actor-1', 'factor-1', 'code')).rejects.toMatchObject({
         statusCode: 404,
         details: { factorId: 'not found' },
       });
@@ -300,50 +300,50 @@ describe('EmailFactorService', () => {
 
     it('throws 404 when the factor is not active', async () => {
       repo.getFactor = vi.fn().mockResolvedValue(makeEmailFactor({ active: false }));
-      await expect(service.createEmailVerification('actor-1', 'factor-1', 'code')).rejects.toMatchObject({
+      await expect(service.issueEmailChallenge('actor-1', 'factor-1', 'code')).rejects.toMatchObject({
         statusCode: 404,
         details: { factorId: 'not found' },
       });
     });
 
-    it('returns email, verificationId, code, expiresAt, issuedAt, and alreadyIssued=false for a code-based verification', async () => {
+    it('returns email, challengeId, code, expiresAt, issuedAt, and alreadyIssued=false for a code-based challenge', async () => {
       repo.getFactor = vi.fn().mockResolvedValue(makeEmailFactor());
 
-      const result = await service.createEmailVerification('actor-1', 'factor-1', 'code');
+      const result = await service.issueEmailChallenge('actor-1', 'factor-1', 'code');
 
       expect(result.email).toBe('user@example.com');
-      expect(result.verificationId).toBeTruthy();
+      expect(result.challengeId).toBeTruthy();
       expect(result.code).toBe('123456');
       expect(DateTime.isDateTime(result.expiresAt)).toBe(true);
       expect(DateTime.isDateTime(result.issuedAt)).toBe(true);
       expect(result.alreadyIssued).toBe(false);
     });
 
-    it('caches the verification payload under both the verification id and actor+factor keys', async () => {
+    it('caches the challenge payload under both the challenge id and actor+factor keys', async () => {
       repo.getFactor = vi.fn().mockResolvedValue(makeEmailFactor());
 
-      await service.createEmailVerification('actor-1', 'factor-1', 'code');
+      await service.issueEmailChallenge('actor-1', 'factor-1', 'code');
 
       // Two cache.set calls: one for the payload, one for the actor_factor → id lookup
       expect(cache.set).toHaveBeenCalledTimes(2);
       const [firstCall, secondCall] = vi.mocked(cache.set).mock.calls;
       const [payloadKey, payloadJson] = firstCall!;
-      expect(payloadKey).toMatch(/^email_factor_verification_/);
+      expect(payloadKey).toMatch(/^email_factor_challenge_/);
       const payload = JSON.parse(payloadJson as string);
       expect(payload.actorId).toBe('actor-1');
       expect(payload.factorId).toBe('factor-1');
-      expect(secondCall![0]).toBe('email_factor_verification_actor-1_factor-1');
+      expect(secondCall![0]).toBe('email_factor_challenge_actor-1_factor-1');
     });
 
-    it('returns the existing pending verification with alreadyIssued=true when one is cached', async () => {
-      const payload = makeVerificationPayload();
+    it('returns the existing pending challenge with alreadyIssued=true when one is cached', async () => {
+      const payload = makeChallengePayload();
       repo.getFactor = vi.fn().mockResolvedValue(makeEmailFactor());
-      cache.get = vi.fn().mockResolvedValueOnce('ver-id-1').mockResolvedValueOnce(JSON.stringify(payload));
+      cache.get = vi.fn().mockResolvedValueOnce('chal-id-1').mockResolvedValueOnce(JSON.stringify(payload));
 
-      const result = await service.createEmailVerification('actor-1', 'factor-1', 'code');
+      const result = await service.issueEmailChallenge('actor-1', 'factor-1', 'code');
 
       expect(result.email).toBe('user@example.com');
-      expect(result.verificationId).toBe('ver-id-1');
+      expect(result.challengeId).toBe('chal-id-1');
       expect(result.code).toBe('123456');
       expect(result.alreadyIssued).toBe(true);
       expect(result.expiresAt.toUnixInteger()).toBe(payload.expiresAt);
@@ -351,10 +351,10 @@ describe('EmailFactorService', () => {
       expect(cache.set).not.toHaveBeenCalled();
     });
 
-    it('uses magic link for magiclink verification method', async () => {
+    it('uses magic link for magiclink challenge method', async () => {
       repo.getFactor = vi.fn().mockResolvedValue(makeEmailFactor());
 
-      await service.createEmailVerification('actor-1', 'factor-1', 'magiclink');
+      await service.issueEmailChallenge('actor-1', 'factor-1', 'magiclink');
 
       const [firstCall] = vi.mocked(cache.set).mock.calls;
       const payload = JSON.parse(firstCall![1] as string);
@@ -362,66 +362,66 @@ describe('EmailFactorService', () => {
     });
   });
 
-  describe('verifyEmailVerification', () => {
-    it('throws 404 when the verification does not exist', async () => {
+  describe('verifyEmailChallenge', () => {
+    it('throws 404 when the challenge does not exist', async () => {
       cache.get = vi.fn().mockResolvedValue(null);
-      await expect(service.verifyEmailVerification('missing-id', '123456')).rejects.toMatchObject({
+      await expect(service.verifyEmailChallenge('missing-id', '123456')).rejects.toMatchObject({
         statusCode: 404,
-        details: { verificationId: 'not found' },
+        details: { challengeId: 'not found' },
       });
     });
 
     it('throws 400 when the OTP code is invalid', async () => {
-      const payload = makeVerificationPayload({ verificationMethod: 'code' });
+      const payload = makeChallengePayload({ verificationMethod: 'code' });
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
       vi.mocked(otpProvider.validate).mockReturnValue(false);
 
-      await expect(service.verifyEmailVerification('ver-id-1', 'wrong')).rejects.toMatchObject({
+      await expect(service.verifyEmailChallenge('chal-id-1', 'wrong')).rejects.toMatchObject({
         statusCode: 400,
         details: { code: 'invalid code' },
       });
     });
 
     it('throws 400 when the magic link token does not match', async () => {
-      const payload = makeVerificationPayload({ verificationMethod: 'magiclink', code: 'correct-token' });
+      const payload = makeChallengePayload({ verificationMethod: 'magiclink', code: 'correct-token' });
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
 
-      await expect(service.verifyEmailVerification('ver-id-1', 'wrong-token')).rejects.toMatchObject({
+      await expect(service.verifyEmailChallenge('chal-id-1', 'wrong-token')).rejects.toMatchObject({
         statusCode: 400,
         details: { code: 'invalid magiclink' },
       });
     });
 
-    it('returns actorId and factorId for a valid code verification', async () => {
-      const payload = makeVerificationPayload({ verificationMethod: 'code' });
+    it('returns actorId and factorId for a valid code challenge', async () => {
+      const payload = makeChallengePayload({ verificationMethod: 'code' });
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
       vi.mocked(otpProvider.validate).mockReturnValue(true);
 
-      const result = await service.verifyEmailVerification('ver-id-1', '123456');
+      const result = await service.verifyEmailChallenge('chal-id-1', '123456');
 
       expect(result.actorId).toBe('actor-1');
       expect(result.factorId).toBe('factor-1');
     });
 
     it('returns actorId and factorId for a valid magic link', async () => {
-      const payload = makeVerificationPayload({ verificationMethod: 'magiclink', code: 'the-magic-token' });
+      const payload = makeChallengePayload({ verificationMethod: 'magiclink', code: 'the-magic-token' });
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
 
-      const result = await service.verifyEmailVerification('ver-id-1', 'the-magic-token');
+      const result = await service.verifyEmailChallenge('chal-id-1', 'the-magic-token');
 
       expect(result.actorId).toBe('actor-1');
       expect(result.factorId).toBe('factor-1');
     });
 
-    it('deletes the cached verification entries after a successful verification', async () => {
-      const payload = makeVerificationPayload({ verificationMethod: 'code' });
+    it('deletes the cached challenge entries after a successful verification', async () => {
+      const payload = makeChallengePayload({ verificationMethod: 'code' });
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
       vi.mocked(otpProvider.validate).mockReturnValue(true);
 
-      await service.verifyEmailVerification('ver-id-1', '123456');
+      await service.verifyEmailChallenge('chal-id-1', '123456');
 
-      expect(cache.delete).toHaveBeenCalledWith('email_factor_verification_ver-id-1');
-      expect(cache.delete).toHaveBeenCalledWith('email_factor_verification_actor-1_factor-1');
+      expect(cache.delete).toHaveBeenCalledWith('email_factor_challenge_chal-id-1');
+      expect(cache.delete).toHaveBeenCalledWith('email_factor_challenge_actor-1_factor-1');
     });
   });
 });

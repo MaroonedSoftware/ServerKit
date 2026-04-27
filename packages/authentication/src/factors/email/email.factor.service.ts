@@ -16,7 +16,7 @@ type EmailPayload = {
   issuedAt: number;
 };
 
-type VerificationPayload = EmailPayload & {
+type IssuePayload = EmailPayload & {
   actorId: string;
   factorId: string;
 };
@@ -53,8 +53,8 @@ export class EmailFactorServiceOptions {
  * 2. Call {@link createEmailFactorFromRegistration} with the token from the link → persists the factor.
  *
  * **Verification flow** (signing in with an existing factor):
- * 1. Call {@link createEmailVerification} → receive a `verificationId` and a `code`/token to send.
- * 2. Call {@link verifyEmailVerification} → returns `actorId` and `factorId` on success.
+ * 1. Call {@link issueEmailChallenge} → receive a `verificationId` and a `code`/token to send.
+ * 2. Call {@link verifyEmailChallenge} → returns `actorId` and `factorId` on success.
  */
 @Injectable()
 export class EmailFactorService {
@@ -65,8 +65,8 @@ export class EmailFactorService {
     private readonly cache: CacheProvider,
   ) {}
 
-  private getVerificationKey(key: string) {
-    return `email_factor_verification_${key}`;
+  private getChallengeKey(key: string) {
+    return `email_factor_challenge_${key}`;
   }
 
   private getRegistrationKey(key: string) {
@@ -94,22 +94,22 @@ export class EmailFactorService {
     return registrationId;
   }
 
-  private async lookupVerification(verificationId: string) {
-    const response = await this.cache.get(this.getVerificationKey(verificationId));
-    return response ? (JSON.parse(response) as VerificationPayload) : undefined;
+  private async lookupChallenge(challengeId: string) {
+    const response = await this.cache.get(this.getChallengeKey(challengeId));
+    return response ? (JSON.parse(response) as IssuePayload) : undefined;
   }
 
-  private async lookupVerificationByActorAndFactor(actorId: string, factorId: string) {
-    const verificationId = await this.cache.get(this.getVerificationKey(`${actorId}_${factorId}`));
-    return verificationId ? await this.lookupVerification(verificationId) : undefined;
+  private async lookupChallengeByActorAndFactor(actorId: string, factorId: string) {
+    const challengeId = await this.cache.get(this.getChallengeKey(`${actorId}_${factorId}`));
+    return challengeId ? await this.lookupChallenge(challengeId) : undefined;
   }
 
-  private async cacheVerification(payload: VerificationPayload, expiration: Duration) {
-    const verificationId = crypto.randomBytes(32).toString('base64url');
-    payload.id = verificationId;
-    await this.cache.set(this.getVerificationKey(verificationId), JSON.stringify(payload), expiration);
-    await this.cache.set(this.getVerificationKey(`${payload.actorId}_${payload.factorId}`), verificationId, expiration);
-    return verificationId;
+  private async cacheChallenge(payload: IssuePayload, expiration: Duration) {
+    const challengeId = crypto.randomBytes(32).toString('base64url');
+    payload.id = challengeId;
+    await this.cache.set(this.getChallengeKey(challengeId), JSON.stringify(payload), expiration);
+    await this.cache.set(this.getChallengeKey(`${payload.actorId}_${payload.factorId}`), challengeId, expiration);
+    return challengeId;
   }
 
   private createCode(expiration: Duration) {
@@ -268,78 +268,78 @@ export class EmailFactorService {
   }
 
   /**
-   * Initiate an email verification challenge for an existing, active factor.
+   * Initiate an email challenge for an existing, active factor.
    *
-   * Generates a code or magic link token and caches a short-lived verification payload.
+   * Generates a code or magic link token and caches a short-lived challenge payload.
    * The caller is responsible for sending the `code` to the `email` address returned.
-   * Complete verification by calling {@link verifyEmailVerification}.
+   * Complete challenge by calling {@link verifyEmailChallenge}.
    *
-   * Idempotent: if a pending verification is already cached for this
-   * actor+factor pair, the existing `verificationId` and `code` are returned
+   * Idempotent: if a pending challenge is already cached for this
+   * actor+factor pair, the existing `challengeId` and `code` are returned
    * and `alreadyIssued` is set to `true`. Use this flag to suppress duplicate
    * "we just emailed you" notifications.
    *
    * @param actorId            - The actor that owns the factor.
    * @param factorId           - The id of the email factor to verify against.
-   * @param verificationMethod - `"code"` or `"magiclink"`.
-   * @returns `{ email, verificationId, code, expiresAt, issuedAt, alreadyIssued }` —
-   *   the verified email address, verification reference, code/token to send,
-   *   when the verification expires and was originally issued (both as Luxon
+   * @param issueMethod - `"code"` or `"magiclink"`.
+   * @returns `{ email, challengeId, code, expiresAt, issuedAt, alreadyIssued }` —
+   *   the verified email address, challenge reference, code/token to send,
+   *   when the challenge expires and was originally issued (both as Luxon
    *   `DateTime`s), and whether this call hit a previously-cached pending
-   *   verification.
+   *   challenge.
    * @throws HTTP 404 when the factor does not exist or is not active.
    */
-  async createEmailVerification(actorId: string, factorId: string, verificationMethod: 'code' | 'magiclink') {
+  async issueEmailChallenge(actorId: string, factorId: string, issueMethod: 'code' | 'magiclink') {
     const factor = await this.emailFactorRepository.getFactor(actorId, factorId);
     if (!factor || !factor.active) {
       throw httpError(404).withDetails({ factorId: 'not found' });
     }
     const email = factor.value;
 
-    const existingVerification = await this.lookupVerificationByActorAndFactor(actorId, factorId);
-    if (existingVerification) {
+    const existingChallenge = await this.lookupChallengeByActorAndFactor(actorId, factorId);
+    if (existingChallenge) {
       return {
         email,
-        verificationId: existingVerification.id,
-        code: existingVerification.code,
-        expiresAt: DateTime.fromSeconds(existingVerification.expiresAt),
-        issuedAt: DateTime.fromSeconds(existingVerification.issuedAt),
+        challengeId: existingChallenge.id,
+        code: existingChallenge.code,
+        expiresAt: DateTime.fromSeconds(existingChallenge.expiresAt),
+        issuedAt: DateTime.fromSeconds(existingChallenge.issuedAt),
         alreadyIssued: true,
       };
     }
 
-    const { payload, expiresAt, issuedAt, expiration } = this.createPayload<VerificationPayload>(verificationMethod);
+    const { payload, expiresAt, issuedAt, expiration } = this.createPayload<IssuePayload>(issueMethod);
 
     payload.actorId = actorId;
     payload.factorId = factorId;
 
-    const verificationId = await this.cacheVerification(payload, expiration);
+    const challengeId = await this.cacheChallenge(payload, expiration);
 
-    return { email, verificationId, code: payload.code, expiresAt, issuedAt, alreadyIssued: false };
+    return { email, challengeId, code: payload.code, expiresAt, issuedAt, alreadyIssued: false };
   }
 
   /**
-   * Complete an email verification challenge.
+   * Complete an email challenge.
    *
-   * On success the cached verification entries (under both the verification id
+   * On success the cached challenge entries (under both the challenge id
    * and the actor+factor pair) are deleted so the code/token cannot be replayed.
    *
-   * @param verificationId - The verification reference returned by {@link createEmailVerification}.
+   * @param challengeId - The challenge reference returned by {@link issueEmailChallenge}.
    * @param code           - The code or magic link token submitted by the user.
    * @returns `{ actorId, factorId }` identifying the actor and factor that was verified.
-   * @throws HTTP 404 when the verification has expired or does not exist.
+   * @throws HTTP 404 when the challenge has expired or does not exist.
    * @throws HTTP 400 when the code/token is invalid.
    */
-  async verifyEmailVerification(verificationId: string, code: string) {
-    const payload = await this.lookupVerification(verificationId);
+  async verifyEmailChallenge(challengeId: string, code: string) {
+    const payload = await this.lookupChallenge(challengeId);
     if (!payload) {
-      throw httpError(404).withDetails({ verificationId: 'not found' });
+      throw httpError(404).withDetails({ challengeId: 'not found' });
     }
 
     this.verifyPayload(payload, code);
 
-    await this.cache.delete(this.getVerificationKey(verificationId));
-    await this.cache.delete(this.getVerificationKey(`${payload.actorId}_${payload.factorId}`));
+    await this.cache.delete(this.getChallengeKey(challengeId));
+    await this.cache.delete(this.getChallengeKey(`${payload.actorId}_${payload.factorId}`));
 
     return { actorId: payload.actorId, factorId: payload.factorId };
   }

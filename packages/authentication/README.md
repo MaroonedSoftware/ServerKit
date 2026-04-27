@@ -288,17 +288,17 @@ if (!alreadyRegistered) {
 // Step 2: user submits the code; persist the factor
 const factor = await emailFactors.createEmailFactorFromRegistration(user.id, registrationId, submittedCode);
 
-// --- Verification (sign-in) ---
+// --- Challenge (sign-in) ---
 
 // Step 1: send a challenge. Idempotent — `alreadyIssued` is true when a pending
-// verification was already cached, so the caller can skip re-sending the email.
-const { email, verificationId, code, alreadyIssued } = await emailFactors.createEmailVerification(user.id, factor.id, 'code');
+// challenge was already cached, so the caller can skip re-sending the email.
+const { email, challengeId, code, alreadyIssued } = await emailFactors.issueEmailChallenge(user.id, factor.id, 'code');
 if (!alreadyIssued) {
   await mailer.sendOtp(email, code);
 }
 
 // Step 2: user submits the code
-const { actorId, factorId } = await emailFactors.verifyEmailVerification(verificationId, submittedCode);
+const { actorId, factorId } = await emailFactors.verifyEmailChallenge(challengeId, submittedCode);
 ```
 
 `registerEmailFactor` rejects the request before issuing a code when:
@@ -649,15 +649,15 @@ Abstract base class. Extend and register a concrete implementation so that `Pass
 | ------------------------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------- |
 | `registerEmailFactor(value, verificationMethod)`                    | `Promise<{ registrationId, code, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>` | Initiate email factor registration (idempotent — `alreadyRegistered` is `true` on a cache hit) |
 | `createEmailFactorFromRegistration(actorId, registrationId, code)`  | `Promise<EmailFactor>`                                      | Complete registration                   |
-| `createEmailVerification(actorId, factorId, verificationMethod)`    | `Promise<{ email, verificationId, code, expiresAt: DateTime, issuedAt: DateTime, alreadyIssued: boolean }>` | Initiate a sign-in challenge (idempotent — `alreadyIssued` is `true` on a cache hit) |
-| `verifyEmailVerification(verificationId, code)`                     | `Promise<{ actorId, factorId }>`                            | Complete a sign-in challenge            |
+| `issueEmailChallenge(actorId, factorId, issueMethod)`               | `Promise<{ email, challengeId, code, expiresAt: DateTime, issuedAt: DateTime, alreadyIssued: boolean }>` | Initiate a sign-in challenge (idempotent — `alreadyIssued` is `true` on a cache hit) |
+| `verifyEmailChallenge(challengeId, code)`                           | `Promise<{ actorId, factorId }>`                            | Complete a sign-in challenge            |
 
 `EmailFactorServiceOptions`:
 
 | Option                | Type       | Default    | Description                                                                              |
 | --------------------- | ---------- | ---------- | ---------------------------------------------------------------------------------------- |
 | `denyList`            | `string[]` | `[]`       | Sorted list of email domains to reject (checked via binary search; e.g. disposable mail) |
-| `otpExpiration`       | `Duration` | 10 minutes | How long an OTP-code registration or verification challenge stays valid                  |
+| `otpExpiration`       | `Duration` | 10 minutes | How long an OTP-code registration or sign-in challenge stays valid                       |
 | `magiclinkExpiration` | `Duration` | 30 minutes | How long a magic link token stays valid                                                  |
 
 ### `EmailFactorRepository`
