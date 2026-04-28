@@ -1,6 +1,6 @@
 # @maroonedsoftware/authentication
 
-Authentication utilities for ServerKit. Provides scheme-based handler dispatch, session management, JWT issuance, OTP generation, password strength checking, password factor flows, email factor flows, authenticator app (TOTP/HOTP) factor flows, phone number factor flows, and FIDO2/WebAuthn factor flows — all with full dependency injection support via [injectkit](https://www.npmjs.com/package/injectkit).
+Authentication utilities for ServerKit. Provides scheme-based handler dispatch, session management, JWT issuance, OTP generation, password strength checking, password factor flows, email factor flows, authenticator app (TOTP/HOTP) factor flows, phone number factor flows, FIDO2/WebAuthn factor flows, OpenID Connect SSO (Google, Microsoft, LinkedIn, Apple, …), and OAuth 2.0 SSO (GitHub, Discord, Twitter/X, …) — all with full dependency injection support via [injectkit](https://www.npmjs.com/package/injectkit).
 
 ## Installation
 
@@ -23,6 +23,8 @@ pnpm add @maroonedsoftware/authentication
 - **Authenticator app factors** — TOTP/HOTP registration with QR code provisioning via `AuthenticatorFactorService`
 - **Phone number factors** — two-step phone factor registration via `PhoneFactorService` (send the OTP out-of-band via SMS)
 - **FIDO2/WebAuthn factors** — passkey/security-key registration and sign-in via `FidoFactorService` (built on [`fido2-lib`](https://www.npmjs.com/package/fido2-lib))
+- **OpenID Connect factors** — sign-in, account linking, and refresh-token rotation via `OidcFactorService` (built on [`openid-client`](https://www.npmjs.com/package/openid-client)) with public-client support and verified-email auto-linking
+- **OAuth 2.0 factors** — non-OIDC sign-in (GitHub, Discord, Twitter/X, …) via `OAuth2FactorService` with an adapter interface that pairs cleanly with [`arctic`](https://www.npmjs.com/package/arctic)
 - **DI-friendly** — all classes are decorated with `@Injectable()` and designed for an injectkit container
 
 ## Usage
@@ -437,6 +439,154 @@ Failed attestations and assertions both throw HTTP 401 with a `WWW-Authenticate:
 
 ---
 
+### OpenID Connect factors
+
+`OidcFactorService` orchestrates SSO sign-in, account linking, and refresh-token rotation against any OpenID Connect provider — Google, Microsoft, LinkedIn, Apple, etc. The id_token is validated end-to-end (signature against the provider's JWKS, `iss` / `aud` / `exp`, `nonce`, and PKCE) by `openid-client`.
+
+Register one or more providers via `OidcProviderRegistry`. Discovery (`.well-known/openid-configuration`) is lazy and cached per provider per process. Public clients (mobile, SPA) are supported by omitting `clientSecret` — PKCE is mandatory in that mode.
+
+```typescript
+import {
+  OidcFactorService,
+  OidcProviderRegistry,
+  OidcProviderRegistryConfig,
+  OidcActorEmailLookup,
+} from '@maroonedsoftware/authentication';
+
+// Wire providers via DI (sourced from AppConfig — keep clientSecret out of code)
+registry.registerValue(OidcProviderRegistryConfig, new OidcProviderRegistryConfig([
+  {
+    name: 'google',
+    issuer: new URL('https://accounts.google.com'),
+    clientId: config.google.clientId,
+    clientSecret: config.google.clientSecret,
+    scopes: ['openid', 'profile', 'email'],
+    redirectUri: new URL('https://app.example.com/auth/google/callback'),
+    authorizeParams: { access_type: 'offline', prompt: 'consent' }, // needed for Google to issue a refresh token
+    persistRefreshToken: true,
+  },
+]));
+registry.register(OidcProviderRegistry).useClass(OidcProviderRegistry).asSingleton();
+registry.register(OidcFactorService).useClass(OidcFactorService).asSingleton();
+
+// Bridge OIDC sign-in to your existing account store. The lookup decides what
+// counts as an "existing account with this email" — typically your email-factor
+// table — and returns the actorId so OidcFactorService can auto-link.
+@Injectable()
+class MyEmailLookup extends OidcActorEmailLookup {
+  constructor(private readonly emails: EmailFactorRepository) { super(); }
+  async findActorByEmail(email: string) {
+    const factor = await this.emails.lookupFactor(email);
+    return factor?.active ? factor.actorId : undefined;
+  }
+}
+registry.register(OidcActorEmailLookup).useClass(MyEmailLookup).asSingleton();
+
+const oidc = container.get(OidcFactorService);
+
+// Step 1 — redirect the browser to the IdP
+const { url } = await oidc.beginAuthorization({
+  provider: 'google',
+  intent: 'sign-in',
+  redirectAfter: '/welcome',
+});
+ctx.redirect(url.toString());
+
+// Step 2 — handle the callback
+const result = await oidc.completeAuthorization({ callbackUrl: new URL(ctx.href) });
+switch (result.kind) {
+  case 'signed-in':
+  case 'linked':
+    // Issue a session for result.actorId
+    break;
+  case 'new-user':
+    if (result.emailConflict) {
+      // An account with this email already exists but the IdP didn't claim it
+      // verified — show "sign in to your existing account first to link this provider".
+      break;
+    }
+    // Show a sign-up form, then call createFactorFromAuthorization with the new actorId.
+    await oidc.createFactorFromAuthorization(newActorId, result.authorizationId);
+    break;
+}
+```
+
+**Account linking.** Pass `intent: 'link'` and an existing `actorId` on `beginAuthorization` to attach an additional provider to a signed-in user.
+
+**Auto-link by verified email.** When sign-in finds no `(provider, subject)` mapping but the IdP returns a verified email matching an existing actor (via `OidcActorEmailLookup`), the service auto-creates the factor on that actor and returns `kind: 'linked'`. Unverified-email matches do **not** auto-link — they return `kind: 'new-user'` with `emailConflict` set so the UI can require sign-in to the existing account before linking.
+
+**Refresh tokens.** Set `persistRefreshToken: true` on the provider config to envelope-encrypt and persist the refresh token (via `@maroonedsoftware/encryption`). Call `oidc.refreshAccessToken(actorId, factorId)` later for a fresh access token; rotated refresh tokens are re-encrypted automatically. Refresh tokens are dropped for public clients regardless of the flag, since safe handling requires DPoP or a backend proxy that this package doesn't implement.
+
+---
+
+### OAuth 2.0 factors (non-OIDC)
+
+`OAuth2FactorService` covers providers that expose OAuth 2.0 but not full OpenID Connect — GitHub, Discord, Twitter/X, etc. The public surface mirrors the OIDC service so callback handling can be shared, but the underlying provider client is supplied as an adapter (typically wrapping an [`arctic`](https://www.npmjs.com/package/arctic) provider) plus a provider-specific `fetchProfile` that resolves the access token to a normalized profile.
+
+```typescript
+import { GitHub } from 'arctic';
+import {
+  OAuth2FactorService,
+  OAuth2ProviderRegistry,
+  OAuth2ProviderRegistryConfig,
+  OAuth2ProviderClient,
+  OAuth2Tokens,
+  OAuth2ActorEmailLookup,
+} from '@maroonedsoftware/authentication';
+
+// Adapt an arctic provider to OAuth2ProviderClient
+const github = new GitHub(config.github.clientId, config.github.clientSecret, 'https://app.example.com/auth/github/callback');
+const githubClient: OAuth2ProviderClient = {
+  createAuthorizationURL: (state, _codeVerifier, scopes) => github.createAuthorizationURL(state, scopes),
+  validateAuthorizationCode: async (code) => {
+    const tokens = await github.validateAuthorizationCode(code);
+    return {
+      accessToken: tokens.accessToken(),
+      refreshToken: tokens.hasRefreshToken() ? tokens.refreshToken() : undefined,
+      expiresAt: tokens.hasRefreshToken() ? tokens.accessTokenExpiresAt() : undefined,
+    } satisfies OAuth2Tokens;
+  },
+};
+
+registry.registerValue(OAuth2ProviderRegistryConfig, new OAuth2ProviderRegistryConfig([
+  {
+    name: 'github',
+    client: githubClient,
+    scopes: ['read:user', 'user:email'],
+    usesPKCE: false, // GitHub does not support PKCE
+    fetchProfile: async (accessToken) => {
+      const [user, emails] = await Promise.all([
+        fetch('https://api.github.com/user', { headers: { Authorization: `Bearer ${accessToken}` } }).then((r) => r.json()),
+        fetch('https://api.github.com/user/emails', { headers: { Authorization: `Bearer ${accessToken}` } }).then((r) => r.json()),
+      ]);
+      const primary = emails.find((e: { primary: boolean }) => e.primary);
+      return {
+        subject: String(user.id),
+        email: primary?.email,
+        emailVerified: primary?.verified === true,
+        name: user.name ?? user.login,
+        picture: user.avatar_url,
+        rawProfile: { user, emails },
+      };
+    },
+  },
+]));
+registry.register(OAuth2ProviderRegistry).useClass(OAuth2ProviderRegistry).asSingleton();
+registry.register(OAuth2FactorService).useClass(OAuth2FactorService).asSingleton();
+
+const oauth2 = container.get(OAuth2FactorService);
+const { url } = await oauth2.beginAuthorization({ provider: 'github', intent: 'sign-in' });
+// ...callback handling identical in shape to the OIDC service above.
+```
+
+**PKCE.** Set `usesPKCE: true` for providers that support it (Google in OAuth-2.0-only mode, Twitter/X, etc.) and the service generates a verifier per request, passing it to both `createAuthorizationURL` and `validateAuthorizationCode`. Set `false` for providers that don't (GitHub).
+
+**Email verification semantics.** Unlike OIDC, most OAuth 2.0 providers don't expose an `email_verified` flag — the adapter is responsible for resolving it (e.g. GitHub's `/user/emails` returns a `verified` boolean per address). Default `emailVerified: false` rather than `undefined` if the provider gives no signal; the auto-link rules treat anything other than explicit `true` as unverified.
+
+**Refresh tokens.** Same opt-in mechanism as OIDC: set `persistRefreshToken: true` and provide a `refreshAccessToken` method on the adapter. Rotated tokens are re-encrypted automatically.
+
+---
+
 ## API Reference
 
 ### `AuthenticationContext`
@@ -785,6 +935,100 @@ Abstract base class. Extend and register a concrete implementation so that `Fido
 | `deleteFactor(actorId, factorId)`                                     | `Promise<void>`                      | Remove a factor                                                                                   |
 
 `FidoFactor`: `{ id: string; actorId: string; active: boolean; publicKey: string; publicKeyId: string; counter: number }`.
+
+### `OidcProviderRegistry`
+
+Holds the configured OIDC providers and lazily resolves an `openid-client` `Configuration` per provider on first use. Constructed from an injected `OidcProviderRegistryConfig`.
+
+| Method                       | Returns                                | Description                                                                              |
+| ---------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `getConfig(name)`            | `OidcProviderConfig`                   | Look up the static config; throws HTTP 404 for unknown providers                         |
+| `isPublicClient(name)`       | `boolean`                              | `true` when the provider has no `clientSecret`                                           |
+| `getConfiguration(name)`     | `Promise<openid-client.Configuration>` | Lazy-resolve and cache the discovery-backed Configuration; deduplicates concurrent calls |
+| `listProviders()`            | `string[]`                             | Names of all registered providers                                                        |
+
+`OidcProviderConfig`: `{ name; issuer: URL; clientId; clientSecret?; scopes: string[]; redirectUri: URL; authorizeParams?: Record<string, string>; persistRefreshToken?: boolean }`. Omit `clientSecret` for public (mobile/SPA) clients — the registry uses `openid-client.None()` and PKCE becomes mandatory.
+
+### `OidcFactorService`
+
+| Method                                                  | Returns                                                          | Description                                                                                                       |
+| ------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `beginAuthorization({ provider, intent, actorId?, redirectAfter? })` | `Promise<{ url: URL; state; expiresAt: DateTime }>`                | Build the IdP authorize URL and cache the round-trip state record (state, nonce, PKCE verifier)                   |
+| `completeAuthorization({ callbackUrl })`                | `Promise<OidcAuthorizationResult>`                               | Exchange the auth code, validate the id_token, fetch userinfo, and resolve to a factor                            |
+| `createFactorFromAuthorization(actorId, authorizationId)` | `Promise<OidcFactor>`                                          | Complete the `new-user` branch by attaching the cached profile to a freshly created actor                         |
+| `refreshAccessToken(actorId, factorId)`                 | `Promise<{ accessToken; expiresAt: DateTime \| null; scope?; idToken? }>` | Rotate the access token using the persisted refresh token; re-encrypts a rotated refresh token automatically      |
+| `hasPendingAuthorization(authorizationId)`              | `Promise<boolean>`                                               | Check whether a `new-user` pending authorization is still cached and unconsumed                                   |
+
+`OidcAuthorizationResult` is a discriminated union with `kind` ∈ `'signed-in' | 'linked' | 'new-user'`. The `'new-user'` branch carries `authorizationId` and an optional `emailConflict: { actorId; reason: 'unverified-email' }` when the IdP-claimed email matches an existing actor but is unverified.
+
+`OidcFactorServiceOptions`:
+
+| Option                            | Type       | Default    | Description                                                                                          |
+| --------------------------------- | ---------- | ---------- | ---------------------------------------------------------------------------------------------------- |
+| `stateExpiration`                 | `Duration` | 10 minutes | How long a state record (the round-trip between authorize and callback) lives                        |
+| `pendingAuthorizationExpiration`  | `Duration` | 30 minutes | How long a `new-user` pending authorization survives before the caller must complete it              |
+
+### `OidcActorEmailLookup`
+
+Abstract bridge from a verified email to an actor id. Used by the auto-link flow. Return `undefined` for ambiguity to force the caller through the explicit new-user / link path.
+
+| Method                       | Returns                          | Description                                                       |
+| ---------------------------- | -------------------------------- | ----------------------------------------------------------------- |
+| `findActorByEmail(email)`    | `Promise<string \| undefined>`   | Resolve an email to an actor id; `undefined` when no match exists |
+
+### `OidcFactorRepository`
+
+Abstract base class. Implementations should enforce uniqueness on `(provider, subject)`.
+
+| Method                                              | Returns                                | Description                                                                                       |
+| --------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `createFactor({ actorId, provider, subject, email?, encryptedRefreshToken?, encryptedRefreshTokenDek?, refreshTokenExpiresAt? })` | `Promise<OidcFactor>`                  | Persist a new factor                                                                              |
+| `lookupFactor(provider, subject)`                   | `Promise<OidcFactor \| undefined>`     | Look up by provider-side identity                                                                 |
+| `lookupFactorsByEmail(email)`                       | `Promise<OidcFactor[]>`                | Look up by last-seen email — used by the auto-link flow                                           |
+| `getFactor(actorId, factorId)`                      | `Promise<OidcFactor>`                  | Retrieve a factor by id, scoped to the owning actor                                               |
+| `listFactorsForActor(actorId)`                      | `Promise<OidcFactor[]>`                | List active factors for an actor (account-settings UI)                                            |
+| `updateRefreshToken(factorId, { encryptedRefreshToken, encryptedRefreshTokenDek, refreshTokenExpiresAt? })` | `Promise<void>`         | Update the persisted refresh token after rotation                                                 |
+| `updateEmail(factorId, email)`                      | `Promise<void>`                        | Update the last-seen email                                                                        |
+| `deleteFactor(actorId, factorId)`                   | `Promise<void>`                        | Remove a factor                                                                                   |
+
+`OidcFactor`: `{ id; actorId; active; provider; subject; email?; encryptedRefreshToken?; encryptedRefreshTokenDek?; refreshTokenExpiresAt?: Date | null }`.
+
+### `OAuth2ProviderRegistry`
+
+Holds OAuth-2.0-only provider adapters. No discovery step — adapters are constructed at app boot and looked up by name.
+
+| Method                | Returns                  | Description                                          |
+| --------------------- | ------------------------ | ---------------------------------------------------- |
+| `getConfig(name)`     | `OAuth2ProviderConfig`   | Look up the config; throws HTTP 404 when unknown     |
+| `listProviders()`     | `string[]`               | Names of all registered providers                    |
+
+`OAuth2ProviderConfig`: `{ name; client: OAuth2ProviderClient; scopes: string[]; usesPKCE: boolean; fetchProfile: (accessToken) => Promise<Omit<OAuth2Profile, 'provider'>>; persistRefreshToken?: boolean }`.
+
+`OAuth2ProviderClient`: adapter interface — `createAuthorizationURL(state, codeVerifier | null, scopes)`, `validateAuthorizationCode(code, codeVerifier | null)`, optional `refreshAccessToken(refreshToken)`. Wrap a provider-specific client (typically an [`arctic`](https://www.npmjs.com/package/arctic) provider).
+
+### `OAuth2FactorService`
+
+Mirrors `OidcFactorService`'s public surface. Same method names, same result shape (`OAuth2AuthorizationResult` with `'signed-in' | 'linked' | 'new-user'`), same `emailConflict` discriminant. See the [Usage section](#oauth-20-factors-non-oidc) for example wiring.
+
+| Method                                                  | Returns                                                          | Description                                                                                                       |
+| ------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `beginAuthorization({ provider, intent, actorId?, redirectAfter? })` | `Promise<{ url: URL; state; expiresAt: DateTime }>`                | Build the provider authorize URL and cache the round-trip state record                                            |
+| `completeAuthorization({ callbackUrl })`                | `Promise<OAuth2AuthorizationResult>`                             | Exchange the auth code, fetch the provider profile, and resolve to a factor                                       |
+| `createFactorFromAuthorization(actorId, authorizationId)` | `Promise<OAuth2Factor>`                                        | Complete the `new-user` branch                                                                                    |
+| `refreshAccessToken(actorId, factorId)`                 | `Promise<{ accessToken; expiresAt: Date \| null; scopes?; idToken? }>` | Rotate the access token via the adapter's `refreshAccessToken`; throws HTTP 400 when the adapter doesn't implement it |
+| `hasPendingAuthorization(authorizationId)`              | `Promise<boolean>`                                               | Check whether a pending authorization is still cached                                                             |
+
+`OAuth2FactorServiceOptions`: same shape as `OidcFactorServiceOptions` (`stateExpiration` 10 min, `pendingAuthorizationExpiration` 30 min by default).
+
+### `OAuth2ActorEmailLookup`
+
+Same contract as `OidcActorEmailLookup` — separate type so the two factor services can be wired up independently.
+
+### `OAuth2FactorRepository`
+
+Abstract base class with the same surface as `OidcFactorRepository`. Stored in a separate table from OIDC factors — the trust model differs (userinfo vs signed id_token) and `(provider, subject)` uniqueness lives in a different namespace.
+
+`OAuth2Factor`: same shape as `OidcFactor`.
 
 ## License
 
