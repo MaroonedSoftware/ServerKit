@@ -1,5 +1,13 @@
 # @maroonedsoftware/koa
 
+## 1.17.1
+
+### Patch Changes
+
+- Updated dependencies [f7eaa33]
+- Updated dependencies [f7eaa33]
+  - @maroonedsoftware/authentication@0.22.0
+
 ## 1.17.0
 
 ### Minor Changes
