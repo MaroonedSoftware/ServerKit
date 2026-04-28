@@ -366,4 +366,33 @@ export class EmailFactorService {
   async hasPendingRegistration(registrationId: string) {
     return (await this.lookupRegistration(registrationId)) !== undefined;
   }
+
+  /**
+   * Build a minimal HTML page that redirects the browser to `redirectUrl` from a
+   * client-side script tag, paired with a freshly generated CSP nonce.
+   *
+   * Intended for the magic link flow: after the server verifies the link, return
+   * this HTML to the user's browser so the redirect happens after page load (which
+   * sidesteps email pre-fetchers that follow `Location` headers and would otherwise
+   * burn the one-time token before the human ever clicks).
+   *
+   * The caller is responsible for serving the returned `nonce` in a
+   * `Content-Security-Policy: script-src 'nonce-<nonce>'` response header so the
+   * inline script is allowed to execute.
+   *
+   * @param redirectUrl - The destination to navigate to. Must use the `http:` or
+   *   `https:` scheme — other schemes (e.g. `javascript:`, `file:`, `data:`) are
+   *   rejected to avoid script-injection / open-redirect abuse.
+   * @returns `{ html, nonce }` — the HTML body to send and the base64 nonce that
+   *   must be echoed in the CSP header.
+   * @throws HTTP 400 when `redirectUrl` is not an `http:` or `https:` URL.
+   */
+  getRedirectHtml(redirectUrl: URL) {
+    if (redirectUrl.protocol !== 'https:' && redirectUrl.protocol !== 'http:') {
+      throw httpError(400).withInternalDetails({ redirectUrl: 'must be a valid http or https URL' });
+    }
+    const nonce = crypto.randomBytes(16).toString('base64');
+    const html = `<!DOCTYPE html><html><head lang="en"><meta http-equiv="Content-Type" content="text/html; charset=utf-8" /></head><body><script nonce="${nonce}" type="text/javascript">window.onload = async function() {window.location.href = "${redirectUrl}";}</script></body></html>`;
+    return { html, nonce };
+  }
 }

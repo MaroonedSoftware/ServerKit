@@ -307,6 +307,14 @@ const { actorId, factorId } = await emailFactors.verifyEmailChallenge(challengeI
 - `EmailFactorRepository.isDomainInviteOnly(domain)` returns `true` (HTTP 403 — implement this to gate registration to allow-listed domains, e.g. workspaces that require an invite),
 - an active factor already exists for the email (HTTP 409).
 
+For the magic link flow, after the server has verified the link, return the page produced by `getRedirectHtml(redirectUrl)` instead of an HTTP redirect. The inline script defers navigation until `window.onload`, which sidesteps mail-client URL pre-fetchers that would otherwise burn the one-time token before the user clicks. The returned `nonce` must be echoed in a `Content-Security-Policy: script-src 'nonce-<nonce>'` header on the same response.
+
+```typescript
+const { html, nonce } = emailFactors.getRedirectHtml(new URL('https://app.example.com/welcome'));
+ctx.set('Content-Security-Policy', `script-src 'nonce-${nonce}'`);
+ctx.body = html;
+```
+
 ---
 
 ### Authenticator app factors (TOTP/HOTP)
@@ -653,6 +661,7 @@ Abstract base class. Extend and register a concrete implementation so that `Pass
 | `issueEmailChallenge(actorId, factorId, issueMethod)`               | `Promise<{ email, challengeId, code, expiresAt: DateTime, issuedAt: DateTime, alreadyIssued: boolean }>` | Initiate a sign-in challenge (idempotent — `alreadyIssued` is `true` on a cache hit) |
 | `verifyEmailChallenge(challengeId, code)`                           | `Promise<{ actorId, factorId }>`                            | Complete a sign-in challenge            |
 | `hasPendingChallenge(challengeId)`                                  | `Promise<boolean>`                                          | Check whether a challenge is still cached and unexpired    |
+| `getRedirectHtml(redirectUrl: URL)`                                 | `{ html, nonce }`                                           | Build a magic-link landing page that redirects to `redirectUrl` via a CSP-nonce-gated inline script (rejects non-`http(s):` URLs with HTTP 400) |
 
 `EmailFactorServiceOptions`:
 

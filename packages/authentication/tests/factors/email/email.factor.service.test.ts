@@ -460,4 +460,55 @@ describe('EmailFactorService', () => {
       expect(cache.get).toHaveBeenCalledWith('email_factor_registration_reg-id-1');
     });
   });
+
+  describe('getRedirectHtml', () => {
+    it('returns html and a nonce for an https URL', () => {
+      const result = service.getRedirectHtml(new URL('https://example.com/landing'));
+
+      expect(result.nonce).toBeTruthy();
+      expect(typeof result.nonce).toBe('string');
+      expect(result.html).toContain('https://example.com/landing');
+    });
+
+    it('returns html and a nonce for an http URL', () => {
+      const result = service.getRedirectHtml(new URL('http://example.com/landing'));
+
+      expect(result.nonce).toBeTruthy();
+      expect(result.html).toContain('http://example.com/landing');
+    });
+
+    it('embeds the generated nonce in the inline script tag', () => {
+      const result = service.getRedirectHtml(new URL('https://example.com/'));
+
+      expect(result.html).toContain(`nonce="${result.nonce}"`);
+    });
+
+    it('generates a fresh nonce on each call', () => {
+      const a = service.getRedirectHtml(new URL('https://example.com/'));
+      const b = service.getRedirectHtml(new URL('https://example.com/'));
+
+      expect(a.nonce).not.toBe(b.nonce);
+    });
+
+    it('throws 400 with internal details when the URL is not http or https', () => {
+      expect(() => service.getRedirectHtml(new URL('ftp://example.com/'))).toThrowError(
+        expect.objectContaining({
+          statusCode: 400,
+          internalDetails: { redirectUrl: 'must be a valid http or https URL' },
+        }),
+      );
+    });
+
+    it('rejects javascript: URLs', () => {
+      expect(() => service.getRedirectHtml(new URL('javascript:alert(1)'))).toThrowError(
+        expect.objectContaining({ statusCode: 400 }),
+      );
+    });
+
+    it('rejects file: URLs', () => {
+      expect(() => service.getRedirectHtml(new URL('file:///etc/passwd'))).toThrowError(
+        expect.objectContaining({ statusCode: 400 }),
+      );
+    });
+  });
 });
