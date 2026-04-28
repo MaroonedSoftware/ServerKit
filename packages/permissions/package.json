@@ -1,6 +1,6 @@
 {
   "name": "@maroonedsoftware/permissions",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "A Zanzibar-style relationship-based access control library — an authorization model DSL, a relation-tuple repository contract, and a Check evaluator with per-request metrics.",
   "author": {
     "name": "Marooned Software",
