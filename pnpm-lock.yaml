@@ -389,6 +389,22 @@ importers:
         specifier: workspace:*
         version: link:../config-typescript
 
+  packages/permissions:
+    dependencies:
+      injectkit:
+        specifier: ^1.2.0
+        version: 1.2.0
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
+    devDependencies:
+      '@repo/config-eslint':
+        specifier: workspace:*
+        version: link:../config-eslint
+      '@repo/config-typescript':
+        specifier: workspace:*
+        version: link:../config-typescript
+
   packages/utilities:
     devDependencies:
       '@repo/config-eslint':

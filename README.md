@@ -128,6 +128,19 @@ Robust multipart/form-data parsing with stream support.
 
 ---
 
+### Permissions
+
+Zanzibar-style relationship-based access control.
+
+- Authorization model DSL with `direct`, `computed`, `tupleToUserset`, `union`, `intersection`, `exclusion`
+- Validated `AuthorizationModel` — bad models fail at startup, not at Check time
+- Pluggable `PermissionsTupleRepository` for any storage backend
+- Recursive Check evaluator with per-request memo, cycle guard, and pluggable metrics sink
+
+[View documentation →](./packages/permissions/README.md)
+
+---
+
 ### Utilities
 
 Common utility functions for everyday server development.

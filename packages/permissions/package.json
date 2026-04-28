@@ -1,0 +1,52 @@
+{
+  "name": "@maroonedsoftware/permissions",
+  "version": "0.0.1",
+  "description": "A Zanzibar-style relationship-based access control library — an authorization model DSL, a relation-tuple repository contract, and a Check evaluator with per-request metrics.",
+  "author": {
+    "name": "Marooned Software",
+    "url": "https://github.com/MaroonedSoftware/serverkit"
+  },
+  "bugs": {
+    "url": "https://github.com/MaroonedSoftware/serverkit/issues"
+  },
+  "homepage": "https://github.com/MaroonedSoftware/serverkit/packages/permissions#readme",
+  "keywords": [
+    "authorization",
+    "backend",
+    "permissions",
+    "rbac",
+    "rebac",
+    "serverkit",
+    "typescript",
+    "zanzibar"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MaroonedSoftware/serverkit.git"
+  },
+  "private": false,
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "license": "MIT",
+  "files": [
+    "dist/**"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --sourcemap --dts && tsc --emitDeclarationOnly --declaration",
+    "build:ci": "eslint --max-warnings=0 && pnpm run build",
+    "lint": "eslint --fix",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:ci": "vitest run --coverage"
+  },
+  "dependencies": {
+    "injectkit": "^1.2.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@repo/config-eslint": "workspace:*",
+    "@repo/config-typescript": "workspace:*"
+  }
+}

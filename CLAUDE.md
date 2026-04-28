@@ -60,6 +60,7 @@ packages/
 ├── kysely/          # Kysely repository base, transaction helpers, PG type overrides
 ├── logger/          # Logger interface and console implementation
 ├── multipart/       # Multipart form-data parsing
+├── permissions/     # Zanzibar-style relationship-based access control
 ├── utilities/       # Common utilities (UUID, email, base32)
 ├── zod/             # Zod-to-httpError validation helper
 ├── config-eslint/   # Shared ESLint configuration
