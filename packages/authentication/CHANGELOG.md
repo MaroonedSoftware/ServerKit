@@ -1,5 +1,13 @@
 # @maroonedsoftware/authentication
 
+## 0.22.0
+
+### Minor Changes
+
+- f7eaa33: Add `EmailFactorService.getRedirectHtml(redirectUrl)` for the magic link flow. Returns a minimal HTML page that defers navigation to `window.onload` (sidestepping mail-client URL pre-fetchers that would otherwise burn the one-time token) along with a freshly generated CSP nonce to echo in a `script-src 'nonce-…'` header. URLs that aren't `http:` or `https:` are rejected with HTTP 400.
+- f7eaa33: feat: add getRedirectHtml helper for email magic link flow
+  - Returns an HTML landing page that defers redirection to window.onload to defeat mail-client URL pre-fetchers, paired with a CSP nonce the caller echoes in a script-src header. Non-http(s) schemes are rejected with 400.
+
 ## 0.21.0
 
 ### Minor Changes
