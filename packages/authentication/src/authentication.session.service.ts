@@ -329,8 +329,10 @@ export class AuthenticationSessionService {
   /**
    * Issue a signed JWT for an existing session.
    *
-   * The JWT embeds the session's claims, factors, and `sessionToken` so the
-   * server can look up the full session on subsequent requests.
+   * The JWT embeds the session's `factors`, `sessionToken`, and `claims` (as
+   * a single nested object — *not* spread to the top level) so the server can
+   * look up the full session on subsequent requests without claim names
+   * colliding with reserved JWT fields.
    *
    * @param sessionToken - The opaque session token to generate a JWT for.
    * @returns An {@link AuthenticationToken} (Bearer token response).
@@ -346,9 +348,9 @@ export class AuthenticationSessionService {
 
     const { token, decoded } = this.jwtProvider.create(
       {
-        ...claims,
         sessionToken,
         factors,
+        claims,
       },
       subject,
       this.options.issuer,

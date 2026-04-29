@@ -289,7 +289,7 @@ describe('AuthenticationSessionService', () => {
       await service.issueTokenForSession('session-token');
 
       expect(jwtProvider.create).toHaveBeenCalledWith(
-        expect.objectContaining({ sessionToken: 'session-token', role: 'admin' }),
+        expect.objectContaining({ sessionToken: 'session-token', claims: { role: 'admin' } }),
         'user-1',
         'https://auth.example.com',
         'https://api.example.com',
