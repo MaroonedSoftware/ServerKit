@@ -303,4 +303,15 @@ export class PasswordFactorService {
   async ensurePasswordStrength(password: string, ...userInputs: (string | number)[]) {
     await this.passwordStrengthProvider.ensureStrength(password, ...userInputs);
   }
+
+  /**
+   * Clear the rate limiter counter for an actor.
+   *
+   * Useful after an out-of-band recovery (e.g. successful magic-link sign-in
+   * or admin unlock) so the next password attempt isn't blocked by 429s
+   * accumulated from the failed attempts that triggered the recovery.
+   */
+  async clearRateLimit(actorId: string) {
+    await this.rateLimiter.delete(actorId);
+  }
 }

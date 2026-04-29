@@ -31,6 +31,7 @@ const makeRateLimiter = () =>
   ({
     consume: vi.fn().mockResolvedValue(undefined),
     reward: vi.fn().mockResolvedValue(undefined),
+    delete: vi.fn().mockResolvedValue(undefined),
   }) as unknown as RateLimiterCompatibleAbstract;
 
 const makeStrengthProvider = () =>
@@ -375,6 +376,13 @@ describe('PasswordFactorService', () => {
 
       await expect(service.checkPasswordStrength('weak', 'alice@example.com', 1990)).resolves.toBe(result);
       expect(strengthProvider.checkStrength).toHaveBeenCalledWith('weak', 'alice@example.com', 1990);
+    });
+  });
+
+  describe('clearRateLimit', () => {
+    it('delegates to the rate limiter', async () => {
+      await service.clearRateLimit('actor-1');
+      expect(rateLimiter.delete).toHaveBeenCalledWith('actor-1');
     });
   });
 
