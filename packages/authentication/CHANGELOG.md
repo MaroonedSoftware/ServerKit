@@ -1,5 +1,11 @@
 # @maroonedsoftware/authentication
 
+## 2.1.0
+
+### Minor Changes
+
+- ea5521d: Add `PasswordFactorService.clearRateLimit(actorId)` to reset the verify-password rate-limiter counter for an actor — useful after an out-of-band recovery (magic-link sign-in, admin unlock) so the next password attempt isn't blocked by accumulated 429s.
+
 ## 2.0.0
 
 ### Major Changes
