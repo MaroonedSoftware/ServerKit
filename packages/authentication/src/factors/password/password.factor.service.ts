@@ -130,7 +130,7 @@ export class PasswordFactorService {
       issuedAt: DateTime.utc().toUnixInteger(),
     } as RegistrationPayload;
 
-    registrationId = await this.cacheRegistration(hash, payload, Duration.fromDurationLike({ minutes: 10 }));
+    registrationId = await this.cacheRegistration(`${hash}:${salt}`, payload, Duration.fromDurationLike({ minutes: 10 }));
     return {
       registrationId,
       expiresAt: DateTime.fromSeconds(payload.expiresAt),

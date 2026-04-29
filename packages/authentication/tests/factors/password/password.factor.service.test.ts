@@ -151,10 +151,10 @@ describe('PasswordFactorService', () => {
       expect(result.expiresAt.toUnixInteger() - result.issuedAt.toUnixInteger()).toBe(600);
     });
 
-    it('caches the payload under the registration id and the password hash', async () => {
+    it('caches the payload under the registration id and the hash:salt key', async () => {
       await service.registerPasswordFactor('strong-pass');
 
-      // Two cache.set calls: payload under registrationId, registrationId under hash.
+      // Two cache.set calls: payload under registrationId, registrationId under `${hash}:${salt}`.
       expect(cache.set).toHaveBeenCalledTimes(2);
       const [firstCall, secondCall] = vi.mocked(cache.set).mock.calls;
       expect(firstCall![0]).toMatch(/^password_factor_registration_/);
@@ -162,7 +162,7 @@ describe('PasswordFactorService', () => {
       expect(payload.hash).toBeTruthy();
       expect(payload.salt).toBeTruthy();
       expect(payload.id).toBeTruthy();
-      expect(secondCall![0]).toBe(`password_factor_registration_${payload.hash}`);
+      expect(secondCall![0]).toBe(`password_factor_registration_${payload.hash}:${payload.salt}`);
       expect(secondCall![1]).toBe(payload.id);
     });
 

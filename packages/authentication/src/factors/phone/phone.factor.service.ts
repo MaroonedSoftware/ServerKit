@@ -121,12 +121,6 @@ export class PhoneFactorService {
       };
     }
 
-    // const existingFactor = await this.phoneFactorRepository.findFactor(actorId, value);
-
-    // if (existingFactor) {
-    //   throw httpError(409).withDetails({ value: 'already registered' });
-    // }
-
     const payload = {
       id: registrationId,
       value,
