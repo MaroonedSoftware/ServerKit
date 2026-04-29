@@ -1,5 +1,11 @@
 # @maroonedsoftware/authentication
 
+## 2.0.0
+
+### Major Changes
+
+- 0ca3ef5: Rename `PasswordFactorService.checkStrength` to `checkPasswordStrength` for parallelism with `ensurePasswordStrength`. Callers on 1.1.0 must rename their call sites.
+
 ## 1.1.0
 
 ### Minor Changes
