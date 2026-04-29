@@ -349,4 +349,51 @@ describe('PasswordFactorService', () => {
       expect(needsReset).toBe(false);
     });
   });
+
+  describe('hasPendingRegistration', () => {
+    it('returns true when the registration is cached', async () => {
+      cache.get = vi.fn().mockResolvedValue(JSON.stringify(makeRegistrationPayload()));
+      await expect(service.hasPendingRegistration('reg-id-1')).resolves.toBe(true);
+    });
+
+    it('returns false when the registration is not cached', async () => {
+      cache.get = vi.fn().mockResolvedValue(null);
+      await expect(service.hasPendingRegistration('missing-reg')).resolves.toBe(false);
+    });
+
+    it('looks up under the registration cache key namespace', async () => {
+      cache.get = vi.fn().mockResolvedValue(null);
+      await service.hasPendingRegistration('reg-id-1');
+      expect(cache.get).toHaveBeenCalledWith('password_factor_registration_reg-id-1');
+    });
+  });
+
+  describe('checkStrength', () => {
+    it('delegates to the strength provider and returns its result', async () => {
+      const result = { valid: false, score: 1, feedback: { warning: 'too short', suggestions: ['use more characters'] } };
+      strengthProvider.checkStrength = vi.fn().mockResolvedValue(result);
+
+      await expect(service.checkStrength('weak', 'alice@example.com', 1990)).resolves.toBe(result);
+      expect(strengthProvider.checkStrength).toHaveBeenCalledWith('weak', 'alice@example.com', 1990);
+    });
+  });
+
+  describe('ensurePasswordStrength', () => {
+    it('delegates to the strength provider', async () => {
+      strengthProvider.ensureStrength = vi.fn().mockResolvedValue(undefined);
+
+      await service.ensurePasswordStrength('strong-pass', 'alice@example.com');
+
+      expect(strengthProvider.ensureStrength).toHaveBeenCalledWith('strong-pass', 'alice@example.com');
+    });
+
+    it('propagates the error thrown by the strength provider', async () => {
+      strengthProvider.ensureStrength = vi.fn().mockRejectedValue(httpError(400).withDetails({ password: 'too weak' }));
+
+      await expect(service.ensurePasswordStrength('weak')).rejects.toMatchObject({
+        statusCode: 400,
+        details: { password: 'too weak' },
+      });
+    });
+  });
 });

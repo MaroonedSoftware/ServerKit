@@ -171,6 +171,16 @@ export class PasswordFactorService {
   }
 
   /**
+   * Check whether a registration is still pending (i.e. cached and not yet expired).
+   *
+   * @param registrationId - The registration reference returned by {@link registerPasswordFactor}.
+   * @returns `true` if the registration exists and has not expired, `false` otherwise.
+   */
+  async hasPendingRegistration(registrationId: string) {
+    return (await this.lookupRegistration(registrationId)) !== undefined;
+  }
+
+  /**
    * Creates a new password factor after validating strength. Throws 409 if the actor already has one.
    *
    * @returns The new factor's ID.
@@ -263,5 +273,34 @@ export class PasswordFactorService {
     const value = this.hashPassword(password);
     const updatedFactor = await this.passwordFactorRepository.updateFactor(actorId, value, false);
     return updatedFactor.id;
+  }
+
+  /**
+   * Evaluate the strength of a password without throwing.
+   *
+   * Pass-through to the injected {@link PasswordStrengthProvider} for callers
+   * that want to surface live strength feedback (e.g. a sign-up form meter)
+   * without taking a separate dependency on the provider.
+   *
+   * @param password   - The password to evaluate.
+   * @param userInputs - Additional strings or numbers to penalise if found in the
+   *   password (e.g. the user's name, email, or date of birth).
+   * @returns `{ valid, score, feedback }` — `valid` is `true` when `score >= 3`.
+   */
+  async checkStrength(password: string, ...userInputs: (string | number)[]) {
+    return this.passwordStrengthProvider.checkStrength(password, ...userInputs);
+  }
+
+  /**
+   * Assert that a password meets the configured strength threshold, throwing on failure.
+   *
+   * Pass-through to the injected {@link PasswordStrengthProvider}.
+   *
+   * @param password   - The password to evaluate.
+   * @param userInputs - Additional context values to penalise (see {@link checkStrength}).
+   * @throws HTTP 400 with `{ password: warning, suggestions: [...] }` details when the score is below threshold.
+   */
+  async ensurePasswordStrength(password: string, ...userInputs: (string | number)[]) {
+    await this.passwordStrengthProvider.ensureStrength(password, ...userInputs);
   }
 }
