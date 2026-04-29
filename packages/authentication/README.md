@@ -265,6 +265,18 @@ await passwordFactors.changePassword(user.id, newPassword);
 await passwordFactors.deleteFactor(user.id);
 ```
 
+For sign-up flows that collect a password before the actor record exists, use the two-step registration flow instead. `registerPasswordFactor` validates strength, hashes the password, and stages it in the cache for 10 minutes; `createPasswordFactorFromRegistration` binds it to an actor:
+
+```typescript
+// Step 1: stage the password (e.g. while the user is also verifying their email).
+// Idempotent — `alreadyRegistered` is true when a pending registration was
+// already cached for the same password.
+const { registrationId, expiresAt, alreadyRegistered } = await passwordFactors.registerPasswordFactor(password);
+
+// Step 2: once the actor record exists, bind the cached hash to it.
+const factor = await passwordFactors.createPasswordFactorFromRegistration(user.id, registrationId);
+```
+
 ---
 
 ### Email factors
@@ -777,15 +789,17 @@ Cache-backed storage for PKCE state (RFC 7636). Wraps an injected `CacheProvider
 
 ### `PasswordFactorService`
 
-Manages password factors with PBKDF2-SHA512 hashing, password-reuse prevention, and rate-limited verification. Strength checks are delegated to an injected `PasswordStrengthProvider`. Requires both that provider and a `RateLimiterCompatibleAbstract` (from `rate-limiter-flexible`) registered in the DI container.
+Manages password factors with PBKDF2-SHA512 hashing, password-reuse prevention, and rate-limited verification. Strength checks are delegated to an injected `PasswordStrengthProvider`. Requires that provider, a `RateLimiterCompatibleAbstract` (from `rate-limiter-flexible`), and a `CacheProvider` (used by the staged-registration flow) registered in the DI container.
 
-| Method                                                | Returns           | Description                                                                                  |
-| ----------------------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------- |
-| `createPasswordFactor(actorId, password, needsReset?)` | `Promise<string>` | Validate strength via `PasswordStrengthProvider` and persist a new factor; throws HTTP 409 if one already exists. Returns `factorId` |
-| `updatePasswordFactor(actorId, password, needsReset?)` | `Promise<string>` | Replace the password after strength check and reuse check against the last 10 passwords. Returns `factorId` |
-| `verifyPassword(actorId, password)`                   | `Promise<string>` | Verify against the stored hash with rate limiting; throws HTTP 401 on bad credentials, HTTP 429 if rate-limited. Returns `factorId` |
-| `changePassword(actorId, password)`                   | `Promise<string>` | Set a new password and clear the `needsReset` flag                                           |
-| `deleteFactor(actorId)`                               | `Promise<void>`   | Permanently remove the actor's password factor                                               |
+| Method                                                              | Returns                                                                              | Description                                                                                                                                  |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `createPasswordFactor(actorId, password, needsReset?)`              | `Promise<string>`                                                                    | Validate strength via `PasswordStrengthProvider` and persist a new factor; throws HTTP 409 if one already exists. Returns `factorId`         |
+| `registerPasswordFactor(password)`                                  | `Promise<{ registrationId, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>` | Validate strength and stage a hashed registration in the cache for 10 minutes (idempotent — `alreadyRegistered` is `true` on a cache hit)    |
+| `createPasswordFactorFromRegistration(actorId, registrationId)`     | `Promise<PasswordFactor>`                                                            | Complete a staged registration; throws HTTP 404 when the registration is missing or expired                                                  |
+| `updatePasswordFactor(actorId, password, needsReset?)`              | `Promise<string>`                                                                    | Replace the password after strength check and reuse check against the last 10 passwords. Returns `factorId`                                  |
+| `verifyPassword(actorId, password)`                                 | `Promise<string>`                                                                    | Verify against the stored hash with rate limiting; throws HTTP 401 on bad credentials, HTTP 429 if rate-limited. Returns `factorId`          |
+| `changePassword(actorId, password)`                                 | `Promise<string>`                                                                    | Set a new password and clear the `needsReset` flag                                                                                           |
+| `deleteFactor(actorId)`                                             | `Promise<void>`                                                                      | Permanently remove the actor's password factor                                                                                               |
 
 ### `PasswordFactorRepository`
 

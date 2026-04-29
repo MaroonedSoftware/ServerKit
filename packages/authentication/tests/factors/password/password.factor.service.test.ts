@@ -8,7 +8,9 @@ import type {
   PasswordValue,
 } from '../../../src/factors/password/password.factor.repository.js';
 import type { PasswordStrengthProvider } from '../../../src/providers/password.strength.provider.js';
+import type { CacheProvider } from '@maroonedsoftware/cache';
 import { httpError } from '@maroonedsoftware/errors';
+import { DateTime } from 'luxon';
 
 const hashPassword = (password: string, salt?: Buffer): PasswordValue => {
   salt ??= crypto.randomBytes(32);
@@ -37,6 +39,23 @@ const makeStrengthProvider = () =>
     ensureStrength: vi.fn().mockResolvedValue(undefined),
   }) as unknown as PasswordStrengthProvider;
 
+const makeCacheProvider = () =>
+  ({
+    get: vi.fn().mockResolvedValue(null),
+    set: vi.fn().mockResolvedValue(undefined),
+    update: vi.fn().mockResolvedValue(undefined),
+    delete: vi.fn().mockResolvedValue(null),
+  }) as unknown as CacheProvider;
+
+const makeRegistrationPayload = (overrides: Record<string, unknown> = {}) => ({
+  id: 'reg-id-1',
+  hash: 'cached-hash',
+  salt: 'cached-salt',
+  expiresAt: DateTime.utc().plus({ minutes: 10 }).toUnixInteger(),
+  issuedAt: DateTime.utc().toUnixInteger(),
+  ...overrides,
+});
+
 const makePasswordFactor = (overrides: Partial<PasswordFactor> = {}): PasswordFactor => ({
   id: 'factor-1',
   actorId: 'actor-1',
@@ -50,6 +69,7 @@ describe('PasswordFactorService', () => {
   let repo: ReturnType<typeof makeRepository>;
   let rateLimiter: ReturnType<typeof makeRateLimiter>;
   let strengthProvider: ReturnType<typeof makeStrengthProvider>;
+  let cache: ReturnType<typeof makeCacheProvider>;
   let service: PasswordFactorService;
 
   beforeEach(() => {
@@ -57,7 +77,8 @@ describe('PasswordFactorService', () => {
     repo = makeRepository();
     rateLimiter = makeRateLimiter();
     strengthProvider = makeStrengthProvider();
-    service = new PasswordFactorService(repo, rateLimiter, strengthProvider);
+    cache = makeCacheProvider();
+    service = new PasswordFactorService(repo, rateLimiter, strengthProvider, cache);
   });
 
   describe('createPasswordFactor', () => {
@@ -108,6 +129,88 @@ describe('PasswordFactorService', () => {
       await service.createPasswordFactor('actor-1', 'strong-pass');
 
       expect(vi.mocked(repo.createFactor).mock.calls[0]![2]).toBe(false);
+    });
+  });
+
+  describe('registerPasswordFactor', () => {
+    it('throws when ensureStrength rejects', async () => {
+      strengthProvider.ensureStrength = vi.fn().mockRejectedValue(httpError(400).withDetails({ password: 'too weak' }));
+
+      await expect(service.registerPasswordFactor('weak')).rejects.toMatchObject({ statusCode: 400 });
+      expect(cache.set).not.toHaveBeenCalled();
+    });
+
+    it('caches a fresh registration and returns registrationId, expiresAt, issuedAt, alreadyRegistered=false', async () => {
+      const result = await service.registerPasswordFactor('strong-pass');
+
+      expect(result.registrationId).toBeTruthy();
+      expect(result.alreadyRegistered).toBe(false);
+      expect(DateTime.isDateTime(result.expiresAt)).toBe(true);
+      expect(DateTime.isDateTime(result.issuedAt)).toBe(true);
+      // expiresAt is 10 minutes after issuedAt
+      expect(result.expiresAt.toUnixInteger() - result.issuedAt.toUnixInteger()).toBe(600);
+    });
+
+    it('caches the payload under the registration id and the password hash', async () => {
+      await service.registerPasswordFactor('strong-pass');
+
+      // Two cache.set calls: payload under registrationId, registrationId under hash.
+      expect(cache.set).toHaveBeenCalledTimes(2);
+      const [firstCall, secondCall] = vi.mocked(cache.set).mock.calls;
+      expect(firstCall![0]).toMatch(/^password_factor_registration_/);
+      const payload = JSON.parse(firstCall![1] as string);
+      expect(payload.hash).toBeTruthy();
+      expect(payload.salt).toBeTruthy();
+      expect(payload.id).toBeTruthy();
+      expect(secondCall![0]).toBe(`password_factor_registration_${payload.hash}`);
+      expect(secondCall![1]).toBe(payload.id);
+    });
+
+    it('returns the existing registration with alreadyRegistered=true when one is cached for the same password', async () => {
+      const payload = makeRegistrationPayload();
+      cache.get = vi.fn().mockResolvedValueOnce('reg-id-1').mockResolvedValueOnce(JSON.stringify(payload));
+
+      const result = await service.registerPasswordFactor('strong-pass');
+
+      expect(result.registrationId).toBe('reg-id-1');
+      expect(result.alreadyRegistered).toBe(true);
+      expect(result.expiresAt.toUnixInteger()).toBe(payload.expiresAt);
+      expect(result.issuedAt.toUnixInteger()).toBe(payload.issuedAt);
+      expect(cache.set).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('createPasswordFactorFromRegistration', () => {
+    it('throws 404 when the registration does not exist', async () => {
+      cache.get = vi.fn().mockResolvedValue(null);
+      await expect(service.createPasswordFactorFromRegistration('actor-1', 'missing-reg')).rejects.toMatchObject({
+        statusCode: 404,
+        details: { registrationId: 'not found' },
+      });
+      expect(repo.createFactor).not.toHaveBeenCalled();
+    });
+
+    it('persists the cached hash/salt against the actor and returns the factor', async () => {
+      const payload = makeRegistrationPayload({ hash: 'cached-hash', salt: 'cached-salt' });
+      const factor = makePasswordFactor({ id: 'new-factor' });
+      cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
+      repo.createFactor = vi.fn().mockResolvedValue(factor);
+
+      const result = await service.createPasswordFactorFromRegistration('actor-1', 'reg-id-1');
+
+      expect(result).toBe(factor);
+      expect(repo.createFactor).toHaveBeenCalledWith('actor-1', { hash: 'cached-hash', salt: 'cached-salt' }, false);
+    });
+
+    it('deletes the cached registration entries after persisting', async () => {
+      const payload = makeRegistrationPayload({ hash: 'cached-hash' });
+      cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
+      repo.createFactor = vi.fn().mockResolvedValue(makePasswordFactor());
+
+      await service.createPasswordFactorFromRegistration('actor-1', 'reg-id-1');
+
+      expect(cache.delete).toHaveBeenCalledWith('password_factor_registration_reg-id-1');
+      expect(cache.delete).toHaveBeenCalledWith('password_factor_registration_cached-hash');
     });
   });
 

@@ -261,10 +261,12 @@ export class EmailFactorService {
 
     this.verifyPayload(payload, code);
 
+    const factor = await this.emailFactorRepository.createFactor(actorId, payload.value);
+
     await this.cache.delete(this.getRegistrationKey(registrationId));
     await this.cache.delete(this.getRegistrationKey(payload.value));
 
-    return await this.emailFactorRepository.createFactor(actorId, payload.value);
+    return factor;
   }
 
   /**
