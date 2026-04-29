@@ -203,14 +203,14 @@ describe('PasswordFactorService', () => {
     });
 
     it('deletes the cached registration entries after persisting', async () => {
-      const payload = makeRegistrationPayload({ hash: 'cached-hash' });
+      const payload = makeRegistrationPayload({ hash: 'cached-hash', salt: 'cached-salt' });
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
       repo.createFactor = vi.fn().mockResolvedValue(makePasswordFactor());
 
       await service.createPasswordFactorFromRegistration('actor-1', 'reg-id-1');
 
       expect(cache.delete).toHaveBeenCalledWith('password_factor_registration_reg-id-1');
-      expect(cache.delete).toHaveBeenCalledWith('password_factor_registration_cached-hash');
+      expect(cache.delete).toHaveBeenCalledWith('password_factor_registration_cached-hash:cached-salt');
     });
   });
 

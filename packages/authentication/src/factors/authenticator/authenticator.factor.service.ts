@@ -38,6 +38,8 @@ type RegistrationPayload = {
   expiresAt: number;
   issuedAt: number;
   otpOptions: OtpOptions;
+  uri: string;
+  qrCode: string;
 };
 
 /**
@@ -71,11 +73,12 @@ export class AuthenticatorFactorService {
   }
 
   private async cacheRegistration(payload: RegistrationPayload, expiration: Duration) {
-    const registrationId = crypto.randomBytes(32).toString('base64url');
+    const registrationId = payload.id ?? crypto.randomBytes(32).toString('base64url');
 
     payload.id = registrationId;
 
     await this.cache.set(this.getRegistrationKey(registrationId), JSON.stringify(payload), expiration);
+    await this.cache.set(this.getRegistrationKey(payload.actorId), registrationId, expiration);
 
     return registrationId;
   }
@@ -86,6 +89,11 @@ export class AuthenticatorFactorService {
     return response ? (JSON.parse(response) as RegistrationPayload) : undefined;
   }
 
+  private async lookupRegistrationByActorId(actorId: string) {
+    const registrationId = await this.cache.get(this.getRegistrationKey(actorId));
+    return registrationId ? await this.lookupRegistration(registrationId) : undefined;
+  }
+
   /**
    * Initiate authenticator factor registration by generating a TOTP secret, an
    * `otpauth://` provisioning URI, and a QR code data URL.
@@ -93,47 +101,80 @@ export class AuthenticatorFactorService {
    * Display the QR code to the user so they can scan it into their authenticator app,
    * then call {@link createAuthenticatorFactorFromRegistration} with the code they enter.
    *
-   * @param actorId - The actor registering the factor.
-   * @param options - OTP options to override the service defaults (algorithm, period, etc.).
-   * @returns `{ registrationId, secret, uri, qrCode, expiresAt }` — the registration
-   *   reference, the raw secret (for manual entry), the provisioning URI, the QR code
-   *   as a data URL, and when the registration expires.
+   * Idempotent: if a pending registration is already cached (by `registrationId`
+   * when supplied, otherwise by `actorId`) the cached secret, URI, and QR code
+   * are returned and `alreadyRegistered` is set to `true`. This lets callers
+   * re-render the same QR code on repeat visits to the registration screen
+   * without invalidating the secret the user may already have scanned.
+   *
+   * @param actorId        - The actor registering the factor.
+   * @param options        - OTP options to override the service defaults (algorithm, period, etc.).
+   *   Ignored on a cache hit.
+   * @param registrationId - Optional caller-supplied id. When set, the method
+   *   first checks for a cached registration under this id before falling back
+   *   to the actor-keyed lookup; on a cache miss it is also used as the id of
+   *   the freshly cached registration.
+   * @returns `{ registrationId, secret, uri, qrCode, expiresAt, issuedAt, alreadyRegistered }` —
+   *   the registration reference, the raw secret (for manual entry), the
+   *   provisioning URI, the QR code as a data URL, when the registration
+   *   expires and was originally issued (both as Luxon `DateTime`s), and
+   *   whether this call hit a previously-cached pending registration.
    */
-  async registerAuthenticatorFactor(actorId: string, options?: OtpOptions) {
+  async registerAuthenticatorFactor(actorId: string, options?: OtpOptions, registrationId?: string) {
+    const existingRegistration = registrationId ? await this.lookupRegistration(registrationId) : await this.lookupRegistrationByActorId(actorId);
+    if (existingRegistration) {
+      return {
+        registrationId: existingRegistration.id,
+        secret: this.encryptionProvider.decrypt(existingRegistration.secretHash),
+        uri: existingRegistration.uri,
+        qrCode: existingRegistration.qrCode,
+        expiresAt: DateTime.fromSeconds(existingRegistration.expiresAt),
+        issuedAt: DateTime.fromSeconds(existingRegistration.issuedAt),
+        alreadyRegistered: true,
+      };
+    }
+
     const otpOptions = { ...this.options.defaults, ...options };
 
     const secret = this.otpProvider.createSecret();
 
     const secretHash = this.encryptionProvider.encrypt(secret);
 
-    const expiresAt = DateTime.utc().plus(this.options.registrationExpiration);
+    const issuedAt = DateTime.utc();
+    const expiresAt = issuedAt.plus(this.options.registrationExpiration);
 
     const uri = this.otpProvider.generateURI(secret, otpOptions, { issuer: this.options.issuer });
 
     const qrCode = await toDataURL(uri);
 
     const payload = {
+      id: registrationId,
       actorId,
       secretHash,
       expiresAt: expiresAt.toUnixInteger(),
-      issuedAt: DateTime.utc().toUnixInteger(),
+      issuedAt: issuedAt.toUnixInteger(),
       otpOptions,
+      uri,
+      qrCode,
     } as RegistrationPayload;
 
-    const registrationId = await this.cacheRegistration(payload, this.options.registrationExpiration);
+    registrationId = await this.cacheRegistration(payload, this.options.registrationExpiration);
 
-    return { registrationId, secret, uri, qrCode, expiresAt };
+    return { registrationId, secret, uri, qrCode, expiresAt, issuedAt, alreadyRegistered: false };
   }
 
   /**
    * Complete authenticator factor registration by verifying the first TOTP code
    * and persisting the factor.
    *
+   * On success the cached registration entries (under both the registration id
+   * and the actor id) are deleted so the secret cannot be replayed.
+   *
    * @param actorId        - The actor completing the registration (must match the
    *   actor that initiated it).
    * @param registrationId - The registration reference from {@link registerAuthenticatorFactor}.
    * @param code           - The current TOTP code from the user's authenticator app.
-   * @returns The id of the newly created factor.
+   * @returns The newly persisted {@link AuthenticatorFactor}.
    * @throws HTTP 404 when the registration has expired or does not exist.
    * @throws HTTP 400 when `actorId` does not match the registration.
    * @throws HTTP 401 when the code is invalid.
@@ -155,7 +196,11 @@ export class AuthenticatorFactorService {
     }
 
     const factor = await this.authenticatorFactorRepository.createFactor(actorId, { ...payload.otpOptions, secretHash: payload.secretHash });
-    return factor.id;
+
+    await this.cache.delete(this.getRegistrationKey(registrationId));
+    await this.cache.delete(this.getRegistrationKey(payload.actorId));
+
+    return factor;
   }
 
   /**

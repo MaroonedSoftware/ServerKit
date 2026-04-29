@@ -84,7 +84,7 @@ export class EmailFactorService {
   }
 
   private async cacheRegistration(value: string, payload: RegistrationPayload, expiration: Duration) {
-    const registrationId = crypto.randomBytes(32).toString('base64url');
+    const registrationId = payload.id ?? crypto.randomBytes(32).toString('base64url');
 
     payload.id = registrationId;
 
@@ -139,8 +139,8 @@ export class EmailFactorService {
     };
   }
 
-  private createPayload<T extends EmailPayload>(verificationMethod: 'code' | 'magiclink') {
-    const payload = { verificationMethod } as T;
+  private createPayload<T extends EmailPayload>(verificationMethod: 'code' | 'magiclink', registrationId?: string) {
+    const payload = { verificationMethod, id: registrationId } as T;
 
     const result = verificationMethod === 'code' ? this.createCode(this.options.otpExpiration) : this.createToken(this.options.magiclinkExpiration);
 
@@ -184,8 +184,16 @@ export class EmailFactorService {
    * set to `true`. Use this flag to throttle "we just emailed you" UX without
    * re-sending the code, or to suppress duplicate notifications.
    *
+   * Callers can also supply their own `registrationId` to make the lookup
+   * deterministic — useful when the id is allocated upstream (e.g. as part of
+   * a longer onboarding state machine).
+   *
    * @param value              - The email address to register.
    * @param verificationMethod - `"code"` for a TOTP-style numeric code; `"magiclink"` for a random token.
+   * @param registrationId     - Optional caller-supplied id. When set, the method
+   *   first checks for a cached registration under this id before falling back to
+   *   the email-keyed lookup; on a cache miss it is also used as the id of the
+   *   freshly cached registration.
    * @returns `{ registrationId, code, expiresAt, issuedAt, alreadyRegistered }` —
    *   the registration reference, the code/token to send, when the registration
    *   expires, when it was originally issued (useful for "we sent the email N
@@ -196,13 +204,13 @@ export class EmailFactorService {
    * @throws HTTP 409 when an active factor already exists for the email
    *   (only checked on a fresh registration; cache-hit paths return early).
    */
-  async registerEmailFactor(value: string, verificationMethod: 'code' | 'magiclink') {
+  async registerEmailFactor(value: string, verificationMethod: 'code' | 'magiclink', registrationId?: string) {
     value = value.trim().toLowerCase();
     if (!isEmail(value)) {
       throw httpError(400).withDetails({ value: 'invalid email format' });
     }
 
-    const existingRegistration = await this.lookupRegistrationByValue(value);
+    const existingRegistration = registrationId ? await this.lookupRegistration(registrationId) : await this.lookupRegistrationByValue(value);
     if (existingRegistration) {
       return {
         registrationId: existingRegistration.id,
@@ -230,11 +238,11 @@ export class EmailFactorService {
       throw httpError(409).withDetails({ method: 'already registered' });
     }
 
-    const { payload, expiresAt, issuedAt, expiration } = this.createPayload<RegistrationPayload>(verificationMethod);
+    const { payload, expiresAt, issuedAt, expiration } = this.createPayload<RegistrationPayload>(verificationMethod, registrationId);
 
     payload.value = value;
 
-    const registrationId = await this.cacheRegistration(value, payload, expiration);
+    registrationId = await this.cacheRegistration(value, payload, expiration);
 
     return { registrationId, code: payload.code, expiresAt, issuedAt, alreadyRegistered: false };
   }

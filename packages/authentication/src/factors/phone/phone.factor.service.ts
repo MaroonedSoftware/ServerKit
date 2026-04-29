@@ -21,7 +21,6 @@ export class PhoneFactorServiceOptions {
 
 type RegistrationPayload = {
   id: string;
-  actorId: string;
   value: string;
   expiresAt: number;
   issuedAt: number;
@@ -35,12 +34,18 @@ type RegistrationPayload = {
  *    pending registration. Returns a `registrationId`, `expiresAt`, `issuedAt`,
  *    and `alreadyRegistered`. Send an OTP to the phone number out-of-band using
  *    the `registrationId` as the reference.
- * 2. Call {@link createPhoneFactorFromRegistration} once the user has verified
- *    their number — persists the factor.
+ * 2. Call {@link createPhoneFactorFromRegistration} with the actor id once the
+ *    user has verified their number — persists the factor.
+ *
+ * Registration is decoupled from the actor: it stages a phone number, not an
+ * (actor, phone number) pair. The actor is bound at completion time, which
+ * lets the same flow drive sign-up (no actor exists yet), profile updates,
+ * and recovery (where the actor is resolved by other means).
  *
  * Registration is idempotent: calling {@link registerPhoneFactor} again for the
- * same actor and phone number returns the existing pending registration rather
- * than creating a duplicate.
+ * same phone number — or supplying the same `registrationId` — returns the
+ * existing pending registration rather than creating a duplicate, so callers
+ * can suppress duplicate SMS sends.
  */
 @Injectable()
 export class PhoneFactorService {
@@ -59,48 +64,53 @@ export class PhoneFactorService {
     return response ? (JSON.parse(response) as RegistrationPayload) : undefined;
   }
 
-  private async lookupRegistrationByValue(actorId: string, value: string) {
-    const registrationId = await this.cache.get(this.getRegistrationKey(`${actorId}_${value}`));
+  private async lookupRegistrationByValue(value: string) {
+    const registrationId = await this.cache.get(this.getRegistrationKey(value));
     return registrationId ? await this.lookupRegistration(registrationId) : undefined;
   }
 
-  private async cacheRegistration(actorId: string, payload: RegistrationPayload, expiration: Duration) {
-    const registrationId = crypto.randomBytes(32).toString('base64url');
+  private async cacheRegistration(value: string, payload: RegistrationPayload, expiration: Duration) {
+    const registrationId = payload.id ?? crypto.randomBytes(32).toString('base64url');
 
     payload.id = registrationId;
 
     await this.cache.set(this.getRegistrationKey(registrationId), JSON.stringify(payload), expiration);
-    await this.cache.set(this.getRegistrationKey(`${actorId}_${payload.value}`), registrationId, expiration);
+    await this.cache.set(this.getRegistrationKey(value), registrationId, expiration);
 
     return registrationId;
   }
 
   /**
-   * Initiate phone factor registration for an actor.
+   * Stage a phone factor registration without yet binding it to an actor.
    *
-   * Validates the phone number, checks for an existing pending registration or a
-   * previously registered factor, then caches a new registration payload. The
-   * caller is responsible for sending an OTP to the phone number out-of-band.
+   * Validates the phone number and caches a pending registration. The caller
+   * is responsible for sending an OTP to the phone number out-of-band (e.g.
+   * via SMS) using the `registrationId` as the reference, then calling
+   * {@link createPhoneFactorFromRegistration} with the actor id once the user
+   * has verified the number.
    *
-   * Registration is idempotent — calling this method again with the same actor
-   * and phone number returns the existing pending registration.
+   * Idempotent: calling this method again with the same phone number — or
+   * supplying the same `registrationId` — returns the existing pending
+   * registration with `alreadyRegistered: true`.
    *
-   * @param actorId - The actor registering the factor.
-   * @param value   - The phone number in E.164 format (e.g. `+12025550123`).
+   * @param value          - The phone number in E.164 format (e.g. `+12025550123`).
+   * @param registrationId - Optional caller-supplied id. When set, the method
+   *   first checks for a cached registration under this id before falling back
+   *   to the value-keyed lookup; on a cache miss it is also used as the id of
+   *   the freshly cached registration.
    * @returns `{ value, registrationId, expiresAt, issuedAt, alreadyRegistered }` —
    *   the (normalized) phone number, the registration reference, when it
    *   expires and was originally issued (both as Luxon `DateTime`s), and
    *   whether this call hit a previously-cached pending registration (use this
    *   flag to suppress duplicate SMS sends).
    * @throws HTTP 400 when `value` is not a valid E.164 phone number.
-   * @throws HTTP 409 when the phone number is already registered as a factor for this actor.
    */
-  async registerPhoneFactor(actorId: string, value: string) {
+  async registerPhoneFactor(value: string, registrationId?: string) {
     if (!isPhoneE164(value)) {
       throw httpError(400).withDetails({ value: 'invalid E.164 format' });
     }
 
-    const existingRegistration = await this.lookupRegistrationByValue(actorId, value);
+    const existingRegistration = registrationId ? await this.lookupRegistration(registrationId) : await this.lookupRegistrationByValue(value);
     if (existingRegistration) {
       return {
         value: existingRegistration.value,
@@ -111,20 +121,20 @@ export class PhoneFactorService {
       };
     }
 
-    const existingFactor = await this.phoneFactorRepository.findFactor(actorId, value);
+    // const existingFactor = await this.phoneFactorRepository.findFactor(actorId, value);
 
-    if (existingFactor) {
-      throw httpError(409).withDetails({ value: 'already registered' });
-    }
+    // if (existingFactor) {
+    //   throw httpError(409).withDetails({ value: 'already registered' });
+    // }
 
     const payload = {
-      actorId,
+      id: registrationId,
       value,
       expiresAt: DateTime.utc().plus(this.options.otpExpiration).toUnixInteger(),
       issuedAt: DateTime.utc().toUnixInteger(),
     } as RegistrationPayload;
 
-    const registrationId = await this.cacheRegistration(actorId, payload, this.options.otpExpiration);
+    registrationId = await this.cacheRegistration(value, payload, this.options.otpExpiration);
 
     return {
       value,
@@ -136,17 +146,16 @@ export class PhoneFactorService {
   }
 
   /**
-   * Complete phone factor registration by persisting the factor.
+   * Complete phone factor registration by binding the cached phone number to
+   * an actor and persisting the factor.
    *
    * On success the cached registration entries (under both the registration id
-   * and the actor+value pair) are deleted so the registration cannot be replayed.
+   * and the phone number) are deleted so the registration cannot be replayed.
    *
-   * @param actorId        - The actor completing the registration (must match
-   *   the actor that initiated it).
+   * @param actorId        - The actor to attach the factor to.
    * @param registrationId - The registration reference from {@link registerPhoneFactor}.
-   * @returns The id of the newly created factor.
+   * @returns The newly persisted {@link PhoneFactor}.
    * @throws HTTP 404 when the registration has expired or does not exist.
-   * @throws HTTP 400 when `actorId` does not match the registration.
    */
   async createPhoneFactorFromRegistration(actorId: string, registrationId: string) {
     const payload = await this.lookupRegistration(registrationId);
@@ -154,16 +163,12 @@ export class PhoneFactorService {
       throw httpError(404).withDetails({ registrationId: 'not found' });
     }
 
-    if (payload.actorId !== actorId) {
-      throw httpError(400).withDetails({ actorId: 'invalid actor' });
-    }
-
-    const factor = await this.phoneFactorRepository.createFactor(payload.actorId, payload.value);
+    const factor = await this.phoneFactorRepository.createFactor(actorId, payload.value);
 
     await this.cache.delete(this.getRegistrationKey(registrationId));
-    await this.cache.delete(this.getRegistrationKey(`${payload.actorId}_${payload.value}`));
+    await this.cache.delete(this.getRegistrationKey(payload.value));
 
-    return factor.id;
+    return factor;
   }
 
   /**

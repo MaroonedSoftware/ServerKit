@@ -342,13 +342,17 @@ import { AuthenticatorFactorService } from '@maroonedsoftware/authentication';
 
 const authenticatorFactors = container.get(AuthenticatorFactorService);
 
-// Step 1: generate a secret and QR code, cache the pending registration
-const { registrationId, secret, uri, qrCode, expiresAt } = await authenticatorFactors.registerAuthenticatorFactor(user.id);
+// Step 1: generate a secret and QR code, cache the pending registration.
+// Idempotent — `alreadyRegistered` is true when a pending registration was
+// already cached for the actor (or the supplied registrationId), in which
+// case the cached secret/uri/qrCode are returned so the same QR code can
+// be re-rendered without invalidating the secret the user may have scanned.
+const { registrationId, secret, uri, qrCode, expiresAt, alreadyRegistered } = await authenticatorFactors.registerAuthenticatorFactor(user.id);
 // Display qrCode (a data URL) to the user so they can scan it into their authenticator app.
 // secret is also returned for manual entry.
 
 // Step 2: user enters the code from their app; verify it and persist the factor
-const factorId = await authenticatorFactors.createAuthenticatorFactorFromRegistration(
+const factor = await authenticatorFactors.createAuthenticatorFactorFromRegistration(
   user.id,
   registrationId,
   submittedCode,
@@ -384,7 +388,7 @@ await authenticatorFactors.deleteFactor(user.id, factorId);
 
 ### Phone number factors
 
-`PhoneFactorService` handles two-step phone number factor registration. It caches a pending registration and returns a `registrationId` — your application is responsible for sending an OTP to that number out-of-band (e.g. via SMS). Registration is idempotent: calling `registerPhoneFactor` again with the same actor and number returns the existing pending registration with `alreadyRegistered: true` so the caller can skip a duplicate SMS send.
+`PhoneFactorService` handles two-step phone number factor registration. It caches a pending registration keyed by phone number and returns a `registrationId` — your application is responsible for sending an OTP to that number out-of-band (e.g. via SMS). The actor is bound at completion time, not at registration, so the same flow drives sign-up (no actor exists yet), profile updates, and recovery. Registration is idempotent: calling `registerPhoneFactor` again with the same number returns the existing pending registration with `alreadyRegistered: true` so the caller can skip a duplicate SMS send.
 
 ```typescript
 import { PhoneFactorService } from '@maroonedsoftware/authentication';
@@ -395,13 +399,13 @@ const phoneFactors = container.get(PhoneFactorService);
 
 // Step 1: cache a pending registration and get the registrationId. `alreadyRegistered`
 // is true when a pending registration was already cached — skip the SMS to avoid duplicates.
-const { value, registrationId, expiresAt, alreadyRegistered } = await phoneFactors.registerPhoneFactor(user.id, '+12025550123');
+const { value, registrationId, expiresAt, alreadyRegistered } = await phoneFactors.registerPhoneFactor('+12025550123');
 if (!alreadyRegistered) {
   await sms.sendOtp(value, registrationId);
 }
 
-// Step 2: user confirms their number; persist the factor
-const factorId = await phoneFactors.createPhoneFactorFromRegistration(user.id, registrationId);
+// Step 2: user confirms their number; bind the registration to an actor and persist the factor
+const factor = await phoneFactors.createPhoneFactorFromRegistration(user.id, registrationId);
 ```
 
 ---
@@ -794,7 +798,7 @@ Manages password factors with PBKDF2-SHA512 hashing, password-reuse prevention, 
 | Method                                                              | Returns                                                                              | Description                                                                                                                                  |
 | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `createPasswordFactor(actorId, password, needsReset?)`              | `Promise<string>`                                                                    | Validate strength via `PasswordStrengthProvider` and persist a new factor; throws HTTP 409 if one already exists. Returns `factorId`         |
-| `registerPasswordFactor(password)`                                  | `Promise<{ registrationId, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>` | Validate strength and stage a hashed registration in the cache for 10 minutes (idempotent — `alreadyRegistered` is `true` on a cache hit)    |
+| `registerPasswordFactor(password, registrationId?)`                 | `Promise<{ registrationId, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>` | Validate strength and stage a hashed registration in the cache for 10 minutes (idempotent — `alreadyRegistered` is `true` on a cache hit)    |
 | `createPasswordFactorFromRegistration(actorId, registrationId)`     | `Promise<PasswordFactor>`                                                            | Complete a staged registration; throws HTTP 404 when the registration is missing or expired                                                  |
 | `updatePasswordFactor(actorId, password, needsReset?)`              | `Promise<string>`                                                                    | Replace the password after strength check and reuse check against the last 10 passwords. Returns `factorId`                                  |
 | `verifyPassword(actorId, password)`                                 | `Promise<string>`                                                                    | Verify against the stored hash with rate limiting; throws HTTP 401 on bad credentials, HTTP 429 if rate-limited. Returns `factorId`          |
@@ -819,7 +823,7 @@ Abstract base class. Extend and register a concrete implementation so that `Pass
 
 | Method                                                              | Returns                                                     | Description                             |
 | ------------------------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------- |
-| `registerEmailFactor(value, verificationMethod)`                    | `Promise<{ registrationId, code, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>` | Initiate email factor registration (idempotent — `alreadyRegistered` is `true` on a cache hit) |
+| `registerEmailFactor(value, verificationMethod, registrationId?)`   | `Promise<{ registrationId, code, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>` | Initiate email factor registration (idempotent — `alreadyRegistered` is `true` on a cache hit) |
 | `createEmailFactorFromRegistration(actorId, registrationId, code)`  | `Promise<EmailFactor>`                                      | Complete registration                   |
 | `hasPendingRegistration(registrationId)`                            | `Promise<boolean>`                                          | Check whether a registration is still cached and unexpired |
 | `issueEmailChallenge(actorId, factorId, issueMethod)`               | `Promise<{ email, challengeId, code, expiresAt: DateTime, issuedAt: DateTime, alreadyIssued: boolean }>` | Initiate a sign-in challenge (idempotent — `alreadyIssued` is `true` on a cache hit) |
@@ -853,13 +857,13 @@ Abstract base class. Extend and register a concrete implementation so that `Emai
 
 Manages TOTP/HOTP authenticator app factors. Requires an `AuthenticatorFactorServiceOptions` object with at minimum an `issuer` string.
 
-| Method                                                                   | Returns                                                           | Description                                                    |
-| ------------------------------------------------------------------------ | ----------------------------------------------------------------- | -------------------------------------------------------------- |
-| `registerAuthenticatorFactor(actorId, options?)`                         | `Promise<{ registrationId, secret, uri, qrCode, expiresAt: DateTime }>`   | Generate a secret, QR code, and cache the pending registration |
-| `createAuthenticatorFactorFromRegistration(actorId, registrationId, code)` | `Promise<string>`                                               | Verify the first OTP code and persist the factor; returns `factorId` |
-| `hasPendingRegistration(registrationId)`                                 | `Promise<boolean>`                                               | Check whether a registration is still cached and unexpired     |
-| `validateFactor(actorId, factorId, code)`                                | `Promise<void>`                                                  | Verify a TOTP/HOTP code; throws HTTP 401 on failure            |
-| `deleteFactor(actorId, factorId)`                                        | `Promise<void>`                                                  | Remove a factor                                                |
+| Method                                                                            | Returns                                                                                                                                       | Description                                                                                                              |
+| --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `registerAuthenticatorFactor(actorId, options?, registrationId?)`                 | `Promise<{ registrationId, secret, uri, qrCode, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>`                       | Generate a secret, QR code, and cache the pending registration (idempotent — `alreadyRegistered` is `true` on a cache hit) |
+| `createAuthenticatorFactorFromRegistration(actorId, registrationId, code)`        | `Promise<AuthenticatorFactor>`                                                                                                                | Verify the first OTP code and persist the factor                                                                          |
+| `hasPendingRegistration(registrationId)`                                          | `Promise<boolean>`                                                                                                                            | Check whether a registration is still cached and unexpired                                                                |
+| `validateFactor(actorId, factorId, code)`                                         | `Promise<void>`                                                                                                                               | Verify a TOTP/HOTP code; throws HTTP 401 on failure                                                                       |
+| `deleteFactor(actorId, factorId)`                                                 | `Promise<void>`                                                                                                                               | Remove a factor                                                                                                          |
 
 `AuthenticatorFactorServiceOptions`:
 
@@ -886,11 +890,11 @@ Abstract base class. Extend and register a concrete implementation (e.g. backed 
 
 Manages phone number factor registration. Requires a `PhoneFactorServiceOptions` object with an `otpExpiration` duration.
 
-| Method                                               | Returns                              | Description                                                                |
-| ---------------------------------------------------- | ------------------------------------ | -------------------------------------------------------------------------- |
-| `registerPhoneFactor(actorId, value)`                | `Promise<{ value, registrationId, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>` | Validate the E.164 number and cache a pending registration (idempotent — `alreadyRegistered` is `true` on a cache hit) |
-| `createPhoneFactorFromRegistration(actorId, registrationId)` | `Promise<string>`            | Persist the factor; returns `factorId`                                     |
-| `hasPendingRegistration(registrationId)`             | `Promise<boolean>`                   | Check whether a registration is still cached and unexpired                 |
+| Method                                                       | Returns                                                                                                   | Description                                                                                                            |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `registerPhoneFactor(value, registrationId?)`                | `Promise<{ value, registrationId, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>` | Validate the E.164 number and cache a pending registration (idempotent — `alreadyRegistered` is `true` on a cache hit) |
+| `createPhoneFactorFromRegistration(actorId, registrationId)` | `Promise<PhoneFactor>`                                                                                    | Bind the cached phone number to `actorId` and persist the factor                                                       |
+| `hasPendingRegistration(registrationId)`                     | `Promise<boolean>`                                                                                        | Check whether a registration is still cached and unexpired                                                             |
 
 `PhoneFactorServiceOptions`:
 
@@ -898,7 +902,7 @@ Manages phone number factor registration. Requires a `PhoneFactorServiceOptions`
 | --------------- | ---------- | ----------------------------------------------------- |
 | `otpExpiration` | `Duration` | How long a pending registration stays valid           |
 
-`registerPhoneFactor` throws HTTP 400 for invalid E.164 numbers and HTTP 409 when the number is already registered as a factor for the actor. `createPhoneFactorFromRegistration` throws HTTP 404 when the registration has expired and HTTP 400 when the `actorId` does not match.
+`registerPhoneFactor` throws HTTP 400 for invalid E.164 numbers. `createPhoneFactorFromRegistration` throws HTTP 404 when the registration has expired. The actor is bound at completion time, so callers that need to enforce uniqueness against existing factors should do so themselves before calling `createPhoneFactorFromRegistration`.
 
 ### `PhoneFactorRepository`
 

@@ -40,7 +40,6 @@ const makeOptions = () => ({
 
 const makeRegistrationPayload = (overrides = {}) => ({
   id: 'reg-id-1',
-  actorId: 'actor-1',
   value: '+12025550123',
   expiresAt: Math.floor(Date.now() / 1000) + 600,
   issuedAt: Math.floor(Date.now() / 1000),
@@ -63,24 +62,24 @@ describe('PhoneFactorService', () => {
   describe('registerPhoneFactor', () => {
     it('throws 400 for an invalid E.164 phone number', async () => {
       vi.mocked(isPhoneE164).mockReturnValue(false);
-      await expect(service.registerPhoneFactor('actor-1', 'not-a-phone')).rejects.toMatchObject({
+      await expect(service.registerPhoneFactor('not-a-phone')).rejects.toMatchObject({
         statusCode: 400,
         details: { value: 'invalid E.164 format' },
       });
     });
 
     it('validates the phone number via isPhoneE164', async () => {
-      await service.registerPhoneFactor('actor-1', '+12025550123');
+      await service.registerPhoneFactor('+12025550123');
       expect(isPhoneE164).toHaveBeenCalledWith('+12025550123');
     });
 
-    it('returns the existing pending registration with alreadyRegistered=true when one is cached', async () => {
+    it('returns the existing pending registration with alreadyRegistered=true when one is cached for the value', async () => {
       const payload = makeRegistrationPayload();
       cache.get = vi.fn()
         .mockResolvedValueOnce('reg-id-1')
         .mockResolvedValueOnce(JSON.stringify(payload));
 
-      const result = await service.registerPhoneFactor('actor-1', '+12025550123');
+      const result = await service.registerPhoneFactor('+12025550123');
 
       expect(result.registrationId).toBe('reg-id-1');
       expect(result.value).toBe('+12025550123');
@@ -89,53 +88,46 @@ describe('PhoneFactorService', () => {
       expect(result.expiresAt.toUnixInteger()).toBe(payload.expiresAt);
       expect(DateTime.isDateTime(result.issuedAt)).toBe(true);
       expect(result.issuedAt.toUnixInteger()).toBe(payload.issuedAt);
-      expect(repo.findFactor).not.toHaveBeenCalled();
       expect(cache.set).not.toHaveBeenCalled();
     });
 
-    it('throws 409 when the phone number is already registered as a factor', async () => {
-      repo.findFactor = vi.fn().mockResolvedValue(makePhoneFactor());
-      await expect(service.registerPhoneFactor('actor-1', '+12025550123')).rejects.toMatchObject({
-        statusCode: 409,
-        details: { value: 'already registered' },
-      });
+    it('returns the existing pending registration with alreadyRegistered=true when looked up by caller-supplied registrationId', async () => {
+      const payload = makeRegistrationPayload();
+      cache.get = vi.fn().mockResolvedValueOnce(JSON.stringify(payload));
+
+      const result = await service.registerPhoneFactor('+12025550123', 'reg-id-1');
+
+      expect(result.registrationId).toBe('reg-id-1');
+      expect(result.alreadyRegistered).toBe(true);
+      expect(cache.get).toHaveBeenCalledWith('phone_factor_registration_reg-id-1');
+      expect(cache.set).not.toHaveBeenCalled();
     });
 
-    it('checks the repository for an existing factor after confirming no pending registration', async () => {
-      await service.registerPhoneFactor('actor-1', '+12025550123');
-      expect(repo.findFactor).toHaveBeenCalledWith('actor-1', '+12025550123');
-    });
+    it('caches the registration payload under the registration id and the phone number', async () => {
+      await service.registerPhoneFactor('+12025550123');
 
-    it('caches the registration payload under a random key', async () => {
-      await service.registerPhoneFactor('actor-1', '+12025550123');
-      const calls = vi.mocked(cache.set).mock.calls as unknown as [string, string][];
-      const payloadCall = calls.find(([, value]) => {
-        try {
-          return !!(value && JSON.parse(value).actorId);
-        } catch {
-          return false;
-        }
-      });
-      expect(payloadCall).toBeDefined();
-      const payload = JSON.parse(payloadCall![1]);
-      expect(payload.actorId).toBe('actor-1');
-      expect(payload.value).toBe('+12025550123');
-    });
-
-    it('caches a lookup entry mapping actor+value to registrationId', async () => {
-      await service.registerPhoneFactor('actor-1', '+12025550123');
-      const calls = vi.mocked(cache.set).mock.calls as unknown as [string, string][];
-      const keys = calls.map(([key]) => key);
-      expect(keys.some((k: string) => k.includes('actor-1_+12025550123'))).toBe(true);
-    });
-
-    it('stores the payload and lookup under separate cache keys (two set calls)', async () => {
-      await service.registerPhoneFactor('actor-1', '+12025550123');
+      // Two cache.set calls: payload under registrationId, registrationId under value.
       expect(cache.set).toHaveBeenCalledTimes(2);
+      const [firstCall, secondCall] = vi.mocked(cache.set).mock.calls;
+      const [payloadKey, payloadJson] = firstCall!;
+      expect(payloadKey).toMatch(/^phone_factor_registration_/);
+      const payload = JSON.parse(payloadJson as string);
+      expect(payload.value).toBe('+12025550123');
+      expect(payload.id).toBeTruthy();
+      expect(secondCall![0]).toBe('phone_factor_registration_+12025550123');
+      expect(secondCall![1]).toBe(payload.id);
+    });
+
+    it('uses the caller-supplied registrationId when persisting a fresh registration', async () => {
+      const result = await service.registerPhoneFactor('+12025550123', 'caller-supplied-id');
+
+      expect(result.registrationId).toBe('caller-supplied-id');
+      const [firstCall] = vi.mocked(cache.set).mock.calls;
+      expect(firstCall![0]).toBe('phone_factor_registration_caller-supplied-id');
     });
 
     it('returns value, registrationId, expiresAt, issuedAt, and alreadyRegistered=false on a fresh registration', async () => {
-      const result = await service.registerPhoneFactor('actor-1', '+12025550123');
+      const result = await service.registerPhoneFactor('+12025550123');
       expect(result.value).toBe('+12025550123');
       expect(result.registrationId).toBeTruthy();
       expect(DateTime.isDateTime(result.expiresAt)).toBe(true);
@@ -157,16 +149,7 @@ describe('PhoneFactorService', () => {
       });
     });
 
-    it('throws 400 when the actorId does not match the registration', async () => {
-      const payload = makeRegistrationPayload({ actorId: 'actor-1' });
-      cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
-      await expect(service.createPhoneFactorFromRegistration('actor-2', 'reg-id-1')).rejects.toMatchObject({
-        statusCode: 400,
-        details: { actorId: 'invalid actor' },
-      });
-    });
-
-    it('persists the factor with the phone number from the registration', async () => {
+    it('persists the factor against the supplied actorId with the phone number from the registration', async () => {
       const payload = makeRegistrationPayload();
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
       repo.createFactor = vi.fn().mockResolvedValue(makePhoneFactor());
@@ -176,14 +159,15 @@ describe('PhoneFactorService', () => {
       expect(repo.createFactor).toHaveBeenCalledWith('actor-1', '+12025550123');
     });
 
-    it('returns the new factor id on success', async () => {
+    it('returns the new factor on success', async () => {
       const payload = makeRegistrationPayload();
+      const factor = makePhoneFactor({ id: 'new-factor-id' });
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
-      repo.createFactor = vi.fn().mockResolvedValue(makePhoneFactor({ id: 'new-factor-id' }));
+      repo.createFactor = vi.fn().mockResolvedValue(factor);
 
       const result = await service.createPhoneFactorFromRegistration('actor-1', 'reg-id-1');
 
-      expect(result).toBe('new-factor-id');
+      expect(result).toBe(factor);
     });
 
     it('deletes the cached registration entries after a successful registration', async () => {
@@ -194,7 +178,7 @@ describe('PhoneFactorService', () => {
       await service.createPhoneFactorFromRegistration('actor-1', 'reg-id-1');
 
       expect(cache.delete).toHaveBeenCalledWith('phone_factor_registration_reg-id-1');
-      expect(cache.delete).toHaveBeenCalledWith('phone_factor_registration_actor-1_+12025550123');
+      expect(cache.delete).toHaveBeenCalledWith('phone_factor_registration_+12025550123');
     });
   });
 

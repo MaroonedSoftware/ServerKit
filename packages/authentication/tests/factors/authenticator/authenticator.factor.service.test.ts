@@ -68,6 +68,8 @@ const makeRegistrationPayload = (overrides = {}) => ({
   expiresAt: Math.floor(Date.now() / 1000) + 1800,
   issuedAt: Math.floor(Date.now() / 1000),
   otpOptions: { type: 'totp' as const, algorithm: 'SHA1', counter: 0, periodSeconds: 30, tokenLength: 6 },
+  uri: 'otpauth://totp/Example:actor-1?secret=TESTSECRET',
+  qrCode: 'data:image/png;base64,MOCKQR',
   ...overrides,
 });
 
@@ -108,24 +110,50 @@ describe('AuthenticatorFactorService', () => {
       expect(toDataURL).toHaveBeenCalledWith('otpauth://totp/Example:actor-1?secret=TESTSECRET');
     });
 
-    it('caches the registration payload', async () => {
+    it('caches the registration payload under the registration id and the actor id', async () => {
       await service.registerAuthenticatorFactor('actor-1');
-      expect(cache.set).toHaveBeenCalledOnce();
-      const [firstCall] = vi.mocked(cache.set).mock.calls;
-      const [key, payloadJson] = firstCall!;
-      expect(key).toMatch(/^authenticator_factor_registration_/);
+
+      // Two cache.set calls: payload under registrationId, registrationId under actorId.
+      expect(cache.set).toHaveBeenCalledTimes(2);
+      const [firstCall, secondCall] = vi.mocked(cache.set).mock.calls;
+      const [payloadKey, payloadJson] = firstCall!;
+      expect(payloadKey).toMatch(/^authenticator_factor_registration_/);
       const payload = JSON.parse(payloadJson as string);
       expect(payload.actorId).toBe('actor-1');
       expect(payload.secretHash).toBe('encrypted-secret');
+      expect(payload.uri).toBe('otpauth://totp/Example:actor-1?secret=TESTSECRET');
+      expect(payload.qrCode).toBe('data:image/png;base64,MOCKQR');
+      expect(secondCall![0]).toBe('authenticator_factor_registration_actor-1');
+      expect(secondCall![1]).toBe(payload.id);
     });
 
-    it('returns registrationId, secret, uri, qrCode, and expiresAt', async () => {
+    it('returns registrationId, secret, uri, qrCode, expiresAt, issuedAt, and alreadyRegistered=false', async () => {
       const result = await service.registerAuthenticatorFactor('actor-1');
       expect(result.registrationId).toBeTruthy();
       expect(result.secret).toBe('TESTSECRET');
       expect(result.uri).toBe('otpauth://totp/Example:actor-1?secret=TESTSECRET');
       expect(result.qrCode).toBe('data:image/png;base64,MOCKQR');
       expect(result.expiresAt).toBeDefined();
+      expect(result.issuedAt).toBeDefined();
+      expect(result.alreadyRegistered).toBe(false);
+    });
+
+    it('returns the existing pending registration with alreadyRegistered=true when one is cached for the actor', async () => {
+      const payload = makeRegistrationPayload({
+        uri: 'otpauth://cached',
+        qrCode: 'data:image/png;base64,CACHEDQR',
+      });
+      cache.get = vi.fn().mockResolvedValueOnce('reg-id-1').mockResolvedValueOnce(JSON.stringify(payload));
+
+      const result = await service.registerAuthenticatorFactor('actor-1');
+
+      expect(result.registrationId).toBe('reg-id-1');
+      expect(result.alreadyRegistered).toBe(true);
+      expect(result.uri).toBe('otpauth://cached');
+      expect(result.qrCode).toBe('data:image/png;base64,CACHEDQR');
+      expect(result.secret).toBe('TESTSECRET');
+      expect(otpProvider.createSecret).not.toHaveBeenCalled();
+      expect(cache.set).not.toHaveBeenCalled();
     });
 
     it('applies custom OTP options over defaults', async () => {
@@ -187,12 +215,24 @@ describe('AuthenticatorFactorService', () => {
       expect(repo.createFactor).toHaveBeenCalledWith('actor-1', expect.objectContaining({ secretHash: 'encrypted-secret' }));
     });
 
-    it('returns the new factor id on success', async () => {
+    it('returns the new factor on success', async () => {
       const payload = makeRegistrationPayload();
+      const factor = makeAuthenticatorFactor({ id: 'new-factor-id' });
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
-      repo.createFactor = vi.fn().mockResolvedValue(makeAuthenticatorFactor({ id: 'new-factor-id' }));
+      repo.createFactor = vi.fn().mockResolvedValue(factor);
       const result = await service.createAuthenticatorFactorFromRegistration('actor-1', 'reg-id-1', '123456');
-      expect(result).toBe('new-factor-id');
+      expect(result).toBe(factor);
+    });
+
+    it('deletes the cached registration entries after a successful registration', async () => {
+      const payload = makeRegistrationPayload({ actorId: 'actor-1' });
+      cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
+      repo.createFactor = vi.fn().mockResolvedValue(makeAuthenticatorFactor());
+
+      await service.createAuthenticatorFactorFromRegistration('actor-1', 'reg-id-1', '123456');
+
+      expect(cache.delete).toHaveBeenCalledWith('authenticator_factor_registration_reg-id-1');
+      expect(cache.delete).toHaveBeenCalledWith('authenticator_factor_registration_actor-1');
     });
   });
 

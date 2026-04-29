@@ -48,8 +48,8 @@ export class PasswordFactorService {
     return response ? (JSON.parse(response) as RegistrationPayload) : undefined;
   }
 
-  private async lookupRegistrationByHash(hash: string) {
-    const registrationId = await this.cache.get(this.getRegistrationKey(hash));
+  private async lookupRegistrationByValue(value: string) {
+    const registrationId = await this.cache.get(this.getRegistrationKey(value));
     return registrationId ? await this.lookupRegistration(registrationId) : undefined;
   }
 
@@ -65,13 +65,13 @@ export class PasswordFactorService {
     return hashPwd.toString('base64') === hash;
   }
 
-  private async cacheRegistration(hash: string, payload: RegistrationPayload, expiration: Duration) {
-    const registrationId = crypto.randomBytes(32).toString('base64url');
+  private async cacheRegistration(value: string, payload: RegistrationPayload, expiration: Duration) {
+    const registrationId = payload.id ?? crypto.randomBytes(32).toString('base64url');
 
     payload.id = registrationId;
 
     await this.cache.set(this.getRegistrationKey(registrationId), JSON.stringify(payload), expiration);
-    await this.cache.set(this.getRegistrationKey(hash), registrationId, expiration);
+    await this.cache.set(this.getRegistrationKey(value), registrationId, expiration);
     return registrationId;
   }
 
@@ -83,23 +83,34 @@ export class PasswordFactorService {
    * calling {@link createPasswordFactorFromRegistration} with that id once the
    * actor record exists.
    *
-   * Idempotent: if a pending registration is already cached for the same
-   * password (matched by hash), the existing `registrationId` is returned and
-   * `alreadyRegistered` is set to `true` — useful for retrying a sign-up
-   * without re-staging the same secret.
+   * Idempotent in two ways:
+   * - If `registrationId` is supplied and resolves to a cached registration,
+   *   that registration is returned. Useful for retrying without churning the
+   *   id (e.g. when stitching this flow into a longer onboarding state machine).
+   * - Otherwise, if a pending registration is already cached for the same
+   *   password (matched by hash + salt), the existing `registrationId` is
+   *   returned. Useful for retrying a sign-up without re-staging the same secret.
    *
-   * @param password - The plaintext password to stage.
+   * In both cases `alreadyRegistered` is set to `true`.
+   *
+   * @param password       - The plaintext password to stage.
+   * @param registrationId - Optional caller-supplied id. When set, the method
+   *   first checks for a cached registration under this id before falling back
+   *   to the password-keyed lookup; on a cache miss it is also used as the id
+   *   of the freshly cached registration.
    * @returns `{ registrationId, expiresAt, issuedAt, alreadyRegistered }` —
    *   the registration reference, when it expires, when it was originally
    *   issued (both as Luxon `DateTime`s), and whether this call hit a
    *   previously-cached registration.
    * @throws HTTP 400 when the password fails the configured strength policy.
    */
-  async registerPasswordFactor(password: string) {
+  async registerPasswordFactor(password: string, registrationId?: string) {
     await this.passwordStrengthProvider.ensureStrength(password);
 
     const { hash, salt } = this.hashPassword(password);
-    const existingRegistration = await this.lookupRegistrationByHash(hash);
+    const existingRegistration = registrationId
+      ? await this.lookupRegistration(registrationId)
+      : await this.lookupRegistrationByValue(`${hash}:${salt}`);
     if (existingRegistration) {
       return {
         registrationId: existingRegistration.id,
@@ -110,6 +121,7 @@ export class PasswordFactorService {
     }
 
     const payload = {
+      id: registrationId,
       hash,
       salt,
       expiresAt: DateTime.utc()
@@ -118,7 +130,7 @@ export class PasswordFactorService {
       issuedAt: DateTime.utc().toUnixInteger(),
     } as RegistrationPayload;
 
-    const registrationId = await this.cacheRegistration(hash, payload, Duration.fromDurationLike({ minutes: 10 }));
+    registrationId = await this.cacheRegistration(hash, payload, Duration.fromDurationLike({ minutes: 10 }));
     return {
       registrationId,
       expiresAt: DateTime.fromSeconds(payload.expiresAt),
@@ -153,7 +165,7 @@ export class PasswordFactorService {
     const factor = await this.passwordFactorRepository.createFactor(actorId, { hash: registration.hash, salt: registration.salt }, false);
 
     await this.cache.delete(this.getRegistrationKey(registrationId));
-    await this.cache.delete(this.getRegistrationKey(registration.hash));
+    await this.cache.delete(this.getRegistrationKey(`${registration.hash}:${registration.salt}`));
 
     return factor;
   }
