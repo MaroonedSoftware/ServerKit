@@ -368,12 +368,12 @@ describe('PasswordFactorService', () => {
     });
   });
 
-  describe('checkStrength', () => {
+  describe('checkPasswordStrength', () => {
     it('delegates to the strength provider and returns its result', async () => {
       const result = { valid: false, score: 1, feedback: { warning: 'too short', suggestions: ['use more characters'] } };
       strengthProvider.checkStrength = vi.fn().mockResolvedValue(result);
 
-      await expect(service.checkStrength('weak', 'alice@example.com', 1990)).resolves.toBe(result);
+      await expect(service.checkPasswordStrength('weak', 'alice@example.com', 1990)).resolves.toBe(result);
       expect(strengthProvider.checkStrength).toHaveBeenCalledWith('weak', 'alice@example.com', 1990);
     });
   });

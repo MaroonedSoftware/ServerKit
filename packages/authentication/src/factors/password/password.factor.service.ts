@@ -287,7 +287,7 @@ export class PasswordFactorService {
    *   password (e.g. the user's name, email, or date of birth).
    * @returns `{ valid, score, feedback }` — `valid` is `true` when `score >= 3`.
    */
-  async checkStrength(password: string, ...userInputs: (string | number)[]) {
+  async checkPasswordStrength(password: string, ...userInputs: (string | number)[]) {
     return this.passwordStrengthProvider.checkStrength(password, ...userInputs);
   }
 
@@ -297,7 +297,7 @@ export class PasswordFactorService {
    * Pass-through to the injected {@link PasswordStrengthProvider}.
    *
    * @param password   - The password to evaluate.
-   * @param userInputs - Additional context values to penalise (see {@link checkStrength}).
+   * @param userInputs - Additional context values to penalise (see {@link checkPasswordStrength}).
    * @throws HTTP 400 with `{ password: warning, suggestions: [...] }` details when the score is below threshold.
    */
   async ensurePasswordStrength(password: string, ...userInputs: (string | number)[]) {
