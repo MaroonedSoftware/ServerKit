@@ -1,6 +1,6 @@
 {
   "name": "@maroonedsoftware/authentication",
-  "version": "0.23.0",
+  "version": "1.0.0",
   "description": "Authentication utilities for ServerKit.",
   "keywords": [
     "backend",
