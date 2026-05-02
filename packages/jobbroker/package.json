@@ -48,7 +48,7 @@
   "devDependencies": {
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
-    "pg-boss": "^12.15.0"
+    "pg-boss": "^12.18.2"
   },
   "peerDependencies": {
     "pg-boss": "^12.5.4"
