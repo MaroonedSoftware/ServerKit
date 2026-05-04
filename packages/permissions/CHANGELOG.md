@@ -1,5 +1,12 @@
 # @maroonedsoftware/permissions
 
+## 0.1.1
+
+### Patch Changes
+
+- db220a1: chore: bump kysely, zod patch versions
+- 9e2c2de: chore: update package versions for dependencies and devDependencies
+
 ## 0.1.0
 
 ### Minor Changes

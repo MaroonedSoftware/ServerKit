@@ -1,5 +1,13 @@
 # @maroonedsoftware/kysely
 
+## 0.5.2
+
+### Patch Changes
+
+- db220a1: chore: bump kysely, zod patch versions
+  - @maroonedsoftware/errors@1.6.0
+  - @maroonedsoftware/utilities@1.7.0
+
 ## 0.5.1
 
 ### Patch Changes

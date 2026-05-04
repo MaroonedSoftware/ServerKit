@@ -1,5 +1,11 @@
 # @repo/config-eslint
 
+## 0.2.1
+
+### Patch Changes
+
+- 9e2c2de: chore: update package versions for dependencies and devDependencies
+
 ## 0.2.0
 
 ### Minor Changes

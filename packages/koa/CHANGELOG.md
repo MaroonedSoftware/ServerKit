@@ -1,5 +1,18 @@
 # @maroonedsoftware/koa
 
+## 1.17.8
+
+### Patch Changes
+
+- 9e2c2de: chore: update package versions for dependencies and devDependencies
+- Updated dependencies [9e2c2de]
+  - @maroonedsoftware/authentication@2.2.1
+  - @maroonedsoftware/appconfig@1.4.1
+  - @maroonedsoftware/errors@1.6.0
+  - @maroonedsoftware/logger@1.1.0
+  - @maroonedsoftware/multipart@1.1.2
+  - @maroonedsoftware/utilities@1.7.0
+
 ## 1.17.7
 
 ### Patch Changes
