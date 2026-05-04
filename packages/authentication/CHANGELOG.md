@@ -1,5 +1,17 @@
 # @maroonedsoftware/authentication
 
+## 2.2.1
+
+### Patch Changes
+
+- 9e2c2de: chore: update package versions for dependencies and devDependencies
+- Updated dependencies [9e2c2de]
+  - @maroonedsoftware/cache@0.1.3
+  - @maroonedsoftware/encryption@0.4.0
+  - @maroonedsoftware/errors@1.6.0
+  - @maroonedsoftware/logger@1.1.0
+  - @maroonedsoftware/utilities@1.7.0
+
 ## 2.2.0
 
 ### Minor Changes

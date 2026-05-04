@@ -1,5 +1,14 @@
 # @maroonedsoftware/cache
 
+## 0.1.3
+
+### Patch Changes
+
+- 9e2c2de: chore: update package versions for dependencies and devDependencies
+  - @maroonedsoftware/errors@1.6.0
+  - @maroonedsoftware/logger@1.1.0
+  - @maroonedsoftware/utilities@1.7.0
+
 ## 0.1.2
 
 ### Patch Changes

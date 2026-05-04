@@ -1,5 +1,11 @@
 # @maroonedsoftware/appconfig
 
+## 1.4.1
+
+### Patch Changes
+
+- 9e2c2de: chore: update package versions for dependencies and devDependencies
+
 ## 1.4.0
 
 ### Minor Changes

@@ -1,5 +1,13 @@
 # @maroonedsoftware/zod
 
+## 0.4.1
+
+### Patch Changes
+
+- db220a1: chore: bump kysely, zod patch versions
+- 9e2c2de: chore: update package versions for dependencies and devDependencies
+  - @maroonedsoftware/errors@1.6.0
+
 ## 0.4.0
 
 ### Minor Changes
