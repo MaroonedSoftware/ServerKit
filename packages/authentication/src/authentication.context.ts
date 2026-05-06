@@ -10,6 +10,12 @@ import { DateTime } from 'luxon';
 export type AuthenticationFactorKind = 'knowledge' | 'possession' | 'biometric';
 
 /**
+ * The verification method used to satisfy an authentication factor within a
+ * session. Corresponds to the built-in factor services shipped by this package.
+ */
+export type AuthenticationFactorMethod = 'phone' | 'password' | 'authenticator' | 'email' | 'fido';
+
+/**
  * Describes a single authentication factor that was satisfied during a session.
  */
 export interface AuthenticationFactor {
@@ -72,7 +78,7 @@ export interface AuthenticationSessionFactor {
   /** When the factor was most recently re-verified. */
   authenticatedAt: DateTime;
   /** The verification method used. */
-  method: 'phone' | 'password' | 'authenticator' | 'email' | 'fido';
+  method: AuthenticationFactorMethod;
   /** Stable identifier for the specific factor record (e.g. a DB row id). */
   methodId: string;
   /** MFA category this factor belongs to. */
