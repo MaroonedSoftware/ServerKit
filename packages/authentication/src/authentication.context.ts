@@ -33,10 +33,8 @@ export interface AuthenticationFactor {
  * arbitrary claims extracted from the credential (e.g. JWT payload).
  */
 export interface AuthenticationContext {
-  /** Unique identifier for the actor that was authenticated. */
-  actorId: string;
-  /** The type of actor that was authenticated. */
-  actorType: string;
+  /** Unique identifier for the subject that was authenticated. */
+  subject: string;
   /** When the session was originally issued. */
   issuedAt: DateTime;
   /** When the session was last accessed. */
@@ -47,7 +45,7 @@ export interface AuthenticationContext {
   factors: AuthenticationFactor[];
   /** Arbitrary key/value claims extracted from the credential. */
   claims: Record<string, unknown>;
-  /** Roles assigned to the authenticated user. */
+  /** Roles assigned to the authenticated subject. */
   roles: string[];
 }
 
@@ -57,8 +55,7 @@ export interface AuthenticationContext {
  * authentication has been resolved, or when authentication fails.
  */
 export const invalidAuthenticationContext: AuthenticationContext = {
-  actorId: '',
-  actorType: '',
+  subject: '',
   issuedAt: DateTime.invalid('invalid'),
   lastAccessedAt: DateTime.invalid('invalid'),
   expiresAt: DateTime.invalid('invalid'),
