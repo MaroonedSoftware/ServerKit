@@ -1,5 +1,11 @@
 # @maroonedsoftware/authentication
 
+## 2.3.0
+
+### Minor Changes
+
+- 5bb6817: Export `AuthenticationFactorMethod`, the union of built-in factor method names (`'phone' | 'password' | 'authenticator' | 'email' | 'fido'`) previously inlined on `AuthenticationSessionFactor.method`.
+
 ## 2.2.1
 
 ### Patch Changes
