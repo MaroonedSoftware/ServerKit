@@ -21,20 +21,22 @@ const parseInterval = (value: string) => {
 /**
  * PostgreSQL type overrides for use with a `KyselyPool`.
  *
- * Replaces the default `pg` parsers for three common types:
+ * Replaces the default `pg` parsers for the following types:
  *
- * | PostgreSQL type | Default JS type | Override        |
- * | --------------- | --------------- | --------------- |
- * | `TIMESTAMP`     | `string`        | `DateTime` (UTC)|
- * | `TIMESTAMPTZ`   | `string`        | `DateTime` (UTC)|
- * | `INT8` / bigint | `string`        | `BigInt`        |
- * | `INTERVAL`      | `string`        | `Interval`      |
- * | `TINTERVAL`     | `string`        | `Interval`      |
- * | `TSTZRANGE`     | `string`        | `Interval`      |
+ * | PostgreSQL type | Default JS type | Override         |
+ * | --------------- | --------------- | ---------------- |
+ * | `TIMESTAMP`     | `string`        | `DateTime` (UTC) |
+ * | `TIMESTAMPTZ`   | `string`        | `DateTime` (UTC) |
+ * | `DATE`          | `string`        | `DateTime` (UTC) |
+ * | `TIME`          | `string`        | `DateTime` (UTC) |
+ * | `INT8` / bigint | `string`        | `BigInt`         |
+ * | `INTERVAL`      | `string`        | `Interval`       |
+ * | `TINTERVAL`     | `string`        | `Interval`       |
+ * | `TSTZRANGE`     | `string`        | `Interval`       |
  *
- * Timestamps are parsed as [Luxon](https://moment.github.io/luxon/) `DateTime`
- * objects in the UTC zone. Large integers are parsed as native `BigInt` values
- * to avoid precision loss beyond `Number.MAX_SAFE_INTEGER`.
+ * Date and time values are parsed as [Luxon](https://moment.github.io/luxon/)
+ * `DateTime` objects in the UTC zone. Large integers are parsed as native
+ * `BigInt` values to avoid precision loss beyond `Number.MAX_SAFE_INTEGER`.
  *
  * Pass this to the `types` option of `KyselyPool` (or `pg.Pool`):
  *
@@ -51,6 +53,8 @@ const parseInterval = (value: string) => {
 export const KyselyPgTypeOverrides = new pg.TypeOverrides();
 KyselyPgTypeOverrides.setTypeParser(pg.types.builtins.TIMESTAMPTZ, parseTimestamp);
 KyselyPgTypeOverrides.setTypeParser(pg.types.builtins.TIMESTAMP, parseTimestamp);
+KyselyPgTypeOverrides.setTypeParser(pg.types.builtins.TIME, parseTimestamp);
+KyselyPgTypeOverrides.setTypeParser(pg.types.builtins.DATE, parseTimestamp);
 KyselyPgTypeOverrides.setTypeParser(pg.types.builtins.INT8, parseBigInt);
 KyselyPgTypeOverrides.setTypeParser(pg.types.builtins.TINTERVAL, parseInterval);
 KyselyPgTypeOverrides.setTypeParser(pg.types.builtins.INTERVAL, parseInterval);

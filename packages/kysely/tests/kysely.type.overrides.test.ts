@@ -54,6 +54,47 @@ describe('KyselyPgTypeOverrides', () => {
     });
   });
 
+  describe('DATE parser', () => {
+    it('should parse a DATE string as a Luxon DateTime', () => {
+      const result = getParser(pg.types.builtins.DATE)('2023-06-15');
+      expect(result).toBeInstanceOf(DateTime);
+    });
+
+    it('should parse with UTC zone', () => {
+      const result = getParser(pg.types.builtins.DATE)('2023-06-15') as DateTime;
+      expect(result.zoneName).toBe('UTC');
+    });
+
+    it('should correctly parse the date values with zeroed time components', () => {
+      const result = getParser(pg.types.builtins.DATE)('2023-06-15') as DateTime;
+      expect(result.year).toBe(2023);
+      expect(result.month).toBe(6);
+      expect(result.day).toBe(15);
+      expect(result.hour).toBe(0);
+      expect(result.minute).toBe(0);
+      expect(result.second).toBe(0);
+    });
+  });
+
+  describe('TIME parser', () => {
+    it('should parse a TIME string as a Luxon DateTime', () => {
+      const result = getParser(pg.types.builtins.TIME)('10:30:45');
+      expect(result).toBeInstanceOf(DateTime);
+    });
+
+    it('should parse with UTC zone', () => {
+      const result = getParser(pg.types.builtins.TIME)('10:30:45') as DateTime;
+      expect(result.zoneName).toBe('UTC');
+    });
+
+    it('should correctly parse the time values', () => {
+      const result = getParser(pg.types.builtins.TIME)('10:30:45') as DateTime;
+      expect(result.hour).toBe(10);
+      expect(result.minute).toBe(30);
+      expect(result.second).toBe(45);
+    });
+  });
+
   describe('INT8 parser', () => {
     it('should parse an INT8 string as a BigInt', () => {
       const result = getParser(pg.types.builtins.INT8)('12345');

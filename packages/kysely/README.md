@@ -173,12 +173,14 @@ if (isKyselyNoResultError(error)) {
 
 ## PostgreSQL Type Overrides
 
-`KyselyPgTypeOverrides` registers custom parsers for six types:
+`KyselyPgTypeOverrides` registers custom parsers for the following types:
 
 | PostgreSQL type   | Default JS type | Override               |
 | ----------------- | --------------- | ---------------------- |
 | `TIMESTAMP`       | `string`        | Luxon `DateTime` (UTC) |
 | `TIMESTAMPTZ`     | `string`        | Luxon `DateTime` (UTC) |
+| `DATE`            | `string`        | Luxon `DateTime` (UTC) |
+| `TIME`            | `string`        | Luxon `DateTime` (UTC) |
 | `INT8` / `bigint` | `string`        | `BigInt`               |
 | `INTERVAL`        | `string`        | Luxon `Interval`       |
 | `TINTERVAL`       | `string`        | Luxon `Interval`       |
@@ -240,7 +242,7 @@ Type guard that returns `true` when `error` is a Kysely `NoResultError`.
 
 ### `KyselyPgTypeOverrides`
 
-`pg.TypeOverrides` — Custom parsers for `TIMESTAMP`, `TIMESTAMPTZ`, `INT8`, `INTERVAL`, `TINTERVAL`, and `TSTZRANGE`.
+`pg.TypeOverrides` — Custom parsers for `TIMESTAMP`, `TIMESTAMPTZ`, `DATE`, `TIME`, `INT8`, `INTERVAL`, `TINTERVAL`, and `TSTZRANGE`.
 
 ### `NullToUndefinedPlugin`
 
