@@ -1,5 +1,11 @@
 # @maroonedsoftware/kysely
 
+## 0.6.0
+
+### Minor Changes
+
+- 507cef2: `KyselyPgTypeOverrides` now parses PostgreSQL `DATE` and `TIME` columns as Luxon `DateTime` (UTC), consistent with the existing `TIMESTAMP` and `TIMESTAMPTZ` parsers.
+
 ## 0.5.2
 
 ### Patch Changes
