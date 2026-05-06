@@ -3,7 +3,7 @@ import { Injectable } from 'injectkit';
 import { DateTime, Duration } from 'luxon';
 import { isEmail, binarySearch } from '@maroonedsoftware/utilities';
 import { OtpProvider } from '../../providers/otp.provider.js';
-import { httpError } from '@maroonedsoftware/errors';
+import { httpError, unauthorizedError } from '@maroonedsoftware/errors';
 import { CacheProvider } from '@maroonedsoftware/cache';
 import { EmailFactorRepository } from './email.factor.repository.js';
 
@@ -54,7 +54,7 @@ export class EmailFactorServiceOptions {
  *
  * **Verification flow** (signing in with an existing factor):
  * 1. Call {@link issueEmailChallenge} → receive a `verificationId` and a `code`/token to send.
- * 2. Call {@link verifyEmailChallenge} → returns `actorId` and `factorId` on success.
+ * 2. Call {@link verifyEmailChallenge} → returns the verified {@link EmailFactor} on success.
  */
 @Injectable()
 export class EmailFactorService {
@@ -334,10 +334,16 @@ export class EmailFactorService {
    * On success the cached challenge entries (under both the challenge id
    * and the actor+factor pair) are deleted so the code/token cannot be replayed.
    *
+   * The factor is re-loaded and re-checked for `active = true` before the code
+   * is verified, so a factor deactivated between {@link issueEmailChallenge}
+   * and this call cannot be used to authenticate.
+   *
    * @param challengeId - The challenge reference returned by {@link issueEmailChallenge}.
    * @param code           - The code or magic link token submitted by the user.
-   * @returns `{ actorId, factorId }` identifying the actor and factor that was verified.
+   * @returns The verified {@link EmailFactor}.
    * @throws HTTP 404 when the challenge has expired or does not exist.
+   * @throws HTTP 401 (`WWW-Authenticate: Bearer error="invalid_factor"`) when
+   *   the factor has been deleted or deactivated since the challenge was issued.
    * @throws HTTP 400 when the code/token is invalid.
    */
   async verifyEmailChallenge(challengeId: string, code: string) {
@@ -346,12 +352,17 @@ export class EmailFactorService {
       throw httpError(404).withDetails({ challengeId: 'not found' });
     }
 
+    const factor = await this.emailFactorRepository.getFactor(payload.actorId, payload.factorId);
+    if (!factor || !factor.active) {
+      throw unauthorizedError('Bearer error="invalid_factor"');
+    }
+
     this.verifyPayload(payload, code);
 
     await this.cache.delete(this.getChallengeKey(challengeId));
     await this.cache.delete(this.getChallengeKey(`${payload.actorId}_${payload.factorId}`));
 
-    return { actorId: payload.actorId, factorId: payload.factorId };
+    return factor;
   }
 
   /**

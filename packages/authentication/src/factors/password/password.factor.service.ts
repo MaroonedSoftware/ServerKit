@@ -183,7 +183,7 @@ export class PasswordFactorService {
   /**
    * Creates a new password factor after validating strength. Throws 409 if the actor already has one.
    *
-   * @returns The new factor's ID.
+   * @returns The newly persisted {@link PasswordFactor}.
    */
   async createPasswordFactor(actorId: string, password: string, needsReset: boolean = false) {
     await this.passwordStrengthProvider.ensureStrength(password);
@@ -195,13 +195,13 @@ export class PasswordFactorService {
 
     const value = this.hashPassword(password);
     const factor = await this.passwordFactorRepository.createFactor(actorId, value, needsReset);
-    return factor.id;
+    return factor;
   }
 
   /**
    * Replaces the actor's password after validating strength and checking the last 10 passwords for reuse.
    *
-   * @returns The updated factor's ID.
+   * @returns The updated {@link PasswordFactor}.
    */
   async updatePasswordFactor(actorId: string, password: string, needsReset: boolean = false) {
     await this.passwordStrengthProvider.ensureStrength(password);
@@ -216,7 +216,7 @@ export class PasswordFactorService {
       throw httpError(400).withDetails({ password: 'Password is the same as a previous one' });
     }
     factor = await this.passwordFactorRepository.updateFactor(actorId, this.hashPassword(password), needsReset);
-    return factor.id;
+    return factor;
   }
 
   /** Permanently removes the actor's password factor. */
@@ -228,7 +228,7 @@ export class PasswordFactorService {
    * Verifies the actor's password against the stored hash, enforcing rate limiting.
    * Throws 429 when rate-limited, 401 when the factor is missing/inactive, needs reset, or the password is wrong.
    *
-   * @returns The factor's ID on success.
+   * @returns The verified {@link PasswordFactor} on success.
    */
   async verifyPassword(actorId: string, password: string) {
     try {
@@ -254,13 +254,13 @@ export class PasswordFactorService {
     }
 
     await this.rateLimiter.reward(actorId);
-    return passwordFactor.id;
+    return passwordFactor;
   }
 
   /**
    * Changes the actor's password and clears the `needsReset` flag. Validates strength before persisting.
    *
-   * @returns The updated factor's ID.
+   * @returns The updated {@link PasswordFactor}.
    */
   async changePassword(actorId: string, password: string) {
     await this.passwordStrengthProvider.ensureStrength(password);
@@ -272,7 +272,7 @@ export class PasswordFactorService {
 
     const value = this.hashPassword(password);
     const updatedFactor = await this.passwordFactorRepository.updateFactor(actorId, value, false);
-    return updatedFactor.id;
+    return updatedFactor;
   }
 
   /**

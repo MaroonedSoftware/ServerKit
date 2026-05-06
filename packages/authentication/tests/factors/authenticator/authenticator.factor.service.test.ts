@@ -284,9 +284,10 @@ describe('AuthenticatorFactorService', () => {
       expect(otpProvider.validate).toHaveBeenCalledWith('123456', 'TESTSECRET', factor);
     });
 
-    it('resolves without throwing for a valid code', async () => {
-      repo.getFactor = vi.fn().mockResolvedValue(makeAuthenticatorFactor());
-      await expect(service.validateFactor('actor-1', 'factor-1', '123456')).resolves.toBeUndefined();
+    it('returns the verified factor for a valid code', async () => {
+      const factor = makeAuthenticatorFactor();
+      repo.getFactor = vi.fn().mockResolvedValue(factor);
+      await expect(service.validateFactor('actor-1', 'factor-1', '123456')).resolves.toBe(factor);
     });
   });
 

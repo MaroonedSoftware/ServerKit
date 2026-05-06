@@ -166,7 +166,7 @@ export type PublicKeyCredentialWithAssertion = PublicKeyCredential & {
  *    returns a {@link FidoAttestation} to pass to `navigator.credentials.create`.
  * 2. The browser returns a `PublicKeyCredentialWithAttestation`. Send it to
  *    {@link createFidoFactorFromRegistration} to verify the attestation and
- *    persist the new factor; returns the new factor id.
+ *    persist the new factor; returns the new {@link FidoFactor}.
  *
  * **Authorization (sign-in) flow:**
  * 1. Call {@link createFidoAuthorizationChallenge} → returns assertion options
@@ -174,7 +174,7 @@ export type PublicKeyCredentialWithAssertion = PublicKeyCredential & {
  *    to pass to `navigator.credentials.get`.
  * 2. The browser returns a `PublicKeyCredentialWithAssertion`. Send it to
  *    {@link verifyFidoAuthorizationChallenge} to verify the signature and
- *    bump the counter; returns `{ actorId, factorId }`.
+ *    bump the counter; returns the verified {@link FidoFactor}.
  *
  * Challenges are cached for {@link FidoFactorServiceOptions.timeout} so the
  * server can verify the response without holding state in memory.
@@ -266,7 +266,7 @@ export class FidoFactorService {
    * @param actorId    - The actor the registration was started for.
    * @param credential - The `PublicKeyCredential` returned by the browser, with
    *   `id`/`rawId` and the attestation response fields base64-encoded.
-   * @returns The id of the newly created {@link FidoFactor}.
+   * @returns The newly created {@link FidoFactor}.
    * @throws HTTP 401 (`WWW-Authenticate: Bearer error="invalid_registration"`)
    *   when no pending registration is cached for this actor (expired or never started).
    * @throws HTTP 401 (`WWW-Authenticate: Bearer error="invalid_credentials"`)
@@ -297,7 +297,7 @@ export class FidoFactorService {
 
       await this.cache.delete(this.getRegistrationKey(actorId));
 
-      return factor.id;
+      return factor;
     } catch (ex) {
       throw unauthorizedError('Bearer error="invalid_credentials"')
         .withCause(ex as Error)
@@ -367,10 +367,13 @@ export class FidoFactorService {
    * @param actorId    - The actor that started the challenge.
    * @param credential - The `PublicKeyCredential` returned by the browser, with
    *   `id`/`rawId` and the assertion response fields base64-encoded.
-   * @returns `{ actorId, factorId }` identifying the actor and the credential used.
+   * @returns The verified {@link FidoFactor}.
    * @throws HTTP 401 (`WWW-Authenticate: Bearer error="invalid_credentials"`)
-   *   when no challenge is cached (expired or never started), the credential
-   *   id is unknown for this actor, or signature verification fails.
+   *   when no challenge is cached (expired or never started) or signature
+   *   verification fails.
+   * @throws HTTP 401 (`WWW-Authenticate: Bearer error="invalid_factor"`) when
+   *   the credential id is unknown for this actor or the matching factor is
+   *   inactive.
    */
   async verifyFidoAuthorizationChallenge(actorId: string, credential: PublicKeyCredentialWithAssertion) {
     const cacheAssertionExpectations = await this.cache.get(this.getAuthorizationKey(actorId));
@@ -381,8 +384,8 @@ export class FidoFactorService {
     const expectedAssertionResult = JSON.parse(cacheAssertionExpectations) as ExpectedAssertionResult;
 
     const factor = await this.fidoFactorRepository.getFactor(actorId, credential.id);
-    if (!factor) {
-      throw unauthorizedError('Bearer error="invalid_credentials"');
+    if (!factor || !factor.active) {
+      throw unauthorizedError('Bearer error="invalid_factor"');
     }
 
     expectedAssertionResult.publicKey = factor.publicKey;
@@ -398,7 +401,7 @@ export class FidoFactorService {
       const result = await this.fido2.assertionResult(assertionResult, expectedAssertionResult);
       await this.fidoFactorRepository.updateFactorCounter(actorId, factor.id, result.authnrData.get('counter'));
       await this.cache.delete(this.getAuthorizationKey(actorId));
-      return { actorId, factorId: factor.id };
+      return factor;
     } catch (ex) {
       throw unauthorizedError('Bearer error="invalid_credentials"')
         .withCause(ex as Error)

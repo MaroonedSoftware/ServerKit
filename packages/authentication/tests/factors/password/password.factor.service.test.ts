@@ -107,13 +107,14 @@ describe('PasswordFactorService', () => {
       expect(repo.createFactor).not.toHaveBeenCalled();
     });
 
-    it('creates a new factor and returns its id', async () => {
+    it('creates a new factor and returns it', async () => {
+      const factor = makePasswordFactor({ id: 'new-factor' });
       repo.getFactor = vi.fn().mockResolvedValue(undefined);
-      repo.createFactor = vi.fn().mockResolvedValue(makePasswordFactor({ id: 'new-factor' }));
+      repo.createFactor = vi.fn().mockResolvedValue(factor);
 
-      const id = await service.createPasswordFactor('actor-1', 'strong-pass', true);
+      const result = await service.createPasswordFactor('actor-1', 'strong-pass', true);
 
-      expect(id).toBe('new-factor');
+      expect(result).toBe(factor);
       expect(strengthProvider.ensureStrength).toHaveBeenCalledWith('strong-pass');
       expect(repo.createFactor).toHaveBeenCalledTimes(1);
       const [actorId, value, needsReset] = vi.mocked(repo.createFactor).mock.calls[0]!;
@@ -244,14 +245,15 @@ describe('PasswordFactorService', () => {
       expect(repo.updateFactor).not.toHaveBeenCalled();
     });
 
-    it('updates the factor and returns its id when the password is novel', async () => {
+    it('updates the factor and returns it when the password is novel', async () => {
+      const updated = makePasswordFactor({ id: 'updated-factor' });
       repo.getFactor = vi.fn().mockResolvedValue(makePasswordFactor());
       repo.listPreviousPasswords = vi.fn().mockResolvedValue([hashPassword('something-else')]);
-      repo.updateFactor = vi.fn().mockResolvedValue(makePasswordFactor({ id: 'updated-factor' }));
+      repo.updateFactor = vi.fn().mockResolvedValue(updated);
 
-      const id = await service.updatePasswordFactor('actor-1', 'strong-pass', true);
+      const result = await service.updatePasswordFactor('actor-1', 'strong-pass', true);
 
-      expect(id).toBe('updated-factor');
+      expect(result).toBe(updated);
       expect(strengthProvider.ensureStrength).toHaveBeenCalledWith('strong-pass');
       expect(repo.listPreviousPasswords).toHaveBeenCalledWith('actor-1', 10);
       const [actorId, value, needsReset] = vi.mocked(repo.updateFactor).mock.calls[0]!;
@@ -308,13 +310,14 @@ describe('PasswordFactorService', () => {
       expect(rateLimiter.reward).not.toHaveBeenCalled();
     });
 
-    it('returns the factor id and rewards the rate limiter on success', async () => {
+    it('returns the verified factor and rewards the rate limiter on success', async () => {
       const value = hashPassword('strong-pass');
-      repo.getFactor = vi.fn().mockResolvedValue(makePasswordFactor({ id: 'verified-factor', value }));
+      const factor = makePasswordFactor({ id: 'verified-factor', value });
+      repo.getFactor = vi.fn().mockResolvedValue(factor);
 
-      const id = await service.verifyPassword('actor-1', 'strong-pass');
+      const result = await service.verifyPassword('actor-1', 'strong-pass');
 
-      expect(id).toBe('verified-factor');
+      expect(result).toBe(factor);
       expect(rateLimiter.consume).toHaveBeenCalledWith('actor-1');
       expect(rateLimiter.reward).toHaveBeenCalledWith('actor-1');
     });
@@ -336,13 +339,14 @@ describe('PasswordFactorService', () => {
       });
     });
 
-    it('updates the factor with needsReset cleared and returns its id', async () => {
+    it('updates the factor with needsReset cleared and returns it', async () => {
+      const updated = makePasswordFactor({ id: 'changed-factor' });
       repo.getFactor = vi.fn().mockResolvedValue(makePasswordFactor({ needsReset: true }));
-      repo.updateFactor = vi.fn().mockResolvedValue(makePasswordFactor({ id: 'changed-factor' }));
+      repo.updateFactor = vi.fn().mockResolvedValue(updated);
 
-      const id = await service.changePassword('actor-1', 'strong-pass');
+      const result = await service.changePassword('actor-1', 'strong-pass');
 
-      expect(id).toBe('changed-factor');
+      expect(result).toBe(updated);
       expect(strengthProvider.ensureStrength).toHaveBeenCalledWith('strong-pass');
       const [actorId, value, needsReset] = vi.mocked(repo.updateFactor).mock.calls[0]!;
       expect(actorId).toBe('actor-1');

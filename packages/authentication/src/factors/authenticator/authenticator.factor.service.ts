@@ -222,6 +222,7 @@ export class AuthenticatorFactorService {
    * @param actorId  - The actor that owns the factor.
    * @param factorId - The factor record id to validate against.
    * @param code     - The current OTP code from the user's authenticator app.
+   * @returns The verified {@link AuthenticatorFactor}.
    * @throws HTTP 401 when the factor does not exist, is inactive, or the code is invalid.
    */
   async validateFactor(actorId: string, factorId: string, code: string) {
@@ -235,6 +236,8 @@ export class AuthenticatorFactorService {
     if (!this.otpProvider.validate(code, secret, factor)) {
       throw unauthorizedError('Bearer error="invalid_code"');
     }
+
+    return factor;
   }
 
   /**

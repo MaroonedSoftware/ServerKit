@@ -250,16 +250,17 @@ import { PasswordFactorService } from '@maroonedsoftware/authentication';
 const passwordFactors = container.get(PasswordFactorService);
 
 // Create a new factor (validates strength, throws 409 if one already exists)
-const factorId = await passwordFactors.createPasswordFactor(user.id, password);
+const factor = await passwordFactors.createPasswordFactor(user.id, password);
 
-// Verify on sign-in (rate-limited; throws 401 on bad credentials, 429 if rate-limited)
-await passwordFactors.verifyPassword(user.id, submittedPassword);
+// Verify on sign-in (rate-limited; throws 401 on bad credentials, 429 if rate-limited).
+// Returns the verified factor (use `.id` to record which factor satisfied authentication).
+const verified = await passwordFactors.verifyPassword(user.id, submittedPassword);
 
 // Replace the password (validates strength, rejects reuse of the last 10)
-await passwordFactors.updatePasswordFactor(user.id, newPassword);
+const updated = await passwordFactors.updatePasswordFactor(user.id, newPassword);
 
 // Change password and clear the `needsReset` flag
-await passwordFactors.changePassword(user.id, newPassword);
+const changed = await passwordFactors.changePassword(user.id, newPassword);
 
 // Remove the factor
 await passwordFactors.deleteFactor(user.id);
@@ -311,8 +312,9 @@ if (!alreadyIssued) {
   await mailer.sendOtp(email, code);
 }
 
-// Step 2: user submits the code
-const { actorId, factorId } = await emailFactors.verifyEmailChallenge(challengeId, submittedCode);
+// Step 2: user submits the code. Returns the verified factor; throws 401 if the
+// factor has been deleted or deactivated since the challenge was issued.
+const verifiedFactor = await emailFactors.verifyEmailChallenge(challengeId, submittedCode);
 ```
 
 `registerEmailFactor` rejects the request before issuing a code when:
@@ -374,8 +376,9 @@ await authenticatorFactors.registerAuthenticatorFactor(user.id, {
 #### Verification (sign-in)
 
 ```typescript
-// Throws HTTP 401 when the factor doesn't exist, is inactive, or the code is invalid
-await authenticatorFactors.validateFactor(user.id, factorId, submittedCode);
+// Returns the verified factor. Throws HTTP 401 when the factor doesn't exist,
+// is inactive, or the code is invalid.
+const factor = await authenticatorFactors.validateFactor(user.id, factorId, submittedCode);
 ```
 
 #### Deletion
@@ -434,7 +437,7 @@ const attestation = await fidoFactors.registerFidoFactor(user.id, {
 // and posts the resulting credential back.
 
 // Step 2: verify the attestation and persist the factor
-const factorId = await fidoFactors.createFidoFactorFromRegistration(user.id, credential);
+const factor = await fidoFactors.createFidoFactorFromRegistration(user.id, credential);
 
 // --- Authorization (sign-in) ---
 
@@ -447,11 +450,11 @@ const assertion = await fidoFactors.createFidoAuthorizationChallenge(user.id, {
 // Client decodes the challenge and each allowCredentials[].id to ArrayBuffers,
 // calls navigator.credentials.get({ publicKey: ... }), and posts back.
 
-// Step 2: verify the signature and bump the stored counter
-const { actorId, factorId } = await fidoFactors.verifyFidoAuthorizationChallenge(user.id, credential);
+// Step 2: verify the signature and bump the stored counter. Returns the verified factor.
+const verifiedFactor = await fidoFactors.verifyFidoAuthorizationChallenge(user.id, credential);
 ```
 
-Failed attestations and assertions both throw HTTP 401 with a `WWW-Authenticate: Bearer error="invalid_credentials"` header (or `"invalid_registration"` when no pending registration is cached). The original `fido2-lib` error is attached as the cause and the raw inputs as internal details for logging.
+Failed attestations and assertions throw HTTP 401 with a `WWW-Authenticate: Bearer error="invalid_credentials"` header (or `"invalid_registration"` when no pending registration is cached). When the credential id submitted at sign-in does not match a known factor for the actor — or the matching factor has been deactivated — `verifyFidoAuthorizationChallenge` throws HTTP 401 with `error="invalid_factor"` instead. The original `fido2-lib` error is attached as the cause and the raw inputs as internal details for logging.
 
 ---
 
@@ -797,13 +800,13 @@ Manages password factors with PBKDF2-SHA512 hashing, password-reuse prevention, 
 
 | Method                                                              | Returns                                                                              | Description                                                                                                                                  |
 | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `createPasswordFactor(actorId, password, needsReset?)`              | `Promise<string>`                                                                    | Validate strength via `PasswordStrengthProvider` and persist a new factor; throws HTTP 409 if one already exists. Returns `factorId`         |
+| `createPasswordFactor(actorId, password, needsReset?)`              | `Promise<PasswordFactor>`                                                            | Validate strength via `PasswordStrengthProvider` and persist a new factor; throws HTTP 409 if one already exists. Returns the new factor     |
 | `registerPasswordFactor(password, registrationId?)`                 | `Promise<{ registrationId, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>` | Validate strength and stage a hashed registration in the cache for 10 minutes (idempotent — `alreadyRegistered` is `true` on a cache hit)    |
 | `createPasswordFactorFromRegistration(actorId, registrationId)`     | `Promise<PasswordFactor>`                                                            | Complete a staged registration; throws HTTP 404 when the registration is missing or expired                                                  |
 | `hasPendingRegistration(registrationId)`                            | `Promise<boolean>`                                                                   | Check whether a staged registration is still cached and unexpired                                                                            |
-| `updatePasswordFactor(actorId, password, needsReset?)`              | `Promise<string>`                                                                    | Replace the password after strength check and reuse check against the last 10 passwords. Returns `factorId`                                  |
-| `verifyPassword(actorId, password)`                                 | `Promise<string>`                                                                    | Verify against the stored hash with rate limiting; throws HTTP 401 on bad credentials, HTTP 429 if rate-limited. Returns `factorId`          |
-| `changePassword(actorId, password)`                                 | `Promise<string>`                                                                    | Set a new password and clear the `needsReset` flag                                                                                           |
+| `updatePasswordFactor(actorId, password, needsReset?)`              | `Promise<PasswordFactor>`                                                            | Replace the password after strength check and reuse check against the last 10 passwords. Returns the updated factor                          |
+| `verifyPassword(actorId, password)`                                 | `Promise<PasswordFactor>`                                                            | Verify against the stored hash with rate limiting; throws HTTP 401 on bad credentials, HTTP 429 if rate-limited. Returns the verified factor |
+| `changePassword(actorId, password)`                                 | `Promise<PasswordFactor>`                                                            | Set a new password and clear the `needsReset` flag. Returns the updated factor                                                               |
 | `checkPasswordStrength(password, ...userInputs)`                    | `Promise<{ valid: boolean, score: number, feedback }>`                               | Pass-through to `PasswordStrengthProvider.checkStrength` for live strength feedback (e.g. a sign-up form meter)                              |
 | `ensurePasswordStrength(password, ...userInputs)`                   | `Promise<void>`                                                                      | Pass-through to `PasswordStrengthProvider.ensureStrength`; throws HTTP 400 when the password is below the strength threshold                 |
 | `clearRateLimit(actorId)`                                           | `Promise<void>`                                                                      | Reset the verify-password rate-limiter counter for an actor (e.g. after an out-of-band recovery)                                             |
@@ -831,7 +834,7 @@ Abstract base class. Extend and register a concrete implementation so that `Pass
 | `createEmailFactorFromRegistration(actorId, registrationId, code)`  | `Promise<EmailFactor>`                                      | Complete registration                   |
 | `hasPendingRegistration(registrationId)`                            | `Promise<boolean>`                                          | Check whether a registration is still cached and unexpired |
 | `issueEmailChallenge(actorId, factorId, issueMethod)`               | `Promise<{ email, challengeId, code, expiresAt: DateTime, issuedAt: DateTime, alreadyIssued: boolean }>` | Initiate a sign-in challenge (idempotent — `alreadyIssued` is `true` on a cache hit) |
-| `verifyEmailChallenge(challengeId, code)`                           | `Promise<{ actorId, factorId }>`                            | Complete a sign-in challenge            |
+| `verifyEmailChallenge(challengeId, code)`                           | `Promise<EmailFactor>`                                      | Complete a sign-in challenge; re-checks the factor is active and returns it (HTTP 401 if it has been deleted or deactivated since the challenge was issued) |
 | `hasPendingChallenge(challengeId)`                                  | `Promise<boolean>`                                          | Check whether a challenge is still cached and unexpired    |
 | `getRedirectHtml(redirectUrl: URL)`                                 | `{ html, nonce }`                                           | Build a magic-link landing page that redirects to `redirectUrl` via a CSP-nonce-gated inline script (rejects non-`http(s):` URLs with HTTP 400) |
 
@@ -866,7 +869,7 @@ Manages TOTP/HOTP authenticator app factors. Requires an `AuthenticatorFactorSer
 | `registerAuthenticatorFactor(actorId, options?, registrationId?)`                 | `Promise<{ registrationId, secret, uri, qrCode, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>`                       | Generate a secret, QR code, and cache the pending registration (idempotent — `alreadyRegistered` is `true` on a cache hit) |
 | `createAuthenticatorFactorFromRegistration(actorId, registrationId, code)`        | `Promise<AuthenticatorFactor>`                                                                                                                | Verify the first OTP code and persist the factor                                                                          |
 | `hasPendingRegistration(registrationId)`                                          | `Promise<boolean>`                                                                                                                            | Check whether a registration is still cached and unexpired                                                                |
-| `validateFactor(actorId, factorId, code)`                                         | `Promise<void>`                                                                                                                               | Verify a TOTP/HOTP code; throws HTTP 401 on failure                                                                       |
+| `validateFactor(actorId, factorId, code)`                                         | `Promise<AuthenticatorFactor>`                                                                                                                | Verify a TOTP/HOTP code and return the verified factor; throws HTTP 401 on failure                                        |
 | `deleteFactor(actorId, factorId)`                                                 | `Promise<void>`                                                                                                                               | Remove a factor                                                                                                          |
 
 `AuthenticatorFactorServiceOptions`:
@@ -928,9 +931,9 @@ Manages FIDO2/WebAuthn factors. Wraps `fido2-lib` and accepts relying party iden
 | Method                                                         | Returns                                                | Description                                                                          |
 | -------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------ |
 | `registerFidoFactor(actorId, options)`                         | `Promise<FidoAttestation>`                             | Generate an attestation challenge and cache the expectations                         |
-| `createFidoFactorFromRegistration(actorId, credential)`        | `Promise<string>`                                      | Verify the attestation and persist the factor; returns `factorId`                    |
+| `createFidoFactorFromRegistration(actorId, credential)`        | `Promise<FidoFactor>`                                  | Verify the attestation and persist the factor; returns the new factor                |
 | `createFidoAuthorizationChallenge(actorId, options)`           | `Promise<{ challenge, allowCredentials, ... }>`        | Emit an assertion challenge (`allowCredentials` from the actor's active factors)     |
-| `verifyFidoAuthorizationChallenge(actorId, credential)`        | `Promise<{ actorId, factorId }>`                       | Verify the assertion signature and bump the stored counter                           |
+| `verifyFidoAuthorizationChallenge(actorId, credential)`        | `Promise<FidoFactor>`                                  | Verify the assertion signature, bump the stored counter, and return the factor       |
 
 `FidoFactorServiceOptions`:
 
@@ -942,7 +945,7 @@ Manages FIDO2/WebAuthn factors. Wraps `fido2-lib` and accepts relying party iden
 
 `AuthorizeFidoFactorOptions`: `{ rpId, rpOrigin }`.
 
-`createFidoFactorFromRegistration` throws HTTP 401 with `WWW-Authenticate: Bearer error="invalid_registration"` when no pending registration is cached, or `error="invalid_credentials"` on attestation failure. `createFidoAuthorizationChallenge` throws HTTP 404 when the actor has no active factors. `verifyFidoAuthorizationChallenge` throws HTTP 401 with `error="invalid_credentials"` when the challenge is missing/expired, the credential id is unknown, or the signature is invalid.
+`createFidoFactorFromRegistration` throws HTTP 401 with `WWW-Authenticate: Bearer error="invalid_registration"` when no pending registration is cached, or `error="invalid_credentials"` on attestation failure. `createFidoAuthorizationChallenge` throws HTTP 404 when the actor has no active factors. `verifyFidoAuthorizationChallenge` throws HTTP 401 with `error="invalid_credentials"` when the challenge is missing/expired or the signature is invalid, and with `error="invalid_factor"` when the credential id is unknown for the actor or the matching factor has been deactivated.
 
 ### `FidoFactorRepository`
 

@@ -338,16 +338,17 @@ describe('FidoFactorService', () => {
       });
     });
 
-    it('persists the verified credential and returns the new factor id', async () => {
+    it('persists the verified credential and returns the new factor', async () => {
       const attestation = await service.registerFidoFactor('actor-1', makeRegisterOptions());
 
       const authenticator = createAuthenticator();
       const credential = buildAttestationCredential({ authenticator, rpId: RP_ID, origin: RP_ORIGIN, challenge: attestation.challenge });
 
-      const factorId = await service.createFidoFactorFromRegistration('actor-1', credential);
+      const factor = await service.createFidoFactorFromRegistration('actor-1', credential);
 
-      expect(factorId).toBe('factor-1');
+      expect(factor.id).toBe('factor-1');
       const stored = repo._factors.get('factor-1')!;
+      expect(factor).toBe(stored);
       expect(stored.actorId).toBe('actor-1');
       expect(stored.active).toBe(true);
       expect(stored.publicKeyId).toBe(authenticator.credentialId.toString('base64'));
@@ -414,11 +415,11 @@ describe('FidoFactorService', () => {
     const seedFactor = async (actorId: string) => {
       const attestation = await service.registerFidoFactor(actorId, makeRegisterOptions());
       const authenticator = createAuthenticator();
-      const factorId = await service.createFidoFactorFromRegistration(
+      const factor = await service.createFidoFactorFromRegistration(
         actorId,
         buildAttestationCredential({ authenticator, rpId: RP_ID, origin: RP_ORIGIN, challenge: attestation.challenge }),
       );
-      return { authenticator, factorId };
+      return { authenticator, factorId: factor.id };
     };
 
     it('throws 401 with invalid_credentials when no challenge is cached', async () => {
@@ -438,7 +439,7 @@ describe('FidoFactorService', () => {
       });
     });
 
-    it('throws 401 with invalid_credentials when the credential id is unknown for this actor', async () => {
+    it('throws 401 with invalid_factor when the credential id is unknown for this actor', async () => {
       await seedFactor('actor-1');
       const challenge = await service.createFidoAuthorizationChallenge('actor-1', makeAuthorizeOptions());
 
@@ -454,7 +455,29 @@ describe('FidoFactorService', () => {
 
       await expect(service.verifyFidoAuthorizationChallenge('actor-1', credential)).rejects.toMatchObject({
         statusCode: 401,
-        headers: { 'WWW-Authenticate': 'Bearer error="invalid_credentials"' },
+        headers: { 'WWW-Authenticate': 'Bearer error="invalid_factor"' },
+      });
+    });
+
+    it('throws 401 with invalid_factor when the matching factor has been deactivated', async () => {
+      const { authenticator, factorId } = await seedFactor('actor-1');
+      const challenge = await service.createFidoAuthorizationChallenge('actor-1', makeAuthorizeOptions());
+
+      // Deactivate the factor between issuing the challenge and verifying it.
+      const stored = repo._factors.get(factorId)!;
+      repo._factors.set(factorId, { ...stored, active: false });
+
+      const credential = buildAssertionCredential({
+        authenticator,
+        rpId: RP_ID,
+        origin: RP_ORIGIN,
+        challenge: challenge.challenge,
+        signCount: 1,
+      });
+
+      await expect(service.verifyFidoAuthorizationChallenge('actor-1', credential)).rejects.toMatchObject({
+        statusCode: 401,
+        headers: { 'WWW-Authenticate': 'Bearer error="invalid_factor"' },
       });
     });
 
@@ -496,7 +519,7 @@ describe('FidoFactorService', () => {
       });
     });
 
-    it('verifies a valid assertion, persists the new counter, and returns actorId/factorId', async () => {
+    it('verifies a valid assertion, persists the new counter, and returns the factor', async () => {
       const { authenticator, factorId } = await seedFactor('actor-1');
       const challenge = await service.createFidoAuthorizationChallenge('actor-1', makeAuthorizeOptions());
 
@@ -510,7 +533,8 @@ describe('FidoFactorService', () => {
 
       const result = await service.verifyFidoAuthorizationChallenge('actor-1', credential);
 
-      expect(result).toEqual({ actorId: 'actor-1', factorId });
+      expect(result.id).toBe(factorId);
+      expect(result.actorId).toBe('actor-1');
       expect(repo._factors.get(factorId)!.counter).toBe(7);
     });
 
