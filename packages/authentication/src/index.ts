@@ -1,4 +1,4 @@
-export * from './authentication.context.js';
+export * from './types.js';
 export * from './authentication.scheme.handler.js';
 export * from './authentication.handler.js';
 export * from './authentication.session.service.js';

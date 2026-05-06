@@ -1,7 +1,7 @@
 import { Context } from 'koa';
 import { Container, Injectable } from 'injectkit';
 import { Logger } from '@maroonedsoftware/logger';
-import { AuthenticationContext } from '@maroonedsoftware/authentication';
+import { AuthenticationSession } from '@maroonedsoftware/authentication';
 import { BinaryLike } from 'node:crypto';
 
 /**
@@ -30,8 +30,8 @@ export interface ServerKitContext extends Context {
   requestId: string;
   /** Raw body for this request. */
   rawBody: BinaryLike;
-  /** Authentication context. */
-  authenticationContext: AuthenticationContext;
+  /** Authentication session. */
+  authenticationSession: AuthenticationSession;
 }
 
 /**

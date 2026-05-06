@@ -1,4 +1,4 @@
-import { AuthenticationContext } from './authentication.context.js';
+import { AuthenticationSession } from './types.js';
 
 /**
  * An HTTP Authorization scheme string (e.g. `"Bearer"`, `"Basic"`).
@@ -8,7 +8,7 @@ export type AuthorizationScheme = 'bearer' | 'basic' | string;
 
 /**
  * Implemented by classes that know how to validate a credential for a specific
- * authorization scheme and produce an {@link AuthenticationContext}.
+ * authorization scheme and produce an {@link AuthenticationSession}.
  */
 export interface AuthenticationHandler {
   /**
@@ -16,8 +16,8 @@ export interface AuthenticationHandler {
    *
    * @param scheme - The authorization scheme extracted from the `Authorization` header.
    * @param value  - The raw credential string that follows the scheme (e.g. the JWT token).
-   * @returns A resolved {@link AuthenticationContext} on success.
+   * @returns A resolved {@link AuthenticationSession} on success.
    * @throws When the credential is invalid or verification fails.
    */
-  authenticate(scheme: AuthorizationScheme, value: string): Promise<AuthenticationContext>;
+  authenticate(scheme: AuthorizationScheme, value: string): Promise<AuthenticationSession>;
 }

@@ -1,5 +1,5 @@
 import { Injectable } from 'injectkit';
-import { AuthenticationContext } from '../authentication.context.js';
+import { AuthenticationSession } from '../types.js';
 
 /**
  * Abstract base class for verifying HTTP Basic authentication credentials.
@@ -12,12 +12,12 @@ import { AuthenticationContext } from '../authentication.context.js';
 @Injectable()
 export abstract class BasicAuthenticationIssuer {
   /**
-   * Verify a username/password pair and return the resulting authentication context.
+   * Verify a username/password pair and return the resulting authentication session.
    *
    * @param username - The plaintext username extracted from the Basic credential.
    * @param password - The plaintext password extracted from the Basic credential.
-   * @returns A resolved {@link AuthenticationContext} on success, or
-   *   {@link invalidAuthenticationContext} when the credentials are invalid.
+   * @returns A resolved {@link AuthenticationSession} on success, or
+   *   {@link invalidAuthenticationSession} when the credentials are invalid.
    */
-  abstract verify(username: string, password: string): Promise<AuthenticationContext>;
+  abstract verify(username: string, password: string): Promise<AuthenticationSession>;
 }

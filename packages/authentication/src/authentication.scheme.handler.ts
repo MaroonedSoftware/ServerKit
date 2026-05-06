@@ -1,7 +1,7 @@
 import { Injectable } from 'injectkit';
 import type { AuthenticationHandler, AuthorizationScheme } from './authentication.handler.js';
 import { Logger } from '@maroonedsoftware/logger';
-import { invalidAuthenticationContext } from './authentication.context.js';
+import { invalidAuthenticationSession } from './types.js';
 
 /**
  * Injectable map of authorization scheme → {@link AuthenticationHandler}.
@@ -15,7 +15,7 @@ export class AuthenticationHandlerMap extends Map<AuthorizationScheme, Authentic
  * {@link AuthenticationHandler} from {@link AuthenticationHandlerMap}, and
  * delegates validation to it.
  *
- * Returns {@link invalidAuthenticationContext} when:
+ * Returns {@link invalidAuthenticationSession} when:
  * - No `Authorization` header is present
  * - The header is malformed (missing scheme or value)
  * - No handler is registered for the scheme
@@ -28,11 +28,11 @@ export class AuthenticationSchemeHandler {
   ) {}
 
   /**
-   * Resolve an {@link AuthenticationContext} from the raw `Authorization` header value.
+   * Resolve an {@link AuthenticationSession} from the raw `Authorization` header value.
    *
    * @param authorizationHeader - The full `Authorization` header string (e.g. `"Bearer <token>"`),
    *   or `undefined` if the header was absent.
-   * @returns The resolved {@link AuthenticationContext}, or {@link invalidAuthenticationContext}
+   * @returns The resolved {@link AuthenticationSession}, or {@link invalidAuthenticationSession}
    *   if the header is absent, malformed, or no handler is registered for the scheme.
    */
   async handle(authorizationHeader?: string) {
@@ -40,16 +40,16 @@ export class AuthenticationSchemeHandler {
       const [scheme, value] = authorizationHeader.split(' ');
       if (!scheme || !value) {
         this.logger.warn('Invalid authorization header');
-        return invalidAuthenticationContext;
+        return invalidAuthenticationSession;
       }
       const normalizedScheme = scheme.toLowerCase();
       const handler = this.handlers.get(normalizedScheme);
       if (!handler) {
         this.logger.warn('No authentication handler found for scheme', { scheme: normalizedScheme });
-        return invalidAuthenticationContext;
+        return invalidAuthenticationSession;
       }
       return await handler.authenticate(normalizedScheme, value);
     }
-    return invalidAuthenticationContext;
+    return invalidAuthenticationSession;
   }
 }

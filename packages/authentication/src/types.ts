@@ -16,55 +16,6 @@ export type AuthenticationFactorKind = 'knowledge' | 'possession' | 'biometric';
 export type AuthenticationFactorMethod = 'phone' | 'password' | 'authenticator' | 'email' | 'fido';
 
 /**
- * Describes a single authentication factor that was satisfied during a session.
- */
-export interface AuthenticationFactor {
-  /** The specific method used (e.g. `"password"`, `"totp"`, `"webauthn"`). */
-  method: string;
-  /** When this factor was last successfully authenticated. */
-  lastAuthenticated: DateTime;
-  /** The MFA category this factor belongs to. */
-  kind: AuthenticationFactorKind;
-}
-
-/**
- * The resolved authentication context attached to a request after a successful
- * authentication check. Carries session metadata, satisfied factors, and
- * arbitrary claims extracted from the credential (e.g. JWT payload).
- */
-export interface AuthenticationContext {
-  /** Unique identifier for the subject that was authenticated. */
-  subject: string;
-  /** When the session was originally issued. */
-  issuedAt: DateTime;
-  /** When the session was last accessed. */
-  lastAccessedAt: DateTime;
-  /** When the session expires. */
-  expiresAt: DateTime;
-  /** Authentication factors satisfied in this session. */
-  factors: AuthenticationFactor[];
-  /** Arbitrary key/value claims extracted from the credential. */
-  claims: Record<string, unknown>;
-  /** Roles assigned to the authenticated subject. */
-  roles: string[];
-}
-
-/**
- * Sentinel value representing an unauthenticated or failed authentication state.
- * All `DateTime` fields are marked invalid; use this as a safe default before
- * authentication has been resolved, or when authentication fails.
- */
-export const invalidAuthenticationContext: AuthenticationContext = {
-  subject: '',
-  issuedAt: DateTime.invalid('invalid'),
-  lastAccessedAt: DateTime.invalid('invalid'),
-  expiresAt: DateTime.invalid('invalid'),
-  factors: [],
-  claims: {},
-  roles: [],
-} as const;
-
-/**
  * A single authentication factor recorded within a server-side session.
  * Tracks when the factor was issued and last verified so that per-factor
  * expiry policies can be enforced at the application layer.
@@ -103,6 +54,21 @@ export interface AuthenticationSession {
   /** Arbitrary claims to embed in tokens issued from this session. */
   claims: Record<string, unknown>;
 }
+
+/**
+ * Sentinel value representing an unauthenticated or failed authentication state.
+ * All `DateTime` fields are marked invalid; use this as a safe default before
+ * authentication has been resolved, or when authentication fails.
+ */
+export const invalidAuthenticationSession: AuthenticationSession = {
+  subject: '',
+  sessionToken: '',
+  issuedAt: DateTime.invalid('invalid'),
+  lastAccessedAt: DateTime.invalid('invalid'),
+  expiresAt: DateTime.invalid('invalid'),
+  factors: [],
+  claims: {},
+} as const;
 
 /**
  * OAuth 2.0-style token response returned after generating a JWT from a session.

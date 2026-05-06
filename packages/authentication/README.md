@@ -11,8 +11,8 @@ pnpm add @maroonedsoftware/authentication
 ## Features
 
 - **Scheme-based dispatch** — register a handler per `Authorization` scheme (`Bearer`, `Basic`, or any custom scheme) and the right one is called automatically
-- **`AuthenticationContext`** — a typed context object carrying session metadata, satisfied MFA factors, and arbitrary credential claims
-- **Safe defaults** — `invalidAuthenticationContext` is a well-typed sentinel for unauthenticated state that can be safely checked without null handling
+- **`AuthenticationSession`** — a typed session object carrying subject, session token, satisfied MFA factors, and arbitrary credential claims
+- **Safe defaults** — `invalidAuthenticationSession` is a well-typed sentinel for unauthenticated state that can be safely checked without null handling
 - **Server-side sessions** — `AuthenticationSessionService` manages session lifecycle in any cache backend, with JWT issuance and revocation support
 - **Built-in JWT support** — `JwtAuthenticationHandler` and `JwtAuthenticationIssuer` for multi-issuer Bearer token validation
 - **Built-in Basic support** — `BasicAuthenticationHandler` and `BasicAuthenticationIssuer` for username/password flows
@@ -35,23 +35,28 @@ pnpm add @maroonedsoftware/authentication
 
 ```typescript
 import { Injectable } from 'injectkit';
-import { AuthenticationHandler, AuthenticationContext, invalidAuthenticationContext } from '@maroonedsoftware/authentication';
+import { AuthenticationHandler, AuthenticationSession, invalidAuthenticationSession } from '@maroonedsoftware/authentication';
 import { DateTime } from 'luxon';
 
 @Injectable()
 class MyJwtHandler implements AuthenticationHandler {
-  async authenticate(scheme: string, value: string): Promise<AuthenticationContext> {
+  async authenticate(scheme: string, value: string): Promise<AuthenticationSession> {
     const payload = await verifyJwt(value); // your JWT verification logic
 
     return {
-      actorId: payload.sub,
-      actorType: 'user',
+      subject: payload.sub,
+      sessionToken: payload.jti,
       issuedAt: DateTime.fromSeconds(payload.iat),
       lastAccessedAt: DateTime.now(),
       expiresAt: DateTime.fromSeconds(payload.exp),
-      factors: [{ method: 'password', lastAuthenticated: DateTime.fromSeconds(payload.iat), kind: 'knowledge' }],
+      factors: [{
+        method: 'password',
+        methodId: payload.factorId,
+        kind: 'knowledge',
+        issuedAt: DateTime.fromSeconds(payload.iat),
+        authenticatedAt: DateTime.fromSeconds(payload.iat),
+      }],
       claims: payload,
-      roles: [],
     };
   }
 }
@@ -67,18 +72,18 @@ registry.register(MyJwtHandler).useClass(MyJwtHandler).asSingleton();
 registry.register(AuthenticationSchemeHandler).useClass(AuthenticationSchemeHandler).asSingleton();
 ```
 
-#### 3. Resolve the authentication context
+#### 3. Resolve the authentication session
 
 ```typescript
 const schemeHandler = container.get(AuthenticationSchemeHandler);
 
-const ctx = await schemeHandler.handle('Bearer eyJhbGci...');
-console.log(ctx.actorId);  // 'user-123'
-console.log(ctx.claims);   // { sub: 'user-123', ... }
+const session = await schemeHandler.handle('Bearer eyJhbGci...');
+console.log(session.subject);  // 'user-123'
+console.log(session.claims);   // { sub: 'user-123', ... }
 
 // Missing or malformed header
-const ctx = await schemeHandler.handle(undefined);
-console.log(ctx === invalidAuthenticationContext); // true
+const empty = await schemeHandler.handle(undefined);
+console.log(empty === invalidAuthenticationSession); // true
 ```
 
 ---
@@ -97,9 +102,9 @@ import type { JwtPayload } from 'jsonwebtoken';
 
 @Injectable()
 class MyIssuer extends JwtAuthenticationIssuer {
-  async parse(payload: JwtPayload): Promise<AuthenticationContext> {
+  async parse(payload: JwtPayload): Promise<AuthenticationSession> {
     // Verify signature, expiry, audience, etc.
-    return { actorId: payload.sub!, actorType: 'user', ... };
+    return { subject: payload.sub!, sessionToken: payload.jti!, ... };
   }
 }
 
@@ -120,12 +125,12 @@ import { BasicAuthenticationHandler, BasicAuthenticationIssuer } from '@marooned
 
 @Injectable()
 class MyBasicIssuer extends BasicAuthenticationIssuer {
-  async verify(username: string, password: string): Promise<AuthenticationContext> {
+  async verify(username: string, password: string): Promise<AuthenticationSession> {
     const user = await db.users.findByUsername(username);
     if (!user || !await bcrypt.compare(password, user.passwordHash)) {
-      return invalidAuthenticationContext;
+      return invalidAuthenticationSession;
     }
-    return { actorId: user.id, actorType: 'user', ... };
+    return { subject: user.id, sessionToken: crypto.randomUUID(), ... };
   }
 }
 
@@ -608,30 +613,40 @@ const { url } = await oauth2.beginAuthorization({ provider: 'github', intent: 's
 
 ## API Reference
 
-### `AuthenticationContext`
+### `AuthenticationSession`
 
-The resolved context produced by a successful authentication check.
+The resolved session produced by a successful authentication check, and the
+authoritative server-side record stored in cache. JWTs issued from this
+session are short-lived signed references — revoke the session to invalidate
+all tokens derived from it.
 
-| Property          | Type                      | Description                                              |
-| ----------------- | ------------------------- | -------------------------------------------------------- |
-| `actorId`         | `string`                  | Unique identifier for the authenticated actor            |
-| `actorType`       | `string`                  | Type of the actor (e.g. `"user"`, `"service"`)           |
-| `issuedAt`        | `DateTime`                | When the session was originally issued                   |
-| `lastAccessedAt`  | `DateTime`                | When the session was last accessed                       |
-| `expiresAt`       | `DateTime`                | When the session expires                                 |
-| `factors`         | `AuthenticationFactor[]`  | MFA factors satisfied in this session                    |
-| `claims`          | `Record<string, unknown>` | Arbitrary key/value claims extracted from the credential |
-| `roles`           | `string[]`                | Roles assigned to the authenticated actor                |
+| Property          | Type                            | Description                                              |
+| ----------------- | ------------------------------- | -------------------------------------------------------- |
+| `subject`         | `string`                        | Subject identifier (typically a user id)                 |
+| `sessionToken`    | `string`                        | Opaque random token used as the cache key and embedded in JWTs |
+| `issuedAt`        | `DateTime`                      | When the session was originally issued                   |
+| `lastAccessedAt`  | `DateTime`                      | When the session was last accessed                       |
+| `expiresAt`       | `DateTime`                      | When the session expires                                 |
+| `factors`         | `AuthenticationSessionFactor[]` | MFA factors satisfied in this session                    |
+| `claims`          | `Record<string, unknown>`       | Arbitrary key/value claims to embed in tokens issued from this session |
 
-### `AuthenticationFactor`
+### `AuthenticationSessionFactor`
 
-Describes a single satisfied authentication factor.
+Describes a single satisfied authentication factor within a session.
 
-| Property            | Type                       | Description                                                       |
-| ------------------- | -------------------------- | ----------------------------------------------------------------- |
-| `method`            | `string`                   | Specific method used (e.g. `"password"`, `"totp"`, `"webauthn"`) |
-| `lastAuthenticated` | `DateTime`                 | When this factor was last successfully authenticated              |
-| `kind`              | `AuthenticationFactorKind` | MFA category: `"knowledge"`, `"possession"`, or `"biometric"`     |
+| Property            | Type                          | Description                                                       |
+| ------------------- | ----------------------------- | ----------------------------------------------------------------- |
+| `method`            | `AuthenticationFactorMethod`  | Verification method used (e.g. `"password"`, `"authenticator"`, `"fido"`) |
+| `methodId`          | `string`                      | Stable identifier for the specific factor record (e.g. a DB row id) |
+| `kind`              | `AuthenticationFactorKind`    | MFA category: `"knowledge"`, `"possession"`, or `"biometric"`     |
+| `issuedAt`          | `DateTime`                    | When this factor entry was first added to the session             |
+| `authenticatedAt`   | `DateTime`                    | When the factor was most recently re-verified                     |
+
+### `AuthenticationFactorMethod`
+
+```typescript
+type AuthenticationFactorMethod = 'phone' | 'password' | 'authenticator' | 'email' | 'fido';
+```
 
 ### `AuthenticationFactorKind`
 
@@ -645,14 +660,14 @@ type AuthenticationFactorKind = 'knowledge' | 'possession' | 'biometric';
 | `possession` | Something you have   | TOTP app, hardware security key |
 | `biometric`  | Something you are    | Fingerprint, face ID            |
 
-### `invalidAuthenticationContext`
+### `invalidAuthenticationSession`
 
-A sentinel `AuthenticationContext` value representing an unauthenticated or failed state. All `DateTime` fields are invalid Luxon instances.
+A sentinel `AuthenticationSession` value representing an unauthenticated or failed state. All `DateTime` fields are invalid Luxon instances.
 
 ```typescript
-import { invalidAuthenticationContext } from '@maroonedsoftware/authentication';
+import { invalidAuthenticationSession } from '@maroonedsoftware/authentication';
 
-if (ctx === invalidAuthenticationContext) {
+if (session === invalidAuthenticationSession) {
   throw httpError(401);
 }
 ```
@@ -661,9 +676,9 @@ if (ctx === invalidAuthenticationContext) {
 
 | Method                         | Returns                          | Description                                                                             |
 | ------------------------------ | -------------------------------- | --------------------------------------------------------------------------------------- |
-| `handle(authorizationHeader?)` | `Promise<AuthenticationContext>` | Parses the `Authorization` header and returns the resolved context, or `invalidAuthenticationContext` |
+| `handle(authorizationHeader?)` | `Promise<AuthenticationSession>` | Parses the `Authorization` header and returns the resolved session, or `invalidAuthenticationSession` |
 
-Returns `invalidAuthenticationContext` when the header is absent, malformed, or no handler is registered for the scheme.
+Returns `invalidAuthenticationSession` when the header is absent, malformed, or no handler is registered for the scheme.
 
 ### `AuthenticationHandlerMap`
 
@@ -673,7 +688,7 @@ An injectable `Map<AuthorizationScheme, AuthenticationHandler>`. Register one en
 
 ```typescript
 interface AuthenticationHandler {
-  authenticate(scheme: string, value: string): Promise<AuthenticationContext>;
+  authenticate(scheme: string, value: string): Promise<AuthenticationSession>;
 }
 ```
 
@@ -689,7 +704,7 @@ Handles `bearer` tokens by decoding the JWT, extracting the `iss` claim, and del
 
 ### `JwtAuthenticationIssuer`
 
-Abstract base class. Implement `parse(payload: JwtPayload): Promise<AuthenticationContext>` to validate tokens from a specific issuer. Register instances in `JwtAuthenticationIssuerMap` keyed by the `iss` claim value.
+Abstract base class. Implement `parse(payload: JwtPayload): Promise<AuthenticationSession>` to validate tokens from a specific issuer. Register instances in `JwtAuthenticationIssuerMap` keyed by the `iss` claim value.
 
 ### `BasicAuthenticationHandler`
 
@@ -697,7 +712,7 @@ Handles `basic` tokens by base64-decoding the credential, splitting on `:`, and 
 
 ### `BasicAuthenticationIssuer`
 
-Abstract base class. Implement `verify(username: string, password: string): Promise<AuthenticationContext>`.
+Abstract base class. Implement `verify(username: string, password: string): Promise<AuthenticationSession>`.
 
 ### `AuthenticationSessionService`
 

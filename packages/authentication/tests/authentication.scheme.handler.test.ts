@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AuthenticationSchemeHandler, AuthenticationHandlerMap } from '../src/authentication.scheme.handler.js';
-import { invalidAuthenticationContext } from '../src/authentication.context.js';
-import type { AuthenticationContext } from '../src/authentication.context.js';
+import { invalidAuthenticationSession } from '../src/types.js';
+import type { AuthenticationSession } from '../src/types.js';
 import type { AuthenticationHandler } from '../src/authentication.handler.js';
 import type { Logger } from '@maroonedsoftware/logger';
 import { DateTime } from 'luxon';
@@ -14,15 +14,14 @@ const makeLogger = (): Logger => ({
   trace: vi.fn(),
 });
 
-const makeValidContext = (): AuthenticationContext => ({
-  actorId: 'auth-123',
-  actorType: 'user',
+const makeValidSession = (): AuthenticationSession => ({
+  subject: 'user-1',
+  sessionToken: 'session-token-123',
   issuedAt: DateTime.now(),
   lastAccessedAt: DateTime.now(),
   expiresAt: DateTime.now().plus({ hours: 1 }),
-  factors: [{ method: 'password', lastAuthenticated: DateTime.now(), kind: 'knowledge' }],
+  factors: [{ method: 'password', methodId: 'factor-1', kind: 'knowledge', issuedAt: DateTime.now(), authenticatedAt: DateTime.now() }],
   claims: { sub: 'user-1' },
-  roles: [],
 });
 
 describe('AuthenticationSchemeHandler', () => {
@@ -37,54 +36,54 @@ describe('AuthenticationSchemeHandler', () => {
   });
 
   describe('handle', () => {
-    it('returns invalidAuthenticationContext when no header is provided', async () => {
+    it('returns invalidAuthenticationSession when no header is provided', async () => {
       const result = await handler.handle(undefined);
-      expect(result).toBe(invalidAuthenticationContext);
+      expect(result).toBe(invalidAuthenticationSession);
     });
 
-    it('returns invalidAuthenticationContext and warns when header has no value', async () => {
+    it('returns invalidAuthenticationSession and warns when header has no value', async () => {
       const result = await handler.handle('Bearer');
-      expect(result).toBe(invalidAuthenticationContext);
+      expect(result).toBe(invalidAuthenticationSession);
       expect(logger.warn).toHaveBeenCalledWith('Invalid authorization header');
     });
 
-    it('returns invalidAuthenticationContext and warns when header has only whitespace value', async () => {
+    it('returns invalidAuthenticationSession and warns when header has only whitespace value', async () => {
       // "Bearer " splits into ["Bearer", ""] — value is empty string (falsy)
       const result = await handler.handle('Bearer ');
-      expect(result).toBe(invalidAuthenticationContext);
+      expect(result).toBe(invalidAuthenticationSession);
       expect(logger.warn).toHaveBeenCalledWith('Invalid authorization header');
     });
 
-    it('returns invalidAuthenticationContext and warns when scheme has no registered handler', async () => {
+    it('returns invalidAuthenticationSession and warns when scheme has no registered handler', async () => {
       const result = await handler.handle('Bearer sometoken');
-      expect(result).toBe(invalidAuthenticationContext);
+      expect(result).toBe(invalidAuthenticationSession);
       expect(logger.warn).toHaveBeenCalledWith('No authentication handler found for scheme', { scheme: 'bearer' });
     });
 
     it('calls the registered handler and returns its result', async () => {
-      const validContext = makeValidContext();
+      const validSession = makeValidSession();
       const bearerHandler: AuthenticationHandler = {
-        authenticate: vi.fn().mockResolvedValue(validContext),
+        authenticate: vi.fn().mockResolvedValue(validSession),
       };
       handlers.set('bearer', bearerHandler);
 
       const result = await handler.handle('Bearer mytoken');
 
       expect(bearerHandler.authenticate).toHaveBeenCalledWith('bearer', 'mytoken');
-      expect(result).toBe(validContext);
+      expect(result).toBe(validSession);
     });
 
     it('works with a custom scheme', async () => {
-      const validContext = makeValidContext();
+      const validSession = makeValidSession();
       const apiKeyHandler: AuthenticationHandler = {
-        authenticate: vi.fn().mockResolvedValue(validContext),
+        authenticate: vi.fn().mockResolvedValue(validSession),
       };
       handlers.set('apikey', apiKeyHandler);
 
       const result = await handler.handle('ApiKey secretkey');
 
       expect(apiKeyHandler.authenticate).toHaveBeenCalledWith('apikey', 'secretkey');
-      expect(result).toBe(validContext);
+      expect(result).toBe(validSession);
     });
 
     it('does not call unrelated handlers', async () => {

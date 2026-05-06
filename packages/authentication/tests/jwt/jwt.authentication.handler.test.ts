@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import jsonwebtoken from 'jsonwebtoken';
 import { JwtAuthenticationHandler, JwtAuthenticationIssuerMap } from '../../src/jwt/jwt.authentication.handler.js';
-import { invalidAuthenticationContext } from '../../src/authentication.context.js';
-import type { AuthenticationContext } from '../../src/authentication.context.js';
+import { invalidAuthenticationSession } from '../../src/types.js';
+import type { AuthenticationSession } from '../../src/types.js';
 import type { JwtAuthenticationIssuer } from '../../src/jwt/jwt.autentication.issuer.js';
 import type { Logger } from '@maroonedsoftware/logger';
 import { DateTime } from 'luxon';
@@ -20,15 +20,14 @@ const makeLogger = (): Logger => ({
   trace: vi.fn(),
 });
 
-const makeValidContext = (): AuthenticationContext => ({
-  actorId: 'auth-123',
-  actorType: 'user',
+const makeValidSession = (): AuthenticationSession => ({
+  subject: 'user-1',
+  sessionToken: 'session-token-123',
   issuedAt: DateTime.now(),
   lastAccessedAt: DateTime.now(),
   expiresAt: DateTime.now().plus({ hours: 1 }),
   factors: [],
   claims: { sub: 'user-1' },
-  roles: [],
 });
 
 describe('JwtAuthenticationHandler', () => {
@@ -43,13 +42,13 @@ describe('JwtAuthenticationHandler', () => {
   });
 
   describe('authenticate', () => {
-    it('returns invalidAuthenticationContext when scheme is not bearer', async () => {
+    it('returns invalidAuthenticationSession when scheme is not bearer', async () => {
       const token = signToken({ iss: 'https://auth.example.com', sub: 'user-1' });
       issuerMap.set('https://auth.example.com', { parse: vi.fn() });
 
       const result = await handler.authenticate('basic', token);
 
-      expect(result).toBe(invalidAuthenticationContext);
+      expect(result).toBe(invalidAuthenticationSession);
     });
 
     it('does not consult any issuer when scheme is not bearer', async () => {
@@ -61,28 +60,28 @@ describe('JwtAuthenticationHandler', () => {
       expect(issuer.parse).not.toHaveBeenCalled();
     });
 
-    it('returns invalidAuthenticationContext for a malformed bearer token', async () => {
+    it('returns invalidAuthenticationSession for a malformed bearer token', async () => {
       const result = await handler.authenticate('bearer', 'not.a.jwt');
-      expect(result).toBe(invalidAuthenticationContext);
+      expect(result).toBe(invalidAuthenticationSession);
     });
 
-    it('returns invalidAuthenticationContext and logs when no issuer is registered for the JWT iss', async () => {
+    it('returns invalidAuthenticationSession and logs when no issuer is registered for the JWT iss', async () => {
       const token = signToken({ iss: 'https://auth.example.com', sub: 'user-1' });
 
       const result = await handler.authenticate('bearer', token);
 
-      expect(result).toBe(invalidAuthenticationContext);
+      expect(result).toBe(invalidAuthenticationSession);
       expect(logger.warn).toHaveBeenCalledWith('No JwtAuthenticationIssuer found for issuer', {
         issuer: 'https://auth.example.com',
       });
     });
 
-    it('returns invalidAuthenticationContext and logs when JWT has no iss', async () => {
+    it('returns invalidAuthenticationSession and logs when JWT has no iss', async () => {
       const token = signToken({ sub: 'user-1' });
 
       const result = await handler.authenticate('bearer', token);
 
-      expect(result).toBe(invalidAuthenticationContext);
+      expect(result).toBe(invalidAuthenticationSession);
       expect(logger.warn).toHaveBeenCalledWith('No JwtAuthenticationIssuer found for issuer', {
         issuer: undefined,
       });
@@ -90,8 +89,8 @@ describe('JwtAuthenticationHandler', () => {
 
     it('passes the decoded payload to the matching issuer and returns its result', async () => {
       const token = signToken({ iss: 'https://auth.example.com', sub: 'user-1', custom: 'claim' });
-      const validContext = makeValidContext();
-      const issuer: JwtAuthenticationIssuer = { parse: vi.fn().mockResolvedValue(validContext) };
+      const validSession = makeValidSession();
+      const issuer: JwtAuthenticationIssuer = { parse: vi.fn().mockResolvedValue(validSession) };
       issuerMap.set('https://auth.example.com', issuer);
 
       const result = await handler.authenticate('bearer', token);
@@ -99,14 +98,14 @@ describe('JwtAuthenticationHandler', () => {
       expect(issuer.parse).toHaveBeenCalledWith(
         expect.objectContaining({ iss: 'https://auth.example.com', sub: 'user-1', custom: 'claim' }),
       );
-      expect(result).toBe(validContext);
+      expect(result).toBe(validSession);
     });
 
     it('routes to the issuer matching the iss claim when multiple are registered', async () => {
       const token = signToken({ iss: 'https://issuer-b.example.com', sub: 'user-2' });
-      const contextB = makeValidContext();
+      const sessionB = makeValidSession();
       const issuerA: JwtAuthenticationIssuer = { parse: vi.fn() };
-      const issuerB: JwtAuthenticationIssuer = { parse: vi.fn().mockResolvedValue(contextB) };
+      const issuerB: JwtAuthenticationIssuer = { parse: vi.fn().mockResolvedValue(sessionB) };
       issuerMap.set('https://issuer-a.example.com', issuerA);
       issuerMap.set('https://issuer-b.example.com', issuerB);
 
@@ -114,7 +113,7 @@ describe('JwtAuthenticationHandler', () => {
 
       expect(issuerA.parse).not.toHaveBeenCalled();
       expect(issuerB.parse).toHaveBeenCalledWith(expect.objectContaining({ iss: 'https://issuer-b.example.com' }));
-      expect(result).toBe(contextB);
+      expect(result).toBe(sessionB);
     });
 
     it('decodes a token without verifying its signature (delegation contract)', async () => {
@@ -125,7 +124,7 @@ describe('JwtAuthenticationHandler', () => {
         'completely-different-secret',
         { algorithm: 'HS256' },
       );
-      const issuer: JwtAuthenticationIssuer = { parse: vi.fn().mockResolvedValue(makeValidContext()) };
+      const issuer: JwtAuthenticationIssuer = { parse: vi.fn().mockResolvedValue(makeValidSession()) };
       issuerMap.set('https://auth.example.com', issuer);
 
       await handler.authenticate('bearer', foreignToken);

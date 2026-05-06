@@ -1,26 +1,25 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { AuthenticationHandler, AuthorizationScheme } from '../src/authentication.handler.js';
-import type { AuthenticationContext } from '../src/authentication.context.js';
-import { invalidAuthenticationContext } from '../src/authentication.context.js';
+import type { AuthenticationSession } from '../src/types.js';
+import { invalidAuthenticationSession } from '../src/types.js';
 import { DateTime } from 'luxon';
 
-const makeValidContext = (): AuthenticationContext => ({
-  actorId: 'auth-123',
-  actorType: 'user',
+const makeValidSession = (): AuthenticationSession => ({
+  subject: 'user-1',
+  sessionToken: 'session-token-123',
   issuedAt: DateTime.now(),
   lastAccessedAt: DateTime.now(),
   expiresAt: DateTime.now().plus({ hours: 1 }),
   factors: [],
   claims: { sub: 'user-1' },
-  roles: ['user'],
 });
 
 describe('AuthenticationHandler', () => {
   describe('interface contract', () => {
     it('should be implementable as a class', async () => {
       class ConcreteHandler implements AuthenticationHandler {
-        async authenticate(_scheme: AuthorizationScheme, value: string): Promise<AuthenticationContext> {
-          return value === 'valid' ? makeValidContext() : invalidAuthenticationContext;
+        async authenticate(_scheme: AuthorizationScheme, value: string): Promise<AuthenticationSession> {
+          return value === 'valid' ? makeValidSession() : invalidAuthenticationSession;
         }
       }
 
@@ -31,35 +30,35 @@ describe('AuthenticationHandler', () => {
 
     it('authenticate should return a Promise', () => {
       const handler: AuthenticationHandler = {
-        authenticate: vi.fn().mockResolvedValue(invalidAuthenticationContext),
+        authenticate: vi.fn().mockResolvedValue(invalidAuthenticationSession),
       };
 
       const result = handler.authenticate('bearer', 'token');
       expect(result).toBeInstanceOf(Promise);
     });
 
-    it('authenticate should resolve with a valid context on success', async () => {
-      const validContext = makeValidContext();
+    it('authenticate should resolve with a valid session on success', async () => {
+      const validSession = makeValidSession();
       const handler: AuthenticationHandler = {
-        authenticate: vi.fn().mockResolvedValue(validContext),
+        authenticate: vi.fn().mockResolvedValue(validSession),
       };
 
       const result = await handler.authenticate('bearer', 'valid-token');
-      expect(result).toBe(validContext);
+      expect(result).toBe(validSession);
     });
 
-    it('authenticate should resolve with invalidAuthenticationContext on failure', async () => {
+    it('authenticate should resolve with invalidAuthenticationSession on failure', async () => {
       const handler: AuthenticationHandler = {
-        authenticate: vi.fn().mockResolvedValue(invalidAuthenticationContext),
+        authenticate: vi.fn().mockResolvedValue(invalidAuthenticationSession),
       };
 
       const result = await handler.authenticate('bearer', 'bad-token');
-      expect(result).toBe(invalidAuthenticationContext);
+      expect(result).toBe(invalidAuthenticationSession);
     });
 
     it('authenticate should be called with the scheme and credential value', async () => {
       const handler: AuthenticationHandler = {
-        authenticate: vi.fn().mockResolvedValue(invalidAuthenticationContext),
+        authenticate: vi.fn().mockResolvedValue(invalidAuthenticationSession),
       };
 
       await handler.authenticate('bearer', 'my-token');
@@ -70,14 +69,14 @@ describe('AuthenticationHandler', () => {
       const handler: AuthenticationHandler = {
         async authenticate(scheme, value) {
           if (scheme === 'bearer' && value === 'secret') {
-            return makeValidContext();
+            return makeValidSession();
           }
-          return invalidAuthenticationContext;
+          return invalidAuthenticationSession;
         },
       };
 
       const result = await handler.authenticate('bearer', 'secret');
-      expect(result.actorId).toBe('auth-123');
+      expect(result.subject).toBe('user-1');
     });
 
     it('should propagate errors thrown by authenticate', async () => {

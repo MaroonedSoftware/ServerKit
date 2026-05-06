@@ -1,6 +1,6 @@
 import { Injectable } from 'injectkit';
 import { AuthenticationHandler, AuthorizationScheme } from '../authentication.handler.js';
-import { invalidAuthenticationContext } from '../authentication.context.js';
+import { invalidAuthenticationSession } from '../types.js';
 import { BasicAuthenticationIssuer } from './basic.authentication.issuer.js';
 
 /**
@@ -8,7 +8,7 @@ import { BasicAuthenticationIssuer } from './basic.authentication.issuer.js';
  * splitting it into a username/password pair, and delegating verification
  * to the injected {@link BasicAuthenticationIssuer}.
  *
- * Returns {@link invalidAuthenticationContext} when:
+ * Returns {@link invalidAuthenticationSession} when:
  * - The scheme is not `"basic"`.
  * - The decoded credential is missing a username or password.
  */
@@ -21,14 +21,14 @@ export class BasicAuthenticationHandler implements AuthenticationHandler {
    * Authenticate a Basic credential.
    *
    * @param scheme - The authorization scheme from the `Authorization` header.
-   *   Must equal `"basic"` (case-sensitive) or {@link invalidAuthenticationContext} is returned.
+   *   Must equal `"basic"` (case-sensitive) or {@link invalidAuthenticationSession} is returned.
    * @param value - The base64-encoded `username:password` string that follows the scheme.
-   * @returns The {@link AuthenticationContext} produced by the issuer on success,
-   *   or {@link invalidAuthenticationContext} when the credential is missing or the scheme does not match.
+   * @returns The {@link AuthenticationSession} produced by the issuer on success,
+   *   or {@link invalidAuthenticationSession} when the credential is missing or the scheme does not match.
    */
   async authenticate(scheme: AuthorizationScheme, value: string) {
     if (scheme !== 'basic') {
-      return invalidAuthenticationContext;
+      return invalidAuthenticationSession;
     }
 
     const decoded = Buffer.from(value, 'base64').toString('utf-8');
@@ -38,6 +38,6 @@ export class BasicAuthenticationHandler implements AuthenticationHandler {
       return await this.issuer.verify(username, password);
     }
 
-    return invalidAuthenticationContext;
+    return invalidAuthenticationSession;
   }
 }

@@ -1,5 +1,5 @@
 import { Injectable } from 'injectkit';
-import { invalidAuthenticationContext } from '../authentication.context.js';
+import { invalidAuthenticationSession } from '../types.js';
 import { AuthenticationHandler, AuthorizationScheme } from '../authentication.handler.js';
 import { JwtAuthenticationIssuer } from './jwt.autentication.issuer.js';
 import jsonwebtoken from 'jsonwebtoken';
@@ -30,12 +30,12 @@ export class JwtAuthenticationIssuerMap extends Map<string, JwtAuthenticationIss
  * looks up the corresponding {@link JwtAuthenticationIssuer} in the injected
  * {@link JwtAuthenticationIssuerMap}, and delegates full verification to it.
  *
- * Returns {@link invalidAuthenticationContext} when:
+ * Returns {@link invalidAuthenticationSession} when:
  * - The scheme is not `bearer`
  * - The token cannot be decoded
  * - No issuer is registered for the token's `iss` claim
  *
- * @see {@link JwtAuthenticationIssuer} – implement this to validate tokens from a specific issuer
+ * @see {@link JwtAuthenticationIssuer} – implement this to validate sessions from a specific issuer
  */
 @Injectable()
 export class JwtAuthenticationHandler implements AuthenticationHandler {
@@ -50,12 +50,12 @@ export class JwtAuthenticationHandler implements AuthenticationHandler {
    *
    * @param scheme - The authorization scheme (must be `'bearer'` to proceed).
    * @param value  - The raw JWT string.
-   * @returns The {@link AuthenticationContext} from the issuer, or
-   *   {@link invalidAuthenticationContext} if the token cannot be resolved.
+   * @returns The {@link AuthenticationSession} from the issuer, or
+   *   {@link invalidAuthenticationSession} if the token cannot be resolved.
    */
   async authenticate(scheme: AuthorizationScheme, value: string) {
     if (scheme !== 'bearer') {
-      return invalidAuthenticationContext;
+      return invalidAuthenticationSession;
     }
 
     const decoded = jsonwebtoken.decode(value, { json: true });
@@ -70,6 +70,6 @@ export class JwtAuthenticationHandler implements AuthenticationHandler {
       }
     }
 
-    return invalidAuthenticationContext;
+    return invalidAuthenticationSession;
   }
 }

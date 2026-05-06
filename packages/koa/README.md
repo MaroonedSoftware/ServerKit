@@ -12,18 +12,18 @@ Peer dependencies: `koa`, `@koa/router`, `@koa/cors`.
 
 ## Features
 
-- **ServerKitContext** — Koa context extended with `container`, `logger`, `requestId`, `correlationId`, `authenticationContext`, and related request metadata
+- **ServerKitContext** — Koa context extended with `container`, `logger`, `requestId`, `correlationId`, `authenticationSession`, and related request metadata
 - **ServerKitRouter** — Router typed for `ServerKitContext`
 - **ServerKitMiddleware** — Middleware type bound to `ServerKitContext`
 - **serverKitContextMiddleware** — Populates context with scoped container, logger, and request/correlation IDs; registers the live context against the `ServerKitContext` injection token so request-scoped services can inject it
 - **corsMiddleware** — CORS headers with `'*'`, string, or RegExp origin matching
 - **errorMiddleware** — Central error handler; maps HTTP errors to status/body, 404 for unmatched routes, 500 for unknown errors
 - **rateLimiterMiddleware** — Per-IP rate limiting via `rate-limiter-flexible` (429 when exceeded)
-- **authenticationMiddleware** — Resolves the `Authorization` header via `AuthenticationSchemeHandler` and populates `ctx.authenticationContext`
+- **authenticationMiddleware** — Resolves the `Authorization` header via `AuthenticationSchemeHandler` and populates `ctx.authenticationSession`
 - **bodyParserMiddleware** — Parses JSON, form, text, multipart, or raw body by allowed content types
 - **defaultParserMappings** — Pre-built MIME-type-to-parser map for use with `bodyParserMiddleware`
 - **requireSignature** — Router middleware that verifies a request HMAC signature against `ctx.rawBody`
-- **requireSecurity** — Router middleware that enforces authentication and optional role-based authorization
+- **requireSecurity** — Router middleware that enforces a valid authentication session
 
 ## Usage
 
@@ -86,15 +86,15 @@ import { ServerKitContext } from '@maroonedsoftware/koa';
 class CurrentUserService {
   constructor(private readonly ctx: ServerKitContext) {}
 
-  get actorId() {
-    return this.ctx.authenticationContext?.actorId;
+  get subject() {
+    return this.ctx.authenticationSession?.subject;
   }
 }
 ```
 
 ### Authentication
 
-`authenticationMiddleware` reads the `Authorization` header, delegates resolution to the `AuthenticationSchemeHandler` registered in the DI container, and populates `ctx.authenticationContext`. The header is deleted from `ctx.req.headers` immediately after reading so it cannot be captured by downstream logging.
+`authenticationMiddleware` reads the `Authorization` header, delegates resolution to the `AuthenticationSchemeHandler` registered in the DI container, and populates `ctx.authenticationSession`. The header is deleted from `ctx.req.headers` immediately after reading so it cannot be captured by downstream logging.
 
 ```typescript
 import {
@@ -115,25 +115,22 @@ diRegistry.register(AuthenticationSchemeHandler).asSingleton();
 app.use(serverKitContextMiddleware(container));
 app.use(authenticationMiddleware());
 
-// Access the resolved context in route handlers
+// Access the resolved session in route handlers
 router.get('/api/me', async ctx => {
-  const { actorId } = ctx.authenticationContext;
-  ctx.body = { actorId };
+  const { subject } = ctx.authenticationSession;
+  ctx.body = { subject };
 });
 ```
 
 ### Authorization
 
-`requireSecurity` is router middleware that runs after `authenticationMiddleware`. It throws 401 when the request is unauthenticated and, if `roles` is provided, throws 403 unless the authenticated context has at least one of the listed roles.
+`requireSecurity` is router middleware that runs after `authenticationMiddleware`. It throws 401 when the request is unauthenticated.
 
 ```typescript
 import { requireSecurity } from '@maroonedsoftware/koa';
 
 // Require any authenticated user
 router.get('/api/profile', requireSecurity(), handler);
-
-// Require at least one of the given roles
-router.delete('/api/users/:id', requireSecurity({ roles: ['admin'] }), handler);
 ```
 
 ### CORS
@@ -264,7 +261,7 @@ The default mappings are:
 | `correlationId`         | `string`                | From `X-Correlation-Id` header or generated            |
 | `requestId`             | `string`                | From `X-Request-Id` header or generated                |
 | `rawBody`               | `BinaryLike`            | Raw request body bytes; set by `bodyParserMiddleware`  |
-| `authenticationContext` | `AuthenticationContext` | Resolved authentication context; set by `authenticationMiddleware` |
+| `authenticationSession` | `AuthenticationSession` | Resolved authentication session; set by `authenticationMiddleware` |
 
 ### Middleware
 
@@ -274,10 +271,10 @@ The default mappings are:
 | `corsMiddleware(options?)`              | CORS via `@koa/cors`; `origin`: `'*'`, string, or `(string \| RegExp)[]`                           |
 | `errorMiddleware()`                     | Catches errors, maps HTTP errors to status/body, 404/500, emits app events                         |
 | `rateLimiterMiddleware(rateLimiter)`    | Consumes one token per request by IP; throws 429 when exceeded                                     |
-| `authenticationMiddleware()`           | Resolves `Authorization` header via `AuthenticationSchemeHandler`; populates `ctx.authenticationContext` |
+| `authenticationMiddleware()`           | Resolves `Authorization` header via `AuthenticationSchemeHandler`; populates `ctx.authenticationSession` |
 | `bodyParserMiddleware(contentTypes)`    | Parses body by allowed MIME types; throws 400/411/415/422 on invalid input                         |
 | `requireSignature(optionsKey)`          | Verifies HMAC of `ctx.rawBody` against a request header; throws 401 on mismatch                   |
-| `requireSecurity(options?)`             | Throws 401 when unauthenticated; throws 403 when none of the `options.roles` are present           |
+| `requireSecurity()`                     | Throws 401 when `ctx.authenticationSession` is `invalidAuthenticationSession`                       |
 
 ### Parser options
 

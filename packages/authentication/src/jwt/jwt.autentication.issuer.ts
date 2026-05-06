@@ -1,6 +1,6 @@
 import { Injectable } from 'injectkit';
 import { JwtPayload } from 'jsonwebtoken';
-import { AuthenticationContext } from '../authentication.context.js';
+import { AuthenticationSession } from '../types.js';
 
 /**
  * Abstract base class for JWT issuer validators.
@@ -13,9 +13,9 @@ import { AuthenticationContext } from '../authentication.context.js';
  * @example
  * ```typescript
  * class MyIssuer extends JwtAuthenticationIssuer {
- *   async parse(payload: JwtPayload): Promise<AuthenticationContext> {
+ *   async parse(payload: JwtPayload): Promise<AuthenticationSession> {
  *     // verify signature, expiry, audience, etc.
- *     return { authenticationId: payload.jti ?? '', ... };
+ *     return { sessionToken: payload.sub ?? '', ... };
  *   }
  * }
  * ```
@@ -23,15 +23,15 @@ import { AuthenticationContext } from '../authentication.context.js';
 @Injectable()
 export abstract class JwtAuthenticationIssuer {
   /**
-   * Convert a decoded JWT payload into an {@link AuthenticationContext}.
+   * Convert a decoded JWT payload into an {@link AuthenticationSession}.
    *
    * Called by {@link JwtAuthenticationHandler} after the token is decoded and the
    * issuer matched. Implementations should verify the token signature, validate
    * claims (expiry, audience, etc.), and map payload fields to the returned context.
    *
    * @param payload - The decoded JWT payload (from `jsonwebtoken.decode`).
-   * @returns A promise resolving to an {@link AuthenticationContext}.
+   * @returns A promise resolving to an {@link AuthenticationSession}.
    * @throws When the token is invalid, expired, or untrusted.
    */
-  abstract parse(payload: JwtPayload): Promise<AuthenticationContext>;
+  abstract parse(payload: JwtPayload): Promise<AuthenticationSession>;
 }

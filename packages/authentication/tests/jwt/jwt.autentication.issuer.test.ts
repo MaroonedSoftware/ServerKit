@@ -1,30 +1,29 @@
 import { describe, it, expect, vi } from 'vitest';
 import { JwtAuthenticationIssuer } from '../../src/jwt/jwt.autentication.issuer.js';
 import { JwtAuthenticationIssuerMap } from '../../src/jwt/jwt.authentication.handler.js';
-import type { AuthenticationContext } from '../../src/authentication.context.js';
-import { invalidAuthenticationContext } from '../../src/authentication.context.js';
+import type { AuthenticationSession } from '../../src/types.js';
+import { invalidAuthenticationSession } from '../../src/types.js';
 import { DateTime } from 'luxon';
 import type { JwtPayload } from 'jsonwebtoken';
 
-const makeValidContext = (): AuthenticationContext => ({
-  actorId: 'auth-123',
-  actorType: 'user',
+const makeValidSession = (): AuthenticationSession => ({
+  subject: 'user-1',
+  sessionToken: 'session-token-123',
   issuedAt: DateTime.now(),
   lastAccessedAt: DateTime.now(),
   expiresAt: DateTime.now().plus({ hours: 1 }),
   factors: [],
   claims: { sub: 'user-1' },
-  roles: ['user'],
 });
 
 class PassthroughIssuer extends JwtAuthenticationIssuer {
-  async parse(_payload: JwtPayload): Promise<AuthenticationContext> {
-    return makeValidContext();
+  async parse(_payload: JwtPayload): Promise<AuthenticationSession> {
+    return makeValidSession();
   }
 }
 
 class RejectingIssuer extends JwtAuthenticationIssuer {
-  async parse(_payload: JwtPayload): Promise<AuthenticationContext> {
+  async parse(_payload: JwtPayload): Promise<AuthenticationSession> {
     throw new Error('Token validation failed');
   }
 }
@@ -32,9 +31,9 @@ class RejectingIssuer extends JwtAuthenticationIssuer {
 class PayloadCapturingIssuer extends JwtAuthenticationIssuer {
   capturedPayload: JwtPayload | null = null;
 
-  async parse(payload: JwtPayload): Promise<AuthenticationContext> {
+  async parse(payload: JwtPayload): Promise<AuthenticationSession> {
     this.capturedPayload = payload;
-    return makeValidContext();
+    return makeValidSession();
   }
 }
 
@@ -58,12 +57,12 @@ describe('JwtAuthenticationIssuer', () => {
       expect(result).toBeInstanceOf(Promise);
     });
 
-    it('should resolve to an AuthenticationContext', async () => {
+    it('should resolve to an AuthenticationSession', async () => {
       const issuer = new PassthroughIssuer();
       const result = await issuer.parse({ sub: 'user-1', iss: 'https://auth.example.com' });
 
       expect(result).toBeDefined();
-      expect(result.actorId).toBe('auth-123');
+      expect(result.subject).toBe('user-1');
     });
 
     it('should receive the full decoded JWT payload', async () => {
@@ -90,23 +89,23 @@ describe('JwtAuthenticationIssuer', () => {
 
     it('should work with a mock implementation via vi.fn()', async () => {
       const issuer = new PassthroughIssuer();
-      const validContext = makeValidContext();
-      vi.spyOn(issuer, 'parse').mockResolvedValue(validContext);
+      const validSession = makeValidSession();
+      vi.spyOn(issuer, 'parse').mockResolvedValue(validSession);
 
       const result = await issuer.parse({ sub: 'user-1' });
-      expect(result).toBe(validContext);
+      expect(result).toBe(validSession);
     });
 
-    it('concrete subclass can return invalidAuthenticationContext', async () => {
+    it('concrete subclass can return invalidAuthenticationSession', async () => {
       class AlwaysInvalidIssuer extends JwtAuthenticationIssuer {
-        async parse(_payload: JwtPayload): Promise<AuthenticationContext> {
-          return invalidAuthenticationContext;
+        async parse(_payload: JwtPayload): Promise<AuthenticationSession> {
+          return invalidAuthenticationSession;
         }
       }
 
       const issuer = new AlwaysInvalidIssuer();
       const result = await issuer.parse({ sub: 'user-1' });
-      expect(result).toBe(invalidAuthenticationContext);
+      expect(result).toBe(invalidAuthenticationSession);
     });
   });
 });

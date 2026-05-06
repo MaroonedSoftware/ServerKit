@@ -2,7 +2,7 @@ import { Injectable } from 'injectkit';
 import { unauthorizedError } from '@maroonedsoftware/errors';
 import { DateTime, Duration } from 'luxon';
 import { deepmergeCustom } from 'deepmerge-ts';
-import { AuthenticationSession, AuthenticationSessionFactor, AuthenticationToken } from './authentication.context.js';
+import { AuthenticationSession, AuthenticationSessionFactor, AuthenticationToken } from './types.js';
 import { CacheProvider } from '@maroonedsoftware/cache';
 import { JwtProvider } from './providers/jwt.provider.js';
 
