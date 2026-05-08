@@ -27,4 +27,7 @@ export * from './providers/password.strength.provider.js';
 export * from './providers/pkce.provider.js';
 export * from './providers/oidc.provider.js';
 export * from './providers/oauth2.provider.js';
-export * from './providers/allowlist.provider.js';
+export * from './policies/email.allowed.policy.js';
+export * from './policies/phone.allowed.policy.js';
+export * from './policies/policy.mappings.js';
+export * from './helpers.js';

@@ -5,7 +5,7 @@ import { OtpProvider } from '../../providers/otp.provider.js';
 import { httpError, unauthorizedError } from '@maroonedsoftware/errors';
 import { CacheProvider } from '@maroonedsoftware/cache';
 import { EmailFactorRepository } from './email.factor.repository.js';
-import { AllowlistProvider } from '../../providers/allowlist.provider.js';
+import { PolicyService } from '@maroonedsoftware/policies';
 
 type EmailPayload = {
   id: string;
@@ -61,7 +61,7 @@ export class EmailFactorService {
     private readonly emailFactorRepository: EmailFactorRepository,
     private readonly otpProvider: OtpProvider,
     private readonly cache: CacheProvider,
-    private readonly allowlistProvider: AllowlistProvider,
+    private readonly policyService: PolicyService,
   ) {}
 
   private getChallengeKey(key: string) {
@@ -206,11 +206,16 @@ export class EmailFactorService {
   async registerEmailFactor(value: string, verificationMethod: 'code' | 'magiclink', registrationId?: string) {
     value = value.trim().toLowerCase();
 
-    const allowed = await this.allowlistProvider.checkEmailIsAllowed(value);
-    if (!allowed.allowed) {
+    const policyResult = await this.policyService.check('email_allowed', { value });
+
+    if (!policyResult.allowed) {
       const msg =
-        allowed.reason === 'deny_list' ? 'email is not allowed' : allowed.reason === 'invalid_format' ? 'invalid email format' : allowed.reason;
-      throw httpError(400).withDetails({ value: msg });
+        policyResult.reason === 'deny_list'
+          ? 'email is not allowed'
+          : policyResult.reason === 'invalid_format'
+            ? 'invalid email format'
+            : policyResult.reason;
+      throw httpError(400).withDetails({ value: msg }).withInternalDetails({ value: policyResult.details?.value });
     }
 
     const existingRegistration = registrationId ? await this.lookupRegistration(registrationId) : await this.lookupRegistrationByValue(value);

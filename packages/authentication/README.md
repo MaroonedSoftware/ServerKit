@@ -326,7 +326,7 @@ const verifiedFactor = await emailFactors.verifyEmailChallenge(challengeId, subm
 
 `registerEmailFactor` rejects the request before issuing a code when:
 - the email format is invalid (HTTP 400),
-- the email is rejected by `AllowlistProvider` (HTTP 400 — invalid format or domain on the configured deny list, e.g. disposable mail providers),
+- the email is rejected by the `email_allowed` policy via `PolicyService` (HTTP 400 — invalid format or domain on the configured deny list, e.g. disposable mail providers),
 - `EmailFactorRepository.isDomainInviteOnly(domain)` returns `true` (HTTP 403 — implement this to gate registration to allow-listed domains, e.g. workspaces that require an invite),
 - an active factor already exists for the email (HTTP 409).
 
@@ -815,20 +815,66 @@ Cache-backed storage for PKCE state (RFC 7636). Wraps an injected `CacheProvider
 | `deleteChallenge(codeChallenge)`                             | `Promise<void>`          | Remove the entry — call after a successful exchange for single-use semantics |
 | `deleteVerifier(codeVerifier)`                               | `Promise<void>`          | Same as `deleteChallenge`, but derives the challenge from the verifier       |
 
-### `AllowlistProvider`
+### Policies (`email_allowed`, `phone_allowed`)
 
-Validates email addresses and phone numbers during factor registration. Injected into `EmailFactorService` and `PhoneFactorService`; subclass and re-register to add stricter rules (regional phone filtering, dynamic deny lists, MX record probing, etc.) without modifying the factor services. Methods return an `AllowListResult` (`{ allowed: true } | { allowed: false, reason: 'invalid_format' | 'deny_list' | string }`) rather than throwing — the calling factor service maps the machine-readable `reason` to a user-facing message and throws HTTP 400 with `{ value: <message> }`. Subclasses can return any custom reason string; bundled factor services pass unknown reasons through verbatim.
+Email and phone validation are dispatched through `PolicyService` from [`@maroonedsoftware/policies`](../policies/README.md). The bundled `EmailFactorService` and `PhoneFactorService` call `policyService.check('email_allowed', { value })` and `policyService.check('phone_allowed', { value })` respectively, then map the machine-readable `reason` on a denial to a user-facing HTTP 400 (`{ value: <message> }`).
 
-| Method                                | Returns                                                            | Description                                                                                       |
-| ------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| `checkEmailIsAllowed(value)`          | `Promise<AllowListResult>` — reasons: `'invalid_format'`, `'deny_list'` | Reject malformed emails or domains on `emailDomainDenyList`. Caller is expected to pre-normalise. |
-| `checkPhoneIsAllowed(phone)`          | `Promise<AllowListResult>` — reasons: `'invalid_format'`           | Reject phone numbers not in E.164 format                                                          |
+This package ships two `Policy` implementations you can register against those names — or subclass / replace to add stricter rules (regional phone filtering, dynamic deny lists, MX record probing, etc.) without modifying the factor services.
 
-`AllowlistProviderOptions`:
+#### `EmailAllowedPolicy`
+
+Rejects malformed email addresses and addresses whose domain is on the configured deny list.
+
+Denial reasons: `'invalid_format'`, `'deny_list'`.
+
+`EmailAllowedPolicyOptions`:
 
 | Option                 | Type       | Default | Description                                                                                       |
 | ---------------------- | ---------- | ------- | ------------------------------------------------------------------------------------------------- |
 | `emailDomainDenyList`  | `string[]` | `[]`    | Sorted list of email domains to reject (checked via binary search; e.g. disposable mail providers) |
+
+#### `PhoneAllowedPolicy`
+
+Rejects phone numbers that are not in E.164 format. Denial reason: `'invalid_format'`.
+
+#### Wiring
+
+```ts
+import {
+  BasePolicyService,
+  type PolicyEnvelope,
+  PolicyRegistryMap,
+  PolicyService,
+} from '@maroonedsoftware/policies';
+import {
+  EmailAllowedPolicy,
+  EmailAllowedPolicyOptions,
+  PhoneAllowedPolicy,
+} from '@maroonedsoftware/authentication';
+
+type AuthPolicies = {
+  email_allowed: { value: string };
+  phone_allowed: { value: string };
+};
+
+@Injectable()
+class AuthPolicyService extends BasePolicyService<AuthPolicies> {
+  protected async buildEnvelope(): Promise<PolicyEnvelope> {
+    return { now: DateTime.utc() };
+  }
+}
+
+registry.register(EmailAllowedPolicyOptions).useValue(new EmailAllowedPolicyOptions(['disposable.com', 'tempmail.org']));
+registry.register(EmailAllowedPolicy).useClass(EmailAllowedPolicy).asSingleton();
+registry.register(PhoneAllowedPolicy).useClass(PhoneAllowedPolicy).asSingleton();
+registry.register(PolicyRegistryMap).useFactory(() => {
+  const map = new PolicyRegistryMap();
+  map.set('email_allowed', EmailAllowedPolicy);
+  map.set('phone_allowed', PhoneAllowedPolicy);
+  return map;
+});
+registry.register(PolicyService).useClass(AuthPolicyService).asSingleton();
+```
 
 ### `PasswordFactorService`
 
@@ -881,7 +927,7 @@ Abstract base class. Extend and register a concrete implementation so that `Pass
 | `otpExpiration`       | `Duration` | 10 minutes | How long an OTP-code registration or sign-in challenge stays valid                       |
 | `magiclinkExpiration` | `Duration` | 30 minutes | How long a magic link token stays valid                                                  |
 
-Email format validation and the disposable-domain deny list are handled by the injected [`AllowlistProvider`](#allowlistprovider) — configure them via `AllowlistProviderOptions`.
+Email format validation and the disposable-domain deny list are dispatched through `PolicyService` under the [`email_allowed` policy](#policies-email_allowed-phone_allowed) — configure them via `EmailAllowedPolicyOptions`.
 
 ### `EmailFactorRepository`
 
@@ -946,7 +992,7 @@ Manages phone number factor registration. Requires a `PhoneFactorServiceOptions`
 | --------------- | ---------- | ----------------------------------------------------- |
 | `otpExpiration` | `Duration` | How long a pending registration stays valid           |
 
-`registerPhoneFactor` rejects invalid phone numbers via the injected [`AllowlistProvider`](#allowlistprovider) (HTTP 400 for non-E.164 input). `createPhoneFactorFromRegistration` throws HTTP 404 when the registration has expired. The actor is bound at completion time, so callers that need to enforce uniqueness against existing factors should do so themselves before calling `createPhoneFactorFromRegistration`.
+`registerPhoneFactor` rejects invalid phone numbers via the [`phone_allowed` policy](#policies-email_allowed-phone_allowed) on `PolicyService` (HTTP 400 for non-E.164 input). `createPhoneFactorFromRegistration` throws HTTP 404 when the registration has expired. The actor is bound at completion time, so callers that need to enforce uniqueness against existing factors should do so themselves before calling `createPhoneFactorFromRegistration`.
 
 ### `PhoneFactorRepository`
 

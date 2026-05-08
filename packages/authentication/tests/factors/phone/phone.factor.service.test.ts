@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { PhoneFactorService } from '../../../src/factors/phone/phone.factor.service.js';
 import type { PhoneFactorRepository, PhoneFactor } from '../../../src/factors/phone/phone.factor.repository.js';
-import type { AllowlistProvider } from '../../../src/providers/allowlist.provider.js';
+import type { PolicyService } from '@maroonedsoftware/policies';
 import type { CacheProvider } from '@maroonedsoftware/cache';
 import { Duration, DateTime } from 'luxon';
 
@@ -22,11 +22,11 @@ const makeRepository = () =>
     deleteFactor: vi.fn(),
   }) as unknown as PhoneFactorRepository;
 
-const makeAllowlistProvider = () =>
+const makePolicyService = () =>
   ({
-    checkEmailIsAllowed: vi.fn().mockResolvedValue({ allowed: true }),
-    checkPhoneIsAllowed: vi.fn().mockResolvedValue({ allowed: true }),
-  }) as unknown as AllowlistProvider;
+    check: vi.fn().mockResolvedValue({ allowed: true }),
+    assert: vi.fn().mockResolvedValue(undefined),
+  }) as unknown as PolicyService;
 
 const makePhoneFactor = (overrides: Partial<PhoneFactor> = {}): PhoneFactor => ({
   id: 'factor-1',
@@ -51,45 +51,45 @@ const makeRegistrationPayload = (overrides = {}) => ({
 describe('PhoneFactorService', () => {
   let cache: ReturnType<typeof makeCacheProvider>;
   let repo: ReturnType<typeof makeRepository>;
-  let allowlistProvider: ReturnType<typeof makeAllowlistProvider>;
+  let policyService: ReturnType<typeof makePolicyService>;
   let service: PhoneFactorService;
 
   beforeEach(() => {
     vi.clearAllMocks();
     cache = makeCacheProvider();
     repo = makeRepository();
-    allowlistProvider = makeAllowlistProvider();
-    service = new PhoneFactorService(makeOptions(), repo, cache, allowlistProvider);
+    policyService = makePolicyService();
+    service = new PhoneFactorService(makeOptions(), repo, cache, policyService);
   });
 
   describe('registerPhoneFactor', () => {
-    it("throws 400 with E.164-format message when the allowlist returns reason 'invalid_format'", async () => {
-      vi.mocked(allowlistProvider.checkPhoneIsAllowed).mockResolvedValue({ allowed: false, reason: 'invalid_format' });
+    it("throws 400 with E.164-format message when the phone_allowed policy denies with reason 'invalid_format'", async () => {
+      vi.mocked(policyService.check).mockResolvedValue({ allowed: false, reason: 'invalid_format' });
       await expect(service.registerPhoneFactor('not-a-phone')).rejects.toMatchObject({
         statusCode: 400,
         details: { value: 'invalid phone number, expected E.164 format' },
       });
     });
 
-    it("throws 400 with 'phone number is not allowed' when the allowlist returns reason 'deny_list'", async () => {
-      vi.mocked(allowlistProvider.checkPhoneIsAllowed).mockResolvedValue({ allowed: false, reason: 'deny_list' });
+    it("throws 400 with 'phone number is not allowed' when the phone_allowed policy denies with reason 'deny_list'", async () => {
+      vi.mocked(policyService.check).mockResolvedValue({ allowed: false, reason: 'deny_list' });
       await expect(service.registerPhoneFactor('+12025550123')).rejects.toMatchObject({
         statusCode: 400,
         details: { value: 'phone number is not allowed' },
       });
     });
 
-    it('passes through a custom reason string from a subclass unchanged', async () => {
-      vi.mocked(allowlistProvider.checkPhoneIsAllowed).mockResolvedValue({ allowed: false, reason: 'region_blocked' });
+    it('passes through a custom deny reason string unchanged', async () => {
+      vi.mocked(policyService.check).mockResolvedValue({ allowed: false, reason: 'region_blocked' });
       await expect(service.registerPhoneFactor('+12025550123')).rejects.toMatchObject({
         statusCode: 400,
         details: { value: 'region_blocked' },
       });
     });
 
-    it('passes the phone number to the allowlist provider', async () => {
+    it("invokes the 'phone_allowed' policy with the phone value", async () => {
       await service.registerPhoneFactor('+12025550123');
-      expect(allowlistProvider.checkPhoneIsAllowed).toHaveBeenCalledWith('+12025550123');
+      expect(policyService.check).toHaveBeenCalledWith('phone_allowed', { value: '+12025550123' });
     });
 
     it('returns the existing pending registration with alreadyRegistered=true when one is cached for the value', async () => {

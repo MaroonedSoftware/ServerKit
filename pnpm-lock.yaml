@@ -78,6 +78,9 @@ importers:
       '@maroonedsoftware/logger':
         specifier: workspace:*
         version: link:../logger
+      '@maroonedsoftware/policies':
+        specifier: workspace:*
+        version: link:../policies
       '@maroonedsoftware/utilities':
         specifier: workspace:*
         version: link:../utilities
@@ -404,6 +407,28 @@ importers:
       '@repo/config-typescript':
         specifier: workspace:*
         version: link:../config-typescript
+
+  packages/policies:
+    dependencies:
+      '@maroonedsoftware/errors':
+        specifier: workspace:*
+        version: link:../errors
+      injectkit:
+        specifier: ^1.2.0
+        version: 1.2.0
+      luxon:
+        specifier: ^3.7.2
+        version: 3.7.2
+    devDependencies:
+      '@repo/config-eslint':
+        specifier: workspace:*
+        version: link:../config-eslint
+      '@repo/config-typescript':
+        specifier: workspace:*
+        version: link:../config-typescript
+      '@types/luxon':
+        specifier: ^3.7.1
+        version: 3.7.1
 
   packages/slack:
     dependencies:

@@ -4,7 +4,7 @@ import { Injectable } from 'injectkit';
 import { httpError } from '@maroonedsoftware/errors';
 import { CacheProvider } from '@maroonedsoftware/cache';
 import { PhoneFactorRepository } from './phone.factor.repository.js';
-import { AllowlistProvider } from '../../providers/allowlist.provider.js';
+import { PolicyService } from '@maroonedsoftware/policies';
 
 /**
  * Configuration options for {@link PhoneFactorService}.
@@ -53,7 +53,7 @@ export class PhoneFactorService {
     private readonly options: PhoneFactorServiceOptions,
     private readonly phoneFactorRepository: PhoneFactorRepository,
     private readonly cache: CacheProvider,
-    private readonly allowlistProvider: AllowlistProvider,
+    private readonly policyService: PolicyService,
   ) {}
 
   private getRegistrationKey(key: string) {
@@ -107,15 +107,15 @@ export class PhoneFactorService {
    * @throws HTTP 400 when `value` is not a valid E.164 phone number.
    */
   async registerPhoneFactor(value: string, registrationId?: string) {
-    const allowed = await this.allowlistProvider.checkPhoneIsAllowed(value);
-    if (!allowed.allowed) {
+    const policyResult = await this.policyService.check('phone_allowed', { value });
+    if (!policyResult.allowed) {
       const msg =
-        allowed.reason === 'deny_list'
+        policyResult.reason === 'deny_list'
           ? 'phone number is not allowed'
-          : allowed.reason === 'invalid_format'
+          : policyResult.reason === 'invalid_format'
             ? 'invalid phone number, expected E.164 format'
-            : allowed.reason;
-      throw httpError(400).withDetails({ value: msg });
+            : policyResult.reason;
+      throw httpError(400).withDetails({ value: msg }).withInternalDetails({ value: policyResult.details?.value });
     }
 
     const existingRegistration = registrationId ? await this.lookupRegistration(registrationId) : await this.lookupRegistrationByValue(value);

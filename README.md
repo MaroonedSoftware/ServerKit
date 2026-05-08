@@ -141,6 +141,19 @@ Zanzibar-style relationship-based access control.
 
 ---
 
+### Policies
+
+Small, DI-friendly framework for encoding allow/deny rules as named, injectable `Policy` classes.
+
+- Discriminated `PolicyResult` (`{ allowed: true } | { allowed: false, reason, details? }`) so policies surface machine-readable reasons instead of throwing
+- Type-safe `PolicyService` — declare a `Policies` map and `check`/`assert` enforce the right context per name at compile time
+- Per-evaluation envelope with `now: DateTime` (extend with session, request id, …)
+- `denyStepUp(reason, requirement)` helper bundles a `StepUpRequirement` for re-auth-gated operations
+
+[View documentation →](./packages/policies/README.md)
+
+---
+
 ### Utilities
 
 Common utility functions for everyday server development.

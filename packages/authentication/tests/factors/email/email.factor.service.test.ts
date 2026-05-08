@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EmailFactorService } from '../../../src/factors/email/email.factor.service.js';
 import type { EmailFactorRepository, EmailFactor } from '../../../src/factors/email/email.factor.repository.js';
 import type { OtpProvider } from '../../../src/providers/otp.provider.js';
-import type { AllowlistProvider } from '../../../src/providers/allowlist.provider.js';
+import type { PolicyService } from '@maroonedsoftware/policies';
 import type { CacheProvider } from '@maroonedsoftware/cache';
 import { Duration, DateTime } from 'luxon';
 
@@ -31,11 +31,11 @@ const makeEmailFactorRepository = () =>
     deleteFactor: vi.fn(),
   }) as unknown as EmailFactorRepository;
 
-const makeAllowlistProvider = () =>
+const makePolicyService = () =>
   ({
-    checkEmailIsAllowed: vi.fn().mockResolvedValue({ allowed: true }),
-    checkPhoneIsAllowed: vi.fn().mockResolvedValue({ allowed: true }),
-  }) as unknown as AllowlistProvider;
+    check: vi.fn().mockResolvedValue({ allowed: true }),
+    assert: vi.fn().mockResolvedValue(undefined),
+  }) as unknown as PolicyService;
 
 const makeEmailFactor = (overrides: Partial<EmailFactor> = {}): EmailFactor => ({
   id: 'factor-1',
@@ -77,7 +77,7 @@ describe('EmailFactorService', () => {
   let cache: ReturnType<typeof makeCacheProvider>;
   let otpProvider: ReturnType<typeof makeOtpProvider>;
   let repo: ReturnType<typeof makeEmailFactorRepository>;
-  let allowlistProvider: ReturnType<typeof makeAllowlistProvider>;
+  let policyService: ReturnType<typeof makePolicyService>;
   let service: EmailFactorService;
 
   beforeEach(() => {
@@ -85,38 +85,38 @@ describe('EmailFactorService', () => {
     cache = makeCacheProvider();
     otpProvider = makeOtpProvider();
     repo = makeEmailFactorRepository();
-    allowlistProvider = makeAllowlistProvider();
-    service = new EmailFactorService(makeOptions(), repo, otpProvider, cache, allowlistProvider);
+    policyService = makePolicyService();
+    service = new EmailFactorService(makeOptions(), repo, otpProvider, cache, policyService);
   });
 
   describe('registerEmailFactor', () => {
-    it("throws 400 with 'invalid email format' when the allowlist returns reason 'invalid_format'", async () => {
-      vi.mocked(allowlistProvider.checkEmailIsAllowed).mockResolvedValue({ allowed: false, reason: 'invalid_format' });
+    it("throws 400 with 'invalid email format' when the email_allowed policy denies with reason 'invalid_format'", async () => {
+      vi.mocked(policyService.check).mockResolvedValue({ allowed: false, reason: 'invalid_format' });
       await expect(service.registerEmailFactor('not-an-email', 'code')).rejects.toMatchObject({
         statusCode: 400,
         details: { value: 'invalid email format' },
       });
     });
 
-    it("throws 400 with 'email is not allowed' when the allowlist returns reason 'deny_list'", async () => {
-      vi.mocked(allowlistProvider.checkEmailIsAllowed).mockResolvedValue({ allowed: false, reason: 'deny_list' });
+    it("throws 400 with 'email is not allowed' when the email_allowed policy denies with reason 'deny_list'", async () => {
+      vi.mocked(policyService.check).mockResolvedValue({ allowed: false, reason: 'deny_list' });
       await expect(service.registerEmailFactor('user@disposable.com', 'code')).rejects.toMatchObject({
         statusCode: 400,
         details: { value: 'email is not allowed' },
       });
     });
 
-    it('passes through a custom reason string from a subclass unchanged', async () => {
-      vi.mocked(allowlistProvider.checkEmailIsAllowed).mockResolvedValue({ allowed: false, reason: 'mx_lookup_failed' });
+    it('passes through a custom deny reason string unchanged', async () => {
+      vi.mocked(policyService.check).mockResolvedValue({ allowed: false, reason: 'mx_lookup_failed' });
       await expect(service.registerEmailFactor('user@example.com', 'code')).rejects.toMatchObject({
         statusCode: 400,
         details: { value: 'mx_lookup_failed' },
       });
     });
 
-    it('passes the normalized email to the allowlist provider', async () => {
+    it("invokes the 'email_allowed' policy with the normalized email value", async () => {
       await service.registerEmailFactor('  USER@Example.COM  ', 'code');
-      expect(allowlistProvider.checkEmailIsAllowed).toHaveBeenCalledWith('user@example.com');
+      expect(policyService.check).toHaveBeenCalledWith('email_allowed', { value: 'user@example.com' });
     });
 
     it('returns the existing pending registration with alreadyRegistered=true when one is cached', async () => {
@@ -156,8 +156,8 @@ describe('EmailFactorService', () => {
       expect(repo.isDomainInviteOnly).toHaveBeenCalledWith('invite-only.com');
     });
 
-    it('checks the allowlist before checking invite-only', async () => {
-      vi.mocked(allowlistProvider.checkEmailIsAllowed).mockResolvedValue({ allowed: false, reason: 'deny_list' });
+    it('checks the email_allowed policy before checking invite-only', async () => {
+      vi.mocked(policyService.check).mockResolvedValue({ allowed: false, reason: 'deny_list' });
       repo.isDomainInviteOnly = vi.fn().mockResolvedValue(true);
 
       await expect(service.registerEmailFactor('user@disposable.com', 'code')).rejects.toMatchObject({

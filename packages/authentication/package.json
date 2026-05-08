@@ -34,6 +34,7 @@
     "@maroonedsoftware/encryption": "workspace:*",
     "@maroonedsoftware/errors": "workspace:*",
     "@maroonedsoftware/logger": "workspace:*",
+    "@maroonedsoftware/policies": "workspace:*",
     "@maroonedsoftware/utilities": "workspace:*",
     "@zxcvbn-ts/core": "^3.0.4",
     "@zxcvbn-ts/language-common": "^3.0.4",
