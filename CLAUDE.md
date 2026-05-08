@@ -61,6 +61,7 @@ packages/
 ├── logger/          # Logger interface and console implementation
 ├── multipart/       # Multipart form-data parsing
 ├── permissions/     # Zanzibar-style relationship-based access control
+├── policies/        # Named, DI-friendly allow/deny policies with PolicyService
 ├── utilities/       # Common utilities (UUID, email, base32)
 ├── zod/             # Zod-to-httpError validation helper
 ├── config-eslint/   # Shared ESLint configuration
@@ -74,7 +75,8 @@ packages/
 The monorepo uses workspace references (`workspace:*`). Key dependency relationships:
 
 - **koa** depends on: `appconfig`, `authentication`, `errors`, `logger`, `multipart`, `utilities`
-- **authentication** depends on: `cache`, `encryption`, `errors`, `logger`, `utilities`
+- **authentication** depends on: `cache`, `encryption`, `errors`, `logger`, `policies`, `utilities`
+- **policies** depends on: `errors`
 - **cache** depends on: `errors`, `logger`, `utilities`
 - **encryption** depends on: `errors`
 - **jobbroker** depends on: `logger`

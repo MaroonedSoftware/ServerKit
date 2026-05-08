@@ -1,5 +1,5 @@
 ---
-'@maroonedsoftware/authentication': major
+'@maroonedsoftware/authentication': minor
 '@maroonedsoftware/policies': minor
 ---
 
@@ -15,4 +15,4 @@ Breaking changes in `@maroonedsoftware/authentication`:
 
 Migration: replace the `AllowlistProvider` registration with bindings for `EmailAllowedPolicy` and `PhoneAllowedPolicy` plus a `PolicyService` (typically a `BasePolicyService` subclass) and a `PolicyRegistryMap` that maps `'email_allowed'` and `'phone_allowed'` to those policies. Move any `emailDomainDenyList` configuration from `AllowlistProviderOptions` to `EmailAllowedPolicyOptions`. Custom subclasses that returned non-default `reason` strings continue to work — the factor services pass unknown reasons through unchanged.
 
-Also exports `matchesFactorConstraints` and `isFactorRecent` helpers (groundwork for upcoming step-up policies).
+Also exports `matchesFactorConstraints` and `isFactorRecent` helpers (groundwork for step-up policies).
