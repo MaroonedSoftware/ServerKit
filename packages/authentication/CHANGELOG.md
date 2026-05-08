@@ -1,5 +1,13 @@
 # @maroonedsoftware/authentication
 
+## 4.4.0
+
+### Minor Changes
+
+- 82bac7f: Rename `PolicyMappings`, `PolicyNames`, and `PolicyContexts` to `AuthenticationPolicyMappings`, `AuthenticationPolicyNames`, and `AuthenticationPolicyContexts` so they don't collide when an application bundles policy mappings from multiple `@maroonedsoftware/*` packages.
+
+  Migration: rename references at every import site. The runtime values and context shapes are unchanged.
+
 ## 4.3.0
 
 ### Minor Changes
