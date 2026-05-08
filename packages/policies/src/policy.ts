@@ -1,5 +1,5 @@
 import { Injectable } from 'injectkit';
-import { DateTime } from 'luxon';
+import { DateTime, Duration } from 'luxon';
 
 /**
  * Result of a successful policy evaluation. Returned by {@link Policy.allow}.
@@ -52,11 +52,11 @@ export interface PolicyContext {}
 /**
  * Acceptable proof for satisfying a step-up policy. At least one factor on
  * the session must match the constraints below and have been re-verified
- * within `withinSeconds` of `now` for the gated operation to proceed.
+ * within `within` of `now` for the gated operation to proceed.
  */
 export interface StepUpRequirement {
-  /** Maximum age (in seconds) of an acceptable factor re-verification. */
-  withinSeconds: number;
+  /** Maximum age of an acceptable factor re-verification. */
+  within: Duration;
   /** If set, only factors whose `method` is in this list count. */
   acceptableMethods?: ReadonlyArray<string>;
   /** If set, only factors whose `kind` is in this list count. */

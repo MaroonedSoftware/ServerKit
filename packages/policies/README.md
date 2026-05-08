@@ -15,7 +15,7 @@ pnpm add @maroonedsoftware/policies
 - **Named registry** — register each policy under a stable name (e.g. `'email_allowed'`) so callers depend on the name and `PolicyService`, not on concrete classes
 - **Type-safe call sites** — declare a `Policies` map (`{ <name>: <ContextShape> }`) and `BasePolicyService.check`/`assert` enforce the right context per name at compile time
 - **Per-evaluation envelope** — subclass `BasePolicyService` to attach request-scoped state (current time, session, request id, …) without each policy reaching for it
-- **Fluent step-up denials** — `denyStepUp(reason, { withinSeconds, acceptableMethods, … })` bundles a `StepUpRequirement` into the response under `kind: 'step_up_required'`
+- **Fluent step-up denials** — `denyStepUp(reason, { within, acceptableMethods, … })` bundles a `StepUpRequirement` into the response under `kind: 'step_up_required'`
 
 ## Concepts
 
@@ -96,7 +96,7 @@ When a policy needs proof of recent re-authentication, return a step-up denial. 
 
 ```ts
 return this.denyStepUp('recent_auth_required', {
-  withinSeconds: 300,
+  within: Duration.fromObject({ minutes: 5 }),
   acceptableMethods: ['fido', 'authenticator'],
 });
 ```
@@ -138,7 +138,7 @@ Default `PolicyService`. Subclass and implement `buildEnvelope(): Promise<TEnvel
 | `PolicyResultDenied`  | `{ allowed: false; reason: string; details?: Record<string, unknown> }`                                |
 | `PolicyResult`        | `PolicyResultAllowed \| PolicyResultDenied`                                                            |
 | `PolicyEnvelope`      | `{ now: DateTime }` (extend in subclasses)                                                             |
-| `StepUpRequirement`   | `{ withinSeconds; acceptableMethods?; acceptableKinds?; excludeMethods? }`                             |
+| `StepUpRequirement`   | `{ within: Duration; acceptableMethods?; acceptableKinds?; excludeMethods? }`                          |
 
 | Guard                       | Description                                  |
 | --------------------------- | -------------------------------------------- |

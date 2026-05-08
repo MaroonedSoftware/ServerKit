@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DateTime } from 'luxon';
+import { DateTime, Duration } from 'luxon';
 import {
   isPolicyResultAllowed,
   isPolicyResultDenied,
@@ -36,7 +36,7 @@ describe('Policy', () => {
   });
 
   it("denyStepUp() wraps the requirement under details.stepUp with kind='step_up_required'", async () => {
-    const requirement: StepUpRequirement = { withinSeconds: 60, acceptableMethods: ['fido'] };
+    const requirement: StepUpRequirement = { within: Duration.fromObject({ seconds: 60 }), acceptableMethods: ['fido'] };
     const result = await new TestPolicy().evaluate({ allow: false, reason: 'recent_auth_required', stepUp: requirement }, envelope);
     expect(result).toEqual({
       allowed: false,
