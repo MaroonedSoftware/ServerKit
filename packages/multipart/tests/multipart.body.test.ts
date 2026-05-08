@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { IncomingMessage } from 'node:http';
 import { MultipartBody } from '../src/multipart.body.js';
-import { FileHandler } from '../src/types.js';
+import { FileHandler, MultipartLimits } from '../src/types.js';
 
 // Track instances created
 const mockInstances: Array<{

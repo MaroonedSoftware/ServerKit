@@ -2,9 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { JobBroker } from '../src/job.broker.js';
 
 class TestJobBroker extends JobBroker {
-  send = vi.fn<[string, object], Promise<void>>().mockResolvedValue(undefined);
-  schedule = vi.fn<[string, string, object?], Promise<void>>().mockResolvedValue(undefined);
-  unschedule = vi.fn<[string], Promise<void>>().mockResolvedValue(undefined);
+  send = vi.fn<(name: string, payload: object) => Promise<void>>().mockResolvedValue(undefined);
+  schedule = vi.fn<(name: string, cron: string, payload?: object) => Promise<void>>().mockResolvedValue(undefined);
+  unschedule = vi.fn<(name: string) => Promise<void>>().mockResolvedValue(undefined);
 }
 
 class FailingJobBroker extends JobBroker {

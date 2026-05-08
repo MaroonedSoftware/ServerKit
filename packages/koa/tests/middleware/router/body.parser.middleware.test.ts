@@ -6,7 +6,10 @@ import type { ServerKitContext } from '../../../src/serverkit.context.js';
 import type { Next } from 'koa';
 
 describe('bodyParserMiddleware', () => {
-  let mockCtx: ServerKitContext;
+  // The middleware is typed against a router-flavoured context, but the body of the test
+  // only exercises a small subset of its surface — type as `any` to avoid stubbing the
+  // entire RouterContext shape on every `as unknown as ServerKitContext` cast site.
+  let mockCtx: any;
   let mockNext: Next;
   let mockBodyParser: { parse: Mock };
   let mockContainer: { get: Mock };

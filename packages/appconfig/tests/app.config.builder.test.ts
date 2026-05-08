@@ -118,7 +118,7 @@ describe('AppConfigBuilder', () => {
         canParse: vi.fn((value: string) => value.startsWith('env:')),
         parse: vi.fn(async (value: string, meta: ObjectVisitorMeta) => {
           const key = value.slice(4);
-          meta.owner[meta.propertyPath] = `resolved_${key}`;
+          (meta.owner as Record<string, unknown>)[meta.propertyPath] = `resolved_${key}`;
         }),
       };
       builder.addSource(source).addProvider(provider);
@@ -142,7 +142,7 @@ describe('AppConfigBuilder', () => {
         canParse: vi.fn((value: string) => value.startsWith('env:')),
         parse: vi.fn(async (value: string, meta: ObjectVisitorMeta) => {
           const key = value.slice(4);
-          meta.owner[meta.propertyPath] = `resolved_${key}`;
+          (meta.owner as Record<string, unknown>)[meta.propertyPath] = `resolved_${key}`;
         }),
       };
       builder.addSource(source).addProvider(provider);
@@ -166,7 +166,7 @@ describe('AppConfigBuilder', () => {
           // For arrays, we need to extract the index from propertyPath
           // propertyPath will be like 'items[0]', so we need to parse it
           if (Array.isArray(meta.owner) && meta.arrayIndex !== undefined) {
-            meta.owner[meta.arrayIndex] = `resolved_${key}`;
+            (meta.owner as unknown as unknown[])[meta.arrayIndex!] = `resolved_${key}`;
           } else {
             // For objects, use propertyPath directly
             (meta.owner as Record<string, unknown>)[meta.propertyPath] = `resolved_${key}`;
@@ -191,13 +191,13 @@ describe('AppConfigBuilder', () => {
       const provider1: AppConfigProvider = {
         canParse: vi.fn((value: string) => value.startsWith('env:')),
         parse: vi.fn(async (value: string, meta: ObjectVisitorMeta) => {
-          meta.owner[meta.propertyPath] = 'provider1';
+          (meta.owner as Record<string, unknown>)[meta.propertyPath] = 'provider1';
         }),
       };
       const provider2: AppConfigProvider = {
         canParse: vi.fn((value: string) => value.startsWith('env:')),
         parse: vi.fn(async (value: string, meta: ObjectVisitorMeta) => {
-          meta.owner[meta.propertyPath] = 'provider2';
+          (meta.owner as Record<string, unknown>)[meta.propertyPath] = 'provider2';
         }),
       };
       builder.addSource(source).addProvider(provider1).addProvider(provider2);
@@ -268,7 +268,7 @@ describe('AppConfigBuilder', () => {
         canParse: vi.fn().mockReturnValue(true),
         parse: vi.fn().mockImplementation(async (value: string, meta: ObjectVisitorMeta) => {
           await new Promise(resolve => setTimeout(resolve, 10));
-          meta.owner[meta.propertyPath] = 'resolved';
+          (meta.owner as Record<string, unknown>)[meta.propertyPath] = 'resolved';
         }),
       };
       builder.addSource(source).addProvider(provider);

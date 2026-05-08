@@ -1,3 +1,4 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Redis } from 'ioredis';
 import { Duration } from 'luxon';
 import { IoRedisCacheProvider } from '../src/ioredis.cache.provider.js';

@@ -126,7 +126,7 @@ describe('PgBossJobRunner', () => {
       await runner.start();
 
       // Get the worker callback
-      const workCall = vi.mocked(mockPgBoss.work).mock.calls[0];
+      const workCall = vi.mocked(mockPgBoss.work).mock.calls[0]!;
       const workerCallback = workCall[1] as (jobs: PgJob<object>[]) => Promise<void>;
 
       const mockJobs: PgJob<object>[] = [{ id: 'job-1', data: { message: 'Hello' } } as unknown as PgJob<object>];
@@ -140,7 +140,7 @@ describe('PgBossJobRunner', () => {
     it('should process multiple jobs', async () => {
       await runner.start();
 
-      const workCall = vi.mocked(mockPgBoss.work).mock.calls[0];
+      const workCall = vi.mocked(mockPgBoss.work).mock.calls[0]!;
       const workerCallback = workCall[1] as (jobs: PgJob<object>[]) => Promise<void>;
 
       const mockJobs: PgJob<object>[] = [
@@ -163,7 +163,7 @@ describe('PgBossJobRunner', () => {
 
       await runner.start();
 
-      const workCall = vi.mocked(mockPgBoss.work).mock.calls[0];
+      const workCall = vi.mocked(mockPgBoss.work).mock.calls[0]!;
       const workerCallback = workCall[1] as (jobs: PgJob<object>[]) => Promise<void>;
 
       const mockJobs: PgJob<object>[] = [{ id: 'job-1', data: { message: 'Hello' } } as unknown as PgJob<object>];
@@ -187,7 +187,7 @@ describe('PgBossJobRunner', () => {
 
       await runner.start();
 
-      const workCall = vi.mocked(mockPgBoss.work).mock.calls[0];
+      const workCall = vi.mocked(mockPgBoss.work).mock.calls[0]!;
       const workerCallback = workCall[1] as (jobs: PgJob<object>[]) => Promise<void>;
 
       const mockJobs: PgJob<object>[] = [
@@ -214,7 +214,7 @@ describe('PgBossJobRunner', () => {
 
       await runner.start();
 
-      const workCall = vi.mocked(mockPgBoss.work).mock.calls[0];
+      const workCall = vi.mocked(mockPgBoss.work).mock.calls[0]!;
       const workerCallback = workCall[1] as (jobs: PgJob<object>[]) => Promise<void>;
 
       const mockJobs: PgJob<object>[] = [

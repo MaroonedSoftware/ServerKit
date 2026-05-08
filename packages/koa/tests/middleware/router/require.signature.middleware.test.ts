@@ -3,7 +3,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { requireSignature, type SignatureOptions } from '../../../src/middleware/router/require.signature.middleware.js';
 import { AppConfig } from '@maroonedsoftware/appconfig';
 import { HttpError } from '@maroonedsoftware/errors';
-import type { ServerKitContext } from '../../../src/serverkit.context.js';
 import type { Next } from 'koa';
 
 const OPTIONS_KEY = 'webhook';
@@ -18,13 +17,17 @@ const DEFAULT_OPTIONS: SignatureOptions = {
 const computeSignature = (opts: SignatureOptions, body: Buffer): string =>
   createHmac(opts.algorithm, opts.secret).update(body).digest(opts.digest);
 
-const makeCtx = (body: Buffer, signature: string, options = DEFAULT_OPTIONS): ServerKitContext => {
+// The middleware is typed against a router-flavoured context; the tests only exercise a
+// small subset of its surface, so we type the mock as `any` to skip stubbing `params` /
+// `router` and the rest of the RouterContext shape.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const makeCtx = (body: Buffer, signature: string, options = DEFAULT_OPTIONS): any => {
   const appConfig = new AppConfig({ [OPTIONS_KEY]: options });
   return {
     rawBody: body,
     get: vi.fn().mockReturnValue(signature),
     container: { get: vi.fn().mockReturnValue(appConfig) },
-  } as unknown as ServerKitContext;
+  };
 };
 
 describe('requireSignature', () => {

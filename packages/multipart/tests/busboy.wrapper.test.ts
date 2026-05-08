@@ -3,7 +3,7 @@ import { IncomingMessage } from 'node:http';
 import { Readable } from 'node:stream';
 import { EventEmitter } from 'node:events';
 import { BusboyWrapper } from '../src/busboy.wrapper.js';
-import { FileHandler } from '../src/types.js';
+import { FileHandler, isMultipartFieldData } from '../src/types.js';
 import { httpError } from '@maroonedsoftware/errors';
 
 // Mock @fastify/busboy
@@ -31,14 +31,15 @@ describe('BusboyWrapper', () => {
         // Empty implementation
       },
     });
+    mockHeaders = {
+      'content-type': 'multipart/form-data; boundary=----WebKitFormBoundary',
+    };
     mockReq = {
       pipe: vi.fn().mockReturnValue(mockStream),
       on: vi.fn(),
       removeListener: vi.fn(),
+      headers: mockHeaders,
     } as unknown as IncomingMessage;
-    mockHeaders = {
-      'content-type': 'multipart/form-data; boundary=----WebKitFormBoundary',
-    };
   });
 
   afterEach(() => {
@@ -47,45 +48,45 @@ describe('BusboyWrapper', () => {
 
   describe('constructor', () => {
     it('should create a BusboyWrapper instance', () => {
-      const wrapper = new BusboyWrapper(mockReq, mockHeaders);
+      const wrapper = new BusboyWrapper(mockReq);
       expect(wrapper).toBeInstanceOf(BusboyWrapper);
     });
 
     it('should set up event listeners', () => {
-      const wrapper = new BusboyWrapper(mockReq, mockHeaders);
+      const wrapper = new BusboyWrapper(mockReq);
       // The wrapper extends Busboy which extends EventEmitter
       expect(wrapper).toBeInstanceOf(EventEmitter);
     });
 
     it('should register request close handler', () => {
-      new BusboyWrapper(mockReq, mockHeaders);
+      new BusboyWrapper(mockReq);
       expect(mockReq.on).toHaveBeenCalledWith('close', expect.any(Function));
     });
 
     it('should accept limits option', () => {
       const limits = { files: 5, fileSize: 1024 };
-      const wrapper = new BusboyWrapper(mockReq, mockHeaders, limits);
+      const wrapper = new BusboyWrapper(mockReq, limits);
       expect(wrapper).toBeInstanceOf(BusboyWrapper);
     });
   });
 
   describe('parse', () => {
     it('should return a promise', () => {
-      const wrapper = new BusboyWrapper(mockReq, mockHeaders);
+      const wrapper = new BusboyWrapper(mockReq);
       const fileHandler: FileHandler = vi.fn().mockResolvedValue(undefined);
       const result = wrapper.parse(fileHandler);
       expect(result).toBeInstanceOf(Promise);
     });
 
     it('should pipe request to busboy', () => {
-      const wrapper = new BusboyWrapper(mockReq, mockHeaders);
+      const wrapper = new BusboyWrapper(mockReq);
       const fileHandler: FileHandler = vi.fn().mockResolvedValue(undefined);
       wrapper.parse(fileHandler);
       expect(mockReq.pipe).toHaveBeenCalledWith(wrapper);
     });
 
     it('should resolve with fields map when parsing completes', async () => {
-      const wrapper = new BusboyWrapper(mockReq, mockHeaders);
+      const wrapper = new BusboyWrapper(mockReq);
       const fileHandler: FileHandler = vi.fn().mockResolvedValue(undefined);
 
       const parsePromise = wrapper.parse(fileHandler);
@@ -106,7 +107,7 @@ describe('BusboyWrapper', () => {
     });
 
     it('should handle multiple fields with same name as array', async () => {
-      const wrapper = new BusboyWrapper(mockReq, mockHeaders);
+      const wrapper = new BusboyWrapper(mockReq);
       const fileHandler: FileHandler = vi.fn().mockResolvedValue(undefined);
 
       const parsePromise = wrapper.parse(fileHandler);
@@ -120,13 +121,15 @@ describe('BusboyWrapper', () => {
       expect(Array.isArray(fieldData)).toBe(true);
       if (Array.isArray(fieldData)) {
         expect(fieldData).toHaveLength(2);
-        expect(fieldData[0].value).toBe('value1');
-        expect(fieldData[1].value).toBe('value2');
+        const first = fieldData[0]!;
+        const second = fieldData[1]!;
+        if (isMultipartFieldData(first)) expect(first.value).toBe('value1');
+        if (isMultipartFieldData(second)) expect(second.value).toBe('value2');
       }
     });
 
     it('should handle file events with fileHandler', async () => {
-      const wrapper = new BusboyWrapper(mockReq, mockHeaders);
+      const wrapper = new BusboyWrapper(mockReq);
       const fileHandler: FileHandler = vi.fn().mockResolvedValue(undefined);
 
       const parsePromise = wrapper.parse(fileHandler);
@@ -149,7 +152,7 @@ describe('BusboyWrapper', () => {
     });
 
     it('should reject promise when fileHandler throws error', async () => {
-      const wrapper = new BusboyWrapper(mockReq, mockHeaders);
+      const wrapper = new BusboyWrapper(mockReq);
       const error = new Error('File processing failed');
       const fileHandler: FileHandler = vi.fn().mockRejectedValue(error);
 
@@ -167,7 +170,7 @@ describe('BusboyWrapper', () => {
     });
 
     it('should handle file without fileHandler', async () => {
-      const wrapper = new BusboyWrapper(mockReq, mockHeaders);
+      const wrapper = new BusboyWrapper(mockReq);
       const fileHandler: FileHandler = vi.fn().mockResolvedValue(undefined);
 
       const parsePromise = wrapper.parse(fileHandler);
@@ -188,7 +191,7 @@ describe('BusboyWrapper', () => {
     });
 
     it('should reject promise on error event', async () => {
-      const wrapper = new BusboyWrapper(mockReq, mockHeaders);
+      const wrapper = new BusboyWrapper(mockReq);
       const fileHandler: FileHandler = vi.fn().mockResolvedValue(undefined);
       const parsePromise = wrapper.parse(fileHandler);
 
@@ -199,7 +202,7 @@ describe('BusboyWrapper', () => {
     });
 
     it('should handle partsLimit event', async () => {
-      const wrapper = new BusboyWrapper(mockReq, mockHeaders);
+      const wrapper = new BusboyWrapper(mockReq);
       const fileHandler: FileHandler = vi.fn().mockResolvedValue(undefined);
       const parsePromise = wrapper.parse(fileHandler);
 
@@ -214,7 +217,7 @@ describe('BusboyWrapper', () => {
     });
 
     it('should handle filesLimit event', async () => {
-      const wrapper = new BusboyWrapper(mockReq, mockHeaders);
+      const wrapper = new BusboyWrapper(mockReq);
       const fileHandler: FileHandler = vi.fn().mockResolvedValue(undefined);
       const parsePromise = wrapper.parse(fileHandler);
 
@@ -224,7 +227,7 @@ describe('BusboyWrapper', () => {
     });
 
     it('should handle fieldsLimit event', async () => {
-      const wrapper = new BusboyWrapper(mockReq, mockHeaders);
+      const wrapper = new BusboyWrapper(mockReq);
       const fileHandler: FileHandler = vi.fn().mockResolvedValue(undefined);
       const parsePromise = wrapper.parse(fileHandler);
 
@@ -236,7 +239,7 @@ describe('BusboyWrapper', () => {
 
   describe('cleanup', () => {
     it('should remove all event listeners on finish', async () => {
-      const wrapper = new BusboyWrapper(mockReq, mockHeaders);
+      const wrapper = new BusboyWrapper(mockReq);
       const fileHandler: FileHandler = vi.fn().mockResolvedValue(undefined);
       const parsePromise = wrapper.parse(fileHandler);
 
@@ -247,7 +250,7 @@ describe('BusboyWrapper', () => {
     });
 
     it('should remove all event listeners on error', async () => {
-      const wrapper = new BusboyWrapper(mockReq, mockHeaders);
+      const wrapper = new BusboyWrapper(mockReq);
       const fileHandler: FileHandler = vi.fn().mockResolvedValue(undefined);
       const parsePromise = wrapper.parse(fileHandler);
 
@@ -263,7 +266,7 @@ describe('BusboyWrapper', () => {
     });
 
     it('should handle request close event', () => {
-      const wrapper = new BusboyWrapper(mockReq, mockHeaders);
+      const wrapper = new BusboyWrapper(mockReq);
       const closeHandler = (mockReq.on as ReturnType<typeof vi.fn>).mock.calls.find(call => call[0] === 'close')?.[1];
 
       expect(closeHandler).toBeDefined();
@@ -279,7 +282,7 @@ describe('BusboyWrapper', () => {
 
   describe('field data handling', () => {
     it('should store field with truncated name', async () => {
-      const wrapper = new BusboyWrapper(mockReq, mockHeaders);
+      const wrapper = new BusboyWrapper(mockReq);
       const fileHandler: FileHandler = vi.fn().mockResolvedValue(undefined);
       const parsePromise = wrapper.parse(fileHandler);
 
@@ -289,13 +292,13 @@ describe('BusboyWrapper', () => {
       const result = await parsePromise;
       const fieldData = result.get('field1');
       expect(fieldData).toBeDefined();
-      if (fieldData && !('stream' in fieldData)) {
+      if (fieldData && !Array.isArray(fieldData) && isMultipartFieldData(fieldData)) {
         expect(fieldData.nameTruncated).toBe(true);
       }
     });
 
     it('should store field with truncated value', async () => {
-      const wrapper = new BusboyWrapper(mockReq, mockHeaders);
+      const wrapper = new BusboyWrapper(mockReq);
       const fileHandler: FileHandler = vi.fn().mockResolvedValue(undefined);
       const parsePromise = wrapper.parse(fileHandler);
 
@@ -305,7 +308,7 @@ describe('BusboyWrapper', () => {
       const result = await parsePromise;
       const fieldData = result.get('field1');
       expect(fieldData).toBeDefined();
-      if (fieldData && !('stream' in fieldData)) {
+      if (fieldData && !Array.isArray(fieldData) && isMultipartFieldData(fieldData)) {
         expect(fieldData.valueTruncated).toBe(true);
       }
     });
@@ -313,7 +316,7 @@ describe('BusboyWrapper', () => {
 
   describe('file data handling', () => {
     it('should store file data correctly', async () => {
-      const wrapper = new BusboyWrapper(mockReq, mockHeaders);
+      const wrapper = new BusboyWrapper(mockReq);
       const fileHandler: FileHandler = vi.fn().mockResolvedValue(undefined);
       const parsePromise = wrapper.parse(fileHandler);
 
@@ -338,7 +341,7 @@ describe('BusboyWrapper', () => {
     });
 
     it('should handle multiple files with same fieldname', async () => {
-      const wrapper = new BusboyWrapper(mockReq, mockHeaders);
+      const wrapper = new BusboyWrapper(mockReq);
       // Don't use fileHandler to avoid early resolution
       const fileHandler: FileHandler = vi.fn().mockResolvedValue(undefined);
       const parsePromise = wrapper.parse(fileHandler);

@@ -13,9 +13,9 @@ describe('unique', () => {
     const result = unique(items, 'id');
     expect(result).toHaveLength(3);
     expect(result.map(r => r.id)).toEqual([1, 2, 3]);
-    expect(result[0].name).toBe('a');
-    expect(result[1].name).toBe('b');
-    expect(result[2].name).toBe('d');
+    expect(result[0]!.name).toBe('a');
+    expect(result[1]!.name).toBe('b');
+    expect(result[2]!.name).toBe('d');
   });
 
   it('should deduplicate by function selector', () => {
@@ -26,8 +26,8 @@ describe('unique', () => {
     ];
     const result = unique(items, t => t.tag);
     expect(result).toHaveLength(2);
-    expect(result[0].tag).toBe('x');
-    expect(result[1].tag).toBe('y');
+    expect(result[0]!.tag).toBe('x');
+    expect(result[1]!.tag).toBe('y');
   });
 
   it('should return empty array for empty input', () => {
@@ -54,7 +54,7 @@ describe('unique', () => {
     ];
     const result = unique(items, 'k');
     expect(result).toHaveLength(1);
-    expect(result[0].v).toBe(1);
+    expect(result[0]!.v).toBe(1);
   });
 
   it('should work with primitive values via function selector', () => {

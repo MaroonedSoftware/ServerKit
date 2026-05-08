@@ -18,7 +18,11 @@ const makeValidSession = (factors: AuthenticationSessionFactor[] = []): Authenti
   ({ subject: 'user-1', sessionToken: 'session-token-123', factors, claims: { sub: 'user-1' } }) as unknown as AuthenticationSession;
 
 describe('requireSecurity', () => {
-  let mockCtx: ServerKitContext;
+  // The middleware is typed against a router-flavoured context, but the body of the test
+  // only exercises a small subset of its surface — type as `any` to avoid stubbing the
+  // entire RouterContext shape on every `as unknown as ServerKitContext` cast site.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let mockCtx: any;
   let mockNext: Next;
 
   beforeEach(() => {

@@ -308,10 +308,10 @@ describe('objectVisitor', () => {
       objectVisitor(obj, callback);
 
       const calls = callback.mock.calls;
-      expect(calls[0][1].path).toBe('top');
-      expect(calls[1][1].path).toBe('nested.deep.value');
-      expect(calls[2][1].path).toBe('array[0]');
-      expect(calls[3][1].path).toBe('array[1]');
+      expect(calls[0]![1].path).toBe('top');
+      expect(calls[1]![1].path).toBe('nested.deep.value');
+      expect(calls[2]![1].path).toBe('array[0]');
+      expect(calls[3]![1].path).toBe('array[1]');
     });
   });
 });

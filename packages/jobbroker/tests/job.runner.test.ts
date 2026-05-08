@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { JobRunner } from '../src/job.runner.js';
 
 class TestJobRunner extends JobRunner {
-  start = vi.fn<[], Promise<void>>().mockResolvedValue(undefined);
-  stop = vi.fn<[], Promise<void>>().mockResolvedValue(undefined);
+  start = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+  stop = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
 }
 
 class FailingJobRunner extends JobRunner {

@@ -12,7 +12,10 @@ import {
 const envelope: PolicyEnvelope = { now: DateTime.fromISO('2026-01-01T00:00:00Z', { zone: 'utc' }) };
 
 class TestPolicy extends Policy<{ allow: boolean; reason?: string; stepUp?: StepUpRequirement }> {
-  async evaluate(context: { allow: boolean; reason?: string; stepUp?: StepUpRequirement }): Promise<PolicyResult> {
+  async evaluate(
+    context: { allow: boolean; reason?: string; stepUp?: StepUpRequirement },
+    _envelope: PolicyEnvelope,
+  ): Promise<PolicyResult> {
     if (context.allow) return this.allow();
     if (context.stepUp) return this.denyStepUp(context.reason ?? 'step_up_required', context.stepUp);
     return this.deny(context.reason ?? 'denied', { extra: 1 });

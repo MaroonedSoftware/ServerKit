@@ -35,7 +35,7 @@ describe('BasePolicyService', () => {
 
   beforeEach(() => {
     evaluate = vi.fn().mockResolvedValue({ allowed: true });
-    policy = new StubPolicy(evaluate);
+    policy = new StubPolicy(evaluate as unknown as (context: { allow: boolean }, envelope: PolicyEnvelope) => Promise<PolicyResult>);
     registry = new PolicyRegistryMap();
     registry.set('example_allowed', POLICY_ID);
     container = { get: vi.fn().mockReturnValue(policy) } as unknown as Container;
