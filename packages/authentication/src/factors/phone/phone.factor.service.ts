@@ -3,8 +3,8 @@ import { DateTime, Duration } from 'luxon';
 import { Injectable } from 'injectkit';
 import { httpError } from '@maroonedsoftware/errors';
 import { CacheProvider } from '@maroonedsoftware/cache';
-import { isPhoneE164 } from '@maroonedsoftware/utilities';
 import { PhoneFactorRepository } from './phone.factor.repository.js';
+import { AllowlistProvider } from '../../providers/allowlist.provider.js';
 
 /**
  * Configuration options for {@link PhoneFactorService}.
@@ -53,6 +53,7 @@ export class PhoneFactorService {
     private readonly options: PhoneFactorServiceOptions,
     private readonly phoneFactorRepository: PhoneFactorRepository,
     private readonly cache: CacheProvider,
+    private readonly allowlistProvider: AllowlistProvider,
   ) {}
 
   private getRegistrationKey(key: string) {
@@ -106,9 +107,7 @@ export class PhoneFactorService {
    * @throws HTTP 400 when `value` is not a valid E.164 phone number.
    */
   async registerPhoneFactor(value: string, registrationId?: string) {
-    if (!isPhoneE164(value)) {
-      throw httpError(400).withDetails({ value: 'invalid E.164 format' });
-    }
+    await this.allowlistProvider.ensurePhoneIsAllowed(value);
 
     const existingRegistration = registrationId ? await this.lookupRegistration(registrationId) : await this.lookupRegistrationByValue(value);
     if (existingRegistration) {

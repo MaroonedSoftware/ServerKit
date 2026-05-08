@@ -1,13 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('@maroonedsoftware/utilities', () => ({
-  isPhoneE164: vi.fn().mockReturnValue(true),
-}));
-
-import { isPhoneE164 } from '@maroonedsoftware/utilities';
 import { PhoneFactorService } from '../../../src/factors/phone/phone.factor.service.js';
 import type { PhoneFactorRepository, PhoneFactor } from '../../../src/factors/phone/phone.factor.repository.js';
+import type { AllowlistProvider } from '../../../src/providers/allowlist.provider.js';
 import type { CacheProvider } from '@maroonedsoftware/cache';
+import { httpError } from '@maroonedsoftware/errors';
 import { Duration, DateTime } from 'luxon';
 
 const makeCacheProvider = () =>
@@ -25,6 +22,12 @@ const makeRepository = () =>
     getFactor: vi.fn(),
     deleteFactor: vi.fn(),
   }) as unknown as PhoneFactorRepository;
+
+const makeAllowlistProvider = () =>
+  ({
+    ensureEmailIsAllowed: vi.fn().mockResolvedValue(undefined),
+    ensurePhoneIsAllowed: vi.fn().mockResolvedValue(undefined),
+  }) as unknown as AllowlistProvider;
 
 const makePhoneFactor = (overrides: Partial<PhoneFactor> = {}): PhoneFactor => ({
   id: 'factor-1',
@@ -49,28 +52,31 @@ const makeRegistrationPayload = (overrides = {}) => ({
 describe('PhoneFactorService', () => {
   let cache: ReturnType<typeof makeCacheProvider>;
   let repo: ReturnType<typeof makeRepository>;
+  let allowlistProvider: ReturnType<typeof makeAllowlistProvider>;
   let service: PhoneFactorService;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(isPhoneE164).mockReturnValue(true);
     cache = makeCacheProvider();
     repo = makeRepository();
-    service = new PhoneFactorService(makeOptions(), repo, cache);
+    allowlistProvider = makeAllowlistProvider();
+    service = new PhoneFactorService(makeOptions(), repo, cache, allowlistProvider);
   });
 
   describe('registerPhoneFactor', () => {
-    it('throws 400 for an invalid E.164 phone number', async () => {
-      vi.mocked(isPhoneE164).mockReturnValue(false);
+    it('propagates the error when the allowlist provider rejects the phone number', async () => {
+      vi.mocked(allowlistProvider.ensurePhoneIsAllowed).mockRejectedValue(
+        httpError(400).withDetails({ value: 'invalid E.164 format' }),
+      );
       await expect(service.registerPhoneFactor('not-a-phone')).rejects.toMatchObject({
         statusCode: 400,
         details: { value: 'invalid E.164 format' },
       });
     });
 
-    it('validates the phone number via isPhoneE164', async () => {
+    it('passes the phone number to the allowlist provider', async () => {
       await service.registerPhoneFactor('+12025550123');
-      expect(isPhoneE164).toHaveBeenCalledWith('+12025550123');
+      expect(allowlistProvider.ensurePhoneIsAllowed).toHaveBeenCalledWith('+12025550123');
     });
 
     it('returns the existing pending registration with alreadyRegistered=true when one is cached for the value', async () => {

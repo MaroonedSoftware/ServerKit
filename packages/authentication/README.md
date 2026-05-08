@@ -324,7 +324,7 @@ const verifiedFactor = await emailFactors.verifyEmailChallenge(challengeId, subm
 
 `registerEmailFactor` rejects the request before issuing a code when:
 - the email format is invalid (HTTP 400),
-- the domain is on `denyList` (HTTP 400, e.g. disposable mail providers),
+- the email is rejected by `AllowlistProvider` (HTTP 400 — invalid format or domain on the configured deny list, e.g. disposable mail providers),
 - `EmailFactorRepository.isDomainInviteOnly(domain)` returns `true` (HTTP 403 — implement this to gate registration to allow-listed domains, e.g. workspaces that require an invite),
 - an active factor already exists for the email (HTTP 409).
 
@@ -809,6 +809,21 @@ Cache-backed storage for PKCE state (RFC 7636). Wraps an injected `CacheProvider
 | `deleteChallenge(codeChallenge)`                             | `Promise<void>`          | Remove the entry — call after a successful exchange for single-use semantics |
 | `deleteVerifier(codeVerifier)`                               | `Promise<void>`          | Same as `deleteChallenge`, but derives the challenge from the verifier       |
 
+### `AllowlistProvider`
+
+Validates email addresses and phone numbers during factor registration. Injected into `EmailFactorService` and `PhoneFactorService`; subclass and re-register to add stricter rules (regional phone filtering, dynamic deny lists, MX record probing, etc.) without modifying the factor services.
+
+| Method                                | Returns         | Description                                                                                                |
+| ------------------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------- |
+| `ensureEmailIsAllowed(value)`         | `Promise<void>` | Reject malformed emails or domains on `emailDomainDenyList` (HTTP 400). Caller is expected to pre-normalise. |
+| `ensurePhoneIsAllowed(phone)`         | `Promise<void>` | Reject phone numbers not in E.164 format (HTTP 400)                                                        |
+
+`AllowlistProviderOptions`:
+
+| Option                 | Type       | Default | Description                                                                                       |
+| ---------------------- | ---------- | ------- | ------------------------------------------------------------------------------------------------- |
+| `emailDomainDenyList`  | `string[]` | `[]`    | Sorted list of email domains to reject (checked via binary search; e.g. disposable mail providers) |
+
 ### `PasswordFactorService`
 
 Manages password factors with PBKDF2-SHA512 hashing, password-reuse prevention, and rate-limited verification. Strength checks are delegated to an injected `PasswordStrengthProvider`. Requires that provider, a `RateLimiterCompatibleAbstract` (from `rate-limiter-flexible`), and a `CacheProvider` (used by the staged-registration flow) registered in the DI container.
@@ -857,9 +872,10 @@ Abstract base class. Extend and register a concrete implementation so that `Pass
 
 | Option                | Type       | Default    | Description                                                                              |
 | --------------------- | ---------- | ---------- | ---------------------------------------------------------------------------------------- |
-| `denyList`            | `string[]` | `[]`       | Sorted list of email domains to reject (checked via binary search; e.g. disposable mail) |
 | `otpExpiration`       | `Duration` | 10 minutes | How long an OTP-code registration or sign-in challenge stays valid                       |
 | `magiclinkExpiration` | `Duration` | 30 minutes | How long a magic link token stays valid                                                  |
+
+Email format validation and the disposable-domain deny list are handled by the injected [`AllowlistProvider`](#allowlistprovider) — configure them via `AllowlistProviderOptions`.
 
 ### `EmailFactorRepository`
 
@@ -924,7 +940,7 @@ Manages phone number factor registration. Requires a `PhoneFactorServiceOptions`
 | --------------- | ---------- | ----------------------------------------------------- |
 | `otpExpiration` | `Duration` | How long a pending registration stays valid           |
 
-`registerPhoneFactor` throws HTTP 400 for invalid E.164 numbers. `createPhoneFactorFromRegistration` throws HTTP 404 when the registration has expired. The actor is bound at completion time, so callers that need to enforce uniqueness against existing factors should do so themselves before calling `createPhoneFactorFromRegistration`.
+`registerPhoneFactor` rejects invalid phone numbers via the injected [`AllowlistProvider`](#allowlistprovider) (HTTP 400 for non-E.164 input). `createPhoneFactorFromRegistration` throws HTTP 404 when the registration has expired. The actor is bound at completion time, so callers that need to enforce uniqueness against existing factors should do so themselves before calling `createPhoneFactorFromRegistration`.
 
 ### `PhoneFactorRepository`
 

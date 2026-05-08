@@ -1,15 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('@maroonedsoftware/utilities', () => ({
-  isEmail: vi.fn(),
-  binarySearch: vi.fn(),
-}));
-
-import { isEmail, binarySearch } from '@maroonedsoftware/utilities';
 import { EmailFactorService } from '../../../src/factors/email/email.factor.service.js';
 import type { EmailFactorRepository, EmailFactor } from '../../../src/factors/email/email.factor.repository.js';
 import type { OtpProvider } from '../../../src/providers/otp.provider.js';
+import type { AllowlistProvider } from '../../../src/providers/allowlist.provider.js';
 import type { CacheProvider } from '@maroonedsoftware/cache';
+import { httpError } from '@maroonedsoftware/errors';
 import { Duration, DateTime } from 'luxon';
 
 const makeCacheProvider = () =>
@@ -36,6 +32,12 @@ const makeEmailFactorRepository = () =>
     deleteFactor: vi.fn(),
   }) as unknown as EmailFactorRepository;
 
+const makeAllowlistProvider = () =>
+  ({
+    ensureEmailIsAllowed: vi.fn().mockResolvedValue(undefined),
+    ensurePhoneIsAllowed: vi.fn().mockResolvedValue(undefined),
+  }) as unknown as AllowlistProvider;
+
 const makeEmailFactor = (overrides: Partial<EmailFactor> = {}): EmailFactor => ({
   id: 'factor-1',
   actorId: 'actor-1',
@@ -45,7 +47,6 @@ const makeEmailFactor = (overrides: Partial<EmailFactor> = {}): EmailFactor => (
 });
 
 const makeOptions = () => ({
-  denyList: ['disposable.com', 'tempmail.org'],
   otpExpiration: Duration.fromObject({ minutes: 10 }),
   magiclinkExpiration: Duration.fromObject({ minutes: 30 }),
 });
@@ -77,6 +78,7 @@ describe('EmailFactorService', () => {
   let cache: ReturnType<typeof makeCacheProvider>;
   let otpProvider: ReturnType<typeof makeOtpProvider>;
   let repo: ReturnType<typeof makeEmailFactorRepository>;
+  let allowlistProvider: ReturnType<typeof makeAllowlistProvider>;
   let service: EmailFactorService;
 
   beforeEach(() => {
@@ -84,19 +86,24 @@ describe('EmailFactorService', () => {
     cache = makeCacheProvider();
     otpProvider = makeOtpProvider();
     repo = makeEmailFactorRepository();
-    service = new EmailFactorService(makeOptions(), repo, otpProvider, cache);
-
-    vi.mocked(isEmail).mockReturnValue(true);
-    vi.mocked(binarySearch).mockReturnValue(false);
+    allowlistProvider = makeAllowlistProvider();
+    service = new EmailFactorService(makeOptions(), repo, otpProvider, cache, allowlistProvider);
   });
 
   describe('registerEmailFactor', () => {
-    it('throws 400 when the email format is invalid', async () => {
-      vi.mocked(isEmail).mockReturnValue(false);
+    it('propagates the error when the allowlist provider rejects the email', async () => {
+      vi.mocked(allowlistProvider.ensureEmailIsAllowed).mockRejectedValue(
+        httpError(400).withDetails({ value: 'invalid email format' }),
+      );
       await expect(service.registerEmailFactor('not-an-email', 'code')).rejects.toMatchObject({
         statusCode: 400,
         details: { value: 'invalid email format' },
       });
+    });
+
+    it('passes the normalized email to the allowlist provider', async () => {
+      await service.registerEmailFactor('  USER@Example.COM  ', 'code');
+      expect(allowlistProvider.ensureEmailIsAllowed).toHaveBeenCalledWith('user@example.com');
     });
 
     it('returns the existing pending registration with alreadyRegistered=true when one is cached', async () => {
@@ -114,27 +121,17 @@ describe('EmailFactorService', () => {
       expect(result.issuedAt.toUnixInteger()).toBe(payload.issuedAt);
     });
 
-    it('skips deny list, invite-only, and existence checks when a pending registration is cached', async () => {
+    it('skips invite-only and existence checks when a pending registration is cached', async () => {
       const payload = makeRegistrationPayload();
       cache.get = vi.fn().mockResolvedValueOnce('reg-id-1').mockResolvedValueOnce(JSON.stringify(payload));
-      vi.mocked(binarySearch).mockReturnValue(true);
       repo.isDomainInviteOnly = vi.fn().mockResolvedValue(true);
       repo.lookupFactor = vi.fn().mockResolvedValue(makeEmailFactor());
 
       const result = await service.registerEmailFactor('user@example.com', 'code');
 
       expect(result.alreadyRegistered).toBe(true);
-      expect(binarySearch).not.toHaveBeenCalled();
       expect(repo.isDomainInviteOnly).not.toHaveBeenCalled();
       expect(repo.lookupFactor).not.toHaveBeenCalled();
-    });
-
-    it('throws 400 when the domain is on the deny list', async () => {
-      vi.mocked(binarySearch).mockReturnValue(true);
-      await expect(service.registerEmailFactor('user@disposable.com', 'code')).rejects.toMatchObject({
-        statusCode: 400,
-        details: { email: 'Must not be a disposable email' },
-      });
     });
 
     it('throws 403 when the email domain is invite-only', async () => {
@@ -146,8 +143,10 @@ describe('EmailFactorService', () => {
       expect(repo.isDomainInviteOnly).toHaveBeenCalledWith('invite-only.com');
     });
 
-    it('checks the deny list before checking invite-only', async () => {
-      vi.mocked(binarySearch).mockReturnValue(true);
+    it('checks the allowlist before checking invite-only', async () => {
+      vi.mocked(allowlistProvider.ensureEmailIsAllowed).mockRejectedValue(
+        httpError(400).withDetails({ email: 'Must not be a disposable email' }),
+      );
       repo.isDomainInviteOnly = vi.fn().mockResolvedValue(true);
 
       await expect(service.registerEmailFactor('user@disposable.com', 'code')).rejects.toMatchObject({
@@ -204,12 +203,6 @@ describe('EmailFactorService', () => {
       const payload = JSON.parse(firstCall![1] as string);
       expect(payload.verificationMethod).toBe('magiclink');
       expect(payload.secret).toBe('');
-    });
-
-    it('normalizes the email by trimming whitespace and lowercasing before validating', async () => {
-      await service.registerEmailFactor('  USER@Example.COM  ', 'code');
-
-      expect(isEmail).toHaveBeenCalledWith('user@example.com');
     });
 
     it('persists the normalized email in the registration payload', async () => {

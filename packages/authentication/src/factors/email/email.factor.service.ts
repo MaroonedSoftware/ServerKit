@@ -1,11 +1,11 @@
 import crypto from 'node:crypto';
 import { Injectable } from 'injectkit';
 import { DateTime, Duration } from 'luxon';
-import { isEmail, binarySearch } from '@maroonedsoftware/utilities';
 import { OtpProvider } from '../../providers/otp.provider.js';
 import { httpError, unauthorizedError } from '@maroonedsoftware/errors';
 import { CacheProvider } from '@maroonedsoftware/cache';
 import { EmailFactorRepository } from './email.factor.repository.js';
+import { AllowlistProvider } from '../../providers/allowlist.provider.js';
 
 type EmailPayload = {
   id: string;
@@ -31,8 +31,6 @@ type RegistrationPayload = EmailPayload & {
 @Injectable()
 export class EmailFactorServiceOptions {
   constructor(
-    /** Domains to reject during registration (e.g. disposable email providers). Checked via binary search — keep sorted. */
-    public readonly denyList: string[] = [],
     /** How long an OTP code-based registration or verification challenge remains valid. */
     public readonly otpExpiration: Duration = Duration.fromDurationLike({ minutes: 10 }),
     /** How long a magic link token remains valid. */
@@ -63,6 +61,7 @@ export class EmailFactorService {
     private readonly emailFactorRepository: EmailFactorRepository,
     private readonly otpProvider: OtpProvider,
     private readonly cache: CacheProvider,
+    private readonly allowlistProvider: AllowlistProvider,
   ) {}
 
   private getChallengeKey(key: string) {
@@ -206,9 +205,8 @@ export class EmailFactorService {
    */
   async registerEmailFactor(value: string, verificationMethod: 'code' | 'magiclink', registrationId?: string) {
     value = value.trim().toLowerCase();
-    if (!isEmail(value)) {
-      throw httpError(400).withDetails({ value: 'invalid email format' });
-    }
+
+    await this.allowlistProvider.ensureEmailIsAllowed(value);
 
     const existingRegistration = registrationId ? await this.lookupRegistration(registrationId) : await this.lookupRegistrationByValue(value);
     if (existingRegistration) {
@@ -222,10 +220,6 @@ export class EmailFactorService {
     }
 
     const domain = value.split('@')[1]!;
-
-    if (binarySearch(this.options.denyList, domain)) {
-      throw httpError(400).withDetails({ email: 'Must not be a disposable email' });
-    }
 
     const isInviteOnly = await this.emailFactorRepository.isDomainInviteOnly(domain);
     if (isInviteOnly) {
