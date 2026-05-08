@@ -23,7 +23,7 @@ Peer dependencies: `koa`, `@koa/router`, `@koa/cors`.
 - **bodyParserMiddleware** — Parses JSON, form, text, multipart, or raw body by allowed content types
 - **defaultParserMappings** — Pre-built MIME-type-to-parser map for use with `bodyParserMiddleware`
 - **requireSignature** — Router middleware that verifies a request HMAC signature against `ctx.rawBody`
-- **requireSecurity** — Router middleware that enforces a valid authentication session
+- **requireSecurity** — Router middleware that enforces a valid authentication session, with optional MFA enforcement
 
 ## Usage
 
@@ -124,13 +124,18 @@ router.get('/api/me', async ctx => {
 
 ### Authorization
 
-`requireSecurity` is router middleware that runs after `authenticationMiddleware`. It throws 401 when the request is unauthenticated.
+`requireSecurity` is router middleware that runs after `authenticationMiddleware`. It throws 401 when the request is unauthenticated and, by default, when multi-factor authentication has not been satisfied.
+
+A session satisfies MFA when it carries at least two factors and at least one factor is not of `kind: 'knowledge'` (i.e. a `possession` or `biometric` factor was also satisfied). MFA failures emit `WWW-Authenticate: Bearer error="mfa_required"`; missing/invalid sessions emit `Bearer error="invalid_token"`.
 
 ```typescript
 import { requireSecurity } from '@maroonedsoftware/koa';
 
-// Require any authenticated user
+// Require any authenticated user with MFA (default)
 router.get('/api/profile', requireSecurity(), handler);
+
+// Authentication only — useful for step-up routes such as MFA enrollment
+router.post('/api/mfa/enroll', requireSecurity({ requireMfa: false }), handler);
 ```
 
 ### CORS
@@ -274,7 +279,7 @@ The default mappings are:
 | `authenticationMiddleware()`           | Resolves `Authorization` header via `AuthenticationSchemeHandler`; populates `ctx.authenticationSession` |
 | `bodyParserMiddleware(contentTypes)`    | Parses body by allowed MIME types; throws 400/411/415/422 on invalid input                         |
 | `requireSignature(optionsKey)`          | Verifies HMAC of `ctx.rawBody` against a request header; throws 401 on mismatch                   |
-| `requireSecurity()`                     | Throws 401 when `ctx.authenticationSession` is `invalidAuthenticationSession`                       |
+| `requireSecurity(options?)`             | Throws 401 when the session is invalid; with default `{ requireMfa: true }` also throws 401 (`mfa_required`) unless MFA is satisfied |
 
 ### Parser options
 
