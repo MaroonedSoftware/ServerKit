@@ -189,6 +189,8 @@ const uri = otp.generateURI(secret, { type: 'totp', algorithm: 'SHA1', periodSec
 const valid = otp.validate(submittedCode, secret, { type: 'totp', periodSeconds: 30 });
 ```
 
+For local development and integration tests, register `OtpProviderMock` in place of `OtpProvider`. It overrides `generate` to always return `'000000'` and `validate` to always return `true`, and logs a warning on every call so it can't slip into production unnoticed. Never wire it into a production container.
+
 ---
 
 ### Password strength
@@ -784,6 +786,10 @@ Abstract base class. Implement `get`, `set`, `update`, and `delete` to plug in a
 | `generateURI(secret, options, urlOptions)`                                 | `string`  | Build an `otpauth://` provisioning URI                   |
 
 `options` is an `OtpOptions` object with `type: 'hotp' | 'totp'`, plus `algorithm`, `counter` (HOTP), `periodSeconds` (TOTP), and `tokenLength`. `urlOptions` accepts `issuer` and an optional `label`.
+
+### `OtpProviderMock`
+
+Drop-in replacement for `OtpProvider` for local development and integration tests. `generate` always returns `'000000'`, `validate` always returns `true`, and each call logs a `WARN` via the injected `Logger`. Never register in production.
 
 ### `PasswordStrengthProvider`
 

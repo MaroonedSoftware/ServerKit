@@ -21,6 +21,7 @@ export * from './factors/oidc/oidc.factor.repository.js';
 export * from './factors/oauth2/oauth2.factor.service.js';
 export * from './factors/oauth2/oauth2.factor.repository.js';
 export * from './providers/otp.provider.js';
+export * from './providers/otp.provider.mock.js';
 export * from './providers/jwt.provider.js';
 export * from './providers/password.strength.provider.js';
 export * from './providers/pkce.provider.js';
