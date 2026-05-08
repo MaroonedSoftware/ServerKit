@@ -7,7 +7,7 @@ import { EmailAllowedPolicy, EmailAllowedPolicyContext } from './email.allowed.p
  * Names of the policies bundled with this package. Use as the policy-name keys
  * in your `PolicyRegistryMap` (or as a union when extending it).
  */
-export type AuthenticationPolicyNames = 'email_allowed' | 'phone_allowed';
+export type AuthenticationPolicyNames = 'email.allowed' | 'phone.allowed';
 
 /**
  * Default mapping from each bundled {@link AuthenticationPolicyNames} value to
@@ -16,17 +16,17 @@ export type AuthenticationPolicyNames = 'email_allowed' | 'phone_allowed';
  * or merge with application-specific mappings before registering.
  */
 export const AuthenticationPolicyMappings: Record<AuthenticationPolicyNames, Constructor<Policy>> = {
-  email_allowed: EmailAllowedPolicy,
-  phone_allowed: PhoneAllowedPolicy,
+  'email.allowed': EmailAllowedPolicy,
+  'phone.allowed': PhoneAllowedPolicy,
 };
 
 /**
  * Mapping from each bundled policy name to its expected context shape. Pass
  * this (or an intersection with your own `Policies` map) as the `TPolicies`
  * type parameter to `BasePolicyService` to get compile-time type safety on
- * `policyService.check('email_allowed', ...)` and friends.
+ * `policyService.check('email.allowed', ...)` and friends.
  */
 export type AuthenticationPolicyContexts = {
-  email_allowed: EmailAllowedPolicyContext;
-  phone_allowed: PhoneAllowedPolicyContext;
+  'email.allowed': EmailAllowedPolicyContext;
+  'phone.allowed': PhoneAllowedPolicyContext;
 };

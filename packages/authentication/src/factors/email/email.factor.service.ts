@@ -206,7 +206,7 @@ export class EmailFactorService {
   async registerEmailFactor(value: string, verificationMethod: 'code' | 'magiclink', registrationId?: string) {
     value = value.trim().toLowerCase();
 
-    const policyResult = await this.policyService.check('email_allowed', { value });
+    const policyResult = await this.policyService.check('email.allowed', { value });
 
     if (!policyResult.allowed) {
       const msg =

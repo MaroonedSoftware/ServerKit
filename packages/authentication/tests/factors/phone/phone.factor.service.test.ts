@@ -63,7 +63,7 @@ describe('PhoneFactorService', () => {
   });
 
   describe('registerPhoneFactor', () => {
-    it("throws 400 with E.164-format message when the phone_allowed policy denies with reason 'invalid_format'", async () => {
+    it("throws 400 with E.164-format message when the phone.allowed policy denies with reason 'invalid_format'", async () => {
       vi.mocked(policyService.check).mockResolvedValue({ allowed: false, reason: 'invalid_format' });
       await expect(service.registerPhoneFactor('not-a-phone')).rejects.toMatchObject({
         statusCode: 400,
@@ -71,7 +71,7 @@ describe('PhoneFactorService', () => {
       });
     });
 
-    it("throws 400 with 'phone number is not allowed' when the phone_allowed policy denies with reason 'deny_list'", async () => {
+    it("throws 400 with 'phone number is not allowed' when the phone.allowed policy denies with reason 'deny_list'", async () => {
       vi.mocked(policyService.check).mockResolvedValue({ allowed: false, reason: 'deny_list' });
       await expect(service.registerPhoneFactor('+12025550123')).rejects.toMatchObject({
         statusCode: 400,
@@ -87,9 +87,9 @@ describe('PhoneFactorService', () => {
       });
     });
 
-    it("invokes the 'phone_allowed' policy with the phone value", async () => {
+    it("invokes the 'phone.allowed' policy with the phone value", async () => {
       await service.registerPhoneFactor('+12025550123');
-      expect(policyService.check).toHaveBeenCalledWith('phone_allowed', { value: '+12025550123' });
+      expect(policyService.check).toHaveBeenCalledWith('phone.allowed', { value: '+12025550123' });
     });
 
     it('returns the existing pending registration with alreadyRegistered=true when one is cached for the value', async () => {

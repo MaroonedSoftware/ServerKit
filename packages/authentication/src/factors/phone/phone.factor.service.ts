@@ -107,7 +107,7 @@ export class PhoneFactorService {
    * @throws HTTP 400 when `value` is not a valid E.164 phone number.
    */
   async registerPhoneFactor(value: string, registrationId?: string) {
-    const policyResult = await this.policyService.check('phone_allowed', { value });
+    const policyResult = await this.policyService.check('phone.allowed', { value });
     if (!policyResult.allowed) {
       const msg =
         policyResult.reason === 'deny_list'

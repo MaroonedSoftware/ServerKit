@@ -90,7 +90,7 @@ describe('EmailFactorService', () => {
   });
 
   describe('registerEmailFactor', () => {
-    it("throws 400 with 'invalid email format' when the email_allowed policy denies with reason 'invalid_format'", async () => {
+    it("throws 400 with 'invalid email format' when the email.allowed policy denies with reason 'invalid_format'", async () => {
       vi.mocked(policyService.check).mockResolvedValue({ allowed: false, reason: 'invalid_format' });
       await expect(service.registerEmailFactor('not-an-email', 'code')).rejects.toMatchObject({
         statusCode: 400,
@@ -98,7 +98,7 @@ describe('EmailFactorService', () => {
       });
     });
 
-    it("throws 400 with 'email is not allowed' when the email_allowed policy denies with reason 'deny_list'", async () => {
+    it("throws 400 with 'email is not allowed' when the email.allowed policy denies with reason 'deny_list'", async () => {
       vi.mocked(policyService.check).mockResolvedValue({ allowed: false, reason: 'deny_list' });
       await expect(service.registerEmailFactor('user@disposable.com', 'code')).rejects.toMatchObject({
         statusCode: 400,
@@ -114,9 +114,9 @@ describe('EmailFactorService', () => {
       });
     });
 
-    it("invokes the 'email_allowed' policy with the normalized email value", async () => {
+    it("invokes the 'email.allowed' policy with the normalized email value", async () => {
       await service.registerEmailFactor('  USER@Example.COM  ', 'code');
-      expect(policyService.check).toHaveBeenCalledWith('email_allowed', { value: 'user@example.com' });
+      expect(policyService.check).toHaveBeenCalledWith('email.allowed', { value: 'user@example.com' });
     });
 
     it('returns the existing pending registration with alreadyRegistered=true when one is cached', async () => {
@@ -156,7 +156,7 @@ describe('EmailFactorService', () => {
       expect(repo.isDomainInviteOnly).toHaveBeenCalledWith('invite-only.com');
     });
 
-    it('checks the email_allowed policy before checking invite-only', async () => {
+    it('checks the email.allowed policy before checking invite-only', async () => {
       vi.mocked(policyService.check).mockResolvedValue({ allowed: false, reason: 'deny_list' });
       repo.isDomainInviteOnly = vi.fn().mockResolvedValue(true);
 

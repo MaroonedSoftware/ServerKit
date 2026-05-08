@@ -12,7 +12,7 @@ pnpm add @maroonedsoftware/policies
 
 - **`Policy` base class** — implement a single `evaluate` method and return `allow()`, `deny(reason, details?)`, or `denyStepUp(reason, requirement)`
 - **Typed `PolicyResult`** — discriminated union (`{ allowed: true } | { allowed: false, reason, details? }`) with `isPolicyResultAllowed` / `isPolicyResultDenied` guards
-- **Named registry** — register each policy under a stable name (e.g. `'email_allowed'`) so callers depend on the name and `PolicyService`, not on concrete classes
+- **Named registry** — register each policy under a stable name (e.g. `'email.allowed'`) so callers depend on the name and `PolicyService`, not on concrete classes
 - **Type-safe call sites** — declare a `Policies` map (`{ <name>: <ContextShape> }`) and `BasePolicyService.check`/`assert` enforce the right context per name at compile time
 - **Per-evaluation envelope** — subclass `BasePolicyService` to attach request-scoped state (current time, session, request id, …) without each policy reaching for it
 - **Fluent step-up denials** — `denyStepUp(reason, { within, acceptableMethods, … })` bundles a `StepUpRequirement` into the response under `kind: 'step_up_required'`
@@ -54,8 +54,8 @@ import { Injectable } from 'injectkit';
 import { DateTime } from 'luxon';
 
 type AppPolicies = {
-  email_allowed: { value: string };
-  phone_allowed: { value: string };
+  'email.allowed': { value: string };
+  'phone.allowed': { value: string };
 };
 
 @Injectable()
@@ -69,7 +69,7 @@ class AppPolicyService extends BasePolicyService<AppPolicies> {
 registry.register(EmailAllowedPolicy).useClass(EmailAllowedPolicy).asSingleton();
 registry.register(PolicyRegistryMap).useFactory(() => {
   const map = new PolicyRegistryMap();
-  map.set('email_allowed', EmailAllowedPolicy);
+  map.set('email.allowed', EmailAllowedPolicy);
   return map;
 });
 registry.register(PolicyService).useClass(AppPolicyService).asSingleton();
@@ -81,13 +81,13 @@ registry.register(PolicyService).useClass(AppPolicyService).asSingleton();
 const policyService = container.get(PolicyService);
 
 // `check` returns the discriminated result — branch on `allowed`.
-const result = await policyService.check('email_allowed', { value: 'user@example.com' });
+const result = await policyService.check('email.allowed', { value: 'user@example.com' });
 if (!result.allowed) {
   throw httpError(400).withDetails({ value: result.reason });
 }
 
 // `assert` throws HTTP 403 (with `kind: 'policy_violation'` in internal details) on deny.
-await policyService.assert('email_allowed', { value: 'user@example.com' });
+await policyService.assert('email.allowed', { value: 'user@example.com' });
 ```
 
 ### Step-up denials

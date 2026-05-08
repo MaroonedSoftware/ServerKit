@@ -9,14 +9,14 @@ import { httpError } from '@maroonedsoftware/errors';
  *
  * @example
  * type AppPolicies = {
- *   email_allowed: { value: string };
- *   phone_allowed: { value: string };
+ *   'email.allowed': { value: string };
+ *   'phone.allowed': { value: string };
  * };
  */
 export type Policies<PolicyName extends string = string> = Record<PolicyName, PolicyContext>;
 
 /**
- * Registry mapping policy names (e.g. `'email_allowed'`) to the DI identifier
+ * Registry mapping policy names (e.g. `'email.allowed'`) to the DI identifier
  * of the {@link Policy} that handles them. Populate via your DI container at
  * bootstrap; {@link BasePolicyService.check} uses it to resolve the policy
  * instance for each call.
