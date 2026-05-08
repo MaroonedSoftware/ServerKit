@@ -206,7 +206,12 @@ export class EmailFactorService {
   async registerEmailFactor(value: string, verificationMethod: 'code' | 'magiclink', registrationId?: string) {
     value = value.trim().toLowerCase();
 
-    await this.allowlistProvider.ensureEmailIsAllowed(value);
+    const allowed = await this.allowlistProvider.checkEmailIsAllowed(value);
+    if (!allowed.allowed) {
+      const msg =
+        allowed.reason === 'deny_list' ? 'email is not allowed' : allowed.reason === 'invalid_format' ? 'invalid email format' : allowed.reason;
+      throw httpError(400).withDetails({ value: msg });
+    }
 
     const existingRegistration = registrationId ? await this.lookupRegistration(registrationId) : await this.lookupRegistrationByValue(value);
     if (existingRegistration) {

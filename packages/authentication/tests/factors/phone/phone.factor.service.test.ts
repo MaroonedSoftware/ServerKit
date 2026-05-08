@@ -4,7 +4,6 @@ import { PhoneFactorService } from '../../../src/factors/phone/phone.factor.serv
 import type { PhoneFactorRepository, PhoneFactor } from '../../../src/factors/phone/phone.factor.repository.js';
 import type { AllowlistProvider } from '../../../src/providers/allowlist.provider.js';
 import type { CacheProvider } from '@maroonedsoftware/cache';
-import { httpError } from '@maroonedsoftware/errors';
 import { Duration, DateTime } from 'luxon';
 
 const makeCacheProvider = () =>
@@ -25,8 +24,8 @@ const makeRepository = () =>
 
 const makeAllowlistProvider = () =>
   ({
-    ensureEmailIsAllowed: vi.fn().mockResolvedValue(undefined),
-    ensurePhoneIsAllowed: vi.fn().mockResolvedValue(undefined),
+    checkEmailIsAllowed: vi.fn().mockResolvedValue({ allowed: true }),
+    checkPhoneIsAllowed: vi.fn().mockResolvedValue({ allowed: true }),
   }) as unknown as AllowlistProvider;
 
 const makePhoneFactor = (overrides: Partial<PhoneFactor> = {}): PhoneFactor => ({
@@ -64,19 +63,33 @@ describe('PhoneFactorService', () => {
   });
 
   describe('registerPhoneFactor', () => {
-    it('propagates the error when the allowlist provider rejects the phone number', async () => {
-      vi.mocked(allowlistProvider.ensurePhoneIsAllowed).mockRejectedValue(
-        httpError(400).withDetails({ value: 'invalid E.164 format' }),
-      );
+    it("throws 400 with E.164-format message when the allowlist returns reason 'invalid_format'", async () => {
+      vi.mocked(allowlistProvider.checkPhoneIsAllowed).mockResolvedValue({ allowed: false, reason: 'invalid_format' });
       await expect(service.registerPhoneFactor('not-a-phone')).rejects.toMatchObject({
         statusCode: 400,
-        details: { value: 'invalid E.164 format' },
+        details: { value: 'invalid phone number, expected E.164 format' },
+      });
+    });
+
+    it("throws 400 with 'phone number is not allowed' when the allowlist returns reason 'deny_list'", async () => {
+      vi.mocked(allowlistProvider.checkPhoneIsAllowed).mockResolvedValue({ allowed: false, reason: 'deny_list' });
+      await expect(service.registerPhoneFactor('+12025550123')).rejects.toMatchObject({
+        statusCode: 400,
+        details: { value: 'phone number is not allowed' },
+      });
+    });
+
+    it('passes through a custom reason string from a subclass unchanged', async () => {
+      vi.mocked(allowlistProvider.checkPhoneIsAllowed).mockResolvedValue({ allowed: false, reason: 'region_blocked' });
+      await expect(service.registerPhoneFactor('+12025550123')).rejects.toMatchObject({
+        statusCode: 400,
+        details: { value: 'region_blocked' },
       });
     });
 
     it('passes the phone number to the allowlist provider', async () => {
       await service.registerPhoneFactor('+12025550123');
-      expect(allowlistProvider.ensurePhoneIsAllowed).toHaveBeenCalledWith('+12025550123');
+      expect(allowlistProvider.checkPhoneIsAllowed).toHaveBeenCalledWith('+12025550123');
     });
 
     it('returns the existing pending registration with alreadyRegistered=true when one is cached for the value', async () => {

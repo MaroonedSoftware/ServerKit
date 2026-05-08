@@ -107,7 +107,16 @@ export class PhoneFactorService {
    * @throws HTTP 400 when `value` is not a valid E.164 phone number.
    */
   async registerPhoneFactor(value: string, registrationId?: string) {
-    await this.allowlistProvider.ensurePhoneIsAllowed(value);
+    const allowed = await this.allowlistProvider.checkPhoneIsAllowed(value);
+    if (!allowed.allowed) {
+      const msg =
+        allowed.reason === 'deny_list'
+          ? 'phone number is not allowed'
+          : allowed.reason === 'invalid_format'
+            ? 'invalid phone number, expected E.164 format'
+            : allowed.reason;
+      throw httpError(400).withDetails({ value: msg });
+    }
 
     const existingRegistration = registrationId ? await this.lookupRegistration(registrationId) : await this.lookupRegistrationByValue(value);
     if (existingRegistration) {

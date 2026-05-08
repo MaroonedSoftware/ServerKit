@@ -1,4 +1,3 @@
-import { httpError } from '@maroonedsoftware/errors';
 import { binarySearch, isEmail, isPhoneE164 } from '@maroonedsoftware/utilities';
 import { Injectable } from 'injectkit';
 
@@ -14,6 +13,17 @@ export class AllowlistProviderOptions {
 }
 
 /**
+ * Result of an allowlist check. `allowed` is `true` when the value passed all
+ * checks; on a failed check `reason` carries a short machine-readable code
+ * (`'invalid_format'`, `'deny_list'`, or a subclass-defined string) so the
+ * caller can map it to a user-facing message.
+ */
+export type AllowListResult = {
+  allowed: boolean;
+  reason?: 'invalid_format' | 'deny_list' | string;
+};
+
+/**
  * Validates email addresses and phone numbers against format rules and
  * configured deny lists during factor registration.
  *
@@ -27,35 +37,41 @@ export class AllowlistProvider {
   constructor(private readonly options: AllowlistProviderOptions) {}
 
   /**
-   * Ensure an email address is well-formed and not on the configured deny list.
+   * Check whether an email address is well-formed and not on the configured deny list.
    *
    * The email is expected to already be normalised (trimmed and lower-cased) by
    * the caller — domain matching against `emailDomainDenyList` is case-sensitive.
    *
    * @param value - The email address to check.
-   * @throws HTTP 400 when `value` is not a valid email address or its domain is on the deny list.
+   * @returns `{ allowed: true }` on success; `{ allowed: false, reason }` with
+   *   `reason` of `'invalid_format'` (malformed email) or `'deny_list'` (domain
+   *   matched `emailDomainDenyList`) on failure.
    */
-  async ensureEmailIsAllowed(value: string): Promise<void> {
+  async checkEmailIsAllowed(value: string): Promise<AllowListResult> {
     if (!isEmail(value)) {
-      throw httpError(400).withDetails({ value: 'invalid email format' });
+      return { allowed: false, reason: 'invalid_format' };
     }
 
     const domain = value.split('@')[1]!;
 
     if (binarySearch(this.options.emailDomainDenyList, domain)) {
-      throw httpError(400).withDetails({ email: 'Must not be a disposable email' });
+      return { allowed: false, reason: 'deny_list' };
     }
+
+    return { allowed: true };
   }
 
   /**
-   * Ensure a phone number is in E.164 format.
+   * Check whether a phone number is in E.164 format.
    *
    * @param phone - The phone number to check (e.g. `+12025550123`).
-   * @throws HTTP 400 when `phone` is not in valid E.164 format.
+   * @returns `{ allowed: true }` on success; `{ allowed: false, reason: 'invalid_format' }` when not E.164.
    */
-  async ensurePhoneIsAllowed(phone: string): Promise<void> {
+  async checkPhoneIsAllowed(phone: string): Promise<AllowListResult> {
     if (!isPhoneE164(phone)) {
-      throw httpError(400).withDetails({ value: 'invalid E.164 format' });
+      return { allowed: false, reason: 'invalid_format' };
     }
+
+    return { allowed: true };
   }
 }

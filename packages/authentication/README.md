@@ -817,12 +817,12 @@ Cache-backed storage for PKCE state (RFC 7636). Wraps an injected `CacheProvider
 
 ### `AllowlistProvider`
 
-Validates email addresses and phone numbers during factor registration. Injected into `EmailFactorService` and `PhoneFactorService`; subclass and re-register to add stricter rules (regional phone filtering, dynamic deny lists, MX record probing, etc.) without modifying the factor services.
+Validates email addresses and phone numbers during factor registration. Injected into `EmailFactorService` and `PhoneFactorService`; subclass and re-register to add stricter rules (regional phone filtering, dynamic deny lists, MX record probing, etc.) without modifying the factor services. Methods return an `AllowListResult` (`{ allowed: true } | { allowed: false, reason: 'invalid_format' | 'deny_list' | string }`) rather than throwing — the calling factor service maps the machine-readable `reason` to a user-facing message and throws HTTP 400 with `{ value: <message> }`. Subclasses can return any custom reason string; bundled factor services pass unknown reasons through verbatim.
 
-| Method                                | Returns         | Description                                                                                                |
-| ------------------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------- |
-| `ensureEmailIsAllowed(value)`         | `Promise<void>` | Reject malformed emails or domains on `emailDomainDenyList` (HTTP 400). Caller is expected to pre-normalise. |
-| `ensurePhoneIsAllowed(phone)`         | `Promise<void>` | Reject phone numbers not in E.164 format (HTTP 400)                                                        |
+| Method                                | Returns                                                            | Description                                                                                       |
+| ------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| `checkEmailIsAllowed(value)`          | `Promise<AllowListResult>` — reasons: `'invalid_format'`, `'deny_list'` | Reject malformed emails or domains on `emailDomainDenyList`. Caller is expected to pre-normalise. |
+| `checkPhoneIsAllowed(phone)`          | `Promise<AllowListResult>` — reasons: `'invalid_format'`           | Reject phone numbers not in E.164 format                                                          |
 
 `AllowlistProviderOptions`:
 

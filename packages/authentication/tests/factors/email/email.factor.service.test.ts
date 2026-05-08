@@ -5,7 +5,6 @@ import type { EmailFactorRepository, EmailFactor } from '../../../src/factors/em
 import type { OtpProvider } from '../../../src/providers/otp.provider.js';
 import type { AllowlistProvider } from '../../../src/providers/allowlist.provider.js';
 import type { CacheProvider } from '@maroonedsoftware/cache';
-import { httpError } from '@maroonedsoftware/errors';
 import { Duration, DateTime } from 'luxon';
 
 const makeCacheProvider = () =>
@@ -34,8 +33,8 @@ const makeEmailFactorRepository = () =>
 
 const makeAllowlistProvider = () =>
   ({
-    ensureEmailIsAllowed: vi.fn().mockResolvedValue(undefined),
-    ensurePhoneIsAllowed: vi.fn().mockResolvedValue(undefined),
+    checkEmailIsAllowed: vi.fn().mockResolvedValue({ allowed: true }),
+    checkPhoneIsAllowed: vi.fn().mockResolvedValue({ allowed: true }),
   }) as unknown as AllowlistProvider;
 
 const makeEmailFactor = (overrides: Partial<EmailFactor> = {}): EmailFactor => ({
@@ -91,19 +90,33 @@ describe('EmailFactorService', () => {
   });
 
   describe('registerEmailFactor', () => {
-    it('propagates the error when the allowlist provider rejects the email', async () => {
-      vi.mocked(allowlistProvider.ensureEmailIsAllowed).mockRejectedValue(
-        httpError(400).withDetails({ value: 'invalid email format' }),
-      );
+    it("throws 400 with 'invalid email format' when the allowlist returns reason 'invalid_format'", async () => {
+      vi.mocked(allowlistProvider.checkEmailIsAllowed).mockResolvedValue({ allowed: false, reason: 'invalid_format' });
       await expect(service.registerEmailFactor('not-an-email', 'code')).rejects.toMatchObject({
         statusCode: 400,
         details: { value: 'invalid email format' },
       });
     });
 
+    it("throws 400 with 'email is not allowed' when the allowlist returns reason 'deny_list'", async () => {
+      vi.mocked(allowlistProvider.checkEmailIsAllowed).mockResolvedValue({ allowed: false, reason: 'deny_list' });
+      await expect(service.registerEmailFactor('user@disposable.com', 'code')).rejects.toMatchObject({
+        statusCode: 400,
+        details: { value: 'email is not allowed' },
+      });
+    });
+
+    it('passes through a custom reason string from a subclass unchanged', async () => {
+      vi.mocked(allowlistProvider.checkEmailIsAllowed).mockResolvedValue({ allowed: false, reason: 'mx_lookup_failed' });
+      await expect(service.registerEmailFactor('user@example.com', 'code')).rejects.toMatchObject({
+        statusCode: 400,
+        details: { value: 'mx_lookup_failed' },
+      });
+    });
+
     it('passes the normalized email to the allowlist provider', async () => {
       await service.registerEmailFactor('  USER@Example.COM  ', 'code');
-      expect(allowlistProvider.ensureEmailIsAllowed).toHaveBeenCalledWith('user@example.com');
+      expect(allowlistProvider.checkEmailIsAllowed).toHaveBeenCalledWith('user@example.com');
     });
 
     it('returns the existing pending registration with alreadyRegistered=true when one is cached', async () => {
@@ -144,9 +157,7 @@ describe('EmailFactorService', () => {
     });
 
     it('checks the allowlist before checking invite-only', async () => {
-      vi.mocked(allowlistProvider.ensureEmailIsAllowed).mockRejectedValue(
-        httpError(400).withDetails({ email: 'Must not be a disposable email' }),
-      );
+      vi.mocked(allowlistProvider.checkEmailIsAllowed).mockResolvedValue({ allowed: false, reason: 'deny_list' });
       repo.isDomainInviteOnly = vi.fn().mockResolvedValue(true);
 
       await expect(service.registerEmailFactor('user@disposable.com', 'code')).rejects.toMatchObject({
