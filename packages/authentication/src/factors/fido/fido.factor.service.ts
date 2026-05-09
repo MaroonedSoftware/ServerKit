@@ -365,11 +365,11 @@ export class FidoFactorService {
    * Initiate FIDO factor registration by generating an attestation challenge
    * and caching the expected attestation result for verification.
    *
-   * Pass `attestationOptions` (or the spread `user`/`challenge`/`attestation`
-   * fields) to `navigator.credentials.create({ publicKey: ... })` after
-   * decoding the base64-encoded `challenge` and `user.id` to `ArrayBuffer`s.
-   * Complete registration with {@link createFidoFactorFromRegistration},
-   * passing the returned `registrationId` back in.
+   * Forward the returned `attestation` object to
+   * `navigator.credentials.create({ publicKey: attestation })` after decoding
+   * the base64-encoded `challenge` and `user.id` to `ArrayBuffer`s. Complete
+   * registration with {@link createFidoFactorFromRegistration}, passing the
+   * returned `registrationId` back in.
    *
    * Idempotent: if a pending registration is already cached for this actor —
    * or for the supplied `registrationId` — the existing payload is returned
@@ -385,7 +385,7 @@ export class FidoFactorService {
    *   first checks for a cached registration under this id before falling back
    *   to the actor-keyed lookup; on a cache miss it is used as the id of the
    *   freshly cached registration.
-   * @returns `{ registrationId, attestationOptions, user, challenge, attestation, expiresAt, issuedAt, alreadyRegistered }`.
+   * @returns `{ registrationId, attestation: { rp, user, challenge, pubKeyCredParams, timeout, attestation }, expiresAt, issuedAt, alreadyRegistered }`. `attestation.user.id` and `attestation.challenge` are base64 strings ready for the browser.
    */
   async registerFidoFactor(actorId: string, options: RegisterFidoFactorOptions, registrationId?: string) {
     const existingRegistration = registrationId ? await this.lookupRegistration(registrationId) : await this.lookupRegistrationByValue(actorId);
@@ -396,13 +396,17 @@ export class FidoFactorService {
       const userIdBase64 = Buffer.from(new TextEncoder().encode(existingRegistration.actorId)).toString('base64');
       return {
         registrationId: existingRegistration.id,
-        attestationOptions: existingRegistration.attestationOptions,
-        user: {
-          ...existingRegistration.attestationOptions.user,
-          id: userIdBase64,
+        attestation: {
+          rp: existingRegistration.attestationOptions.rp,
+          user: {
+            ...existingRegistration.attestationOptions.user,
+            id: userIdBase64,
+          },
+          challenge: existingRegistration.attestationExpectations.challenge,
+          pubKeyCredParams: existingRegistration.attestationOptions.pubKeyCredParams,
+          timeout: existingRegistration.attestationOptions.timeout,
+          attestation: existingRegistration.attestationOptions.attestation ?? 'none',
         },
-        challenge: existingRegistration.attestationExpectations.challenge,
-        attestation: existingRegistration.attestationOptions.attestation ?? 'none',
         expiresAt: DateTime.fromSeconds(existingRegistration.expiresAt),
         issuedAt: DateTime.fromSeconds(existingRegistration.issuedAt),
         alreadyRegistered: true,
@@ -419,10 +423,14 @@ export class FidoFactorService {
 
     return {
       registrationId,
-      attestationOptions: payload.attestationOptions,
-      user: { ...payload.attestationOptions.user, id: Buffer.from(payload.attestationOptions.user.id).toString('base64') },
-      challenge: payload.attestationExpectations.challenge,
-      attestation: payload.attestationOptions.attestation ?? 'none',
+      attestation: {
+        rp: payload.attestationOptions.rp,
+        user: { ...payload.attestationOptions.user, id: Buffer.from(payload.attestationOptions.user.id).toString('base64') },
+        challenge: payload.attestationExpectations.challenge,
+        pubKeyCredParams: payload.attestationOptions.pubKeyCredParams,
+        timeout: payload.attestationOptions.timeout,
+        attestation: payload.attestationOptions.attestation ?? 'none',
+      },
       expiresAt,
       issuedAt,
       alreadyRegistered: false,
@@ -479,9 +487,9 @@ export class FidoFactorService {
   /**
    * Initiate a FIDO authorization (sign-in) challenge for an actor.
    *
-   * Pass `assertionOptions` (or the spread `challenge`/`allowCredentials`
-   * fields) to `navigator.credentials.get({ publicKey: ... })` after decoding
-   * the base64 `challenge` and each `allowCredentials[].id` to `ArrayBuffer`s.
+   * Forward the returned `assertion` object to
+   * `navigator.credentials.get({ publicKey: assertion })` after decoding the
+   * base64 `challenge` and each `allowCredentials[].id` to `ArrayBuffer`s.
    * Complete with {@link verifyFidoAuthorizationChallenge}, passing the
    * returned `challengeId` back in.
    *
@@ -502,7 +510,7 @@ export class FidoFactorService {
    * @param options  - Optional per-call relying party overrides. Each field
    *   falls back to the matching {@link FidoFactorServiceOptions} default
    *   when omitted.
-   * @returns `{ challengeId, assertionOptions, challenge, allowCredentials, expiresAt, issuedAt, alreadyIssued }`.
+   * @returns `{ challengeId, assertion: { ...assertionOptions, challenge, allowCredentials }, expiresAt, issuedAt, alreadyIssued }`. `assertion.challenge` and each `assertion.allowCredentials[].id` are base64 strings ready for the browser.
    * @throws HTTP 404 with `factorId: 'not found'` when `factorId` is supplied
    *   but does not match a factor for this actor.
    * @throws HTTP 404 with `actorId: 'no factors found'` when `factorId` is
@@ -529,9 +537,11 @@ export class FidoFactorService {
     if (existingChallenge) {
       return {
         challengeId: existingChallenge.id,
-        assertionOptions: existingChallenge.assertionOptions,
-        challenge: existingChallenge.assertionExpectations.challenge,
-        allowCredentials: existingChallenge.assertionExpectations.allowCredentials,
+        assertion: {
+          ...existingChallenge.assertionOptions,
+          challenge: existingChallenge.assertionExpectations.challenge,
+          allowCredentials: existingChallenge.assertionExpectations.allowCredentials,
+        },
         expiresAt: DateTime.fromSeconds(existingChallenge.expiresAt),
         issuedAt: DateTime.fromSeconds(existingChallenge.issuedAt),
         alreadyIssued: true,
@@ -546,9 +556,11 @@ export class FidoFactorService {
 
     return {
       challengeId,
-      assertionOptions: payload.assertionOptions,
-      challenge: payload.assertionExpectations.challenge,
-      allowCredentials: payload.assertionExpectations.allowCredentials,
+      assertion: {
+        ...payload.assertionOptions,
+        challenge: payload.assertionExpectations.challenge,
+        allowCredentials: payload.assertionExpectations.allowCredentials,
+      },
       expiresAt,
       issuedAt,
       alreadyIssued: false,

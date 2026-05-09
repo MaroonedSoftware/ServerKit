@@ -448,14 +448,15 @@ const fidoFactors = container.get(FidoFactorService);
 // Step 1: emit an attestation challenge to the browser. `alreadyRegistered`
 // is true when a pending registration was already cached for this actor —
 // reuse the same payload so back-to-back calls don't re-prompt the authenticator.
-const { registrationId, attestationOptions, user, challenge, alreadyRegistered } =
+const { registrationId, attestation, alreadyRegistered } =
   await fidoFactors.registerFidoFactor(user.id, {
     userName: user.email,
     userDisplayName: user.name,
   });
-// Send the attestation payload to the browser; client decodes `challenge` and
-// `user.id` from base64 to ArrayBuffers, calls navigator.credentials.create({ publicKey: ... }),
-// and posts the resulting credential back along with the `registrationId`.
+// Send `attestation` to the browser; client decodes `attestation.challenge`
+// and `attestation.user.id` from base64 to ArrayBuffers, calls
+// navigator.credentials.create({ publicKey: attestation }), and posts the
+// resulting credential back along with the `registrationId`.
 
 // Step 2: verify the attestation and persist the factor
 const factor = await fidoFactors.createFidoFactorFromRegistration(user.id, registrationId, credential);
@@ -466,11 +467,11 @@ const factor = await fidoFactors.createFidoFactorFromRegistration(user.id, regis
 // the actor's active factors, so the browser only prompts for ones they have.
 // Pass a specific `factorId` to scope the challenge to that one factor; pass
 // `undefined` to allow any of the actor's active factors.
-const { challengeId, assertionOptions, allowCredentials, alreadyIssued } =
+const { challengeId, assertion, alreadyIssued } =
   await fidoFactors.createFidoAuthorizationChallenge(user.id, undefined);
-// Client decodes the challenge and each allowCredentials[].id to ArrayBuffers,
-// calls navigator.credentials.get({ publicKey: ... }), and posts back along with
-// the `challengeId`.
+// Client decodes `assertion.challenge` and each `assertion.allowCredentials[].id`
+// to ArrayBuffers, calls navigator.credentials.get({ publicKey: assertion }),
+// and posts back along with the `challengeId`.
 
 // Step 2: verify the signature and bump the stored counter. Returns the verified factor.
 const verifiedFactor = await fidoFactors.verifyFidoAuthorizationChallenge(challengeId, credential);
@@ -1033,10 +1034,10 @@ Manages FIDO2/WebAuthn factors. Wraps `fido2-lib` and accepts relying party iden
 
 | Method                                                                  | Returns                                                                                                                              | Description                                                                                                                  |
 | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| `registerFidoFactor(actorId, options, registrationId?)`                 | `Promise<{ registrationId, attestationOptions, user, challenge, attestation, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>` | Generate an attestation challenge and cache the expectations (idempotent — `alreadyRegistered` is `true` on a cache hit)     |
+| `registerFidoFactor(actorId, options, registrationId?)`                 | `Promise<{ registrationId, attestation: { rp, user, challenge, pubKeyCredParams, timeout, attestation }, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>` | Generate an attestation challenge and cache the expectations (idempotent — `alreadyRegistered` is `true` on a cache hit). Forward `attestation` to `navigator.credentials.create`. |
 | `createFidoFactorFromRegistration(actorId, registrationId, credential)` | `Promise<FidoFactor>`                                                                                                                | Verify the attestation against the cached registration and persist the factor                                                |
 | `hasPendingRegistration(registrationId)`                                | `Promise<boolean>`                                                                                                                   | Check whether a registration is still cached and unexpired                                                                   |
-| `createFidoAuthorizationChallenge(actorId, factorId, options?)`         | `Promise<{ challengeId, assertionOptions, challenge, allowCredentials, expiresAt: DateTime, issuedAt: DateTime, alreadyIssued: boolean }>` | Emit an assertion challenge — pass a `factorId` to scope to one factor, or `undefined` to allow any active factor (idempotent) |
+| `createFidoAuthorizationChallenge(actorId, factorId, options?)`         | `Promise<{ challengeId, assertion: { rpId, challenge, allowCredentials, ... }, expiresAt: DateTime, issuedAt: DateTime, alreadyIssued: boolean }>` | Emit an assertion challenge — pass a `factorId` to scope to one factor, or `undefined` to allow any active factor (idempotent). Forward `assertion` to `navigator.credentials.get`. |
 | `verifyFidoAuthorizationChallenge(challengeId, credential)`             | `Promise<FidoFactor>`                                                                                                                | Verify the assertion signature, bump the stored counter, and return the factor                                               |
 | `hasPendingChallenge(challengeId)`                                      | `Promise<boolean>`                                                                                                                   | Check whether a challenge is still cached and unexpired                                                                      |
 

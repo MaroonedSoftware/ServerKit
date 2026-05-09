@@ -279,10 +279,10 @@ describe('FidoFactorService', () => {
     it('returns rp/user attestation fields populated from options and a registrationId', async () => {
       const result = await service.registerFidoFactor('actor-1', makeRegisterOptions({ rpIcon: 'https://example.com/icon.png' }));
 
-      expect(result.attestationOptions.rp).toEqual({ name: 'Example', id: RP_ID, icon: 'https://example.com/icon.png' });
-      expect(result.user.name).toBe('user@example.com');
-      expect(result.user.displayName).toBe('Example User');
-      expect(result.attestation).toBe('none');
+      expect(result.attestation.rp).toEqual({ name: 'Example', id: RP_ID, icon: 'https://example.com/icon.png' });
+      expect(result.attestation.user.name).toBe('user@example.com');
+      expect(result.attestation.user.displayName).toBe('Example User');
+      expect(result.attestation.attestation).toBe('none');
       expect(result.registrationId).toBeTruthy();
       expect(result.alreadyRegistered).toBe(false);
     });
@@ -290,8 +290,8 @@ describe('FidoFactorService', () => {
     it('encodes user.id as the actor id and emits a 128-byte challenge', async () => {
       const result = await service.registerFidoFactor('actor-42', makeRegisterOptions());
 
-      expect(Buffer.from(result.user.id, 'base64').toString('utf8')).toBe('actor-42');
-      expect(Buffer.from(result.challenge, 'base64')).toHaveLength(128);
+      expect(Buffer.from(result.attestation.user.id, 'base64').toString('utf8')).toBe('actor-42');
+      expect(Buffer.from(result.attestation.challenge, 'base64')).toHaveLength(128);
     });
 
     it('returns the existing pending registration with alreadyRegistered=true on a back-to-back call for the same actor', async () => {
@@ -300,7 +300,7 @@ describe('FidoFactorService', () => {
 
       expect(b.alreadyRegistered).toBe(true);
       expect(b.registrationId).toBe(a.registrationId);
-      expect(b.challenge).toBe(a.challenge);
+      expect(b.attestation.challenge).toBe(a.attestation.challenge);
     });
 
     it('returns the existing pending registration when looked up by caller-supplied registrationId', async () => {
@@ -334,7 +334,7 @@ describe('FidoFactorService', () => {
 
       const result = await service.registerFidoFactor('actor-1', { userName: 'u', userDisplayName: 'U' });
 
-      expect(result.attestationOptions.rp).toEqual({
+      expect(result.attestation.rp).toEqual({
         id: 'default.example.com',
         name: 'Default Example',
         icon: 'https://default.example.com/icon.png',
@@ -367,41 +367,41 @@ describe('FidoFactorService', () => {
     });
 
     it('throws 401 with invalid_credentials when the rpId does not match', async () => {
-      const attestation = await service.registerFidoFactor('actor-1', makeRegisterOptions());
+      const registration = await service.registerFidoFactor('actor-1', makeRegisterOptions());
 
       const authenticator = createAuthenticator();
       const credential = buildAttestationCredential({
         authenticator,
         rpId: 'different.com', // wrong rpIdHash in authData
         origin: RP_ORIGIN,
-        challenge: attestation.challenge,
+        challenge: registration.attestation.challenge,
       });
 
-      await expect(service.createFidoFactorFromRegistration('actor-1', attestation.registrationId, credential)).rejects.toMatchObject({
+      await expect(service.createFidoFactorFromRegistration('actor-1', registration.registrationId, credential)).rejects.toMatchObject({
         statusCode: 401,
         headers: { 'WWW-Authenticate': 'Bearer error="invalid_credentials"' },
       });
     });
 
     it('forwards the supplied label through to the persisted factor', async () => {
-      const attestation = await service.registerFidoFactor('actor-1', makeRegisterOptions({ label: 'MacBook Touch ID' }));
+      const registration = await service.registerFidoFactor('actor-1', makeRegisterOptions({ label: 'MacBook Touch ID' }));
 
       const authenticator = createAuthenticator();
-      const credential = buildAttestationCredential({ authenticator, rpId: RP_ID, origin: RP_ORIGIN, challenge: attestation.challenge });
+      const credential = buildAttestationCredential({ authenticator, rpId: RP_ID, origin: RP_ORIGIN, challenge: registration.attestation.challenge });
 
-      const factor = await service.createFidoFactorFromRegistration('actor-1', attestation.registrationId, credential);
+      const factor = await service.createFidoFactorFromRegistration('actor-1', registration.registrationId, credential);
 
       expect(factor.label).toBe('MacBook Touch ID');
       expect(repo.createFactor).toHaveBeenCalledWith('actor-1', expect.objectContaining({ label: 'MacBook Touch ID' }));
     });
 
     it('persists the verified credential and returns the new factor', async () => {
-      const attestation = await service.registerFidoFactor('actor-1', makeRegisterOptions());
+      const registration = await service.registerFidoFactor('actor-1', makeRegisterOptions());
 
       const authenticator = createAuthenticator();
-      const credential = buildAttestationCredential({ authenticator, rpId: RP_ID, origin: RP_ORIGIN, challenge: attestation.challenge });
+      const credential = buildAttestationCredential({ authenticator, rpId: RP_ID, origin: RP_ORIGIN, challenge: registration.attestation.challenge });
 
-      const factor = await service.createFidoFactorFromRegistration('actor-1', attestation.registrationId, credential);
+      const factor = await service.createFidoFactorFromRegistration('actor-1', registration.registrationId, credential);
 
       expect(factor.id).toBe('factor-1');
       const stored = repo._factors.get('factor-1')!;
@@ -414,15 +414,15 @@ describe('FidoFactorService', () => {
     });
 
     it('deletes the cached registration entries after a successful registration', async () => {
-      const attestation = await service.registerFidoFactor('actor-1', makeRegisterOptions());
-      expect(cache._store.has(`fido_factor_registration_${attestation.registrationId}`)).toBe(true);
+      const registration = await service.registerFidoFactor('actor-1', makeRegisterOptions());
+      expect(cache._store.has(`fido_factor_registration_${registration.registrationId}`)).toBe(true);
       expect(cache._store.has('fido_factor_registration_actor-1')).toBe(true);
 
       const authenticator = createAuthenticator();
-      const credential = buildAttestationCredential({ authenticator, rpId: RP_ID, origin: RP_ORIGIN, challenge: attestation.challenge });
-      await service.createFidoFactorFromRegistration('actor-1', attestation.registrationId, credential);
+      const credential = buildAttestationCredential({ authenticator, rpId: RP_ID, origin: RP_ORIGIN, challenge: registration.attestation.challenge });
+      await service.createFidoFactorFromRegistration('actor-1', registration.registrationId, credential);
 
-      expect(cache._store.has(`fido_factor_registration_${attestation.registrationId}`)).toBe(false);
+      expect(cache._store.has(`fido_factor_registration_${registration.registrationId}`)).toBe(false);
       expect(cache._store.has('fido_factor_registration_actor-1')).toBe(false);
     });
   });
@@ -444,29 +444,29 @@ describe('FidoFactorService', () => {
 
     it('returns assertionOptions with allowCredentials populated from the actor’s active factors', async () => {
       // Register a factor end-to-end so the repo and cache are in a real state.
-      const attestation = await service.registerFidoFactor('actor-1', makeRegisterOptions());
+      const registration = await service.registerFidoFactor('actor-1', makeRegisterOptions());
       const authenticator = createAuthenticator();
       await service.createFidoFactorFromRegistration(
         'actor-1',
-        attestation.registrationId,
-        buildAttestationCredential({ authenticator, rpId: RP_ID, origin: RP_ORIGIN, challenge: attestation.challenge }),
+        registration.registrationId,
+        buildAttestationCredential({ authenticator, rpId: RP_ID, origin: RP_ORIGIN, challenge: registration.attestation.challenge }),
       );
 
       const result = await service.createFidoAuthorizationChallenge('actor-1', undefined, makeAuthorizeOptions());
 
-      expect(result.allowCredentials).toEqual([{ id: authenticator.credentialId.toString('base64'), type: 'public-key' }]);
-      expect(Buffer.from(result.challenge, 'base64')).toHaveLength(128);
+      expect(result.assertion.allowCredentials).toEqual([{ id: authenticator.credentialId.toString('base64'), type: 'public-key' }]);
+      expect(Buffer.from(result.assertion.challenge, 'base64')).toHaveLength(128);
       expect(result.alreadyIssued).toBe(false);
       expect(result.challengeId).toBeTruthy();
     });
 
     it('returns the existing pending challenge with alreadyIssued=true on a back-to-back call for the same actor+factor', async () => {
-      const attestation = await service.registerFidoFactor('actor-1', makeRegisterOptions());
+      const registration = await service.registerFidoFactor('actor-1', makeRegisterOptions());
       const authenticator = createAuthenticator();
       const factor = await service.createFidoFactorFromRegistration(
         'actor-1',
-        attestation.registrationId,
-        buildAttestationCredential({ authenticator, rpId: RP_ID, origin: RP_ORIGIN, challenge: attestation.challenge }),
+        registration.registrationId,
+        buildAttestationCredential({ authenticator, rpId: RP_ID, origin: RP_ORIGIN, challenge: registration.attestation.challenge }),
       );
 
       const a = await service.createFidoAuthorizationChallenge('actor-1', factor.id, makeAuthorizeOptions());
@@ -474,7 +474,7 @@ describe('FidoFactorService', () => {
 
       expect(b.alreadyIssued).toBe(true);
       expect(b.challengeId).toBe(a.challengeId);
-      expect(b.challenge).toBe(a.challenge);
+      expect(b.assertion.challenge).toBe(a.assertion.challenge);
     });
 
     it('falls back to FidoFactorServiceOptions defaults when options are omitted', async () => {
@@ -487,19 +487,19 @@ describe('FidoFactorService', () => {
 
       const result = await service.createFidoAuthorizationChallenge('actor-1', undefined);
 
-      expect(result.assertionOptions.rpId).toBe('default.example.com');
+      expect(result.assertion.rpId).toBe('default.example.com');
     });
   });
 
   describe('verifyFidoAuthorizationChallenge', () => {
     // Registers a factor with a real keypair and returns the bits needed to assert.
     const seedFactor = async (actorId: string) => {
-      const attestation = await service.registerFidoFactor(actorId, makeRegisterOptions());
+      const registration = await service.registerFidoFactor(actorId, makeRegisterOptions());
       const authenticator = createAuthenticator();
       const factor = await service.createFidoFactorFromRegistration(
         actorId,
-        attestation.registrationId,
-        buildAttestationCredential({ authenticator, rpId: RP_ID, origin: RP_ORIGIN, challenge: attestation.challenge }),
+        registration.registrationId,
+        buildAttestationCredential({ authenticator, rpId: RP_ID, origin: RP_ORIGIN, challenge: registration.attestation.challenge }),
       );
       return { authenticator, factorId: factor.id };
     };
@@ -531,7 +531,7 @@ describe('FidoFactorService', () => {
         authenticator: stranger,
         rpId: RP_ID,
         origin: RP_ORIGIN,
-        challenge: challenge.challenge,
+        challenge: challenge.assertion.challenge,
         signCount: 1,
       });
 
@@ -553,7 +553,7 @@ describe('FidoFactorService', () => {
         authenticator,
         rpId: RP_ID,
         origin: RP_ORIGIN,
-        challenge: challenge.challenge,
+        challenge: challenge.assertion.challenge,
         signCount: 1,
       });
 
@@ -577,7 +577,7 @@ describe('FidoFactorService', () => {
         authenticator: otherAuthenticator,
         rpId: RP_ID,
         origin: RP_ORIGIN,
-        challenge: challenge.challenge,
+        challenge: challenge.assertion.challenge,
         signCount: 1,
       });
 
@@ -597,7 +597,7 @@ describe('FidoFactorService', () => {
         authenticator: { ...attacker, credentialId: authenticator.credentialId },
         rpId: RP_ID,
         origin: RP_ORIGIN,
-        challenge: challenge.challenge,
+        challenge: challenge.assertion.challenge,
         signCount: 1,
       });
 
@@ -633,7 +633,7 @@ describe('FidoFactorService', () => {
         authenticator,
         rpId: RP_ID,
         origin: RP_ORIGIN,
-        challenge: challenge.challenge,
+        challenge: challenge.assertion.challenge,
         signCount: 7,
       });
 
@@ -653,7 +653,7 @@ describe('FidoFactorService', () => {
         authenticator,
         rpId: RP_ID,
         origin: RP_ORIGIN,
-        challenge: challenge.challenge,
+        challenge: challenge.assertion.challenge,
         signCount: 1,
       });
       await service.verifyFidoAuthorizationChallenge(challenge.challengeId, credential);
@@ -669,7 +669,7 @@ describe('FidoFactorService', () => {
       let challenge = await service.createFidoAuthorizationChallenge('actor-1', factorId, makeAuthorizeOptions());
       await service.verifyFidoAuthorizationChallenge(
         challenge.challengeId,
-        buildAssertionCredential({ authenticator, rpId: RP_ID, origin: RP_ORIGIN, challenge: challenge.challenge, signCount: 5 }),
+        buildAssertionCredential({ authenticator, rpId: RP_ID, origin: RP_ORIGIN, challenge: challenge.assertion.challenge, signCount: 5 }),
       );
       expect(repo._factors.get(factorId)!.counter).toBe(5);
 
@@ -679,7 +679,7 @@ describe('FidoFactorService', () => {
         authenticator,
         rpId: RP_ID,
         origin: RP_ORIGIN,
-        challenge: challenge.challenge,
+        challenge: challenge.assertion.challenge,
         signCount: 5,
       });
       await expect(service.verifyFidoAuthorizationChallenge(challenge.challengeId, replay)).rejects.toMatchObject({
