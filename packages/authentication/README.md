@@ -433,7 +433,7 @@ const verifiedFactor = await phoneFactors.verifyPhoneChallenge(challengeId, subm
 
 ### FIDO2 / WebAuthn factors
 
-`FidoFactorService` handles passkey and security-key flows on top of [`fido2-lib`](https://www.npmjs.com/package/fido2-lib). Relying party identifiers (`rpId`, `rpOrigin`, `rpName`) are passed per call rather than configured statically, so a single service can serve multiple hosts. Both registration and sign-in are two-step: the server emits a challenge, caches the expectations for `FidoFactorServiceOptions.timeout` (5 minutes by default), and verifies the browser's response in step two.
+`FidoFactorService` handles passkey and security-key flows on top of [`fido2-lib`](https://www.npmjs.com/package/fido2-lib). Relying party identifiers (`rpId`, `rpOrigin`, `rpName`, `rpIcon`) come from `FidoFactorServiceOptions` by default and can be overridden per call, so a single service instance serves a primary host out of the box and still fronts multiple hosts when callers supply overrides. Both registration and sign-in are two-step: the server emits a challenge, caches the expectations for `FidoFactorServiceOptions.timeout` (5 minutes by default), and verifies the browser's response in step two.
 
 ```typescript
 import { FidoFactorService } from '@maroonedsoftware/authentication';
@@ -1036,13 +1036,17 @@ Manages FIDO2/WebAuthn factors. Wraps `fido2-lib` and accepts relying party iden
 
 `FidoFactorServiceOptions`:
 
-| Option    | Type       | Default   | Description                                                                                              |
-| --------- | ---------- | --------- | -------------------------------------------------------------------------------------------------------- |
-| `timeout` | `Duration` | 5 minutes | How long a pending registration or authorization challenge stays valid (also forwarded to the browser)   |
+| Option      | Type       | Default                | Description                                                                                              |
+| ----------- | ---------- | ---------------------- | -------------------------------------------------------------------------------------------------------- |
+| `timeout`   | `Duration` | 5 minutes              | How long a pending registration or authorization challenge stays valid (also forwarded to the browser)   |
+| `rpId`      | `string`   | `'localhost'`          | Default relying party id when not overridden per call                                                    |
+| `rpName`    | `string`   | `'Localhost'`          | Default human-readable relying party name when not overridden per call                                   |
+| `rpOrigin`  | `string`   | `'http://localhost'`   | Default relying party origin when not overridden per call                                                |
+| `rpIcon`    | `string?`  | —                      | Default icon URL when not overridden per call                                                            |
 
-`RegisterFidoFactorOptions`: `{ rpId, rpName, rpOrigin, rpIcon?, userName, userDisplayName }`.
+`RegisterFidoFactorOptions`: `{ rpId?, rpName?, rpOrigin?, rpIcon?, userName, userDisplayName }`. The `rp*` fields all fall back to the corresponding `FidoFactorServiceOptions` defaults.
 
-`AuthorizeFidoFactorOptions`: `{ rpId, rpOrigin }`.
+`AuthorizeFidoFactorOptions`: `{ rpId?, rpOrigin? }`. Both fields fall back to the corresponding `FidoFactorServiceOptions` defaults; the `options` argument to `createFidoAuthorizationChallenge` may also be omitted entirely.
 
 `createFidoFactorFromRegistration` throws HTTP 401 with `WWW-Authenticate: Bearer error="invalid_registration"` when no pending registration is cached, or `error="invalid_credentials"` on attestation failure. `createFidoAuthorizationChallenge` throws HTTP 404 when the actor has no active factors. `verifyFidoAuthorizationChallenge` throws HTTP 401 with `error="invalid_credentials"` when the challenge is missing/expired or the signature is invalid, and with `error="invalid_factor"` when the credential id is unknown for the actor or the matching factor has been deactivated.
 

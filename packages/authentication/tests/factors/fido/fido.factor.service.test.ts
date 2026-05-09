@@ -295,6 +295,40 @@ describe('FidoFactorService', () => {
       expect(payload).toMatchObject({ rpId: RP_ID, origin: RP_ORIGIN, factor: 'either' });
       expect(typeof payload.challenge).toBe('string');
     });
+
+    it('falls back to FidoFactorServiceOptions defaults when rp fields are omitted', async () => {
+      service = new FidoFactorService(
+        new FidoFactorServiceOptions(
+          Duration.fromObject({ minutes: 5 }),
+          'default.example.com',
+          'Default Example',
+          'https://default.example.com',
+          'https://default.example.com/icon.png',
+        ),
+        repo,
+        cache,
+      );
+
+      const result = await service.registerFidoFactor('actor-1', { userName: 'u', userDisplayName: 'U' });
+
+      expect(result.rp).toEqual({ id: 'default.example.com', name: 'Default Example', icon: 'https://default.example.com/icon.png' });
+      const cached = JSON.parse(cache._store.get('fido_factor_registration_actor-1')!);
+      expect(cached).toMatchObject({ rpId: 'default.example.com', origin: 'https://default.example.com' });
+    });
+
+    it('per-call rp options override FidoFactorServiceOptions defaults', async () => {
+      service = new FidoFactorService(
+        new FidoFactorServiceOptions(Duration.fromObject({ minutes: 5 }), 'default.example.com', 'Default', 'https://default.example.com'),
+        repo,
+        cache,
+      );
+
+      const result = await service.registerFidoFactor('actor-1', makeRegisterOptions({ rpIcon: 'https://override.example.com/icon.png' }));
+
+      expect(result.rp).toEqual({ id: RP_ID, name: 'Example', icon: 'https://override.example.com/icon.png' });
+      const cached = JSON.parse(cache._store.get('fido_factor_registration_actor-1')!);
+      expect(cached).toMatchObject({ rpId: RP_ID, origin: RP_ORIGIN });
+    });
   });
 
   describe('createFidoFactorFromRegistration', () => {
@@ -389,6 +423,20 @@ describe('FidoFactorService', () => {
 
       expect(result.allowCredentials).toEqual([{ id: authenticator.credentialId.toString('base64'), type: 'public-key' }]);
       expect(Buffer.from(result.challenge, 'base64')).toHaveLength(128);
+    });
+
+    it('falls back to FidoFactorServiceOptions defaults when options are omitted', async () => {
+      service = new FidoFactorService(
+        new FidoFactorServiceOptions(Duration.fromObject({ minutes: 5 }), 'default.example.com', 'Default', 'https://default.example.com'),
+        repo,
+        cache,
+      );
+      await repo.createFactor('actor-1', 'pem', 'cred-1', 0, true);
+
+      await service.createFidoAuthorizationChallenge('actor-1');
+
+      const cached = JSON.parse(cache._store.get('fido_factor_authorization_actor-1')!);
+      expect(cached).toMatchObject({ rpId: 'default.example.com', origin: 'https://default.example.com' });
     });
 
     it('caches assertion expectations including the userHandle for the actor', async () => {

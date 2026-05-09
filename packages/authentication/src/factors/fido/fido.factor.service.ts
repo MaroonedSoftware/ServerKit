@@ -13,34 +13,51 @@ export class FidoFactorServiceOptions {
   constructor(
     /** How long a pending registration or authorization challenge remains valid. Also forwarded to the authenticator as the WebAuthn `timeout` hint. */
     public readonly timeout: Duration = Duration.fromDurationLike({ minutes: 5 }),
+    /** Effective relying party id — the host the credential will be bound to. */
+    public readonly rpId: string = 'localhost',
+    /** Human-readable name of the relying party, shown in the authenticator UI. */
+    public readonly rpName: string = 'Localhost',
+    /** Full origin (scheme + host + optional port) of the relying party. */
+    public readonly rpOrigin: string = 'http://localhost',
+    /** Optional icon URL for the relying party. */
+    public readonly rpIcon?: string,
   ) {}
 }
 
 /**
- * Per-call WebAuthn relying party context for an authorization (sign-in) challenge.
+ * Per-call WebAuthn relying party overrides for an authorization (sign-in) challenge.
  *
  * `rpId` and `rpOrigin` must match what the browser sees — `rpId` is the host
  * (e.g. `example.com`) and `rpOrigin` is the scheme + host (e.g. `https://example.com`).
  * A mismatch causes the assertion to be rejected by the authenticator.
+ *
+ * Both fields are optional: when omitted, the corresponding default from
+ * {@link FidoFactorServiceOptions} is used. Supply them per-call to serve
+ * multiple hosts from a single service instance.
  */
 export type AuthorizeFidoFactorOptions = {
-  /** Effective relying party id — the host the credential is bound to. */
-  rpId: string;
-  /** Full origin (scheme + host + optional port) of the relying party. */
-  rpOrigin: string;
+  /** Effective relying party id — the host the credential is bound to. Falls back to `FidoFactorServiceOptions.rpId`. */
+  rpId?: string;
+  /** Full origin (scheme + host + optional port) of the relying party. Falls back to `FidoFactorServiceOptions.rpOrigin`. */
+  rpOrigin?: string;
 };
 
 /**
- * Per-call WebAuthn relying party + user context for a registration challenge.
+ * Per-call WebAuthn relying party overrides + user context for a registration challenge.
+ *
+ * The relying party fields all fall back to the corresponding
+ * {@link FidoFactorServiceOptions} defaults when omitted; `userName` and
+ * `userDisplayName` are required because they identify the human being
+ * registered, not the application.
  */
 export type RegisterFidoFactorOptions = {
-  /** Effective relying party id — the host the credential will be bound to. */
-  rpId: string;
-  /** Human-readable name of the relying party, shown in the authenticator UI. */
-  rpName: string;
-  /** Full origin (scheme + host + optional port) of the relying party. */
-  rpOrigin: string;
-  /** Optional icon URL for the relying party. */
+  /** Effective relying party id — the host the credential will be bound to. Falls back to `FidoFactorServiceOptions.rpId`. */
+  rpId?: string;
+  /** Human-readable name of the relying party, shown in the authenticator UI. Falls back to `FidoFactorServiceOptions.rpName`. */
+  rpName?: string;
+  /** Full origin (scheme + host + optional port) of the relying party. Falls back to `FidoFactorServiceOptions.rpOrigin`. */
+  rpOrigin?: string;
+  /** Optional icon URL for the relying party. Falls back to `FidoFactorServiceOptions.rpIcon`. */
   rpIcon?: string;
   /** Account-level identifier for the user (e.g. email or username). Shown on the authenticator. */
   userName: string;
@@ -158,8 +175,10 @@ export type PublicKeyCredentialWithAssertion = PublicKeyCredential & {
  *
  * Wraps `fido2-lib` and persists per-actor credentials via
  * {@link FidoFactorRepository}. The relying party identifiers (`rpId`,
- * `rpOrigin`, `rpName`) are supplied per-call rather than configured
- * statically, so the same service can serve multiple hosts.
+ * `rpOrigin`, `rpName`, `rpIcon`) come from {@link FidoFactorServiceOptions}
+ * by default but can be overridden per-call, so a single service instance
+ * can serve a single primary host out of the box and still front multiple
+ * hosts when the caller supplies overrides.
  *
  * **Registration flow:**
  * 1. Call {@link registerFidoFactor} with the actor and relying party context →
@@ -221,15 +240,17 @@ export class FidoFactorService {
    * Complete registration with {@link createFidoFactorFromRegistration}.
    *
    * @param actorId - The actor that will own the new factor.
-   * @param options - Per-call relying party and user metadata.
+   * @param options - User metadata plus optional per-call relying party overrides.
+   *   `userName` and `userDisplayName` are required; `rpId` / `rpName` / `rpOrigin` / `rpIcon`
+   *   each fall back to the matching {@link FidoFactorServiceOptions} default.
    * @returns A {@link FidoAttestation} ready to forward to the browser.
    */
   async registerFidoFactor(actorId: string, options: RegisterFidoFactorOptions): Promise<FidoAttestation> {
     const attestationOptions = await this.fido2.attestationOptions();
     const encodedId = new TextEncoder().encode(actorId);
-    attestationOptions.rp.id = options.rpId;
-    attestationOptions.rp.name = options.rpName;
-    attestationOptions.rp.icon = options.rpIcon;
+    attestationOptions.rp.id = options.rpId ?? this.options.rpId;
+    attestationOptions.rp.name = options.rpName ?? this.options.rpName;
+    attestationOptions.rp.icon = options.rpIcon ?? this.options.rpIcon;
     attestationOptions.user.id = encodedId.buffer.slice(encodedId.byteOffset, encodedId.byteLength + encodedId.byteOffset) as ArrayBuffer;
     attestationOptions.user.name = options.userName;
     attestationOptions.user.displayName = options.userDisplayName;
@@ -243,7 +264,7 @@ export class FidoFactorService {
     const attestationExpectations: ExpectedAttestationResult = {
       challenge: challenge.toString('base64'),
       rpId: attestationOptions.rp.id,
-      origin: options.rpOrigin,
+      origin: options.rpOrigin ?? this.options.rpOrigin,
       factor: 'either',
     };
 
@@ -316,12 +337,14 @@ export class FidoFactorService {
    * Complete with {@link verifyFidoAuthorizationChallenge}.
    *
    * @param actorId - The actor attempting to authenticate.
-   * @param options - Per-call relying party context (`rpId`, `rpOrigin`).
+   * @param options - Optional per-call relying party overrides. Each field
+   *   falls back to the matching {@link FidoFactorServiceOptions} default
+   *   when omitted; pass `{}` (or omit entirely) to use the defaults.
    * @returns Assertion options including `challenge` (base64) and
    *   `allowCredentials` populated from the actor's active factors.
    * @throws HTTP 404 when the actor has no active FIDO factors.
    */
-  async createFidoAuthorizationChallenge(actorId: string, options: AuthorizeFidoFactorOptions) {
+  async createFidoAuthorizationChallenge(actorId: string, options: AuthorizeFidoFactorOptions = {}) {
     const factors = await this.fidoFactorRepository.listFactors(actorId, true);
     if (factors.length === 0) {
       throw httpError(404).withDetails({ actorId: 'no factors found' });
@@ -329,7 +352,7 @@ export class FidoFactorService {
 
     const assertionOptions = await this.fido2.assertionOptions();
 
-    assertionOptions.rpId = options.rpId;
+    assertionOptions.rpId = options.rpId ?? this.options.rpId;
 
     const challenge = crypto.randomBytes(128);
 
@@ -343,7 +366,7 @@ export class FidoFactorService {
     const assertionExpectations: Omit<ExpectedAssertionResult, 'allowCredentials'> & { allowCredentials?: PublicKeyCredentialDescriptor[] } = {
       challenge: challenge.toString('base64'),
       rpId: assertionOptions.rpId,
-      origin: options.rpOrigin,
+      origin: options.rpOrigin ?? this.options.rpOrigin,
       factor: 'either',
       publicKey: '',
       prevCounter: 0,
