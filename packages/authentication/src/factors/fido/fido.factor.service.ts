@@ -510,7 +510,7 @@ export class FidoFactorService {
    * @param options  - Optional per-call relying party overrides. Each field
    *   falls back to the matching {@link FidoFactorServiceOptions} default
    *   when omitted.
-   * @returns `{ challengeId, assertion: { ...assertionOptions, challenge, allowCredentials }, expiresAt, issuedAt, alreadyIssued }`. `assertion.challenge` and each `assertion.allowCredentials[].id` are base64 strings ready for the browser.
+   * @returns `{ challengeId, assertion: { ...assertionOptions, challenge, rawChallenge, allowCredentials }, expiresAt, issuedAt, alreadyIssued }`. `assertion.challenge` and each `assertion.allowCredentials[].id` are base64 strings ready for the browser; `assertion.rawChallenge` is the same value as a `Buffer` for callers that want the raw bytes.
    * @throws HTTP 404 with `factorId: 'not found'` when `factorId` is supplied
    *   but does not match a factor for this actor.
    * @throws HTTP 404 with `actorId: 'no factors found'` when `factorId` is
@@ -540,6 +540,9 @@ export class FidoFactorService {
         assertion: {
           ...existingChallenge.assertionOptions,
           challenge: existingChallenge.assertionExpectations.challenge,
+          // assertionOptions.challenge is an ArrayBuffer that JSON round-tripping flattened;
+          // rebuild the raw bytes from the base64 form we persisted in assertionExpectations.
+          rawChallenge: Buffer.from(existingChallenge.assertionExpectations.challenge, 'base64'),
           allowCredentials: existingChallenge.assertionExpectations.allowCredentials,
         },
         expiresAt: DateTime.fromSeconds(existingChallenge.expiresAt),
@@ -559,6 +562,7 @@ export class FidoFactorService {
       assertion: {
         ...payload.assertionOptions,
         challenge: payload.assertionExpectations.challenge,
+        rawChallenge: Buffer.from(payload.assertionOptions.challenge),
         allowCredentials: payload.assertionExpectations.allowCredentials,
       },
       expiresAt,

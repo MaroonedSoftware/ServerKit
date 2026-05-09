@@ -456,6 +456,8 @@ describe('FidoFactorService', () => {
 
       expect(result.assertion.allowCredentials).toEqual([{ id: authenticator.credentialId.toString('base64'), type: 'public-key' }]);
       expect(Buffer.from(result.assertion.challenge, 'base64')).toHaveLength(128);
+      expect(Buffer.isBuffer(result.assertion.rawChallenge)).toBe(true);
+      expect(result.assertion.rawChallenge).toEqual(Buffer.from(result.assertion.challenge, 'base64'));
       expect(result.alreadyIssued).toBe(false);
       expect(result.challengeId).toBeTruthy();
     });
@@ -475,6 +477,8 @@ describe('FidoFactorService', () => {
       expect(b.alreadyIssued).toBe(true);
       expect(b.challengeId).toBe(a.challengeId);
       expect(b.assertion.challenge).toBe(a.assertion.challenge);
+      expect(Buffer.isBuffer(b.assertion.rawChallenge)).toBe(true);
+      expect(b.assertion.rawChallenge).toEqual(Buffer.from(b.assertion.challenge, 'base64'));
     });
 
     it('falls back to FidoFactorServiceOptions defaults when options are omitted', async () => {
