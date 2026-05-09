@@ -442,37 +442,38 @@ const fidoFactors = container.get(FidoFactorService);
 
 // --- Registration ---
 
-// Step 1: emit an attestation challenge to the browser
-const attestation = await fidoFactors.registerFidoFactor(user.id, {
-  rpId: 'example.com',
-  rpName: 'Example',
-  rpOrigin: 'https://example.com',
-  userName: user.email,
-  userDisplayName: user.name,
-});
-// Send `attestation` to the browser; client decodes `challenge` and `user.id`
-// from base64 to ArrayBuffers, calls navigator.credentials.create({ publicKey: ... }),
-// and posts the resulting credential back.
+// Step 1: emit an attestation challenge to the browser. `alreadyRegistered`
+// is true when a pending registration was already cached for this actor —
+// reuse the same payload so back-to-back calls don't re-prompt the authenticator.
+const { registrationId, attestationOptions, user, challenge, alreadyRegistered } =
+  await fidoFactors.registerFidoFactor(user.id, {
+    userName: user.email,
+    userDisplayName: user.name,
+  });
+// Send the attestation payload to the browser; client decodes `challenge` and
+// `user.id` from base64 to ArrayBuffers, calls navigator.credentials.create({ publicKey: ... }),
+// and posts the resulting credential back along with the `registrationId`.
 
 // Step 2: verify the attestation and persist the factor
-const factor = await fidoFactors.createFidoFactorFromRegistration(user.id, credential);
+const factor = await fidoFactors.createFidoFactorFromRegistration(user.id, registrationId, credential);
 
 // --- Authorization (sign-in) ---
 
 // Step 1: emit an assertion challenge — `allowCredentials` is populated from
-// the actor's active factors, so the browser only prompts for ones they have
-const assertion = await fidoFactors.createFidoAuthorizationChallenge(user.id, {
-  rpId: 'example.com',
-  rpOrigin: 'https://example.com',
-});
+// the actor's active factors, so the browser only prompts for ones they have.
+// Pass a specific `factorId` to scope the challenge to that one factor; pass
+// `undefined` to allow any of the actor's active factors.
+const { challengeId, assertionOptions, allowCredentials, alreadyIssued } =
+  await fidoFactors.createFidoAuthorizationChallenge(user.id, undefined);
 // Client decodes the challenge and each allowCredentials[].id to ArrayBuffers,
-// calls navigator.credentials.get({ publicKey: ... }), and posts back.
+// calls navigator.credentials.get({ publicKey: ... }), and posts back along with
+// the `challengeId`.
 
 // Step 2: verify the signature and bump the stored counter. Returns the verified factor.
-const verifiedFactor = await fidoFactors.verifyFidoAuthorizationChallenge(user.id, credential);
+const verifiedFactor = await fidoFactors.verifyFidoAuthorizationChallenge(challengeId, credential);
 ```
 
-Failed attestations and assertions throw HTTP 401 with a `WWW-Authenticate: Bearer error="invalid_credentials"` header (or `"invalid_registration"` when no pending registration is cached). When the credential id submitted at sign-in does not match a known factor for the actor — or the matching factor has been deactivated — `verifyFidoAuthorizationChallenge` throws HTTP 401 with `error="invalid_factor"` instead. The original `fido2-lib` error is attached as the cause and the raw inputs as internal details for logging.
+Missing or expired registrations and challenges throw HTTP 404 with `{ registrationId: 'not found' }` or `{ challengeId: 'not found' }`. Failed attestations and assertions throw HTTP 401 with a `WWW-Authenticate: Bearer error="invalid_credentials"` header. When the credential id submitted at sign-in does not match a known active factor for the actor — or the credential does not belong to the factor that was scoped at issue time — `verifyFidoAuthorizationChallenge` throws HTTP 401 with `error="invalid_factor"` instead. The original `fido2-lib` error is attached as the cause and the raw inputs as internal details for logging.
 
 ---
 
@@ -1027,12 +1028,14 @@ Abstract base class. Extend and register a concrete implementation so that `Phon
 
 Manages FIDO2/WebAuthn factors. Wraps `fido2-lib` and accepts relying party identifiers per call.
 
-| Method                                                         | Returns                                                | Description                                                                          |
-| -------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------ |
-| `registerFidoFactor(actorId, options)`                         | `Promise<FidoAttestation>`                             | Generate an attestation challenge and cache the expectations                         |
-| `createFidoFactorFromRegistration(actorId, credential)`        | `Promise<FidoFactor>`                                  | Verify the attestation and persist the factor; returns the new factor                |
-| `createFidoAuthorizationChallenge(actorId, options)`           | `Promise<{ challenge, allowCredentials, ... }>`        | Emit an assertion challenge (`allowCredentials` from the actor's active factors)     |
-| `verifyFidoAuthorizationChallenge(actorId, credential)`        | `Promise<FidoFactor>`                                  | Verify the assertion signature, bump the stored counter, and return the factor       |
+| Method                                                                  | Returns                                                                                                                              | Description                                                                                                                  |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| `registerFidoFactor(actorId, options, registrationId?)`                 | `Promise<{ registrationId, attestationOptions, user, challenge, attestation, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>` | Generate an attestation challenge and cache the expectations (idempotent — `alreadyRegistered` is `true` on a cache hit)     |
+| `createFidoFactorFromRegistration(actorId, registrationId, credential)` | `Promise<FidoFactor>`                                                                                                                | Verify the attestation against the cached registration and persist the factor                                                |
+| `hasPendingRegistration(registrationId)`                                | `Promise<boolean>`                                                                                                                   | Check whether a registration is still cached and unexpired                                                                   |
+| `createFidoAuthorizationChallenge(actorId, factorId, options?)`         | `Promise<{ challengeId, assertionOptions, challenge, allowCredentials, expiresAt: DateTime, issuedAt: DateTime, alreadyIssued: boolean }>` | Emit an assertion challenge — pass a `factorId` to scope to one factor, or `undefined` to allow any active factor (idempotent) |
+| `verifyFidoAuthorizationChallenge(challengeId, credential)`             | `Promise<FidoFactor>`                                                                                                                | Verify the assertion signature, bump the stored counter, and return the factor                                               |
+| `hasPendingChallenge(challengeId)`                                      | `Promise<boolean>`                                                                                                                   | Check whether a challenge is still cached and unexpired                                                                      |
 
 `FidoFactorServiceOptions`:
 
@@ -1048,7 +1051,7 @@ Manages FIDO2/WebAuthn factors. Wraps `fido2-lib` and accepts relying party iden
 
 `AuthorizeFidoFactorOptions`: `{ rpId?, rpOrigin? }`. Both fields fall back to the corresponding `FidoFactorServiceOptions` defaults; the `options` argument to `createFidoAuthorizationChallenge` may also be omitted entirely.
 
-`createFidoFactorFromRegistration` throws HTTP 401 with `WWW-Authenticate: Bearer error="invalid_registration"` when no pending registration is cached, or `error="invalid_credentials"` on attestation failure. `createFidoAuthorizationChallenge` throws HTTP 404 when the actor has no active factors. `verifyFidoAuthorizationChallenge` throws HTTP 401 with `error="invalid_credentials"` when the challenge is missing/expired or the signature is invalid, and with `error="invalid_factor"` when the credential id is unknown for the actor or the matching factor has been deactivated.
+`createFidoFactorFromRegistration` throws HTTP 404 with `{ registrationId: 'not found' }` when the registration has expired or does not exist, and HTTP 401 with `error="invalid_credentials"` on attestation failure. `createFidoAuthorizationChallenge` throws HTTP 404 with `{ factorId: 'not found' }` when a supplied `factorId` is unknown, or with `{ actorId: 'no factors found' }` when no `factorId` is supplied and the actor has no active factors. `verifyFidoAuthorizationChallenge` throws HTTP 404 with `{ challengeId: 'not found' }` when the challenge is missing/expired, HTTP 401 with `error="invalid_credentials"` on signature failure, and HTTP 401 with `error="invalid_factor"` when the credential is unknown, the matching factor is deactivated, or the credential does not belong to the factor that was scoped at issue time.
 
 ### `FidoFactorRepository`
 

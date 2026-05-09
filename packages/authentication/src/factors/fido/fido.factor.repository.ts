@@ -48,15 +48,20 @@ export interface FidoFactorRepository {
   /**
    * Retrieve a specific FIDO factor for an actor.
    *
-   * `factorId` here is the credential id reported by the authenticator (the
-   * `id` field of the `PublicKeyCredential` returned by the browser), not the
-   * database row id.
-   *
    * @param actorId  - The actor that owns the factor.
-   * @param factorId - The credential id reported by the authenticator.
+   * @param factorId - The factor record id.
    * @returns The matching {@link FidoFactor}, or `undefined` if not found.
    */
   getFactor(actorId: string, factorId: string): Promise<FidoFactor | undefined>;
+
+  /**
+   * Look up a factor by its credential id.
+   * @param actorId  - The actor that owns the factor.
+   * @param credentialId - The credential id reported by the authenticator (the
+   * `id` field of the `PublicKeyCredential` returned by the browser).
+   * @returns The matching {@link FidoFactor}, or `undefined` if not found.
+   */
+  lookupFactor(actorId: string, credentialId: string): Promise<FidoFactor | undefined>;
 
   /**
    * Persist the latest signature counter after a successful assertion.

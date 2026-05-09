@@ -1,7 +1,15 @@
 import { Injectable } from 'injectkit';
-import { AssertionResult, AttestationResult, ExpectedAssertionResult, ExpectedAttestationResult, Fido2Lib } from 'fido2-lib';
-import { FidoFactorRepository } from './fido.factor.repository.js';
-import { Duration } from 'luxon';
+import {
+  AssertionResult,
+  AttestationResult,
+  ExpectedAssertionResult,
+  ExpectedAttestationResult,
+  Fido2Lib,
+  PublicKeyCredentialCreationOptions,
+  PublicKeyCredentialRequestOptions,
+} from 'fido2-lib';
+import { FidoFactor, FidoFactorRepository } from './fido.factor.repository.js';
+import { DateTime, Duration } from 'luxon';
 import crypto from 'node:crypto';
 import { CacheProvider } from '@maroonedsoftware/cache';
 import { httpError, unauthorizedError } from '@maroonedsoftware/errors';
@@ -170,6 +178,35 @@ export type PublicKeyCredentialWithAssertion = PublicKeyCredential & {
   response: AuthenticatorAssertionResponse;
 };
 
+type FidoPayload = {
+  id: string;
+  actorId: string;
+  expiresAt: number;
+  issuedAt: number;
+};
+
+type ChallengePayload = FidoPayload & {
+  factorId: string;
+  assertionOptions: PublicKeyCredentialRequestOptions;
+  assertionExpectations: Omit<ExpectedAssertionResult, 'allowCredentials'> & { allowCredentials?: PublicKeyCredentialDescriptor[] };
+};
+
+type RegistrationPayload = FidoPayload & {
+  attestationOptions: PublicKeyCredentialCreationOptions;
+  attestationExpectations: ExpectedAttestationResult;
+};
+
+type PayloadOptions =
+  | {
+      method: 'attestation';
+      options: RegisterFidoFactorOptions;
+    }
+  | {
+      method: 'assertion';
+      options: AuthorizeFidoFactorOptions;
+      factors: FidoFactor[];
+    };
+
 /**
  * Manages the lifecycle of FIDO2/WebAuthn authentication factors.
  *
@@ -181,19 +218,28 @@ export type PublicKeyCredentialWithAssertion = PublicKeyCredential & {
  * hosts when the caller supplies overrides.
  *
  * **Registration flow:**
- * 1. Call {@link registerFidoFactor} with the actor and relying party context →
- *    returns a {@link FidoAttestation} to pass to `navigator.credentials.create`.
+ * 1. Call {@link registerFidoFactor} → returns a `registrationId`, the
+ *    `attestationOptions` to pass to `navigator.credentials.create`, and an
+ *    `alreadyRegistered` flag for idempotency.
  * 2. The browser returns a `PublicKeyCredentialWithAttestation`. Send it to
- *    {@link createFidoFactorFromRegistration} to verify the attestation and
- *    persist the new factor; returns the new {@link FidoFactor}.
+ *    {@link createFidoFactorFromRegistration} along with the `registrationId`
+ *    to verify the attestation and persist the new factor; returns the new
+ *    {@link FidoFactor}.
  *
  * **Authorization (sign-in) flow:**
- * 1. Call {@link createFidoAuthorizationChallenge} → returns assertion options
- *    (including `allowCredentials` populated from the actor's active factors)
- *    to pass to `navigator.credentials.get`.
+ * 1. Call {@link createFidoAuthorizationChallenge} with the actor and an
+ *    optional `factorId` (to scope the challenge to one factor) → returns a
+ *    `challengeId`, the `assertionOptions` to pass to
+ *    `navigator.credentials.get`, and an `alreadyIssued` flag for idempotency.
  * 2. The browser returns a `PublicKeyCredentialWithAssertion`. Send it to
- *    {@link verifyFidoAuthorizationChallenge} to verify the signature and
- *    bump the counter; returns the verified {@link FidoFactor}.
+ *    {@link verifyFidoAuthorizationChallenge} along with the `challengeId` to
+ *    verify the signature and bump the counter; returns the verified
+ *    {@link FidoFactor}.
+ *
+ * Both registration and challenge are idempotent: a second call for the same
+ * actor (or the same `actor+factorId` pair) returns the cached payload with
+ * `alreadyRegistered`/`alreadyIssued: true` so the caller can skip duplicate
+ * client work.
  *
  * Challenges are cached for {@link FidoFactorServiceOptions.timeout} so the
  * server can verify the response without holding state in memory.
@@ -222,30 +268,54 @@ export class FidoFactorService {
       timeout: this.options.timeout.toMillis(),
     });
   }
+  private getChallengeKey(key: string) {
+    return `fido_factor_challenge_${key}`;
+  }
 
   private getRegistrationKey(key: string) {
     return `fido_factor_registration_${key}`;
   }
 
-  private getAuthorizationKey(key: string) {
-    return `fido_factor_authorization_${key}`;
+  private async lookupRegistration(registrationId: string) {
+    const response = await this.cache.get(this.getRegistrationKey(registrationId));
+    return response ? (JSON.parse(response) as RegistrationPayload) : undefined;
   }
 
-  /**
-   * Initiate FIDO factor registration by generating an attestation challenge
-   * and caching the expected attestation result for verification.
-   *
-   * Pass the returned object to `navigator.credentials.create({ publicKey: ... })`
-   * after decoding the base64-encoded `challenge` and `user.id` to `ArrayBuffer`s.
-   * Complete registration with {@link createFidoFactorFromRegistration}.
-   *
-   * @param actorId - The actor that will own the new factor.
-   * @param options - User metadata plus optional per-call relying party overrides.
-   *   `userName` and `userDisplayName` are required; `rpId` / `rpName` / `rpOrigin` / `rpIcon`
-   *   each fall back to the matching {@link FidoFactorServiceOptions} default.
-   * @returns A {@link FidoAttestation} ready to forward to the browser.
-   */
-  async registerFidoFactor(actorId: string, options: RegisterFidoFactorOptions): Promise<FidoAttestation> {
+  private async lookupRegistrationByValue(actorId: string) {
+    const registrationId = await this.cache.get(this.getRegistrationKey(actorId));
+    return registrationId ? await this.lookupRegistration(registrationId) : undefined;
+  }
+
+  private async cacheRegistration(actorId: string, payload: RegistrationPayload, expiration: Duration) {
+    const registrationId = payload.id ?? crypto.randomBytes(32).toString('base64url');
+
+    payload.id = registrationId;
+
+    await this.cache.set(this.getRegistrationKey(registrationId), JSON.stringify(payload), expiration);
+    await this.cache.set(this.getRegistrationKey(actorId), registrationId, expiration);
+
+    return registrationId;
+  }
+
+  private async lookupChallenge(challengeId: string) {
+    const response = await this.cache.get(this.getChallengeKey(challengeId));
+    return response ? (JSON.parse(response) as ChallengePayload) : undefined;
+  }
+
+  private async lookupChallengeByActorAndFactor(actorId: string, factorId: string) {
+    const challengeId = await this.cache.get(this.getChallengeKey(`${actorId}_${factorId}`));
+    return challengeId ? await this.lookupChallenge(challengeId) : undefined;
+  }
+
+  private async cacheChallenge(payload: ChallengePayload, expiration: Duration) {
+    const challengeId = crypto.randomBytes(32).toString('base64url');
+    payload.id = challengeId;
+    await this.cache.set(this.getChallengeKey(challengeId), JSON.stringify(payload), expiration);
+    await this.cache.set(this.getChallengeKey(`${payload.actorId}_${payload.factorId}`), challengeId, expiration);
+    return challengeId;
+  }
+
+  private async createAttestation(actorId: string, options: RegisterFidoFactorOptions) {
     const attestationOptions = await this.fido2.attestationOptions();
     const encodedId = new TextEncoder().encode(actorId);
     attestationOptions.rp.id = options.rpId ?? this.options.rpId;
@@ -259,8 +329,6 @@ export class FidoFactorService {
 
     attestationOptions.challenge = challenge.buffer.slice(challenge.byteOffset, challenge.byteLength + challenge.byteOffset) as ArrayBuffer;
 
-    const userId = Buffer.from(attestationOptions.user.id).toString('base64');
-
     const attestationExpectations: ExpectedAttestationResult = {
       challenge: challenge.toString('base64'),
       rpId: attestationOptions.rp.id,
@@ -268,88 +336,10 @@ export class FidoFactorService {
       factor: 'either',
     };
 
-    await this.cache.set(this.getRegistrationKey(actorId), JSON.stringify(attestationExpectations), this.options.timeout);
-
-    return {
-      ...attestationOptions,
-      user: { ...attestationOptions.user, id: userId },
-      challenge: challenge.toString('base64'),
-      attestation: attestationOptions.attestation ?? 'none',
-    };
+    return { attestationOptions, attestationExpectations };
   }
 
-  /**
-   * Complete FIDO factor registration by verifying the authenticator's
-   * attestation against the cached challenge and persisting the new factor.
-   *
-   * On success the cached registration challenge is deleted so it cannot be replayed.
-   *
-   * @param actorId    - The actor the registration was started for.
-   * @param credential - The `PublicKeyCredential` returned by the browser, with
-   *   `id`/`rawId` and the attestation response fields base64-encoded.
-   * @returns The newly created {@link FidoFactor}.
-   * @throws HTTP 401 (`WWW-Authenticate: Bearer error="invalid_registration"`)
-   *   when no pending registration is cached for this actor (expired or never started).
-   * @throws HTTP 401 (`WWW-Authenticate: Bearer error="invalid_credentials"`)
-   *   when attestation verification fails. The original error is attached as the cause.
-   */
-  async createFidoFactorFromRegistration(actorId: string, credential: PublicKeyCredentialWithAttestation) {
-    const cacheAttestationExpectations = await this.cache.get(this.getRegistrationKey(actorId));
-    if (!cacheAttestationExpectations) {
-      throw unauthorizedError('Bearer error="invalid_registration"');
-    }
-
-    const expectedAttestationResult = JSON.parse(cacheAttestationExpectations) as ExpectedAttestationResult;
-
-    const id = Uint8Array.from(Buffer.from(credential.id, 'base64')).buffer;
-    const rawId = Uint8Array.from(Buffer.from(credential.rawId, 'base64')).buffer;
-    const attestationResult: AttestationResult = { ...credential, id, rawId };
-
-    try {
-      const result = await this.fido2.attestationResult(attestationResult, expectedAttestationResult);
-
-      const factor = await this.fidoFactorRepository.createFactor(
-        actorId,
-        result.authnrData.get('credentialPublicKeyPem'),
-        credential.id,
-        result.authnrData.get('counter'),
-        true,
-      );
-
-      await this.cache.delete(this.getRegistrationKey(actorId));
-
-      return factor;
-    } catch (ex) {
-      throw unauthorizedError('Bearer error="invalid_credentials"')
-        .withCause(ex as Error)
-        .withInternalDetails({ attestationResult, expectedAttestationResult });
-    }
-  }
-
-  /**
-   * Initiate a FIDO authorization (sign-in) challenge for an actor.
-   *
-   * Looks up the actor's active factors and emits assertion options with an
-   * `allowCredentials` list, so the browser only prompts for credentials the
-   * user actually has. Pass the returned object to
-   * `navigator.credentials.get({ publicKey: ... })` after decoding the
-   * `challenge` and each `allowCredentials[].id` to `ArrayBuffer`s.
-   * Complete with {@link verifyFidoAuthorizationChallenge}.
-   *
-   * @param actorId - The actor attempting to authenticate.
-   * @param options - Optional per-call relying party overrides. Each field
-   *   falls back to the matching {@link FidoFactorServiceOptions} default
-   *   when omitted; pass `{}` (or omit entirely) to use the defaults.
-   * @returns Assertion options including `challenge` (base64) and
-   *   `allowCredentials` populated from the actor's active factors.
-   * @throws HTTP 404 when the actor has no active FIDO factors.
-   */
-  async createFidoAuthorizationChallenge(actorId: string, options: AuthorizeFidoFactorOptions = {}) {
-    const factors = await this.fidoFactorRepository.listFactors(actorId, true);
-    if (factors.length === 0) {
-      throw httpError(404).withDetails({ actorId: 'no factors found' });
-    }
-
+  private async createAssertion(actorId: string, options: AuthorizeFidoFactorOptions, factors: FidoFactor[]) {
     const assertionOptions = await this.fido2.assertionOptions();
 
     assertionOptions.rpId = options.rpId ?? this.options.rpId;
@@ -374,42 +364,263 @@ export class FidoFactorService {
       allowCredentials,
     };
 
-    await this.cache.set(this.getAuthorizationKey(actorId), JSON.stringify(assertionExpectations), this.options.timeout);
+    return { assertionOptions, assertionExpectations };
+  }
 
-    return { ...assertionOptions, challenge: challenge.toString('base64'), allowCredentials };
+  private async createPayload<T extends FidoPayload>(actorId: string, options: PayloadOptions, registrationId?: string) {
+    const result =
+      options.method === 'attestation'
+        ? await this.createAttestation(actorId, options.options)
+        : await this.createAssertion(actorId, options.options, options.factors);
+
+    const issuedAt = DateTime.utc();
+    const expiresAt = issuedAt.plus(this.options.timeout);
+
+    const payload = {
+      id: registrationId,
+      actorId,
+      expiresAt: expiresAt.toUnixInteger(),
+      issuedAt: issuedAt.toUnixInteger(),
+      ...result,
+    } as unknown as T;
+
+    return { payload, expiresAt, issuedAt, expiration: this.options.timeout };
+  }
+
+  /**
+   * Initiate FIDO factor registration by generating an attestation challenge
+   * and caching the expected attestation result for verification.
+   *
+   * Pass `attestationOptions` (or the spread `user`/`challenge`/`attestation`
+   * fields) to `navigator.credentials.create({ publicKey: ... })` after
+   * decoding the base64-encoded `challenge` and `user.id` to `ArrayBuffer`s.
+   * Complete registration with {@link createFidoFactorFromRegistration},
+   * passing the returned `registrationId` back in.
+   *
+   * Idempotent: if a pending registration is already cached for this actor —
+   * or for the supplied `registrationId` — the existing payload is returned
+   * with `alreadyRegistered: true`, so callers can avoid double-prompting the
+   * authenticator.
+   *
+   * @param actorId        - The actor that will own the new factor.
+   * @param options        - User metadata plus optional per-call relying party
+   *   overrides. `userName` and `userDisplayName` are required; `rpId` /
+   *   `rpName` / `rpOrigin` / `rpIcon` each fall back to the matching
+   *   {@link FidoFactorServiceOptions} default.
+   * @param registrationId - Optional caller-supplied id. When set, the method
+   *   first checks for a cached registration under this id before falling back
+   *   to the actor-keyed lookup; on a cache miss it is used as the id of the
+   *   freshly cached registration.
+   * @returns `{ registrationId, attestationOptions, user, challenge, attestation, expiresAt, issuedAt, alreadyRegistered }`.
+   */
+  async registerFidoFactor(actorId: string, options: RegisterFidoFactorOptions, registrationId?: string) {
+    const existingRegistration = registrationId ? await this.lookupRegistration(registrationId) : await this.lookupRegistrationByValue(actorId);
+    if (existingRegistration) {
+      // The cached attestationOptions.user.id was an ArrayBuffer that JSON
+      // stringification flattened into `{}`; rebuild the base64 id from the
+      // payload's actorId, matching what the fresh-registration path returns.
+      const userIdBase64 = Buffer.from(new TextEncoder().encode(existingRegistration.actorId)).toString('base64');
+      return {
+        registrationId: existingRegistration.id,
+        attestationOptions: existingRegistration.attestationOptions,
+        user: {
+          ...existingRegistration.attestationOptions.user,
+          id: userIdBase64,
+        },
+        challenge: existingRegistration.attestationExpectations.challenge,
+        attestation: existingRegistration.attestationOptions.attestation ?? 'none',
+        expiresAt: DateTime.fromSeconds(existingRegistration.expiresAt),
+        issuedAt: DateTime.fromSeconds(existingRegistration.issuedAt),
+        alreadyRegistered: true,
+      };
+    }
+
+    const { payload, expiresAt, issuedAt } = await this.createPayload<RegistrationPayload>(
+      actorId,
+      { method: 'attestation', options },
+      registrationId,
+    );
+
+    registrationId = await this.cacheRegistration(actorId, payload, this.options.timeout);
+
+    return {
+      registrationId,
+      attestationOptions: payload.attestationOptions,
+      user: { ...payload.attestationOptions.user, id: Buffer.from(payload.attestationOptions.user.id).toString('base64') },
+      challenge: payload.attestationExpectations.challenge,
+      attestation: payload.attestationOptions.attestation ?? 'none',
+      expiresAt,
+      issuedAt,
+      alreadyRegistered: false,
+    };
+  }
+
+  /**
+   * Complete FIDO factor registration by verifying the authenticator's
+   * attestation against the cached challenge and persisting the new factor.
+   *
+   * On success the cached registration entries (under both the registration id
+   * and the actor) are deleted so the challenge cannot be replayed.
+   *
+   * @param actorId        - The actor to attach the factor to.
+   * @param registrationId - The registration reference returned by {@link registerFidoFactor}.
+   * @param credential     - The `PublicKeyCredential` returned by the browser, with
+   *   `id`/`rawId` and the attestation response fields base64-encoded.
+   * @returns The newly created {@link FidoFactor}.
+   * @throws HTTP 404 when the registration has expired or does not exist.
+   * @throws HTTP 401 (`WWW-Authenticate: Bearer error="invalid_credentials"`)
+   *   when attestation verification fails. The original error is attached as the cause.
+   */
+  async createFidoFactorFromRegistration(actorId: string, registrationId: string, credential: PublicKeyCredentialWithAttestation) {
+    const payload = await this.lookupRegistration(registrationId);
+    if (!payload) {
+      throw httpError(404).withDetails({ registrationId: 'not found' });
+    }
+
+    const id = Uint8Array.from(Buffer.from(credential.id, 'base64')).buffer;
+    const rawId = Uint8Array.from(Buffer.from(credential.rawId, 'base64')).buffer;
+    const attestationResult: AttestationResult = { ...credential, id, rawId };
+
+    try {
+      const result = await this.fido2.attestationResult(attestationResult, payload.attestationExpectations);
+
+      const factor = await this.fidoFactorRepository.createFactor(
+        actorId,
+        result.authnrData.get('credentialPublicKeyPem'),
+        credential.id,
+        result.authnrData.get('counter'),
+        true,
+      );
+
+      await this.cache.delete(this.getRegistrationKey(registrationId));
+      await this.cache.delete(this.getRegistrationKey(actorId));
+
+      return factor;
+    } catch (ex) {
+      throw unauthorizedError('Bearer error="invalid_credentials"')
+        .withCause(ex as Error)
+        .withInternalDetails({ attestationResult, expectedAttestationResult: payload.attestationExpectations });
+    }
+  }
+
+  /**
+   * Initiate a FIDO authorization (sign-in) challenge for an actor.
+   *
+   * Pass `assertionOptions` (or the spread `challenge`/`allowCredentials`
+   * fields) to `navigator.credentials.get({ publicKey: ... })` after decoding
+   * the base64 `challenge` and each `allowCredentials[].id` to `ArrayBuffer`s.
+   * Complete with {@link verifyFidoAuthorizationChallenge}, passing the
+   * returned `challengeId` back in.
+   *
+   * Two flavors:
+   * - `factorId` provided → narrows `allowCredentials` to that single factor;
+   *   the verifier additionally enforces that the credential the browser
+   *   returned belongs to that factor.
+   * - `factorId` omitted → `allowCredentials` includes all of the actor's
+   *   active factors; any of them is acceptable at verify time.
+   *
+   * Idempotent per `(actorId, factorId)` pair (or `(actorId, 'any')` when
+   * `factorId` is omitted): a second call with the same scope returns the
+   * cached payload with `alreadyIssued: true`.
+   *
+   * @param actorId  - The actor attempting to authenticate.
+   * @param factorId - Optional row id of a specific factor to challenge. When
+   *   omitted, all active factors are eligible.
+   * @param options  - Optional per-call relying party overrides. Each field
+   *   falls back to the matching {@link FidoFactorServiceOptions} default
+   *   when omitted.
+   * @returns `{ challengeId, assertionOptions, challenge, allowCredentials, expiresAt, issuedAt, alreadyIssued }`.
+   * @throws HTTP 404 with `factorId: 'not found'` when `factorId` is supplied
+   *   but does not match a factor for this actor.
+   * @throws HTTP 404 with `actorId: 'no factors found'` when `factorId` is
+   *   omitted and the actor has no active factors.
+   */
+  async createFidoAuthorizationChallenge(actorId: string, factorId: string | undefined, options: AuthorizeFidoFactorOptions = {}) {
+    let factors: FidoFactor[];
+
+    if (factorId) {
+      const factor = await this.fidoFactorRepository.getFactor(actorId, factorId);
+      if (!factor) {
+        throw httpError(404).withDetails({ factorId: 'not found' });
+      }
+      factors = [factor];
+    } else {
+      factorId = 'any';
+      factors = await this.fidoFactorRepository.listFactors(actorId, true);
+      if (factors.length === 0) {
+        throw httpError(404).withDetails({ actorId: 'no factors found' });
+      }
+    }
+
+    const existingChallenge = await this.lookupChallengeByActorAndFactor(actorId, factorId);
+    if (existingChallenge) {
+      return {
+        challengeId: existingChallenge.id,
+        assertionOptions: existingChallenge.assertionOptions,
+        challenge: existingChallenge.assertionExpectations.challenge,
+        allowCredentials: existingChallenge.assertionExpectations.allowCredentials,
+        expiresAt: DateTime.fromSeconds(existingChallenge.expiresAt),
+        issuedAt: DateTime.fromSeconds(existingChallenge.issuedAt),
+        alreadyIssued: true,
+      };
+    }
+
+    const { payload, expiresAt, issuedAt } = await this.createPayload<ChallengePayload>(actorId, { method: 'assertion', options, factors });
+
+    payload.factorId = factorId;
+
+    const challengeId = await this.cacheChallenge(payload, this.options.timeout);
+
+    return {
+      challengeId,
+      assertionOptions: payload.assertionOptions,
+      challenge: payload.assertionExpectations.challenge,
+      allowCredentials: payload.assertionExpectations.allowCredentials,
+      expiresAt,
+      issuedAt,
+      alreadyIssued: false,
+    };
   }
 
   /**
    * Complete a FIDO authorization challenge.
    *
-   * Loads the cached assertion expectations, looks up the credential the user
-   * picked, verifies the assertion via `fido2-lib`, and persists the updated
-   * signature counter on success. The cached challenge is deleted on success
-   * so it cannot be replayed.
+   * Loads the cached assertion expectations, resolves the factor by the
+   * credential id reported by the browser, verifies the assertion via
+   * `fido2-lib`, and persists the updated signature counter on success. The
+   * cached challenge entries (under both the challenge id and the
+   * actor+factor pair) are deleted on success so the challenge cannot be
+   * replayed.
    *
-   * @param actorId    - The actor that started the challenge.
-   * @param credential - The `PublicKeyCredential` returned by the browser, with
+   * @param challengeId - The challenge reference returned by {@link createFidoAuthorizationChallenge}.
+   * @param credential  - The `PublicKeyCredential` returned by the browser, with
    *   `id`/`rawId` and the assertion response fields base64-encoded.
    * @returns The verified {@link FidoFactor}.
-   * @throws HTTP 401 (`WWW-Authenticate: Bearer error="invalid_credentials"`)
-   *   when no challenge is cached (expired or never started) or signature
-   *   verification fails.
+   * @throws HTTP 404 when the challenge has expired or does not exist.
    * @throws HTTP 401 (`WWW-Authenticate: Bearer error="invalid_factor"`) when
-   *   the credential id is unknown for this actor or the matching factor is
-   *   inactive.
+   *   the credential id is unknown for this actor, the matching factor is
+   *   inactive, or the credential does not belong to the factor that was
+   *   scoped at issue time.
+   * @throws HTTP 401 (`WWW-Authenticate: Bearer error="invalid_credentials"`)
+   *   when signature verification fails. The original `fido2-lib` error is
+   *   attached as the cause.
    */
-  async verifyFidoAuthorizationChallenge(actorId: string, credential: PublicKeyCredentialWithAssertion) {
-    const cacheAssertionExpectations = await this.cache.get(this.getAuthorizationKey(actorId));
-    if (!cacheAssertionExpectations) {
-      throw unauthorizedError('Bearer error="invalid_credentials"');
+  async verifyFidoAuthorizationChallenge(challengeId: string, credential: PublicKeyCredentialWithAssertion) {
+    const payload = await this.lookupChallenge(challengeId);
+    if (!payload) {
+      throw httpError(404).withDetails({ challengeId: 'not found' });
     }
 
-    const expectedAssertionResult = JSON.parse(cacheAssertionExpectations) as ExpectedAssertionResult;
-
-    const factor = await this.fidoFactorRepository.getFactor(actorId, credential.id);
+    const factor = await this.fidoFactorRepository.lookupFactor(payload.actorId, credential.id);
     if (!factor || !factor.active) {
       throw unauthorizedError('Bearer error="invalid_factor"');
     }
+
+    if (payload.factorId !== 'any' && factor.id !== payload.factorId) {
+      throw unauthorizedError('Bearer error="invalid_factor"');
+    }
+
+    const expectedAssertionResult = payload.assertionExpectations as ExpectedAssertionResult;
 
     expectedAssertionResult.publicKey = factor.publicKey;
     expectedAssertionResult.prevCounter = factor.counter;
@@ -422,13 +633,34 @@ export class FidoFactorService {
 
     try {
       const result = await this.fido2.assertionResult(assertionResult, expectedAssertionResult);
-      await this.fidoFactorRepository.updateFactorCounter(actorId, factor.id, result.authnrData.get('counter'));
-      await this.cache.delete(this.getAuthorizationKey(actorId));
+      await this.fidoFactorRepository.updateFactorCounter(payload.actorId, factor.id, result.authnrData.get('counter'));
+      await this.cache.delete(this.getChallengeKey(challengeId));
+      await this.cache.delete(this.getChallengeKey(`${payload.actorId}_${payload.factorId}`));
       return factor;
     } catch (ex) {
       throw unauthorizedError('Bearer error="invalid_credentials"')
         .withCause(ex as Error)
         .withInternalDetails({ assertionResult, expectedAssertionResult });
     }
+  }
+
+  /**
+   * Check whether an authorization challenge is still pending (i.e. cached and not yet expired).
+   *
+   * @param challengeId - The challenge reference returned by {@link createFidoAuthorizationChallenge}.
+   * @returns `true` if the challenge exists and has not expired, `false` otherwise.
+   */
+  async hasPendingChallenge(challengeId: string) {
+    return (await this.lookupChallenge(challengeId)) !== undefined;
+  }
+
+  /**
+   * Check whether a registration is still pending (i.e. cached and not yet expired).
+   *
+   * @param registrationId - The registration reference returned by {@link registerFidoFactor}.
+   * @returns `true` if the registration exists and has not expired, `false` otherwise.
+   */
+  async hasPendingRegistration(registrationId: string) {
+    return (await this.lookupRegistration(registrationId)) !== undefined;
   }
 }
