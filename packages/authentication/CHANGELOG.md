@@ -1,5 +1,11 @@
 # @maroonedsoftware/authentication
 
+## 4.10.0
+
+### Minor Changes
+
+- 058fe78: `createFidoAuthorizationChallenge` now also returns `assertion.rawChallenge` — the same value as `assertion.challenge` but as a raw `Buffer` instead of a base64 string — for callers that want to forward the bytes to the WebAuthn client without decoding.
+
 ## 4.9.0
 
 ### Minor Changes
