@@ -54,6 +54,14 @@ describe('set', () => {
 
     expect(mockRedis.set).toHaveBeenCalledWith('my-key', 'my-value', 'EX', 1800);
   });
+
+  it('rounds fractional seconds to the nearest integer for the EX flag', async () => {
+    vi.mocked(mockRedis.set).mockResolvedValue('OK');
+
+    await provider.set('my-key', 'my-value', Duration.fromObject({ milliseconds: 1500 }));
+
+    expect(mockRedis.set).toHaveBeenCalledWith('my-key', 'my-value', 'EX', 2);
+  });
 });
 
 describe('update', () => {
@@ -63,6 +71,14 @@ describe('update', () => {
     await provider.update('my-key', 'new-value', Duration.fromObject({ minutes: 15 }));
 
     expect(mockRedis.set).toHaveBeenCalledWith('my-key', 'new-value', 'EX', 900);
+  });
+
+  it('rounds fractional seconds to the nearest integer for the EX flag', async () => {
+    vi.mocked(mockRedis.set).mockResolvedValue('OK');
+
+    await provider.update('my-key', 'new-value', Duration.fromObject({ milliseconds: 2400 }));
+
+    expect(mockRedis.set).toHaveBeenCalledWith('my-key', 'new-value', 'EX', 2);
   });
 
   it('uses KEEPTTL when no TTL is provided', async () => {

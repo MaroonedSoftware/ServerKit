@@ -67,7 +67,7 @@ Base class to extend when implementing a custom cache backend.
 
 Concrete `CacheProvider` backed by [ioredis](https://github.com/redis/ioredis). Requires an `ioredis` `Redis` instance injected via the DI container.
 
-- Uses Redis `EX` for TTL-bearing writes.
+- Uses Redis `EX` for TTL-bearing writes (TTLs are rounded to whole seconds, since `EX` is integer-only).
 - Uses Redis `KEEPTTL` when updating without a new TTL.
 
 ## Custom implementations
