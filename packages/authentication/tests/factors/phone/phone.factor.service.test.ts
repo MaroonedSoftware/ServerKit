@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { PhoneFactorService } from '../../../src/factors/phone/phone.factor.service.js';
 import type { PhoneFactorRepository, PhoneFactor } from '../../../src/factors/phone/phone.factor.repository.js';
+import type { OtpProvider } from '../../../src/providers/otp.provider.js';
 import type { PolicyService } from '@maroonedsoftware/policies';
 import type { CacheProvider } from '@maroonedsoftware/cache';
 import { Duration, DateTime } from 'luxon';
@@ -13,6 +14,13 @@ const makeCacheProvider = () =>
     update: vi.fn().mockResolvedValue(undefined),
     delete: vi.fn().mockResolvedValue(null),
   }) as unknown as CacheProvider;
+
+const makeOtpProvider = () =>
+  ({
+    createSecret: vi.fn().mockReturnValue('TESTSECRET'),
+    generate: vi.fn().mockReturnValue('123456'),
+    validate: vi.fn().mockReturnValue(true),
+  }) as unknown as OtpProvider;
 
 const makeRepository = () =>
   ({
@@ -42,14 +50,28 @@ const makeOptions = () => ({
 
 const makeRegistrationPayload = (overrides = {}) => ({
   id: 'reg-id-1',
+  secret: 'TESTSECRET',
+  code: '123456',
+  expiresAt: DateTime.utc().plus({ minutes: 10 }).toUnixInteger(),
+  issuedAt: DateTime.utc().toUnixInteger(),
   value: '+12025550123',
-  expiresAt: Math.floor(Date.now() / 1000) + 600,
-  issuedAt: Math.floor(Date.now() / 1000),
+  ...overrides,
+});
+
+const makeChallengePayload = (overrides = {}) => ({
+  id: 'chal-id-1',
+  secret: 'TESTSECRET',
+  code: '123456',
+  expiresAt: DateTime.utc().plus({ minutes: 10 }).toUnixInteger(),
+  issuedAt: DateTime.utc().toUnixInteger(),
+  actorId: 'actor-1',
+  factorId: 'factor-1',
   ...overrides,
 });
 
 describe('PhoneFactorService', () => {
   let cache: ReturnType<typeof makeCacheProvider>;
+  let otpProvider: ReturnType<typeof makeOtpProvider>;
   let repo: ReturnType<typeof makeRepository>;
   let policyService: ReturnType<typeof makePolicyService>;
   let service: PhoneFactorService;
@@ -57,9 +79,10 @@ describe('PhoneFactorService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     cache = makeCacheProvider();
+    otpProvider = makeOtpProvider();
     repo = makeRepository();
     policyService = makePolicyService();
-    service = new PhoneFactorService(makeOptions(), repo, cache, policyService);
+    service = new PhoneFactorService(makeOptions(), repo, otpProvider, cache, policyService);
   });
 
   describe('registerPhoneFactor', () => {
@@ -101,7 +124,7 @@ describe('PhoneFactorService', () => {
       const result = await service.registerPhoneFactor('+12025550123');
 
       expect(result.registrationId).toBe('reg-id-1');
-      expect(result.value).toBe('+12025550123');
+      expect(result.code).toBe('123456');
       expect(result.alreadyRegistered).toBe(true);
       expect(DateTime.isDateTime(result.expiresAt)).toBe(true);
       expect(result.expiresAt.toUnixInteger()).toBe(payload.expiresAt);
@@ -133,6 +156,8 @@ describe('PhoneFactorService', () => {
       const payload = JSON.parse(payloadJson as string);
       expect(payload.value).toBe('+12025550123');
       expect(payload.id).toBeTruthy();
+      expect(payload.secret).toBe('TESTSECRET');
+      expect(payload.code).toBe('123456');
       expect(secondCall![0]).toBe('phone_factor_registration_+12025550123');
       expect(secondCall![1]).toBe(payload.id);
     });
@@ -145,9 +170,9 @@ describe('PhoneFactorService', () => {
       expect(firstCall![0]).toBe('phone_factor_registration_caller-supplied-id');
     });
 
-    it('returns value, registrationId, expiresAt, issuedAt, and alreadyRegistered=false on a fresh registration', async () => {
+    it('returns registrationId, code, expiresAt, issuedAt, and alreadyRegistered=false on a fresh registration', async () => {
       const result = await service.registerPhoneFactor('+12025550123');
-      expect(result.value).toBe('+12025550123');
+      expect(result.code).toBe('123456');
       expect(result.registrationId).toBeTruthy();
       expect(DateTime.isDateTime(result.expiresAt)).toBe(true);
       expect(DateTime.isDateTime(result.issuedAt)).toBe(true);
@@ -162,9 +187,20 @@ describe('PhoneFactorService', () => {
   describe('createPhoneFactorFromRegistration', () => {
     it('throws 404 when the registration does not exist', async () => {
       cache.get = vi.fn().mockResolvedValue(null);
-      await expect(service.createPhoneFactorFromRegistration('actor-1', 'missing-reg')).rejects.toMatchObject({
+      await expect(service.createPhoneFactorFromRegistration('actor-1', 'missing-reg', '123456')).rejects.toMatchObject({
         statusCode: 404,
         details: { registrationId: 'not found' },
+      });
+    });
+
+    it('throws 400 when the OTP code is invalid', async () => {
+      const payload = makeRegistrationPayload();
+      cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
+      vi.mocked(otpProvider.validate).mockReturnValue(false);
+
+      await expect(service.createPhoneFactorFromRegistration('actor-1', 'reg-id-1', 'wrong')).rejects.toMatchObject({
+        statusCode: 400,
+        details: { code: 'invalid code' },
       });
     });
 
@@ -173,7 +209,7 @@ describe('PhoneFactorService', () => {
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
       repo.createFactor = vi.fn().mockResolvedValue(makePhoneFactor());
 
-      await service.createPhoneFactorFromRegistration('actor-1', 'reg-id-1');
+      await service.createPhoneFactorFromRegistration('actor-1', 'reg-id-1', '123456');
 
       expect(repo.createFactor).toHaveBeenCalledWith('actor-1', '+12025550123');
     });
@@ -184,7 +220,7 @@ describe('PhoneFactorService', () => {
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
       repo.createFactor = vi.fn().mockResolvedValue(factor);
 
-      const result = await service.createPhoneFactorFromRegistration('actor-1', 'reg-id-1');
+      const result = await service.createPhoneFactorFromRegistration('actor-1', 'reg-id-1', '123456');
 
       expect(result).toBe(factor);
     });
@@ -194,10 +230,153 @@ describe('PhoneFactorService', () => {
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
       repo.createFactor = vi.fn().mockResolvedValue(makePhoneFactor());
 
-      await service.createPhoneFactorFromRegistration('actor-1', 'reg-id-1');
+      await service.createPhoneFactorFromRegistration('actor-1', 'reg-id-1', '123456');
 
       expect(cache.delete).toHaveBeenCalledWith('phone_factor_registration_reg-id-1');
       expect(cache.delete).toHaveBeenCalledWith('phone_factor_registration_+12025550123');
+    });
+  });
+
+  describe('issuePhoneChallenge', () => {
+    it('throws 404 when the factor does not exist', async () => {
+      repo.getFactor = vi.fn().mockResolvedValue(null);
+      await expect(service.issuePhoneChallenge('actor-1', 'factor-1')).rejects.toMatchObject({
+        statusCode: 404,
+        details: { factorId: 'not found' },
+      });
+    });
+
+    it('throws 404 when the factor is not active', async () => {
+      repo.getFactor = vi.fn().mockResolvedValue(makePhoneFactor({ active: false }));
+      await expect(service.issuePhoneChallenge('actor-1', 'factor-1')).rejects.toMatchObject({
+        statusCode: 404,
+        details: { factorId: 'not found' },
+      });
+    });
+
+    it('returns phone, challengeId, code, expiresAt, issuedAt, and alreadyIssued=false on a fresh challenge', async () => {
+      repo.getFactor = vi.fn().mockResolvedValue(makePhoneFactor());
+
+      const result = await service.issuePhoneChallenge('actor-1', 'factor-1');
+
+      expect(result.phone).toBe('+12025550123');
+      expect(result.challengeId).toBeTruthy();
+      expect(result.code).toBe('123456');
+      expect(DateTime.isDateTime(result.expiresAt)).toBe(true);
+      expect(DateTime.isDateTime(result.issuedAt)).toBe(true);
+      expect(result.alreadyIssued).toBe(false);
+    });
+
+    it('caches the challenge payload under both the challenge id and actor+factor keys', async () => {
+      repo.getFactor = vi.fn().mockResolvedValue(makePhoneFactor());
+
+      await service.issuePhoneChallenge('actor-1', 'factor-1');
+
+      // Two cache.set calls: one for the payload, one for the actor_factor → id lookup
+      expect(cache.set).toHaveBeenCalledTimes(2);
+      const [firstCall, secondCall] = vi.mocked(cache.set).mock.calls;
+      const [payloadKey, payloadJson] = firstCall!;
+      expect(payloadKey).toMatch(/^phone_factor_challenge_/);
+      const payload = JSON.parse(payloadJson as string);
+      expect(payload.actorId).toBe('actor-1');
+      expect(payload.factorId).toBe('factor-1');
+      expect(secondCall![0]).toBe('phone_factor_challenge_actor-1_factor-1');
+    });
+
+    it('returns the existing pending challenge with alreadyIssued=true when one is cached', async () => {
+      const payload = makeChallengePayload();
+      repo.getFactor = vi.fn().mockResolvedValue(makePhoneFactor());
+      cache.get = vi.fn().mockResolvedValueOnce('chal-id-1').mockResolvedValueOnce(JSON.stringify(payload));
+
+      const result = await service.issuePhoneChallenge('actor-1', 'factor-1');
+
+      expect(result.phone).toBe('+12025550123');
+      expect(result.challengeId).toBe('chal-id-1');
+      expect(result.code).toBe('123456');
+      expect(result.alreadyIssued).toBe(true);
+      expect(result.expiresAt.toUnixInteger()).toBe(payload.expiresAt);
+      expect(result.issuedAt.toUnixInteger()).toBe(payload.issuedAt);
+      expect(cache.set).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('verifyPhoneChallenge', () => {
+    it('throws 404 when the challenge does not exist', async () => {
+      cache.get = vi.fn().mockResolvedValue(null);
+      await expect(service.verifyPhoneChallenge('missing-id', '123456')).rejects.toMatchObject({
+        statusCode: 404,
+        details: { challengeId: 'not found' },
+      });
+    });
+
+    it('throws 401 when the factor has been deleted since the challenge was issued', async () => {
+      const payload = makeChallengePayload();
+      cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
+      repo.getFactor = vi.fn().mockResolvedValue(undefined);
+
+      await expect(service.verifyPhoneChallenge('chal-id-1', '123456')).rejects.toMatchObject({ statusCode: 401 });
+    });
+
+    it('throws 401 when the factor has been deactivated since the challenge was issued', async () => {
+      const payload = makeChallengePayload();
+      cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
+      repo.getFactor = vi.fn().mockResolvedValue(makePhoneFactor({ active: false }));
+
+      await expect(service.verifyPhoneChallenge('chal-id-1', '123456')).rejects.toMatchObject({ statusCode: 401 });
+    });
+
+    it('throws 400 when the OTP code is invalid', async () => {
+      const payload = makeChallengePayload();
+      cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
+      repo.getFactor = vi.fn().mockResolvedValue(makePhoneFactor());
+      vi.mocked(otpProvider.validate).mockReturnValue(false);
+
+      await expect(service.verifyPhoneChallenge('chal-id-1', 'wrong')).rejects.toMatchObject({
+        statusCode: 400,
+        details: { code: 'invalid code' },
+      });
+    });
+
+    it('returns the verified factor on a valid code', async () => {
+      const factor = makePhoneFactor();
+      const payload = makeChallengePayload();
+      cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
+      repo.getFactor = vi.fn().mockResolvedValue(factor);
+      vi.mocked(otpProvider.validate).mockReturnValue(true);
+
+      const result = await service.verifyPhoneChallenge('chal-id-1', '123456');
+
+      expect(result).toBe(factor);
+    });
+
+    it('deletes the cached challenge entries after a successful verification', async () => {
+      const payload = makeChallengePayload();
+      cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
+      repo.getFactor = vi.fn().mockResolvedValue(makePhoneFactor());
+      vi.mocked(otpProvider.validate).mockReturnValue(true);
+
+      await service.verifyPhoneChallenge('chal-id-1', '123456');
+
+      expect(cache.delete).toHaveBeenCalledWith('phone_factor_challenge_chal-id-1');
+      expect(cache.delete).toHaveBeenCalledWith('phone_factor_challenge_actor-1_factor-1');
+    });
+  });
+
+  describe('hasPendingChallenge', () => {
+    it('returns true when the challenge is cached', async () => {
+      cache.get = vi.fn().mockResolvedValue(JSON.stringify(makeChallengePayload()));
+      await expect(service.hasPendingChallenge('chal-id-1')).resolves.toBe(true);
+    });
+
+    it('returns false when the challenge is not cached', async () => {
+      cache.get = vi.fn().mockResolvedValue(null);
+      await expect(service.hasPendingChallenge('missing-id')).resolves.toBe(false);
+    });
+
+    it('looks up under the challenge cache key namespace', async () => {
+      cache.get = vi.fn().mockResolvedValue(null);
+      await service.hasPendingChallenge('chal-id-1');
+      expect(cache.get).toHaveBeenCalledWith('phone_factor_challenge_chal-id-1');
     });
   });
 

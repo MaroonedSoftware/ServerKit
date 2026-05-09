@@ -35,6 +35,8 @@ export class EmailFactorServiceOptions {
     public readonly otpExpiration: Duration = Duration.fromDurationLike({ minutes: 10 }),
     /** How long a magic link token remains valid. */
     public readonly magiclinkExpiration: Duration = Duration.fromDurationLike({ minutes: 30 }),
+    /** Length of the generated OTP code, in digits. Defaults to 6. Ignored for the `magiclink` method. */
+    public readonly tokenLength: number = 6,
   ) {}
 }
 
@@ -114,7 +116,12 @@ export class EmailFactorService {
   private createCode(expiration: Duration) {
     const secret = this.otpProvider.createSecret();
     const issuedAt = DateTime.utc();
-    const code = this.otpProvider.generate(secret, { type: 'totp', periodSeconds: expiration.as('seconds'), tokenLength: 6, timestamp: issuedAt });
+    const code = this.otpProvider.generate(secret, {
+      type: 'totp',
+      periodSeconds: expiration.as('seconds'),
+      tokenLength: this.options.tokenLength,
+      timestamp: issuedAt,
+    });
 
     return {
       code,
@@ -160,7 +167,7 @@ export class EmailFactorService {
         !this.otpProvider.validate(
           code,
           payload.secret ?? '',
-          { type: 'totp', periodSeconds: payload.expiresAt - payload.issuedAt, tokenLength: 6 },
+          { type: 'totp', periodSeconds: payload.expiresAt - payload.issuedAt, tokenLength: this.options.tokenLength },
           1,
         )
       ) {
@@ -224,8 +231,8 @@ export class EmailFactorService {
         registrationId: existingRegistration.id,
         code: existingRegistration.code,
         expiresAt: DateTime.fromSeconds(existingRegistration.expiresAt),
-        alreadyRegistered: true,
         issuedAt: DateTime.fromSeconds(existingRegistration.issuedAt),
+        alreadyRegistered: true,
       };
     }
 

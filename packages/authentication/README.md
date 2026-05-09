@@ -398,7 +398,7 @@ await authenticatorFactors.deleteFactor(user.id, factorId);
 
 ### Phone number factors
 
-`PhoneFactorService` handles two-step phone number factor registration. It caches a pending registration keyed by phone number and returns a `registrationId` — your application is responsible for sending an OTP to that number out-of-band (e.g. via SMS). The actor is bound at completion time, not at registration, so the same flow drives sign-up (no actor exists yet), profile updates, and recovery. Registration is idempotent: calling `registerPhoneFactor` again with the same number returns the existing pending registration with `alreadyRegistered: true` so the caller can skip a duplicate SMS send.
+`PhoneFactorService` handles two-step phone number factor registration and sign-in challenges. Each step generates a TOTP `code` that your application sends out-of-band (e.g. via SMS) — the service returns the code so the caller can hand it to its SMS provider. The actor is bound at registration completion time, not at registration start, so the same flow drives sign-up (no actor exists yet), profile updates, and recovery. Both registration and sign-in challenges are idempotent: re-calling them returns the existing pending payload with `alreadyRegistered`/`alreadyIssued: true` so the caller can skip a duplicate SMS send.
 
 ```typescript
 import { PhoneFactorService } from '@maroonedsoftware/authentication';
@@ -407,15 +407,26 @@ const phoneFactors = container.get(PhoneFactorService);
 
 // --- Registration ---
 
-// Step 1: cache a pending registration and get the registrationId. `alreadyRegistered`
+// Step 1: cache a pending registration and get a code to SMS. `alreadyRegistered`
 // is true when a pending registration was already cached — skip the SMS to avoid duplicates.
-const { value, registrationId, expiresAt, alreadyRegistered } = await phoneFactors.registerPhoneFactor('+12025550123');
+const { registrationId, code, alreadyRegistered } = await phoneFactors.registerPhoneFactor('+12025550123');
 if (!alreadyRegistered) {
-  await sms.sendOtp(value, registrationId);
+  await sms.send('+12025550123', `Your code is ${code}`);
 }
 
-// Step 2: user confirms their number; bind the registration to an actor and persist the factor
-const factor = await phoneFactors.createPhoneFactorFromRegistration(user.id, registrationId);
+// Step 2: user submits the code; verify it, bind to an actor, and persist the factor
+const factor = await phoneFactors.createPhoneFactorFromRegistration(user.id, registrationId, submittedCode);
+
+// --- Sign-in challenge ---
+
+// Step 1: emit a fresh code for an existing active factor
+const { phone, challengeId, code: signInCode, alreadyIssued } = await phoneFactors.issuePhoneChallenge(user.id, factor.id);
+if (!alreadyIssued) {
+  await sms.send(phone, `Your sign-in code is ${signInCode}`);
+}
+
+// Step 2: verify the code the user submitted; returns the verified factor
+const verifiedFactor = await phoneFactors.verifyPhoneChallenge(challengeId, submittedCode);
 ```
 
 ---
@@ -926,6 +937,7 @@ Abstract base class. Extend and register a concrete implementation so that `Pass
 | --------------------- | ---------- | ---------- | ---------------------------------------------------------------------------------------- |
 | `otpExpiration`       | `Duration` | 10 minutes | How long an OTP-code registration or sign-in challenge stays valid                       |
 | `magiclinkExpiration` | `Duration` | 30 minutes | How long a magic link token stays valid                                                  |
+| `tokenLength`         | `number`   | `6`        | Length, in digits, of the generated OTP code (ignored for the `magiclink` method)        |
 
 Email format validation and the disposable-domain deny list are dispatched through `PolicyService` under the [`email.allowed` policy](#policies-emailallowed-phoneallowed) — configure them via `EmailAllowedPolicyOptions`.
 
@@ -978,21 +990,25 @@ Abstract base class. Extend and register a concrete implementation (e.g. backed 
 
 ### `PhoneFactorService`
 
-Manages phone number factor registration. Requires a `PhoneFactorServiceOptions` object with an `otpExpiration` duration.
+Manages phone number factor registration and sign-in challenges. Requires a `PhoneFactorServiceOptions` object.
 
-| Method                                                       | Returns                                                                                                   | Description                                                                                                            |
-| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `registerPhoneFactor(value, registrationId?)`                | `Promise<{ value, registrationId, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>` | Validate the E.164 number and cache a pending registration (idempotent — `alreadyRegistered` is `true` on a cache hit) |
-| `createPhoneFactorFromRegistration(actorId, registrationId)` | `Promise<PhoneFactor>`                                                                                    | Bind the cached phone number to `actorId` and persist the factor                                                       |
-| `hasPendingRegistration(registrationId)`                     | `Promise<boolean>`                                                                                        | Check whether a registration is still cached and unexpired                                                             |
+| Method                                                              | Returns                                                                                                       | Description                                                                                                                                                |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `registerPhoneFactor(value, registrationId?)`                       | `Promise<{ registrationId, code, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>`      | Validate the E.164 number, generate a code, and cache a pending registration (idempotent — `alreadyRegistered` is `true` on a cache hit)                   |
+| `createPhoneFactorFromRegistration(actorId, registrationId, code)`  | `Promise<PhoneFactor>`                                                                                        | Verify the code, bind the cached phone number to `actorId`, and persist the factor                                                                          |
+| `hasPendingRegistration(registrationId)`                            | `Promise<boolean>`                                                                                            | Check whether a registration is still cached and unexpired                                                                                                  |
+| `issuePhoneChallenge(actorId, factorId)`                            | `Promise<{ phone, challengeId, code, expiresAt: DateTime, issuedAt: DateTime, alreadyIssued: boolean }>`      | Initiate a sign-in challenge for an active factor (idempotent — `alreadyIssued` is `true` on a cache hit)                                                   |
+| `verifyPhoneChallenge(challengeId, code)`                           | `Promise<PhoneFactor>`                                                                                        | Complete a sign-in challenge; re-checks the factor is active and returns it (HTTP 401 if it has been deleted or deactivated since the challenge was issued) |
+| `hasPendingChallenge(challengeId)`                                  | `Promise<boolean>`                                                                                            | Check whether a challenge is still cached and unexpired                                                                                                     |
 
 `PhoneFactorServiceOptions`:
 
-| Option          | Type       | Description                                           |
-| --------------- | ---------- | ----------------------------------------------------- |
-| `otpExpiration` | `Duration` | How long a pending registration stays valid           |
+| Option          | Type       | Default    | Description                                                            |
+| --------------- | ---------- | ---------- | ---------------------------------------------------------------------- |
+| `otpExpiration` | `Duration` | 10 minutes | How long a pending registration or sign-in challenge stays valid       |
+| `tokenLength`   | `number`   | `6`        | Length, in digits, of the generated OTP code                           |
 
-`registerPhoneFactor` rejects invalid phone numbers via the [`phone.allowed` policy](#policies-emailallowed-phoneallowed) on `PolicyService` (HTTP 400 for non-E.164 input). `createPhoneFactorFromRegistration` throws HTTP 404 when the registration has expired. The actor is bound at completion time, so callers that need to enforce uniqueness against existing factors should do so themselves before calling `createPhoneFactorFromRegistration`.
+`registerPhoneFactor` rejects invalid phone numbers via the [`phone.allowed` policy](#policies-emailallowed-phoneallowed) on `PolicyService` (HTTP 400 for non-E.164 input). `createPhoneFactorFromRegistration` throws HTTP 404 when the registration has expired and HTTP 400 when the submitted code is invalid. `verifyPhoneChallenge` throws HTTP 404 for an expired/missing challenge, HTTP 401 (`WWW-Authenticate: Bearer error="invalid_factor"`) when the factor has been deactivated since the challenge was issued, and HTTP 400 for an invalid code. The actor is bound at registration completion time, so callers that need to enforce uniqueness against existing factors should do so themselves before calling `createPhoneFactorFromRegistration`.
 
 ### `PhoneFactorRepository`
 
