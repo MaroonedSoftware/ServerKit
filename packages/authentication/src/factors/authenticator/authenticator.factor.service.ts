@@ -34,6 +34,7 @@ export class AuthenticatorFactorServiceOptions {
 type RegistrationPayload = {
   id: string;
   actorId: string;
+  label?: string;
   secretHash: string;
   expiresAt: number;
   issuedAt: number;
@@ -108,6 +109,9 @@ export class AuthenticatorFactorService {
    * without invalidating the secret the user may already have scanned.
    *
    * @param actorId        - The actor registering the factor.
+   * @param label          - Optional human-readable label for the factor (e.g.
+   *   "Personal phone"). Stored on the {@link AuthenticatorFactor} and shown
+   *   wherever the actor's factors are listed.
    * @param options        - OTP options to override the service defaults (algorithm, period, etc.).
    *   Ignored on a cache hit.
    * @param registrationId - Optional caller-supplied id. When set, the method
@@ -120,7 +124,7 @@ export class AuthenticatorFactorService {
    *   expires and was originally issued (both as Luxon `DateTime`s), and
    *   whether this call hit a previously-cached pending registration.
    */
-  async registerAuthenticatorFactor(actorId: string, options?: OtpOptions, registrationId?: string) {
+  async registerAuthenticatorFactor(actorId: string, label?: string, options?: OtpOptions, registrationId?: string) {
     const existingRegistration = registrationId ? await this.lookupRegistration(registrationId) : await this.lookupRegistrationByActorId(actorId);
     if (existingRegistration) {
       return {
@@ -150,6 +154,7 @@ export class AuthenticatorFactorService {
     const payload = {
       id: registrationId,
       actorId,
+      label,
       secretHash,
       expiresAt: expiresAt.toUnixInteger(),
       issuedAt: issuedAt.toUnixInteger(),
@@ -195,7 +200,11 @@ export class AuthenticatorFactorService {
       throw unauthorizedError('Bearer error="invalid_code"');
     }
 
-    const factor = await this.authenticatorFactorRepository.createFactor(actorId, { ...payload.otpOptions, secretHash: payload.secretHash });
+    const factor = await this.authenticatorFactorRepository.createFactor(actorId, {
+      ...payload.otpOptions,
+      secretHash: payload.secretHash,
+      label: payload.label,
+    });
 
     await this.cache.delete(this.getRegistrationKey(registrationId));
     await this.cache.delete(this.getRegistrationKey(payload.actorId));

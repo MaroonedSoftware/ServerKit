@@ -356,9 +356,12 @@ const authenticatorFactors = container.get(AuthenticatorFactorService);
 // already cached for the actor (or the supplied registrationId), in which
 // case the cached secret/uri/qrCode are returned so the same QR code can
 // be re-rendered without invalidating the secret the user may have scanned.
-const { registrationId, secret, uri, qrCode, expiresAt, alreadyRegistered } = await authenticatorFactors.registerAuthenticatorFactor(user.id);
+const { registrationId, secret, uri, qrCode, expiresAt, alreadyRegistered } =
+  await authenticatorFactors.registerAuthenticatorFactor(user.id, 'Personal phone');
 // Display qrCode (a data URL) to the user so they can scan it into their authenticator app.
 // secret is also returned for manual entry.
+// The optional second argument (`label`) is stored on the AuthenticatorFactor
+// and surfaced wherever the actor's factors are listed.
 
 // Step 2: user enters the code from their app; verify it and persist the factor
 const factor = await authenticatorFactors.createAuthenticatorFactorFromRegistration(
@@ -371,7 +374,7 @@ const factor = await authenticatorFactors.createAuthenticatorFactorFromRegistrat
 You can override OTP algorithm defaults per registration:
 
 ```typescript
-await authenticatorFactors.registerAuthenticatorFactor(user.id, {
+await authenticatorFactors.registerAuthenticatorFactor(user.id, undefined, {
   type: 'totp',
   algorithm: 'SHA256',
   periodSeconds: 60,
@@ -962,7 +965,7 @@ Manages TOTP/HOTP authenticator app factors. Requires an `AuthenticatorFactorSer
 
 | Method                                                                            | Returns                                                                                                                                       | Description                                                                                                              |
 | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `registerAuthenticatorFactor(actorId, options?, registrationId?)`                 | `Promise<{ registrationId, secret, uri, qrCode, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>`                       | Generate a secret, QR code, and cache the pending registration (idempotent — `alreadyRegistered` is `true` on a cache hit) |
+| `registerAuthenticatorFactor(actorId, label?, options?, registrationId?)`         | `Promise<{ registrationId, secret, uri, qrCode, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>`                       | Generate a secret, QR code, and cache the pending registration (idempotent — `alreadyRegistered` is `true` on a cache hit). `label` is stored on the resulting factor. |
 | `createAuthenticatorFactorFromRegistration(actorId, registrationId, code)`        | `Promise<AuthenticatorFactor>`                                                                                                                | Verify the first OTP code and persist the factor                                                                          |
 | `hasPendingRegistration(registrationId)`                                          | `Promise<boolean>`                                                                                                                            | Check whether a registration is still cached and unexpired                                                                |
 | `validateFactor(actorId, factorId, code)`                                         | `Promise<AuthenticatorFactor>`                                                                                                                | Verify a TOTP/HOTP code and return the verified factor; throws HTTP 401 on failure                                        |
@@ -987,7 +990,7 @@ Abstract base class. Extend and register a concrete implementation (e.g. backed 
 | `getFactor(actorId, factorId)`                  | `Promise<AuthenticatorFactor \| undefined>`  | Retrieve a factor by id                     |
 | `deleteFactor(actorId, factorId)`               | `Promise<void>`                              | Remove a factor                             |
 
-`AuthenticatorFactor` extends `OtpOptions` with `id: string`, `actorId: string`, `active: boolean`, and `secretHash: string` (the encrypted OTP secret).
+`AuthenticatorFactor` extends `OtpOptions` with `id: string`, `actorId: string`, `active: boolean`, `secretHash: string` (the encrypted OTP secret), and an optional `label?: string`.
 
 ### `PhoneFactorService`
 
@@ -1047,7 +1050,7 @@ Manages FIDO2/WebAuthn factors. Wraps `fido2-lib` and accepts relying party iden
 | `rpOrigin`  | `string`   | `'http://localhost'`   | Default relying party origin when not overridden per call                                                |
 | `rpIcon`    | `string?`  | —                      | Default icon URL when not overridden per call                                                            |
 
-`RegisterFidoFactorOptions`: `{ rpId?, rpName?, rpOrigin?, rpIcon?, userName, userDisplayName }`. The `rp*` fields all fall back to the corresponding `FidoFactorServiceOptions` defaults.
+`RegisterFidoFactorOptions`: `{ label?, rpId?, rpName?, rpOrigin?, rpIcon?, userName, userDisplayName }`. The `rp*` fields all fall back to the corresponding `FidoFactorServiceOptions` defaults; `label` is stored on the resulting `FidoFactor`.
 
 `AuthorizeFidoFactorOptions`: `{ rpId?, rpOrigin? }`. Both fields fall back to the corresponding `FidoFactorServiceOptions` defaults; the `options` argument to `createFidoAuthorizationChallenge` may also be omitted entirely.
 
@@ -1059,13 +1062,14 @@ Abstract base class. Extend and register a concrete implementation so that `Fido
 
 | Method                                                                | Returns                              | Description                                                                                       |
 | --------------------------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| `createFactor(actorId, publicKey, publicKeyId, counter, active)`      | `Promise<FidoFactor>`                | Persist a new factor                                                                              |
+| `createFactor(actorId, options)`                                      | `Promise<FidoFactor>`                | Persist a new factor (`options: FidoFactorOptions` carries `publicKey`, `publicKeyId`, `counter`, and an optional `label`) |
 | `listFactors(actorId, active)`                                        | `Promise<FidoFactor[]>`              | List the actor's factors, used to populate `allowCredentials`                                     |
-| `getFactor(actorId, factorId)`                                        | `Promise<FidoFactor \| undefined>`   | Look up a factor by credential id (the `id` field of `PublicKeyCredential`)                       |
+| `getFactor(actorId, factorId)`                                        | `Promise<FidoFactor \| undefined>`   | Retrieve a factor by row id                                                                       |
+| `lookupFactor(actorId, credentialId)`                                 | `Promise<FidoFactor \| undefined>`   | Look up a factor by credential id (the `id` field of `PublicKeyCredential`)                       |
 | `updateFactorCounter(actorId, factorId, counter)`                     | `Promise<void>`                      | Persist the latest signature counter; must be strictly increasing (regression = cloned authenticator) |
 | `deleteFactor(actorId, factorId)`                                     | `Promise<void>`                      | Remove a factor                                                                                   |
 
-`FidoFactor`: `{ id: string; actorId: string; active: boolean; publicKey: string; publicKeyId: string; counter: number }`.
+`FidoFactor`: `{ id: string; actorId: string; active: boolean; publicKey: string; publicKeyId: string; counter: number; label?: string }`.
 
 ### `OidcProviderRegistry`
 

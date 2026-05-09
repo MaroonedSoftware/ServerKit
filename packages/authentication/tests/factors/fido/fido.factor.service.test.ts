@@ -207,8 +207,16 @@ const makeStatefulRepo = () => {
   const factors = new Map<string, FidoFactor>(); // keyed by factor.id
   let nextId = 1;
   return {
-    createFactor: vi.fn(async (actorId: string, publicKey: string, publicKeyId: string, counter: number, active: boolean) => {
-      const factor: FidoFactor = { id: `factor-${nextId++}`, actorId, active, publicKey, publicKeyId, counter };
+    createFactor: vi.fn(async (actorId: string, options: { publicKey: string; publicKeyId: string; counter: number; label?: string }) => {
+      const factor: FidoFactor = {
+        id: `factor-${nextId++}`,
+        actorId,
+        active: true,
+        publicKey: options.publicKey,
+        publicKeyId: options.publicKeyId,
+        counter: options.counter,
+        label: options.label,
+      };
       factors.set(factor.id, factor);
       return factor;
     }),
@@ -375,6 +383,18 @@ describe('FidoFactorService', () => {
       });
     });
 
+    it('forwards the supplied label through to the persisted factor', async () => {
+      const attestation = await service.registerFidoFactor('actor-1', makeRegisterOptions({ label: 'MacBook Touch ID' }));
+
+      const authenticator = createAuthenticator();
+      const credential = buildAttestationCredential({ authenticator, rpId: RP_ID, origin: RP_ORIGIN, challenge: attestation.challenge });
+
+      const factor = await service.createFidoFactorFromRegistration('actor-1', attestation.registrationId, credential);
+
+      expect(factor.label).toBe('MacBook Touch ID');
+      expect(repo.createFactor).toHaveBeenCalledWith('actor-1', expect.objectContaining({ label: 'MacBook Touch ID' }));
+    });
+
     it('persists the verified credential and returns the new factor', async () => {
       const attestation = await service.registerFidoFactor('actor-1', makeRegisterOptions());
 
@@ -463,7 +483,7 @@ describe('FidoFactorService', () => {
         repo,
         cache,
       );
-      await repo.createFactor('actor-1', 'pem', 'cred-1', 0, true);
+      await repo.createFactor('actor-1', { publicKey: 'pem', publicKeyId: 'cred-1', counter: 0 });
 
       const result = await service.createFidoAuthorizationChallenge('actor-1', undefined);
 
@@ -549,7 +569,7 @@ describe('FidoFactorService', () => {
 
       // Seed a second factor manually so we have a different credentialId.
       const otherAuthenticator = createAuthenticator();
-      await repo.createFactor('actor-1', 'pem', otherAuthenticator.credentialId.toString('base64'), 0, true);
+      await repo.createFactor('actor-1', { publicKey: 'pem', publicKeyId: otherAuthenticator.credentialId.toString('base64'), counter: 0 });
 
       const challenge = await service.createFidoAuthorizationChallenge('actor-1', factorIdA, makeAuthorizeOptions());
 
@@ -682,7 +702,7 @@ describe('FidoFactorService', () => {
 
   describe('hasPendingChallenge', () => {
     it('returns true when the challenge is cached', async () => {
-      await repo.createFactor('actor-1', 'pem', 'cred-1', 0, true);
+      await repo.createFactor('actor-1', { publicKey: 'pem', publicKeyId: 'cred-1', counter: 0 });
       const { challengeId } = await service.createFidoAuthorizationChallenge('actor-1', undefined, makeAuthorizeOptions());
       await expect(service.hasPendingChallenge(challengeId)).resolves.toBe(true);
     });

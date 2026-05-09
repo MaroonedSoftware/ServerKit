@@ -1,21 +1,30 @@
 import { Injectable } from 'injectkit';
 
 /**
- * A persisted FIDO/WebAuthn authentication factor record.
+ * Material extracted from a verified WebAuthn attestation, plus optional
+ * caller-supplied metadata, that is persisted as a new {@link FidoFactor}.
  */
-export type FidoFactor = {
-  /** Unique identifier for this factor record. */
-  id: string;
-  /** The actor this factor belongs to. */
-  actorId: string;
-  /** Whether this factor is currently active and may be used for authentication. */
-  active: boolean;
+export type FidoFactorOptions = {
   /** PEM-encoded public key extracted from the authenticator's attestation. */
   publicKey: string;
   /** The credential id (base64-encoded) returned by the authenticator at registration. Used to look up the factor on assertion. */
   publicKeyId: string;
   /** Signature counter from the most recent successful assertion. Used by `fido2-lib` to detect cloned authenticators. */
   counter: number;
+  /** A human-readable label for the factor (e.g. "MacBook Touch ID"). */
+  label?: string;
+};
+
+/**
+ * A persisted FIDO/WebAuthn authentication factor record.
+ */
+export type FidoFactor = FidoFactorOptions & {
+  /** Unique identifier for this factor record. */
+  id: string;
+  /** The actor this factor belongs to. */
+  actorId: string;
+  /** Whether this factor is currently active and may be used for authentication. */
+  active: boolean;
 };
 
 /**
@@ -25,14 +34,17 @@ export type FidoFactor = {
 export interface FidoFactorRepository {
   /**
    * Persist a new FIDO factor for an actor.
-   * @param actorId     - The actor to associate the factor with.
-   * @param publicKey   - PEM-encoded public key from the authenticator attestation.
-   * @param publicKeyId - The credential id returned by the authenticator (base64).
-   * @param counter     - The initial signature counter from the attestation.
-   * @param active      - Whether the factor should be immediately usable.
+   *
+   * Implementations should default the new factor to active. The returned
+   * {@link FidoFactor} carries the assigned row `id` along with the supplied
+   * options.
+   *
+   * @param actorId - The actor to associate the factor with.
+   * @param options - Public key material and optional metadata extracted from
+   *   the verified attestation.
    * @returns The newly created {@link FidoFactor}.
    */
-  createFactor(actorId: string, publicKey: string, publicKeyId: string, counter: number, active: boolean): Promise<FidoFactor>;
+  createFactor(actorId: string, options: FidoFactorOptions): Promise<FidoFactor>;
 
   /**
    * List an actor's FIDO factors, filtered by active status.

@@ -9,18 +9,22 @@ import { OtpOptions } from '../../providers/otp.provider.js';
 export type AuthenticatorFactorOptions = OtpOptions & {
   /** The OTP secret encrypted with the application master key. */
   secretHash: string;
+  /** A human-readable label for the factor (e.g. "Personal phone"). */
+  label?: string;
 };
 
 /**
  * A persisted TOTP/HOTP authenticator factor record.
  */
-export type AuthenticatorFactor = Required<AuthenticatorFactorOptions> & {
+export type AuthenticatorFactor = Required<Omit<AuthenticatorFactorOptions, 'label'>> & {
   /** Unique identifier for this factor record. */
   id: string;
   /** The actor this factor belongs to. */
   actorId: string;
   /** Whether this factor is currently active and may be used for authentication. */
   active: boolean;
+  /** A human-readable label for the factor. */
+  label?: string;
 };
 
 /**

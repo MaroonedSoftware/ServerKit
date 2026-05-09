@@ -157,12 +157,20 @@ describe('AuthenticatorFactorService', () => {
     });
 
     it('applies custom OTP options over defaults', async () => {
-      await service.registerAuthenticatorFactor('actor-1', { type: 'totp', algorithm: 'SHA256', periodSeconds: 60, tokenLength: 8, counter: 0 });
+      await service.registerAuthenticatorFactor('actor-1', undefined, { type: 'totp', algorithm: 'SHA256', periodSeconds: 60, tokenLength: 8, counter: 0 });
       expect(otpProvider.generateURI).toHaveBeenCalledWith(
         'TESTSECRET',
         expect.objectContaining({ algorithm: 'SHA256', periodSeconds: 60, tokenLength: 8 }),
         { issuer: 'TestApp' },
       );
+    });
+
+    it('persists the supplied label on the cached registration payload', async () => {
+      await service.registerAuthenticatorFactor('actor-1', 'Personal phone');
+
+      const [firstCall] = vi.mocked(cache.set).mock.calls;
+      const payload = JSON.parse(firstCall![1] as string);
+      expect(payload.label).toBe('Personal phone');
     });
   });
 
@@ -213,6 +221,16 @@ describe('AuthenticatorFactorService', () => {
       repo.createFactor = vi.fn().mockResolvedValue(makeAuthenticatorFactor());
       await service.createAuthenticatorFactorFromRegistration('actor-1', 'reg-id-1', '123456');
       expect(repo.createFactor).toHaveBeenCalledWith('actor-1', expect.objectContaining({ secretHash: 'encrypted-secret' }));
+    });
+
+    it('forwards the cached label to the repository on factor creation', async () => {
+      const payload = makeRegistrationPayload({ label: 'Personal phone' });
+      cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
+      repo.createFactor = vi.fn().mockResolvedValue(makeAuthenticatorFactor());
+
+      await service.createAuthenticatorFactorFromRegistration('actor-1', 'reg-id-1', '123456');
+
+      expect(repo.createFactor).toHaveBeenCalledWith('actor-1', expect.objectContaining({ label: 'Personal phone' }));
     });
 
     it('returns the new factor on success', async () => {

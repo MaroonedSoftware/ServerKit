@@ -59,6 +59,8 @@ export type AuthorizeFidoFactorOptions = {
  * registered, not the application.
  */
 export type RegisterFidoFactorOptions = {
+  /** A human-readable label for the factor. */
+  label?: string;
   /** Effective relying party id — the host the credential will be bound to. Falls back to `FidoFactorServiceOptions.rpId`. */
   rpId?: string;
   /** Human-readable name of the relying party, shown in the authenticator UI. Falls back to `FidoFactorServiceOptions.rpName`. */
@@ -71,38 +73,6 @@ export type RegisterFidoFactorOptions = {
   userName: string;
   /** Friendly display name for the user. Shown on the authenticator. */
   userDisplayName: string;
-};
-
-/**
- * The attestation challenge returned to the client.
- *
- * Pass this to `navigator.credentials.create({ publicKey: ... })` after
- * decoding the base64-encoded `challenge` and `user.id` to `ArrayBuffer`s.
- */
-export type FidoAttestation = {
-  /** Relying party metadata to display on the authenticator. */
-  rp: {
-    name: string;
-    id: string;
-    icon?: string;
-  };
-  /** User metadata to bind the new credential to. `id` is base64-encoded. */
-  user: {
-    id: string;
-    name: string;
-    displayName: string;
-  };
-  /** Random server-generated challenge (base64). The authenticator signs this. */
-  challenge: string;
-  /** Acceptable algorithms for the credential, in preference order. */
-  pubKeyCredParams: {
-    type: 'public-key';
-    alg: number;
-  }[];
-  /** WebAuthn `timeout` hint (milliseconds). */
-  timeout?: number;
-  /** Attestation conveyance preference. */
-  attestation: 'direct' | 'indirect' | 'none';
 };
 
 /**
@@ -192,6 +162,7 @@ type ChallengePayload = FidoPayload & {
 };
 
 type RegistrationPayload = FidoPayload & {
+  label?: string;
   attestationOptions: PublicKeyCredentialCreationOptions;
   attestationExpectations: ExpectedAttestationResult;
 };
@@ -200,11 +171,13 @@ type PayloadOptions =
   | {
       method: 'attestation';
       options: RegisterFidoFactorOptions;
+      label?: string;
     }
   | {
       method: 'assertion';
       options: AuthorizeFidoFactorOptions;
       factors: FidoFactor[];
+      label?: string;
     };
 
 /**
@@ -379,6 +352,7 @@ export class FidoFactorService {
     const payload = {
       id: registrationId,
       actorId,
+      label: options.label,
       expiresAt: expiresAt.toUnixInteger(),
       issuedAt: issuedAt.toUnixInteger(),
       ...result,
@@ -437,7 +411,7 @@ export class FidoFactorService {
 
     const { payload, expiresAt, issuedAt } = await this.createPayload<RegistrationPayload>(
       actorId,
-      { method: 'attestation', options },
+      { method: 'attestation', options, label: options.label },
       registrationId,
     );
 
@@ -484,13 +458,12 @@ export class FidoFactorService {
     try {
       const result = await this.fido2.attestationResult(attestationResult, payload.attestationExpectations);
 
-      const factor = await this.fidoFactorRepository.createFactor(
-        actorId,
-        result.authnrData.get('credentialPublicKeyPem'),
-        credential.id,
-        result.authnrData.get('counter'),
-        true,
-      );
+      const factor = await this.fidoFactorRepository.createFactor(actorId, {
+        publicKey: result.authnrData.get('credentialPublicKeyPem'),
+        publicKeyId: credential.id,
+        counter: result.authnrData.get('counter'),
+        label: payload.label,
+      });
 
       await this.cache.delete(this.getRegistrationKey(registrationId));
       await this.cache.delete(this.getRegistrationKey(actorId));
