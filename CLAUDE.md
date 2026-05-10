@@ -193,3 +193,15 @@ The koa package integrates with **InjectKit** for request-scoped services. The `
 ### Type Safety
 
 All packages are fully typed. The koa package uses generic types (`ServerKitContext`, `ServerKitMiddleware<ResponseBody>`) to ensure type safety in route handlers.
+
+### File Naming
+
+Source and test filenames use **dot separators**, not hyphens. Compose the name from the symbol it exports plus a kind suffix:
+
+- Services: `scim.user.service.ts`
+- Repositories: `scim.user.repository.ts`
+- Middleware: `require.security.middleware.ts`
+- Schemas: `enterprise.user.schema.ts`
+- Test files mirror their source: `scim.user.service.test.ts`
+
+Index/barrel files are `index.ts`. Do not introduce hyphenated filenames; match the existing convention across packages.
