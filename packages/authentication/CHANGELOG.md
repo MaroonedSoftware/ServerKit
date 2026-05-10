@@ -1,5 +1,11 @@
 # @maroonedsoftware/authentication
 
+## 4.11.0
+
+### Minor Changes
+
+- 630b492: Add `'oidc'` to `AuthenticationFactorMethod` so OIDC factors can be recorded on a session alongside the other built-in methods.
+
 ## 4.10.0
 
 ### Minor Changes
