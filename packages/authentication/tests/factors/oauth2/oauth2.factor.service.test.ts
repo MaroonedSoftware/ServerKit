@@ -8,6 +8,7 @@ import {
 import {
   OAuth2FactorRepository,
   OAuth2Factor,
+  OAuth2FactorValue,
 } from '../../../src/factors/oauth2/oauth2.factor.repository.js';
 import {
   OAuth2ProviderRegistry,
@@ -43,18 +44,16 @@ const makeCache = () => {
 
 const makeRepo = () =>
   ({
-    createFactor: vi.fn(async (args: { actorId: string; provider: string; subject: string; email?: string }) => ({
+    createFactor: vi.fn(async (actorId: string, value: OAuth2FactorValue) => ({
       id: 'factor-new',
-      actorId: args.actorId,
+      actorId,
       active: true,
-      provider: args.provider,
-      subject: args.subject,
-      email: args.email,
+      ...value,
     })),
     lookupFactor: vi.fn(async () => undefined),
     lookupFactorsByEmail: vi.fn(async () => []),
     getFactor: vi.fn(),
-    listFactorsForActor: vi.fn(async () => []),
+    listFactors: vi.fn(async () => []),
     updateRefreshToken: vi.fn(async () => undefined),
     updateEmail: vi.fn(async () => undefined),
     deleteFactor: vi.fn(async () => undefined),

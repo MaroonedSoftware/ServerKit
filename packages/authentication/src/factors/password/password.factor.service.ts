@@ -162,7 +162,7 @@ export class PasswordFactorService {
       throw httpError(404).withDetails({ registrationId: 'not found' });
     }
 
-    const factor = await this.passwordFactorRepository.createFactor(actorId, { hash: registration.hash, salt: registration.salt }, false);
+    const factor = await this.passwordFactorRepository.createFactor(actorId, { hash: registration.hash, salt: registration.salt, needsReset: false });
 
     await this.cache.delete(this.getRegistrationKey(registrationId));
     await this.cache.delete(this.getRegistrationKey(`${registration.hash}:${registration.salt}`));
@@ -188,13 +188,13 @@ export class PasswordFactorService {
   async createPasswordFactor(actorId: string, password: string, needsReset: boolean = false) {
     await this.passwordStrengthProvider.ensureStrength(password);
 
-    const existingFactor = await this.passwordFactorRepository.getFactor(actorId);
+    const existingFactor = await this.passwordFactorRepository.getFactor(actorId, actorId);
     if (existingFactor) {
       throw httpError(409).withDetails({ actorId: 'Password factor already exists' });
     }
 
     const value = this.hashPassword(password);
-    const factor = await this.passwordFactorRepository.createFactor(actorId, value, needsReset);
+    const factor = await this.passwordFactorRepository.createFactor(actorId, { ...value, needsReset });
     return factor;
   }
 
@@ -206,7 +206,7 @@ export class PasswordFactorService {
   async updatePasswordFactor(actorId: string, password: string, needsReset: boolean = false) {
     await this.passwordStrengthProvider.ensureStrength(password);
 
-    let factor = await this.passwordFactorRepository.getFactor(actorId);
+    let factor = await this.passwordFactorRepository.getFactor(actorId, actorId);
     if (!factor) {
       throw httpError(404).withDetails({ actorId: 'Password factor not found' });
     }
@@ -215,13 +215,13 @@ export class PasswordFactorService {
     if (previousPasswords.some(p => this.comparePassword(password, p.hash, p.salt))) {
       throw httpError(400).withDetails({ password: 'Password is the same as a previous one' });
     }
-    factor = await this.passwordFactorRepository.updateFactor(actorId, this.hashPassword(password), needsReset);
+    factor = await this.passwordFactorRepository.updateFactor(actorId, { ...this.hashPassword(password), needsReset });
     return factor;
   }
 
   /** Permanently removes the actor's password factor. */
   async deleteFactor(actorId: string) {
-    await this.passwordFactorRepository.deleteFactor(actorId);
+    await this.passwordFactorRepository.deleteFactor(actorId, actorId);
   }
 
   /**
@@ -239,7 +239,7 @@ export class PasswordFactorService {
         .withCause(error as Error);
     }
 
-    const passwordFactor = await this.passwordFactorRepository.getFactor(actorId);
+    const passwordFactor = await this.passwordFactorRepository.getFactor(actorId, actorId);
 
     if (!passwordFactor || !passwordFactor.active) {
       throw unauthorizedError('Bearer error="invalid_factor"').withInternalDetails({ message: `${actorId} missing active password factor` });
@@ -265,13 +265,13 @@ export class PasswordFactorService {
   async changePassword(actorId: string, password: string) {
     await this.passwordStrengthProvider.ensureStrength(password);
 
-    const passwordFactor = await this.passwordFactorRepository.getFactor(actorId);
+    const passwordFactor = await this.passwordFactorRepository.getFactor(actorId, actorId);
     if (!passwordFactor) {
       throw httpError(404).withDetails({ actorId: 'Password factor not found' });
     }
 
     const value = this.hashPassword(password);
-    const updatedFactor = await this.passwordFactorRepository.updateFactor(actorId, value, false);
+    const updatedFactor = await this.passwordFactorRepository.updateFactor(actorId, { ...value, needsReset: false });
     return updatedFactor;
   }
 
@@ -313,5 +313,15 @@ export class PasswordFactorService {
    */
   async clearRateLimit(actorId: string) {
     await this.rateLimiter.delete(actorId);
+  }
+
+  /**
+   * Retrieve the password factor for an actor.
+   *
+   * Password factors are one-per-actor, so the factor id and actor id coincide
+   * — this helper hides that and looks the factor up by actor id alone.
+   */
+  async getFactor(actorId: string) {
+    return await this.passwordFactorRepository.getFactor(actorId, actorId);
   }
 }

@@ -15,7 +15,7 @@ vi.mock('openid-client', () => ({
 
 import * as openidClient from 'openid-client';
 import { OidcFactorService, OidcFactorServiceOptions, OidcActorEmailLookup } from '../../../src/factors/oidc/oidc.factor.service.js';
-import { OidcFactorRepository, OidcFactor } from '../../../src/factors/oidc/oidc.factor.repository.js';
+import { OidcFactorRepository, OidcFactor, OidcFactorValue } from '../../../src/factors/oidc/oidc.factor.repository.js';
 import { OidcProviderRegistry, OidcProviderRegistryConfig, OidcProviderConfig } from '../../../src/providers/oidc.provider.js';
 import { EncryptionProvider } from '@maroonedsoftware/encryption';
 import { Logger } from '@maroonedsoftware/logger';
@@ -45,18 +45,16 @@ const makeCache = () => {
 
 const makeRepo = () =>
   ({
-    createFactor: vi.fn(async (args: { actorId: string; provider: string; subject: string; email?: string }) => ({
+    createFactor: vi.fn(async (actorId: string, value: OidcFactorValue) => ({
       id: 'factor-new',
-      actorId: args.actorId,
+      actorId,
       active: true,
-      provider: args.provider,
-      subject: args.subject,
-      email: args.email,
+      ...value,
     })),
     lookupFactor: vi.fn(async () => undefined),
     lookupFactorsByEmail: vi.fn(async () => []),
     getFactor: vi.fn(),
-    listFactorsForActor: vi.fn(async () => []),
+    listFactors: vi.fn(async () => []),
     updateRefreshToken: vi.fn(async () => undefined),
     updateEmail: vi.fn(async () => undefined),
     deleteFactor: vi.fn(async () => undefined),
@@ -293,7 +291,8 @@ describe('OidcFactorService', () => {
       if (result.kind !== 'linked') throw new Error('unreachable');
       expect(result.actorId).toBe('actor-existing');
       expect(repo.createFactor).toHaveBeenCalledWith(
-        expect.objectContaining({ actorId: 'actor-existing', provider: 'google', subject: 'subject-1', email: 'user@example.com' }),
+        'actor-existing',
+        expect.objectContaining({ provider: 'google', subject: 'subject-1', email: 'user@example.com' }),
       );
     });
 
@@ -309,7 +308,7 @@ describe('OidcFactorService', () => {
       expect(result.kind).toBe('linked');
       if (result.kind !== 'linked') throw new Error('unreachable');
       expect(result.actorId).toBe('actor-by-email');
-      expect(repo.createFactor).toHaveBeenCalledWith(expect.objectContaining({ actorId: 'actor-by-email' }));
+      expect(repo.createFactor).toHaveBeenCalledWith('actor-by-email', expect.anything());
     });
 
     it('does NOT auto-link when the email is unverified — returns new-user with emailConflict', async () => {
@@ -405,7 +404,8 @@ describe('OidcFactorService', () => {
 
       expect(factor.actorId).toBe('actor-fresh');
       expect(repo.createFactor).toHaveBeenCalledWith(
-        expect.objectContaining({ actorId: 'actor-fresh', provider: 'google', subject: 'subject-1', email: 'fresh@example.com' }),
+        'actor-fresh',
+        expect.objectContaining({ provider: 'google', subject: 'subject-1', email: 'fresh@example.com' }),
       );
       expect(cache._store.has(`oidc_authorization_${result.authorizationId}`)).toBe(false);
     });

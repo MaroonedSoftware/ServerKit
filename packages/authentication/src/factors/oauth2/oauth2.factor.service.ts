@@ -192,7 +192,7 @@ export class OAuth2FactorService {
     const refreshTokenExpiresAt = tokens.expiresAt ?? null;
 
     // 1. Existing factor for (provider, subject) → signed-in
-    const existing = await this.repo.lookupFactor(stored.provider, profile.subject);
+    const existing = await this.repo.lookupFactor({ provider: stored.provider, subject: profile.subject });
     if (existing) {
       if (refreshToken) {
         const { encryptedValue, encryptedDek } = this.encryption.encryptWithNewDek(refreshToken);
@@ -332,8 +332,7 @@ export class OAuth2FactorService {
       encryptedRefreshToken = encryptedValue;
       encryptedRefreshTokenDek = encryptedDek;
     }
-    return this.repo.createFactor({
-      actorId,
+    return this.repo.createFactor(actorId, {
       provider: profile.provider,
       subject: profile.subject,
       email: profile.email,
@@ -359,5 +358,28 @@ export class OAuth2FactorService {
     const stored: StoredPendingAuthorization = { ...args, authorizationId, expiresAt };
     await this.cache.set(this.getAuthorizationKey(authorizationId), JSON.stringify(stored), this.options.pendingAuthorizationExpiration);
     return authorizationId;
+  }
+
+  /** Retrieve an OAuth 2.0 factor by id, scoped to the owning actor. */
+  async getFactor(actorId: string, factorId: string) {
+    return await this.repo.getFactor(actorId, factorId);
+  }
+
+  /** List OAuth 2.0 factors for an actor. Pass `active` to filter by activation state. */
+  async listFactors(actorId: string, active?: boolean) {
+    return await this.repo.listFactors(actorId, active);
+  }
+
+  /**
+   * Look up a factor by its provider-side identity. Lookup is global, not per-actor —
+   * `(provider, subject)` is unique system-wide. Returns `undefined` when no match exists.
+   */
+  async lookupFactor(provider: string, subject: string) {
+    return await this.repo.lookupFactor({ provider, subject });
+  }
+
+  /** Permanently remove an OAuth 2.0 factor. */
+  async deleteFactor(actorId: string, factorId: string) {
+    await this.repo.deleteFactor(actorId, factorId);
   }
 }

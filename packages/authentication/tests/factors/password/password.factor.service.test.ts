@@ -117,11 +117,11 @@ describe('PasswordFactorService', () => {
       expect(result).toBe(factor);
       expect(strengthProvider.ensureStrength).toHaveBeenCalledWith('strong-pass');
       expect(repo.createFactor).toHaveBeenCalledTimes(1);
-      const [actorId, value, needsReset] = vi.mocked(repo.createFactor).mock.calls[0]!;
+      const [actorId, value] = vi.mocked(repo.createFactor).mock.calls[0]!;
       expect(actorId).toBe('actor-1');
       expect(value.hash).toBeTruthy();
       expect(value.salt).toBeTruthy();
-      expect(needsReset).toBe(true);
+      expect(value.needsReset).toBe(true);
     });
 
     it('defaults needsReset to false', async () => {
@@ -130,7 +130,7 @@ describe('PasswordFactorService', () => {
 
       await service.createPasswordFactor('actor-1', 'strong-pass');
 
-      expect(vi.mocked(repo.createFactor).mock.calls[0]![2]).toBe(false);
+      expect(vi.mocked(repo.createFactor).mock.calls[0]![1].needsReset).toBe(false);
     });
   });
 
@@ -201,7 +201,7 @@ describe('PasswordFactorService', () => {
       const result = await service.createPasswordFactorFromRegistration('actor-1', 'reg-id-1');
 
       expect(result).toBe(factor);
-      expect(repo.createFactor).toHaveBeenCalledWith('actor-1', { hash: 'cached-hash', salt: 'cached-salt' }, false);
+      expect(repo.createFactor).toHaveBeenCalledWith('actor-1', { hash: 'cached-hash', salt: 'cached-salt', needsReset: false });
     });
 
     it('deletes the cached registration entries after persisting', async () => {
@@ -256,17 +256,17 @@ describe('PasswordFactorService', () => {
       expect(result).toBe(updated);
       expect(strengthProvider.ensureStrength).toHaveBeenCalledWith('strong-pass');
       expect(repo.listPreviousPasswords).toHaveBeenCalledWith('actor-1', 10);
-      const [actorId, value, needsReset] = vi.mocked(repo.updateFactor).mock.calls[0]!;
+      const [actorId, value] = vi.mocked(repo.updateFactor).mock.calls[0]!;
       expect(actorId).toBe('actor-1');
       expect(value.hash).toBeTruthy();
-      expect(needsReset).toBe(true);
+      expect(value.needsReset).toBe(true);
     });
   });
 
   describe('deleteFactor', () => {
     it('delegates to the repository', async () => {
       await service.deleteFactor('actor-1');
-      expect(repo.deleteFactor).toHaveBeenCalledWith('actor-1');
+      expect(repo.deleteFactor).toHaveBeenCalledWith('actor-1', 'actor-1');
     });
   });
 
@@ -348,10 +348,10 @@ describe('PasswordFactorService', () => {
 
       expect(result).toBe(updated);
       expect(strengthProvider.ensureStrength).toHaveBeenCalledWith('strong-pass');
-      const [actorId, value, needsReset] = vi.mocked(repo.updateFactor).mock.calls[0]!;
+      const [actorId, value] = vi.mocked(repo.updateFactor).mock.calls[0]!;
       expect(actorId).toBe('actor-1');
       expect(value.hash).toBeTruthy();
-      expect(needsReset).toBe(false);
+      expect(value.needsReset).toBe(false);
     });
   });
 

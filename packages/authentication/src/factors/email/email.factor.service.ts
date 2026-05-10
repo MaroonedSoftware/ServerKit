@@ -178,6 +178,32 @@ export class EmailFactorService {
     }
   }
 
+  private async ensureEmailAllowed(value: string) {
+    const policyResult = await this.policyService.check('email.allowed', { value });
+
+    if (!policyResult.allowed) {
+      const msg =
+        policyResult.reason === 'deny_list'
+          ? 'email is not allowed'
+          : policyResult.reason === 'invalid_format'
+            ? 'invalid email format'
+            : policyResult.reason;
+      throw httpError(400).withDetails({ value: msg }).withInternalDetails({ value: policyResult.details?.value });
+    }
+
+    const domain = value.split('@')[1]!;
+
+    const isInviteOnly = await this.emailFactorRepository.isDomainInviteOnly(domain);
+    if (isInviteOnly) {
+      throw httpError(403).withDetails({ email: 'Must be invited to register' });
+    }
+
+    const existingFactor = await this.emailFactorRepository.lookupFactor(value);
+    if (existingFactor) {
+      throw httpError(409).withDetails({ method: 'already registered' });
+    }
+  }
+
   /**
    * Initiate email factor registration by generating a verification code or magic link token
    * and caching a short-lived registration payload.
@@ -213,18 +239,6 @@ export class EmailFactorService {
   async registerEmailFactor(value: string, verificationMethod: 'code' | 'magiclink', registrationId?: string) {
     value = value.trim().toLowerCase();
 
-    const policyResult = await this.policyService.check('email.allowed', { value });
-
-    if (!policyResult.allowed) {
-      const msg =
-        policyResult.reason === 'deny_list'
-          ? 'email is not allowed'
-          : policyResult.reason === 'invalid_format'
-            ? 'invalid email format'
-            : policyResult.reason;
-      throw httpError(400).withDetails({ value: msg }).withInternalDetails({ value: policyResult.details?.value });
-    }
-
     const existingRegistration = registrationId ? await this.lookupRegistration(registrationId) : await this.lookupRegistrationByValue(value);
     if (existingRegistration) {
       return {
@@ -236,18 +250,7 @@ export class EmailFactorService {
       };
     }
 
-    const domain = value.split('@')[1]!;
-
-    const isInviteOnly = await this.emailFactorRepository.isDomainInviteOnly(domain);
-    if (isInviteOnly) {
-      throw httpError(403).withDetails({ email: 'Must be invited to register' });
-    }
-
-    const existingFactor = await this.emailFactorRepository.lookupFactor(value);
-
-    if (existingFactor) {
-      throw httpError(409).withDetails({ method: 'already registered' });
-    }
+    await this.ensureEmailAllowed(value);
 
     const { payload, expiresAt, issuedAt, expiration } = this.createPayload<RegistrationPayload>(verificationMethod, registrationId);
 
@@ -426,5 +429,52 @@ export class EmailFactorService {
     const nonce = crypto.randomBytes(16).toString('base64');
     const html = `<!DOCTYPE html><html><head lang="en"><meta http-equiv="Content-Type" content="text/html; charset=utf-8" /></head><body><script nonce="${nonce}" type="text/javascript">window.onload = async function() {window.location.href = "${redirectUrl}";}</script></body></html>`;
     return { html, nonce };
+  }
+
+  /**
+   * Persist an email factor directly, bypassing the registration/verification flow.
+   *
+   * Suitable for trusted callers (e.g. invite acceptance, admin tooling) where the
+   * email has already been verified out-of-band. Normalises `value` and runs the
+   * `email.allowed` policy plus the invite-only domain check, but skips OTP/magic-link
+   * verification.
+   *
+   * @throws HTTP 400 when the email fails policy validation.
+   * @throws HTTP 403 when the email's domain is invite-only.
+   * @throws HTTP 409 when an email factor for `value` already exists.
+   */
+  async createFactor(actorId: string, value: string) {
+    value = value.trim().toLowerCase();
+
+    await this.ensureEmailAllowed(value);
+
+    return this.emailFactorRepository.createFactor(actorId, value);
+  }
+
+  /** Check whether registration is gated by an invite for the given domain. Domain is normalized (trimmed and lowercased). */
+  async isDomainInviteOnly(domain: string) {
+    domain = domain.trim().toLowerCase();
+    return await this.emailFactorRepository.isDomainInviteOnly(domain);
+  }
+
+  /** Retrieve an email factor by id, scoped to the owning actor. */
+  async getFactor(actorId: string, factorId: string) {
+    return await this.emailFactorRepository.getFactor(actorId, factorId);
+  }
+
+  /** List email factors for an actor. Pass `active` to filter by activation state. */
+  async listFactors(actorId: string, active?: boolean) {
+    return await this.emailFactorRepository.listFactors(actorId, active);
+  }
+
+  /** Look up an email factor by email address. Value is normalized before lookup. Returns `undefined` when no match exists. */
+  async lookupFactor(value: string) {
+    value = value.trim().toLowerCase();
+    return await this.emailFactorRepository.lookupFactor(value);
+  }
+
+  /** Permanently remove an email factor. */
+  async deleteFactor(actorId: string, factorId: string) {
+    return await this.emailFactorRepository.deleteFactor(actorId, factorId);
   }
 }

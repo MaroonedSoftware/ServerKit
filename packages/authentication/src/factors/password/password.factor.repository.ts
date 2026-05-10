@@ -1,4 +1,5 @@
 import { Injectable } from 'injectkit';
+import { Factor, FactorRepository } from '../factor.repository.js';
 
 /** PBKDF2-derived password hash and its associated salt, both base64-encoded. */
 export type PasswordValue = {
@@ -6,34 +7,25 @@ export type PasswordValue = {
   hash: string;
   /** The PBKDF2-derived password salt, base64-encoded. */
   salt: string;
+  needsReset?: boolean;
 };
 
 /** A persisted password authentication factor for an actor. */
-export interface PasswordFactor {
-  id: string;
-  /** The actor this factor belongs to. */
-  actorId: string;
-  /** Whether this factor is currently enabled for authentication. */
-  active: boolean;
-  /** The PBKDF2-derived password hash and its associated salt, both base64-encoded. */
-  value: PasswordValue;
-  /** When true the actor must change their password before authenticating. */
-  needsReset: boolean;
-}
+export type PasswordFactor = Factor &
+  PasswordValue & {
+    /** The PBKDF2-derived password hash and its associated salt, both base64-encoded. */
+    value: PasswordValue;
+    /** When true the actor must change their password before authenticating. */
+    needsReset: boolean;
+  };
 
 /** Repository interface for persisting and retrieving password factors. */
 // eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
-export interface PasswordFactorRepository {
-  /** Creates a new password factor for the given actor. */
-  createFactor(subject: string, value: PasswordValue, needsReset: boolean): Promise<PasswordFactor>;
+export interface PasswordFactorRepository extends FactorRepository<PasswordFactor, PasswordValue> {
   /** Returns the most recent `limit` historical password hashes for the actor, used to enforce password reuse policy. */
   listPreviousPasswords(actorId: string, limit: number): Promise<PasswordValue[]>;
   /** Replaces the actor's current password factor value. */
-  updateFactor(actorId: string, value: PasswordValue, needsReset: boolean): Promise<PasswordFactor>;
-  /** Returns the active password factor for the actor, or null if none exists. */
-  getFactor(actorId: string): Promise<PasswordFactor>;
-  /** Permanently removes the actor's password factor. */
-  deleteFactor(actorId: string): Promise<void>;
+  updateFactor(actorId: string, value: PasswordValue): Promise<PasswordFactor>;
 }
 
 @Injectable()

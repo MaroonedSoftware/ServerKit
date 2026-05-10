@@ -652,4 +652,24 @@ export class FidoFactorService {
   async hasPendingRegistration(registrationId: string) {
     return (await this.lookupRegistration(registrationId)) !== undefined;
   }
+
+  /** Retrieve a FIDO factor by id, scoped to the owning actor. */
+  async getFactor(actorId: string, factorId: string) {
+    return this.fidoFactorRepository.getFactor(actorId, factorId);
+  }
+
+  /** List FIDO factors for an actor. Pass `active` to filter by activation state. */
+  async listFactors(actorId: string, active?: boolean) {
+    return this.fidoFactorRepository.listFactors(actorId, active);
+  }
+
+  /** Look up an actor's FIDO factor by the credential id reported by the authenticator. Returns `undefined` when no match exists. */
+  async lookupFactor(actorId: string, credentialId: string) {
+    return await this.fidoFactorRepository.lookupFactor(actorId, credentialId);
+  }
+
+  /** Permanently remove a FIDO factor. */
+  async deleteFactor(actorId: string, factorId: string) {
+    await this.fidoFactorRepository.deleteFactor(actorId, factorId);
+  }
 }

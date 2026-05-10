@@ -249,6 +249,21 @@ export class AuthenticatorFactorService {
     return factor;
   }
 
+  /** Retrieve an authenticator factor by id, scoped to the owning actor. Returns `undefined` when no match exists. */
+  async getFactor(actorId: string, factorId: string) {
+    return this.authenticatorFactorRepository.getFactor(actorId, factorId);
+  }
+
+  /** List authenticator factors for an actor. Pass `active` to filter by activation state. */
+  async listFactors(actorId: string, active?: boolean) {
+    return this.authenticatorFactorRepository.listFactors(actorId, active);
+  }
+
+  /** Look up an actor's authenticator factor by its human-readable label. Returns `undefined` when no match exists. */
+  async lookupFactor(actorId: string, label: string) {
+    return await this.authenticatorFactorRepository.lookupFactor(actorId, label);
+  }
+
   /**
    * Delete an authenticator factor.
    *

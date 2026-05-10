@@ -261,7 +261,7 @@ export class OidcFactorService {
     const refreshTokenExpiresAt = this.computeRefreshTokenExpiry(tokens);
 
     // 1. Existing factor for (provider, subject) → signed-in
-    const existing = await this.repo.lookupFactor(stored.provider, subject);
+    const existing = await this.repo.lookupFactor({ provider: stored.provider, subject });
     if (existing) {
       if (refreshToken) {
         const { encryptedValue, encryptedDek } = this.encryption.encryptWithNewDek(refreshToken);
@@ -410,8 +410,7 @@ export class OidcFactorService {
       encryptedRefreshTokenDek = encryptedDek;
     }
 
-    return this.repo.createFactor({
-      actorId,
+    return this.repo.createFactor(actorId, {
       provider: profile.provider,
       subject: profile.subject,
       email: profile.email,
@@ -455,5 +454,28 @@ export class OidcFactorService {
       return new Date(Date.now() + expiresIn * 1000);
     }
     return null;
+  }
+
+  /** Retrieve an OIDC factor by id, scoped to the owning actor. */
+  async getFactor(actorId: string, factorId: string) {
+    return await this.repo.getFactor(actorId, factorId);
+  }
+
+  /** List OIDC factors for an actor. Pass `active` to filter by activation state. */
+  async listFactors(actorId: string, active?: boolean) {
+    return await this.repo.listFactors(actorId, active);
+  }
+
+  /**
+   * Look up a factor by its provider-side identity. Lookup is global, not per-actor —
+   * `(provider, subject)` is unique system-wide. Returns `undefined` when no match exists.
+   */
+  async lookupFactor(provider: string, subject: string) {
+    return await this.repo.lookupFactor({ provider, subject });
+  }
+
+  /** Permanently remove an OIDC factor. */
+  async deleteFactor(actorId: string, factorId: string) {
+    await this.repo.deleteFactor(actorId, factorId);
   }
 }

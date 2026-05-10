@@ -197,17 +197,6 @@ export class PhoneFactorService {
    *   `phone.allowed` policy denies the number.
    */
   async registerPhoneFactor(value: string, registrationId?: string) {
-    const policyResult = await this.policyService.check('phone.allowed', { value });
-    if (!policyResult.allowed) {
-      const msg =
-        policyResult.reason === 'deny_list'
-          ? 'phone number is not allowed'
-          : policyResult.reason === 'invalid_format'
-            ? 'invalid phone number, expected E.164 format'
-            : policyResult.reason;
-      throw httpError(400).withDetails({ value: msg }).withInternalDetails({ value: policyResult.details?.value });
-    }
-
     const existingRegistration = registrationId ? await this.lookupRegistration(registrationId) : await this.lookupRegistrationByValue(value);
     if (existingRegistration) {
       return {
@@ -217,6 +206,17 @@ export class PhoneFactorService {
         issuedAt: DateTime.fromSeconds(existingRegistration.issuedAt),
         alreadyRegistered: true,
       };
+    }
+
+    const policyResult = await this.policyService.check('phone.allowed', { value });
+    if (!policyResult.allowed) {
+      const msg =
+        policyResult.reason === 'deny_list'
+          ? 'phone number is not allowed'
+          : policyResult.reason === 'invalid_format'
+            ? 'invalid phone number, expected E.164 format'
+            : policyResult.reason;
+      throw httpError(400).withDetails({ value: msg }).withInternalDetails({ value: policyResult.details?.value });
     }
 
     const { payload, expiresAt, issuedAt, expiration } = this.createPayload<RegistrationPayload>(registrationId);
@@ -374,5 +374,25 @@ export class PhoneFactorService {
    */
   async hasPendingRegistration(registrationId: string) {
     return (await this.lookupRegistration(registrationId)) !== undefined;
+  }
+
+  /** Retrieve a phone factor by id, scoped to the owning actor. */
+  async getFactor(actorId: string, factorId: string) {
+    return await this.phoneFactorRepository.getFactor(actorId, factorId);
+  }
+
+  /** List phone factors for an actor. Pass `active` to filter by activation state. */
+  async listFactors(actorId: string, active?: boolean) {
+    return await this.phoneFactorRepository.listFactors(actorId, active);
+  }
+
+  /** Look up an actor's phone factor by E.164 phone number. Returns `undefined` when no match exists. */
+  async lookupFactor(actorId: string, value: string) {
+    return await this.phoneFactorRepository.lookupFactor(actorId, value);
+  }
+
+  /** Permanently remove a phone factor. */
+  async deleteFactor(actorId: string, factorId: string) {
+    await this.phoneFactorRepository.deleteFactor(actorId, factorId);
   }
 }

@@ -912,17 +912,18 @@ Manages password factors with PBKDF2-SHA512 hashing, password-reuse prevention, 
 
 ### `PasswordFactorRepository`
 
-Abstract base class. Extend and register a concrete implementation so that `PasswordFactorService` can resolve it at runtime.
+Abstract base class. Extends `FactorRepository<PasswordFactor, PasswordValue>` from the shared factor base contract. Extend and register a concrete implementation so that `PasswordFactorService` can resolve it at runtime.
 
 | Method                                                  | Returns                          | Description                                              |
 | ------------------------------------------------------- | -------------------------------- | -------------------------------------------------------- |
-| `createFactor(subject, value, needsReset)`              | `Promise<PasswordFactor>`        | Persist a new password factor                            |
-| `updateFactor(actorId, value, needsReset)`              | `Promise<PasswordFactor>`        | Replace the actor's current password factor value        |
-| `getFactor(actorId)`                                    | `Promise<PasswordFactor>`        | Retrieve the active password factor for the actor        |
+| `createFactor(actorId, value: PasswordValue)`           | `Promise<PasswordFactor>`        | Persist a new password factor (`value.needsReset` defaults to `false`) |
+| `updateFactor(actorId, value: PasswordValue)`           | `Promise<PasswordFactor>`        | Replace the actor's current password factor value        |
+| `getFactor(actorId, factorId)`                          | `Promise<PasswordFactor>`        | Retrieve the password factor — pass `actorId` for both args, since password factors are one-per-actor |
+| `listFactors(actorId, active?)`                         | `Promise<PasswordFactor[]>`      | List password factors for an actor (zero or one)         |
 | `listPreviousPasswords(actorId, limit)`                 | `Promise<PasswordValue[]>`       | Return the most recent `limit` historical password hashes |
-| `deleteFactor(actorId)`                                 | `Promise<void>`                  | Permanently remove the actor's password factor           |
+| `deleteFactor(actorId, factorId)`                       | `Promise<void>`                  | Permanently remove the actor's password factor (pass `actorId` for both args) |
 
-`PasswordFactor`: `{ id: string; actorId: string; active: boolean; value: PasswordValue; needsReset: boolean }`. `PasswordValue`: `{ hash: string; salt: string }` — both base64-encoded.
+`PasswordFactor`: `Factor & PasswordValue & { value: PasswordValue; needsReset: boolean }`. `PasswordValue`: `{ hash: string; salt: string; needsReset?: boolean }` — `hash` and `salt` are base64-encoded.
 
 ### `EmailFactorService`
 
@@ -948,17 +949,18 @@ Email format validation and the disposable-domain deny list are dispatched throu
 
 ### `EmailFactorRepository`
 
-Abstract base class. Extend and register a concrete implementation so that `EmailFactorService` can resolve it at runtime.
+Abstract base class. Extends `Omit<FactorRepository<EmailFactor>, 'lookupFactor'>` — the base `lookupFactor` is replaced with a global, single-arg version because email-by-address is unique system-wide. Extend and register a concrete implementation so that `EmailFactorService` can resolve it at runtime.
 
 | Method                              | Returns                  | Description                                          |
 | ----------------------------------- | ------------------------ | ---------------------------------------------------- |
 | `createFactor(actorId, value)`      | `Promise<EmailFactor>`   | Persist a new email factor                           |
-| `lookupFactor(value)`               | `Promise<EmailFactor \| undefined>` | Look up an email factor by email address             |
+| `lookupFactor(value)`               | `Promise<EmailFactor \| undefined>` | Look up an email factor by email address (global, not per-actor) |
 | `isDomainInviteOnly(domain)`        | `Promise<boolean>`       | Check whether a domain is invite-only (gates registration) |
-| `getFactor(actorId, factorId)`      | `Promise<EmailFactor>`   | Retrieve a factor by id                              |
+| `getFactor(actorId, factorId)`      | `Promise<EmailFactor>`   | Retrieve a factor by id, scoped to the owning actor  |
+| `listFactors(actorId, active?)`     | `Promise<EmailFactor[]>` | List factors for an actor                            |
 | `deleteFactor(actorId, factorId)`   | `Promise<void>`          | Remove a factor                                      |
 
-`EmailFactor`: `{ id: string; actorId: string; active: boolean; value: string }` where `value` is the verified email address.
+`EmailFactor`: `Factor & { value: string }` where `value` is the verified email address.
 
 ### `AuthenticatorFactorService`
 
@@ -983,15 +985,17 @@ Manages TOTP/HOTP authenticator app factors. Requires an `AuthenticatorFactorSer
 
 ### `AuthenticatorFactorRepository`
 
-Abstract base class. Extend and register a concrete implementation (e.g. backed by a PostgreSQL table) so that `AuthenticatorFactorService` can resolve it at runtime.
+Abstract base class. Extends `FactorRepository<AuthenticatorFactor, AuthenticatorFactorOptions, string>` from the shared factor base contract. Extend and register a concrete implementation (e.g. backed by a PostgreSQL table) so that `AuthenticatorFactorService` can resolve it at runtime.
 
 | Method                                          | Returns                                      | Description                                 |
 | ----------------------------------------------- | -------------------------------------------- | ------------------------------------------- |
 | `createFactor(actorId, options)`                | `Promise<AuthenticatorFactor>`               | Persist a new factor for an actor           |
 | `getFactor(actorId, factorId)`                  | `Promise<AuthenticatorFactor \| undefined>`  | Retrieve a factor by id                     |
+| `listFactors(actorId, active?)`                 | `Promise<AuthenticatorFactor[]>`             | List factors for an actor                   |
+| `lookupFactor(actorId, label)`                  | `Promise<AuthenticatorFactor \| undefined>`  | Look up an actor's factor by its label      |
 | `deleteFactor(actorId, factorId)`               | `Promise<void>`                              | Remove a factor                             |
 
-`AuthenticatorFactor` extends `OtpOptions` with `id: string`, `actorId: string`, `active: boolean`, `secretHash: string` (the encrypted OTP secret), and an optional `label?: string`.
+`AuthenticatorFactor`: `Factor & AuthenticatorFactorOptions` — `OtpOptions` with `id`, `actorId`, `active`, `secretHash` (the encrypted OTP secret), and an optional `label?: string`.
 
 ### `PhoneFactorService`
 
@@ -1017,16 +1021,17 @@ Manages phone number factor registration and sign-in challenges. Requires a `Pho
 
 ### `PhoneFactorRepository`
 
-Abstract base class. Extend and register a concrete implementation so that `PhoneFactorService` can resolve it at runtime.
+Abstract base class. Extends `FactorRepository<PhoneFactor>` from the shared factor base contract. Extend and register a concrete implementation so that `PhoneFactorService` can resolve it at runtime.
 
 | Method                              | Returns                               | Description                                       |
 | ----------------------------------- | ------------------------------------- | ------------------------------------------------- |
 | `createFactor(actorId, value)`      | `Promise<PhoneFactor>`                | Persist a new factor for an actor                 |
-| `findFactor(actorId, value)`        | `Promise<PhoneFactor \| undefined>`   | Look up a factor by actor and phone number        |
-| `getFactor(actorId, factorId)`      | `Promise<PhoneFactor \| undefined>`   | Look up a factor by id                            |
+| `lookupFactor(actorId, value)`      | `Promise<PhoneFactor \| undefined>`   | Look up a factor by actor and phone number        |
+| `getFactor(actorId, factorId)`      | `Promise<PhoneFactor \| undefined>`   | Look up a factor by id, scoped to the owning actor |
+| `listFactors(actorId, active?)`     | `Promise<PhoneFactor[]>`              | List factors for an actor                         |
 | `deleteFactor(actorId, factorId)`   | `Promise<void>`                       | Remove a factor                                   |
 
-`PhoneFactor`: `{ id: string; actorId: string; active: boolean; value: string }` where `value` is the E.164-formatted phone number.
+`PhoneFactor`: `Factor & { value: string }` where `value` is the E.164-formatted phone number.
 
 ### `FidoFactorService`
 
@@ -1059,16 +1064,18 @@ Manages FIDO2/WebAuthn factors. Wraps `fido2-lib` and accepts relying party iden
 
 ### `FidoFactorRepository`
 
-Abstract base class. Extend and register a concrete implementation so that `FidoFactorService` can resolve it at runtime.
+Abstract base class. Extends `FactorRepository<FidoFactor, FidoFactorOptions, string>` from the shared factor base contract. Extend and register a concrete implementation so that `FidoFactorService` can resolve it at runtime.
 
 | Method                                                                | Returns                              | Description                                                                                       |
 | --------------------------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------- |
 | `createFactor(actorId, options)`                                      | `Promise<FidoFactor>`                | Persist a new factor (`options: FidoFactorOptions` carries `publicKey`, `publicKeyId`, `counter`, and an optional `label`) |
-| `listFactors(actorId, active)`                                        | `Promise<FidoFactor[]>`              | List the actor's factors, used to populate `allowCredentials`                                     |
+| `listFactors(actorId, active?)`                                       | `Promise<FidoFactor[]>`              | List the actor's factors, used to populate `allowCredentials`                                     |
 | `getFactor(actorId, factorId)`                                        | `Promise<FidoFactor \| undefined>`   | Retrieve a factor by row id                                                                       |
 | `lookupFactor(actorId, credentialId)`                                 | `Promise<FidoFactor \| undefined>`   | Look up a factor by credential id (the `id` field of `PublicKeyCredential`)                       |
 | `updateFactorCounter(actorId, factorId, counter)`                     | `Promise<void>`                      | Persist the latest signature counter; must be strictly increasing (regression = cloned authenticator) |
 | `deleteFactor(actorId, factorId)`                                     | `Promise<void>`                      | Remove a factor                                                                                   |
+
+`FidoFactor`: `Factor & FidoFactorOptions`.
 
 `FidoFactor`: `{ id: string; actorId: string; active: boolean; publicKey: string; publicKeyId: string; counter: number; label?: string }`.
 
@@ -1116,18 +1123,24 @@ Abstract bridge from a verified email to an actor id. Used by the auto-link flow
 
 Abstract base class. Implementations should enforce uniqueness on `(provider, subject)`.
 
+Extends `FactorRepository<OidcFactor, OidcFactorValue, OidcFactorLookup>` from the shared factor base contract.
+
 | Method                                              | Returns                                | Description                                                                                       |
 | --------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `createFactor({ actorId, provider, subject, email?, encryptedRefreshToken?, encryptedRefreshTokenDek?, refreshTokenExpiresAt? })` | `Promise<OidcFactor>`                  | Persist a new factor                                                                              |
-| `lookupFactor(provider, subject)`                   | `Promise<OidcFactor \| undefined>`     | Look up by provider-side identity                                                                 |
+| `createFactor(actorId, value: OidcFactorValue)`     | `Promise<OidcFactor>`                  | Persist a new factor                                                                              |
+| `lookupFactor({ provider, subject })`               | `Promise<OidcFactor \| undefined>`     | Look up by provider-side identity                                                                 |
 | `lookupFactorsByEmail(email)`                       | `Promise<OidcFactor[]>`                | Look up by last-seen email — used by the auto-link flow                                           |
 | `getFactor(actorId, factorId)`                      | `Promise<OidcFactor>`                  | Retrieve a factor by id, scoped to the owning actor                                               |
-| `listFactorsForActor(actorId)`                      | `Promise<OidcFactor[]>`                | List active factors for an actor (account-settings UI)                                            |
+| `listFactors(actorId, active?)`                     | `Promise<OidcFactor[]>`                | List factors for an actor (account-settings UI)                                                   |
 | `updateRefreshToken(factorId, { encryptedRefreshToken, encryptedRefreshTokenDek, refreshTokenExpiresAt? })` | `Promise<void>`         | Update the persisted refresh token after rotation                                                 |
 | `updateEmail(factorId, email)`                      | `Promise<void>`                        | Update the last-seen email                                                                        |
 | `deleteFactor(actorId, factorId)`                   | `Promise<void>`                        | Remove a factor                                                                                   |
 
-`OidcFactor`: `{ id; actorId; active; provider; subject; email?; encryptedRefreshToken?; encryptedRefreshTokenDek?; refreshTokenExpiresAt?: Date | null }`.
+`OidcFactor`: `Factor & OidcFactorValue` — `{ id; actorId; active; provider; subject; email?; encryptedRefreshToken?; encryptedRefreshTokenDek?; refreshTokenExpiresAt?: Date | null }`.
+
+`OidcFactorValue`: `{ provider; subject; email?; encryptedRefreshToken?; encryptedRefreshTokenDek?; refreshTokenExpiresAt?: Date | null }` — payload accepted by `createFactor`.
+
+`OidcFactorLookup`: `{ provider; subject }` — argument accepted by `lookupFactor`.
 
 ### `OAuth2ProviderRegistry`
 
@@ -1162,9 +1175,11 @@ Same contract as `OidcActorEmailLookup` — separate type so the two factor serv
 
 ### `OAuth2FactorRepository`
 
-Abstract base class with the same surface as `OidcFactorRepository`. Stored in a separate table from OIDC factors — the trust model differs (userinfo vs signed id_token) and `(provider, subject)` uniqueness lives in a different namespace.
+Abstract base class with the same surface as `OidcFactorRepository`. Extends `FactorRepository<OAuth2Factor, OAuth2FactorValue, OAuth2FactorLookup>` from the shared factor base contract. Stored in a separate table from OIDC factors — the trust model differs (userinfo vs signed id_token) and `(provider, subject)` uniqueness lives in a different namespace.
 
-`OAuth2Factor`: same shape as `OidcFactor`.
+`OAuth2Factor`: `Factor & OAuth2FactorValue` — same shape as `OidcFactor`.
+
+`OAuth2FactorValue` / `OAuth2FactorLookup`: same shape as the OIDC equivalents.
 
 ## License
 
