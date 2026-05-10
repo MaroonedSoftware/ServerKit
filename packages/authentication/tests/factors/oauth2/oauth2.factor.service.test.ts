@@ -50,6 +50,7 @@ const makeRepo = () =>
       active: true,
       ...value,
     })),
+    findFactor: vi.fn(async () => undefined),
     lookupFactor: vi.fn(async () => undefined),
     lookupFactorsByEmail: vi.fn(async () => []),
     getFactor: vi.fn(),
@@ -207,7 +208,7 @@ describe('OAuth2FactorService', () => {
         subject: 'gh-12345',
         email: 'octocat@example.com',
       };
-      vi.mocked(repo.lookupFactor).mockResolvedValue(existing);
+      vi.mocked(repo.findFactor).mockResolvedValue(existing);
 
       const result = await service.completeAuthorization({
         callbackUrl: new URL(`https://app.example.com/cb?code=abc&state=${state}`),
@@ -223,7 +224,7 @@ describe('OAuth2FactorService', () => {
       ({ service, encryption } = makeService(providerConfig, repo, emailLookup, cache));
 
       const { state } = await service.beginAuthorization({ provider: 'github', intent: 'sign-in' });
-      vi.mocked(repo.lookupFactor).mockResolvedValue({
+      vi.mocked(repo.findFactor).mockResolvedValue({
         id: 'factor-1',
         actorId: 'actor-1',
         active: true,

@@ -949,12 +949,13 @@ Email format validation and the disposable-domain deny list are dispatched throu
 
 ### `EmailFactorRepository`
 
-Abstract base class. Extends `Omit<FactorRepository<EmailFactor>, 'lookupFactor'>` — the base `lookupFactor` is replaced with a global, single-arg version because email-by-address is unique system-wide. Extend and register a concrete implementation so that `EmailFactorService` can resolve it at runtime.
+Abstract base class. Extends `FactorRepository<EmailFactor>` from the shared factor base contract and narrows the optional `findFactor` to required, since email-by-address is unique system-wide. Extend and register a concrete implementation so that `EmailFactorService` can resolve it at runtime.
 
 | Method                              | Returns                  | Description                                          |
 | ----------------------------------- | ------------------------ | ---------------------------------------------------- |
 | `createFactor(actorId, value)`      | `Promise<EmailFactor>`   | Persist a new email factor                           |
-| `lookupFactor(value)`               | `Promise<EmailFactor \| undefined>` | Look up an email factor by email address (global, not per-actor) |
+| `findFactor(value)`                 | `Promise<EmailFactor \| undefined>` | Find an email factor globally by address — used by registration to detect existing accounts and by sign-in to resolve callbacks |
+| `lookupFactor(actorId, value)`      | `Promise<EmailFactor \| undefined>` | Per-actor scoped lookup ("does this actor have this email?")                            |
 | `isDomainInviteOnly(domain)`        | `Promise<boolean>`       | Check whether a domain is invite-only (gates registration) |
 | `getFactor(actorId, factorId)`      | `Promise<EmailFactor>`   | Retrieve a factor by id, scoped to the owning actor  |
 | `listFactors(actorId, active?)`     | `Promise<EmailFactor[]>` | List factors for an actor                            |
@@ -1123,12 +1124,13 @@ Abstract bridge from a verified email to an actor id. Used by the auto-link flow
 
 Abstract base class. Implementations should enforce uniqueness on `(provider, subject)`.
 
-Extends `FactorRepository<OidcFactor, OidcFactorValue, OidcFactorLookup>` from the shared factor base contract.
+Extends `FactorRepository<OidcFactor, OidcFactorValue, OidcFactorLookup>` from the shared factor base contract and narrows the optional `findFactor` to required, since `(provider, subject)` is unique system-wide.
 
 | Method                                              | Returns                                | Description                                                                                       |
 | --------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `createFactor(actorId, value: OidcFactorValue)`     | `Promise<OidcFactor>`                  | Persist a new factor                                                                              |
-| `lookupFactor({ provider, subject })`               | `Promise<OidcFactor \| undefined>`     | Look up by provider-side identity                                                                 |
+| `findFactor({ provider, subject })`                 | `Promise<OidcFactor \| undefined>`     | Find a factor globally by its provider-side identity (sign-in callback resolution)                |
+| `lookupFactor(actorId, { provider, subject })`      | `Promise<OidcFactor \| undefined>`     | Per-actor scoped lookup ("does this actor have this provider+subject linked?")                    |
 | `lookupFactorsByEmail(email)`                       | `Promise<OidcFactor[]>`                | Look up by last-seen email — used by the auto-link flow                                           |
 | `getFactor(actorId, factorId)`                      | `Promise<OidcFactor>`                  | Retrieve a factor by id, scoped to the owning actor                                               |
 | `listFactors(actorId, active?)`                     | `Promise<OidcFactor[]>`                | List factors for an actor (account-settings UI)                                                   |
@@ -1175,7 +1177,7 @@ Same contract as `OidcActorEmailLookup` — separate type so the two factor serv
 
 ### `OAuth2FactorRepository`
 
-Abstract base class with the same surface as `OidcFactorRepository`. Extends `FactorRepository<OAuth2Factor, OAuth2FactorValue, OAuth2FactorLookup>` from the shared factor base contract. Stored in a separate table from OIDC factors — the trust model differs (userinfo vs signed id_token) and `(provider, subject)` uniqueness lives in a different namespace.
+Abstract base class with the same surface as `OidcFactorRepository`. Extends `FactorRepository<OAuth2Factor, OAuth2FactorValue, OAuth2FactorLookup>` and narrows `findFactor` to required for the same reason. Stored in a separate table from OIDC factors — the trust model differs (userinfo vs signed id_token) and `(provider, subject)` uniqueness lives in a different namespace.
 
 `OAuth2Factor`: `Factor & OAuth2FactorValue` — same shape as `OidcFactor`.
 

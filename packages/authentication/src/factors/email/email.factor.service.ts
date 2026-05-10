@@ -198,7 +198,7 @@ export class EmailFactorService {
       throw httpError(403).withDetails({ email: 'Must be invited to register' });
     }
 
-    const existingFactor = await this.emailFactorRepository.lookupFactor(value);
+    const existingFactor = await this.emailFactorRepository.findFactor(value);
     if (existingFactor) {
       throw httpError(409).withDetails({ method: 'already registered' });
     }
@@ -467,10 +467,10 @@ export class EmailFactorService {
     return await this.emailFactorRepository.listFactors(actorId, active);
   }
 
-  /** Look up an email factor by email address. Value is normalized before lookup. Returns `undefined` when no match exists. */
-  async lookupFactor(value: string) {
+  /** Find an email factor by email address. Lookup is global, not per-actor — email is unique system-wide. Value is normalized before lookup. Returns `undefined` when no match exists. */
+  async findFactor(value: string) {
     value = value.trim().toLowerCase();
-    return await this.emailFactorRepository.lookupFactor(value);
+    return await this.emailFactorRepository.findFactor(value);
   }
 
   /** Permanently remove an email factor. */

@@ -51,6 +51,7 @@ const makeRepo = () =>
       active: true,
       ...value,
     })),
+    findFactor: vi.fn(async () => undefined),
     lookupFactor: vi.fn(async () => undefined),
     lookupFactorsByEmail: vi.fn(async () => []),
     getFactor: vi.fn(),
@@ -223,7 +224,7 @@ describe('OidcFactorService', () => {
       await seedState();
       seedTokens();
       const existing: OidcFactor = { id: 'factor-1', actorId: 'actor-1', active: true, provider: 'google', subject: 'subject-1', email: 'user@example.com' };
-      vi.mocked(repo.lookupFactor).mockResolvedValue(existing);
+      vi.mocked(repo.findFactor).mockResolvedValue(existing);
 
       const result = await service.completeAuthorization({
         callbackUrl: new URL('https://app.example.com/cb?code=xyz&state=state-token'),
@@ -245,7 +246,7 @@ describe('OidcFactorService', () => {
       await seedState();
       seedTokens();
       const existing: OidcFactor = { id: 'factor-1', actorId: 'actor-1', active: true, provider: 'google', subject: 'subject-1' };
-      vi.mocked(repo.lookupFactor).mockResolvedValue(existing);
+      vi.mocked(repo.findFactor).mockResolvedValue(existing);
 
       await service.completeAuthorization({ callbackUrl: new URL('https://app.example.com/cb?code=xyz&state=state-token') });
 
@@ -261,7 +262,7 @@ describe('OidcFactorService', () => {
       await seedState();
       seedTokens();
       const existing: OidcFactor = { id: 'factor-1', actorId: 'actor-1', active: true, provider: 'google', subject: 'subject-1' };
-      vi.mocked(repo.lookupFactor).mockResolvedValue(existing);
+      vi.mocked(repo.findFactor).mockResolvedValue(existing);
 
       await service.completeAuthorization({ callbackUrl: new URL('https://app.example.com/cb?code=xyz&state=state-token') });
 
@@ -272,7 +273,7 @@ describe('OidcFactorService', () => {
       await seedState();
       seedTokens({ email: 'new@example.com' });
       const existing: OidcFactor = { id: 'factor-1', actorId: 'actor-1', active: true, provider: 'google', subject: 'subject-1', email: 'old@example.com' };
-      vi.mocked(repo.lookupFactor).mockResolvedValue(existing);
+      vi.mocked(repo.findFactor).mockResolvedValue(existing);
 
       await service.completeAuthorization({ callbackUrl: new URL('https://app.example.com/cb?code=xyz&state=state-token') });
 

@@ -48,15 +48,13 @@ export type OAuth2Factor = Factor & OAuth2FactorValue;
  * provider account cannot be linked to two different actors.
  */
 // eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
-export interface OAuth2FactorRepository extends Omit<FactorRepository<OAuth2Factor, OAuth2FactorValue, OAuth2FactorLookup>, 'lookupFactor'> {
+export interface OAuth2FactorRepository extends FactorRepository<OAuth2Factor, OAuth2FactorValue, OAuth2FactorLookup> {
   /**
-   * Look up a factor by its provider-side identity.
-   *
-   * Unlike the base contract's per-actor `lookupFactor`, this is global —
-   * `(provider, subject)` is unique system-wide, and the lookup is what resolves
-   * a callback to an existing actor. Returns `undefined` when no factor matches.
+   * Find a factor globally by its provider-side identity. `(provider, subject)`
+   * is unique system-wide, so this is the lookup that resolves an OAuth 2.0
+   * callback to an existing actor. Returns `undefined` when no factor matches.
    */
-  lookupFactor(value: OAuth2FactorLookup): Promise<OAuth2Factor | undefined>;
+  findFactor(value: OAuth2FactorLookup): Promise<OAuth2Factor | undefined>;
 
   /** Look up factors by last-seen email — used by the auto-link flow when the provider returns a verified email. */
   lookupFactorsByEmail(email: string): Promise<OAuth2Factor[]>;

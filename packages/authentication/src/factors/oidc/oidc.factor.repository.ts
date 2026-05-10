@@ -49,15 +49,13 @@ export type OidcFactor = Factor & OidcFactorValue;
  * IdP account cannot be linked to two different actors.
  */
 // eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
-export interface OidcFactorRepository extends Omit<FactorRepository<OidcFactor, OidcFactorValue, OidcFactorLookup>, 'lookupFactor'> {
+export interface OidcFactorRepository extends FactorRepository<OidcFactor, OidcFactorValue, OidcFactorLookup> {
   /**
-   * Look up a factor by its provider-side identity.
-   *
-   * Unlike the base contract's per-actor `lookupFactor`, this is global —
-   * `(provider, subject)` is unique system-wide, and the lookup is what resolves
-   * a callback to an existing actor. Returns `undefined` when no factor matches.
+   * Find a factor globally by its provider-side identity. `(provider, subject)`
+   * is unique system-wide, so this is the lookup that resolves an OIDC callback
+   * to an existing actor. Returns `undefined` when no factor matches.
    */
-  lookupFactor(value: OidcFactorLookup): Promise<OidcFactor | undefined>;
+  findFactor(value: OidcFactorLookup): Promise<OidcFactor | undefined>;
 
   /**
    * Look up every OIDC factor whose last-seen email matches `email`.

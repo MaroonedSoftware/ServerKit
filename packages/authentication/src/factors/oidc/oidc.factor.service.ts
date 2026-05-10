@@ -261,7 +261,7 @@ export class OidcFactorService {
     const refreshTokenExpiresAt = this.computeRefreshTokenExpiry(tokens);
 
     // 1. Existing factor for (provider, subject) → signed-in
-    const existing = await this.repo.lookupFactor({ provider: stored.provider, subject });
+    const existing = await this.repo.findFactor({ provider: stored.provider, subject });
     if (existing) {
       if (refreshToken) {
         const { encryptedValue, encryptedDek } = this.encryption.encryptWithNewDek(refreshToken);
@@ -467,11 +467,11 @@ export class OidcFactorService {
   }
 
   /**
-   * Look up a factor by its provider-side identity. Lookup is global, not per-actor —
+   * Find a factor by its provider-side identity. Lookup is global, not per-actor —
    * `(provider, subject)` is unique system-wide. Returns `undefined` when no match exists.
    */
-  async lookupFactor(provider: string, subject: string) {
-    return await this.repo.lookupFactor({ provider, subject });
+  async findFactor(provider: string, subject: string) {
+    return await this.repo.findFactor({ provider, subject });
   }
 
   /** Permanently remove an OIDC factor. */
