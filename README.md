@@ -154,6 +154,20 @@ Small, DI-friendly framework for encoding allow/deny rules as named, injectable 
 
 ---
 
+### SCIM
+
+SCIM 2.0 (RFC 7643/7644) server toolkit — schemas, filter parser, PATCH applier, error envelope, and a Koa router with abstract repositories.
+
+- Core schemas (User, Group, EnterpriseUser) and discovery endpoints (`/Schemas`, `/ResourceTypes`, `/ServiceProviderConfig`)
+- Full SCIM filter grammar with a typed AST
+- PATCH op applier with value-path filters
+- Abstract `ScimUserRepository` / `ScimGroupRepository` for any datastore
+- Bearer-scope guard that integrates with `@maroonedsoftware/authentication`
+
+[View documentation →](./packages/scim/README.md)
+
+---
+
 ### Utilities
 
 Common utility functions for everyday server development.

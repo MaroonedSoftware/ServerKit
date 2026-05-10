@@ -1,0 +1,64 @@
+{
+  "name": "@maroonedsoftware/scim",
+  "version": "0.0.1",
+  "description": "SCIM 2.0 (RFC 7643/7644) server toolkit for ServerKit — schemas, filter parser, PATCH applier, error envelope, and a Koa router with abstract repositories.",
+  "author": {
+    "name": "Marooned Software",
+    "url": "https://github.com/MaroonedSoftware/serverkit"
+  },
+  "bugs": {
+    "url": "https://github.com/MaroonedSoftware/serverkit/issues"
+  },
+  "homepage": "https://github.com/MaroonedSoftware/serverkit/packages/scim#readme",
+  "keywords": [
+    "backend",
+    "scim",
+    "scim2",
+    "provisioning",
+    "identity",
+    "serverkit",
+    "typescript"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MaroonedSoftware/serverkit.git"
+  },
+  "private": false,
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "license": "MIT",
+  "files": [
+    "dist/**"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --sourcemap --dts && tsc --emitDeclarationOnly --declaration",
+    "build:ci": "eslint --max-warnings=0 && pnpm run build",
+    "lint": "eslint --fix",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:ci": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@maroonedsoftware/authentication": "workspace:*",
+    "@maroonedsoftware/errors": "workspace:*",
+    "@maroonedsoftware/koa": "workspace:*",
+    "@maroonedsoftware/logger": "workspace:*",
+    "@maroonedsoftware/utilities": "workspace:*",
+    "injectkit": "^1.2.0"
+  },
+  "peerDependencies": {
+    "@koa/router": "^15.2.0",
+    "koa": "^3.1.1"
+  },
+  "devDependencies": {
+    "@koa/router": "^15.5.0",
+    "@repo/config-eslint": "workspace:*",
+    "@repo/config-typescript": "workspace:*",
+    "@types/koa": "^3.0.2",
+    "@types/supertest": "^6.0.3",
+    "koa": "^3.2.0",
+    "supertest": "^7.1.4"
+  }
+}
