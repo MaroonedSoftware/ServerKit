@@ -13,7 +13,7 @@ export type AuthenticationFactorKind = 'knowledge' | 'possession' | 'biometric';
  * The verification method used to satisfy an authentication factor within a
  * session. Corresponds to the built-in factor services shipped by this package.
  */
-export type AuthenticationFactorMethod = 'phone' | 'password' | 'authenticator' | 'email' | 'fido';
+export type AuthenticationFactorMethod = 'phone' | 'password' | 'authenticator' | 'email' | 'fido' | 'oidc';
 
 /**
  * A single authentication factor recorded within a server-side session.

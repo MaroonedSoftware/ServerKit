@@ -663,7 +663,7 @@ Describes a single satisfied authentication factor within a session.
 ### `AuthenticationFactorMethod`
 
 ```typescript
-type AuthenticationFactorMethod = 'phone' | 'password' | 'authenticator' | 'email' | 'fido';
+type AuthenticationFactorMethod = 'phone' | 'password' | 'authenticator' | 'email' | 'fido' | 'oidc';
 ```
 
 ### `AuthenticationFactorKind`
@@ -765,7 +765,7 @@ Server-side session record stored in cache. Time fields are Luxon `DateTime` ins
 | ----------------- | --------------------------------------------------------------- | ------------------------------------------------------ |
 | `issuedAt`        | `DateTime`                                                      | When this factor entry was first added to the session. |
 | `authenticatedAt` | `DateTime`                                                      | When the factor was most recently re-verified.         |
-| `method`          | `'phone' \| 'password' \| 'authenticator' \| 'email' \| 'fido'` | The verification method used.                          |
+| `method`          | `'phone' \| 'password' \| 'authenticator' \| 'email' \| 'fido' \| 'oidc'` | The verification method used.                          |
 | `methodId`        | `string`                                                        | Stable identifier for the specific factor record.      |
 | `kind`            | `AuthenticationFactorKind`                                      | MFA category.                                          |
 
