@@ -12,7 +12,7 @@ export type PhoneFactor = Factor & {
 /**
  * Repository interface for persisting phone number factors.
  */
-// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging, @typescript-eslint/no-empty-object-type, @typescript-eslint/no-empty-interface
 export interface PhoneFactorRepository extends FactorRepository<PhoneFactor> {}
 
 @Injectable()

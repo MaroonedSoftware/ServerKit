@@ -22,7 +22,7 @@ export type AuthenticatorFactor = Factor & AuthenticatorFactorOptions;
 /**
  * Repository interface for persisting authenticator (TOTP/HOTP) factors.
  */
-// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging, @typescript-eslint/no-empty-object-type, @typescript-eslint/no-empty-interface
 export interface AuthenticatorFactorRepository extends FactorRepository<AuthenticatorFactor, AuthenticatorFactorOptions, string> {}
 
 @Injectable()
