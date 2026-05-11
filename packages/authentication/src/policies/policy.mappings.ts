@@ -4,12 +4,18 @@ import { PhoneAllowedPolicy, PhoneAllowedPolicyContext } from './phone.allowed.p
 import { EmailAllowedPolicy, EmailAllowedPolicyContext } from './email.allowed.policy.js';
 import { OidcProfileAllowedPolicy, OidcProfileAllowedPolicyContext } from './oidc.profile.allowed.policy.js';
 import { OAuth2ProfileAllowedPolicy, OAuth2ProfileAllowedPolicyContext } from './oauth2.profile.allowed.policy.js';
+import { PasswordAllowedPolicy, PasswordAllowedPolicyContext } from './password.allowed.policy.js';
 
 /**
  * Names of the policies bundled with this package. Use as the policy-name keys
  * in your `PolicyRegistryMap` (or as a union when extending it).
  */
-export type AuthenticationPolicyNames = 'email.allowed' | 'phone.allowed' | 'oidc.profile.allowed' | 'oauth2.profile.allowed';
+export type AuthenticationPolicyNames =
+  | 'email.allowed'
+  | 'phone.allowed'
+  | 'password.allowed'
+  | 'oidc.profile.allowed'
+  | 'oauth2.profile.allowed';
 
 /**
  * Default mapping from each bundled {@link AuthenticationPolicyNames} value to
@@ -20,6 +26,7 @@ export type AuthenticationPolicyNames = 'email.allowed' | 'phone.allowed' | 'oid
 export const AuthenticationPolicyMappings: Record<AuthenticationPolicyNames, Constructor<Policy>> = {
   'email.allowed': EmailAllowedPolicy,
   'phone.allowed': PhoneAllowedPolicy,
+  'password.allowed': PasswordAllowedPolicy,
   'oidc.profile.allowed': OidcProfileAllowedPolicy,
   'oauth2.profile.allowed': OAuth2ProfileAllowedPolicy,
 };
@@ -33,6 +40,7 @@ export const AuthenticationPolicyMappings: Record<AuthenticationPolicyNames, Con
 export type AuthenticationPolicyContexts = {
   'email.allowed': EmailAllowedPolicyContext;
   'phone.allowed': PhoneAllowedPolicyContext;
+  'password.allowed': PasswordAllowedPolicyContext;
   'oidc.profile.allowed': OidcProfileAllowedPolicyContext;
   'oauth2.profile.allowed': OAuth2ProfileAllowedPolicyContext;
 };

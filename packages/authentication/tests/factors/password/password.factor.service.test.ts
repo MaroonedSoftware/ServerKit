@@ -8,6 +8,8 @@ import type {
   PasswordValue,
 } from '../../../src/factors/password/password.factor.repository.js';
 import type { PasswordStrengthProvider } from '../../../src/providers/password.strength.provider.js';
+import type { PasswordHashProvider } from '../../../src/providers/password.hash.provider.js';
+import type { PolicyService } from '@maroonedsoftware/policies';
 import type { CacheProvider } from '@maroonedsoftware/cache';
 import { httpError } from '@maroonedsoftware/errors';
 import { DateTime } from 'luxon';
@@ -40,6 +42,23 @@ const makeStrengthProvider = () =>
     ensureStrength: vi.fn().mockResolvedValue(undefined),
   }) as unknown as PasswordStrengthProvider;
 
+// Hash provider mock uses the same pbkdf2 params as the real default so values produced by the
+// `hashPassword` test helper round-trip through the service unchanged.
+const makeHashProvider = () =>
+  ({
+    hash: vi.fn(async (password: string) => hashPassword(password)),
+    verify: vi.fn(async (password: string, hash: string, salt: string) => {
+      const computed = crypto.pbkdf2Sync(password, Buffer.from(salt, 'base64'), 210000, 64, 'sha512').toString('base64');
+      return computed === hash;
+    }),
+  }) as unknown as PasswordHashProvider;
+
+const makePolicyService = () =>
+  ({
+    check: vi.fn().mockResolvedValue({ allowed: true }),
+    assert: vi.fn().mockResolvedValue(undefined),
+  }) as unknown as PolicyService;
+
 const makeCacheProvider = () =>
   ({
     get: vi.fn().mockResolvedValue(null),
@@ -70,6 +89,8 @@ describe('PasswordFactorService', () => {
   let repo: ReturnType<typeof makeRepository>;
   let rateLimiter: ReturnType<typeof makeRateLimiter>;
   let strengthProvider: ReturnType<typeof makeStrengthProvider>;
+  let hashProvider: ReturnType<typeof makeHashProvider>;
+  let policyService: ReturnType<typeof makePolicyService>;
   let cache: ReturnType<typeof makeCacheProvider>;
   let service: PasswordFactorService;
 
@@ -78,20 +99,25 @@ describe('PasswordFactorService', () => {
     repo = makeRepository();
     rateLimiter = makeRateLimiter();
     strengthProvider = makeStrengthProvider();
+    hashProvider = makeHashProvider();
+    policyService = makePolicyService();
     cache = makeCacheProvider();
-    service = new PasswordFactorService(repo, rateLimiter, strengthProvider, cache);
+    service = new PasswordFactorService(repo, rateLimiter, strengthProvider, hashProvider, policyService, cache);
   });
 
   describe('createPasswordFactor', () => {
-    it('throws when ensureStrength rejects', async () => {
-      strengthProvider.ensureStrength = vi.fn().mockRejectedValue(httpError(400).withDetails({ password: 'too weak' }));
+    it("throws 400 when the password.allowed policy denies with reason 'weak_password'", async () => {
+      policyService.check = vi.fn().mockResolvedValue({ allowed: false, reason: 'weak_password', details: { warning: 'too common', suggestions: ['add symbols'] } });
 
-      await expect(service.createPasswordFactor('actor-1', 'weak')).rejects.toMatchObject({ statusCode: 400 });
+      await expect(service.createPasswordFactor('actor-1', 'weak')).rejects.toMatchObject({
+        statusCode: 400,
+        details: { password: 'too common', suggestions: ['add symbols'] },
+      });
       expect(repo.createFactor).not.toHaveBeenCalled();
     });
 
-    it('checks strength before looking up the existing factor', async () => {
-      strengthProvider.ensureStrength = vi.fn().mockRejectedValue(httpError(400));
+    it('checks the policy before looking up the existing factor', async () => {
+      policyService.check = vi.fn().mockResolvedValue({ allowed: false, reason: 'weak_password' });
 
       await expect(service.createPasswordFactor('actor-1', 'weak')).rejects.toMatchObject({ statusCode: 400 });
       expect(repo.getFactor).not.toHaveBeenCalled();
@@ -115,7 +141,7 @@ describe('PasswordFactorService', () => {
       const result = await service.createPasswordFactor('actor-1', 'strong-pass', true);
 
       expect(result).toBe(factor);
-      expect(strengthProvider.ensureStrength).toHaveBeenCalledWith('strong-pass');
+      expect(policyService.check).toHaveBeenCalledWith('password.allowed', { password: 'strong-pass', previousPasswords: undefined });
       expect(repo.createFactor).toHaveBeenCalledTimes(1);
       const [actorId, value] = vi.mocked(repo.createFactor).mock.calls[0]!;
       expect(actorId).toBe('actor-1');
@@ -135,10 +161,13 @@ describe('PasswordFactorService', () => {
   });
 
   describe('registerPasswordFactor', () => {
-    it('throws when ensureStrength rejects', async () => {
-      strengthProvider.ensureStrength = vi.fn().mockRejectedValue(httpError(400).withDetails({ password: 'too weak' }));
+    it('throws 400 when the password.allowed policy denies', async () => {
+      policyService.check = vi.fn().mockResolvedValue({ allowed: false, reason: 'weak_password', details: { warning: 'too weak' } });
 
-      await expect(service.registerPasswordFactor('weak')).rejects.toMatchObject({ statusCode: 400 });
+      await expect(service.registerPasswordFactor('weak')).rejects.toMatchObject({
+        statusCode: 400,
+        details: { password: 'too weak' },
+      });
       expect(cache.set).not.toHaveBeenCalled();
     });
 
@@ -217,13 +246,6 @@ describe('PasswordFactorService', () => {
   });
 
   describe('updatePasswordFactor', () => {
-    it('throws when ensureStrength rejects', async () => {
-      strengthProvider.ensureStrength = vi.fn().mockRejectedValue(httpError(400));
-
-      await expect(service.updatePasswordFactor('actor-1', 'weak')).rejects.toMatchObject({ statusCode: 400 });
-      expect(repo.getFactor).not.toHaveBeenCalled();
-    });
-
     it('throws 404 when there is no existing factor', async () => {
       repo.getFactor = vi.fn().mockResolvedValue(undefined);
 
@@ -231,12 +253,14 @@ describe('PasswordFactorService', () => {
         statusCode: 404,
         details: { actorId: 'Password factor not found' },
       });
+      expect(policyService.check).not.toHaveBeenCalled();
     });
 
-    it('throws 400 when the new password matches a previous one', async () => {
+    it("throws 400 with the reuse message when the policy denies with reason 'reused_password'", async () => {
       const previous = hashPassword('strong-pass');
       repo.getFactor = vi.fn().mockResolvedValue(makePasswordFactor());
       repo.listPreviousPasswords = vi.fn().mockResolvedValue([previous]);
+      policyService.check = vi.fn().mockResolvedValue({ allowed: false, reason: 'reused_password' });
 
       await expect(service.updatePasswordFactor('actor-1', 'strong-pass')).rejects.toMatchObject({
         statusCode: 400,
@@ -245,7 +269,19 @@ describe('PasswordFactorService', () => {
       expect(repo.updateFactor).not.toHaveBeenCalled();
     });
 
-    it('updates the factor and returns it when the password is novel', async () => {
+    it('passes the previousPasswords list to the policy', async () => {
+      const previous = [hashPassword('history-1'), hashPassword('history-2')];
+      repo.getFactor = vi.fn().mockResolvedValue(makePasswordFactor());
+      repo.listPreviousPasswords = vi.fn().mockResolvedValue(previous);
+      repo.updateFactor = vi.fn().mockResolvedValue(makePasswordFactor());
+
+      await service.updatePasswordFactor('actor-1', 'strong-pass');
+
+      expect(repo.listPreviousPasswords).toHaveBeenCalledWith('actor-1', 10);
+      expect(policyService.check).toHaveBeenCalledWith('password.allowed', { password: 'strong-pass', previousPasswords: previous });
+    });
+
+    it('updates the factor and returns it when the policy allows', async () => {
       const updated = makePasswordFactor({ id: 'updated-factor' });
       repo.getFactor = vi.fn().mockResolvedValue(makePasswordFactor());
       repo.listPreviousPasswords = vi.fn().mockResolvedValue([hashPassword('something-else')]);
@@ -254,8 +290,6 @@ describe('PasswordFactorService', () => {
       const result = await service.updatePasswordFactor('actor-1', 'strong-pass', true);
 
       expect(result).toBe(updated);
-      expect(strengthProvider.ensureStrength).toHaveBeenCalledWith('strong-pass');
-      expect(repo.listPreviousPasswords).toHaveBeenCalledWith('actor-1', 10);
       const [actorId, value] = vi.mocked(repo.updateFactor).mock.calls[0]!;
       expect(actorId).toBe('actor-1');
       expect(value.hash).toBeTruthy();
@@ -277,7 +311,7 @@ describe('PasswordFactorService', () => {
       expect(repo.getFactor).not.toHaveBeenCalled();
     });
 
-    it('does not consult the strength provider on verify', async () => {
+    it('does not consult the strength provider or password.allowed policy on verify', async () => {
       const value = hashPassword('strong-pass');
       repo.getFactor = vi.fn().mockResolvedValue(makePasswordFactor({ value }));
 
@@ -285,6 +319,7 @@ describe('PasswordFactorService', () => {
 
       expect(strengthProvider.ensureStrength).not.toHaveBeenCalled();
       expect(strengthProvider.checkStrength).not.toHaveBeenCalled();
+      expect(policyService.check).not.toHaveBeenCalled();
     });
 
     it('throws 401 when the factor does not exist', async () => {
@@ -324,8 +359,8 @@ describe('PasswordFactorService', () => {
   });
 
   describe('changePassword', () => {
-    it('throws when ensureStrength rejects', async () => {
-      strengthProvider.ensureStrength = vi.fn().mockRejectedValue(httpError(400));
+    it('throws 400 when the password.allowed policy denies', async () => {
+      policyService.check = vi.fn().mockResolvedValue({ allowed: false, reason: 'weak_password', details: { warning: 'too weak' } });
 
       await expect(service.changePassword('actor-1', 'weak')).rejects.toMatchObject({ statusCode: 400 });
       expect(repo.getFactor).not.toHaveBeenCalled();
@@ -347,7 +382,7 @@ describe('PasswordFactorService', () => {
       const result = await service.changePassword('actor-1', 'strong-pass');
 
       expect(result).toBe(updated);
-      expect(strengthProvider.ensureStrength).toHaveBeenCalledWith('strong-pass');
+      expect(policyService.check).toHaveBeenCalledWith('password.allowed', { password: 'strong-pass', previousPasswords: undefined });
       const [actorId, value] = vi.mocked(repo.updateFactor).mock.calls[0]!;
       expect(actorId).toBe('actor-1');
       expect(value.hash).toBeTruthy();

@@ -2,8 +2,10 @@ import crypto from 'node:crypto';
 import { Injectable } from 'injectkit';
 import { RateLimiterCompatibleAbstract } from 'rate-limiter-flexible';
 import { httpError, unauthorizedError } from '@maroonedsoftware/errors';
+import { PolicyService } from '@maroonedsoftware/policies';
 import { PasswordFactorRepository, PasswordValue } from './password.factor.repository.js';
 import { PasswordStrengthProvider } from '../../providers/password.strength.provider.js';
+import { PasswordHashProvider } from '../../providers/password.hash.provider.js';
 import { CacheProvider } from '@maroonedsoftware/cache';
 import { DateTime, Duration } from 'luxon';
 
@@ -18,13 +20,16 @@ type RegistrationPayload = {
 /**
  * Service for managing password-based authentication factors.
  *
- * Handles PBKDF2-SHA512 hashing, reuse prevention, and rate-limited
- * verification. Strength validation is delegated to {@link PasswordStrengthProvider}
- * (zxcvbn + HaveIBeenPwned by default) — register your own implementation to
- * override the policy.
+ * Hashing and verification are delegated to {@link PasswordHashProvider} (the
+ * bundled default is `Argon2idPasswordHashProvider`). Acceptability rules
+ * (strength + reuse prevention) live in the
+ * `password.allowed` policy, resolved via the injected {@link PolicyService};
+ * register a subclass of `PasswordAllowedPolicy` to override either rule.
+ * Verification is rate-limited via the injected
+ * {@link RateLimiterCompatibleAbstract}.
  *
  * Two creation flows are supported:
- * - Direct: {@link createPasswordFactor} — strength-check and persist in one call.
+ * - Direct: {@link createPasswordFactor} — checks the `password.allowed` policy and persists in one call.
  * - Two-step registration: {@link registerPasswordFactor} stages a hashed payload
  *   in the cache and returns a `registrationId`; {@link createPasswordFactorFromRegistration}
  *   binds it to an actor. This lets callers collect a password before the actor
@@ -36,6 +41,8 @@ export class PasswordFactorService {
     private readonly passwordFactorRepository: PasswordFactorRepository,
     private readonly rateLimiter: RateLimiterCompatibleAbstract,
     private readonly passwordStrengthProvider: PasswordStrengthProvider,
+    private readonly passwordHashProvider: PasswordHashProvider,
+    private readonly policyService: PolicyService,
     private readonly cache: CacheProvider,
   ) {}
 
@@ -53,16 +60,18 @@ export class PasswordFactorService {
     return registrationId ? await this.lookupRegistration(registrationId) : undefined;
   }
 
-  private hashPassword(password: string, salt?: Buffer): PasswordValue {
-    salt ??= crypto.randomBytes(32);
-    const hash = crypto.pbkdf2Sync(password, salt, 210000, 64, 'sha512');
-    return { hash: hash.toString('base64'), salt: salt.toString('base64') };
-  }
-
-  private comparePassword(password: string, hash: string, salt: string) {
-    const saltBuffer = Buffer.from(salt, 'base64');
-    const hashPwd = crypto.pbkdf2Sync(password, saltBuffer, 210000, 64, 'sha512');
-    return hashPwd.toString('base64') === hash;
+  private async ensurePasswordAllowed(password: string, previousPasswords?: ReadonlyArray<PasswordValue>) {
+    const result = await this.policyService.check('password.allowed', { password, previousPasswords });
+    if (result.allowed) {
+      return;
+    }
+    if (result.reason === 'weak_password') {
+      throw httpError(400).withDetails({ password: result.details?.warning, suggestions: result.details?.suggestions });
+    }
+    if (result.reason === 'reused_password') {
+      throw httpError(400).withDetails({ password: 'Password is the same as a previous one' });
+    }
+    throw httpError(400).withDetails({ password: result.reason }).withInternalDetails(result.details ?? {});
   }
 
   private async cacheRegistration(value: string, payload: RegistrationPayload, expiration: Duration) {
@@ -105,9 +114,9 @@ export class PasswordFactorService {
    * @throws HTTP 400 when the password fails the configured strength policy.
    */
   async registerPasswordFactor(password: string, registrationId?: string) {
-    await this.passwordStrengthProvider.ensureStrength(password);
+    await this.ensurePasswordAllowed(password);
 
-    const { hash, salt } = this.hashPassword(password);
+    const { hash, salt } = await this.passwordHashProvider.hash(password);
     const existingRegistration = registrationId
       ? await this.lookupRegistration(registrationId)
       : await this.lookupRegistrationByValue(`${hash}:${salt}`);
@@ -186,14 +195,14 @@ export class PasswordFactorService {
    * @returns The newly persisted {@link PasswordFactor}.
    */
   async createPasswordFactor(actorId: string, password: string, needsReset: boolean = false) {
-    await this.passwordStrengthProvider.ensureStrength(password);
+    await this.ensurePasswordAllowed(password);
 
     const existingFactor = await this.passwordFactorRepository.getFactor(actorId, actorId);
     if (existingFactor) {
       throw httpError(409).withDetails({ actorId: 'Password factor already exists' });
     }
 
-    const value = this.hashPassword(password);
+    const value = await this.passwordHashProvider.hash(password);
     const factor = await this.passwordFactorRepository.createFactor(actorId, { ...value, needsReset });
     return factor;
   }
@@ -204,18 +213,15 @@ export class PasswordFactorService {
    * @returns The updated {@link PasswordFactor}.
    */
   async updatePasswordFactor(actorId: string, password: string, needsReset: boolean = false) {
-    await this.passwordStrengthProvider.ensureStrength(password);
-
     let factor = await this.passwordFactorRepository.getFactor(actorId, actorId);
     if (!factor) {
       throw httpError(404).withDetails({ actorId: 'Password factor not found' });
     }
 
     const previousPasswords = await this.passwordFactorRepository.listPreviousPasswords(actorId, 10);
-    if (previousPasswords.some(p => this.comparePassword(password, p.hash, p.salt))) {
-      throw httpError(400).withDetails({ password: 'Password is the same as a previous one' });
-    }
-    factor = await this.passwordFactorRepository.updateFactor(actorId, { ...this.hashPassword(password), needsReset });
+    await this.ensurePasswordAllowed(password, previousPasswords);
+
+    factor = await this.passwordFactorRepository.updateFactor(actorId, { ...(await this.passwordHashProvider.hash(password)), needsReset });
     return factor;
   }
 
@@ -249,7 +255,7 @@ export class PasswordFactorService {
       throw unauthorizedError('Bearer error="reset_password"').withInternalDetails({ message: `${actorId} needs to reset password` });
     }
 
-    if (!this.comparePassword(password, passwordFactor.value.hash, passwordFactor.value.salt)) {
+    if (!(await this.passwordHashProvider.verify(password, passwordFactor.value.hash, passwordFactor.value.salt))) {
       throw unauthorizedError('Bearer error="invalid_credentials"').withInternalDetails({ message: `${actorId} invalid password attempt` });
     }
 
@@ -263,14 +269,14 @@ export class PasswordFactorService {
    * @returns The updated {@link PasswordFactor}.
    */
   async changePassword(actorId: string, password: string) {
-    await this.passwordStrengthProvider.ensureStrength(password);
+    await this.ensurePasswordAllowed(password);
 
     const passwordFactor = await this.passwordFactorRepository.getFactor(actorId, actorId);
     if (!passwordFactor) {
       throw httpError(404).withDetails({ actorId: 'Password factor not found' });
     }
 
-    const value = this.hashPassword(password);
+    const value = await this.passwordHashProvider.hash(password);
     const updatedFactor = await this.passwordFactorRepository.updateFactor(actorId, { ...value, needsReset: false });
     return updatedFactor;
   }
