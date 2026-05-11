@@ -21,6 +21,7 @@ import {
 import { EncryptionProvider } from '@maroonedsoftware/encryption';
 import { Logger } from '@maroonedsoftware/logger';
 import type { CacheProvider } from '@maroonedsoftware/cache';
+import type { PolicyResult, PolicyService } from '@maroonedsoftware/policies';
 
 const TEST_AUTHORIZE_URL = new URL('https://github.com/login/oauth/authorize');
 
@@ -65,6 +66,12 @@ const makeEmailLookup = () =>
     findActorByEmail: vi.fn(async () => undefined),
   }) as unknown as OAuth2ActorEmailLookup;
 
+const makePolicyService = (result: PolicyResult = { allowed: true }) =>
+  ({
+    check: vi.fn(async () => result),
+    assert: vi.fn(async () => undefined),
+  }) as unknown as PolicyService;
+
 const makeLogger = () =>
   ({ error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn(), trace: vi.fn() }) as unknown as Logger;
 
@@ -100,13 +107,20 @@ const makeProviderConfig = (overrides: Partial<OAuth2ProviderConfig> = {}): OAut
   ...overrides,
 });
 
-const makeService = (config: OAuth2ProviderConfig, repo: OAuth2FactorRepository, lookup: OAuth2ActorEmailLookup, cache: CacheProvider) => {
+const makeService = (
+  config: OAuth2ProviderConfig,
+  repo: OAuth2FactorRepository,
+  lookup: OAuth2ActorEmailLookup,
+  cache: CacheProvider,
+  policyService: PolicyService = makePolicyService(),
+) => {
   const registry = new OAuth2ProviderRegistry(new OAuth2ProviderRegistryConfig([config]));
   const encryption = new EncryptionProvider(crypto.randomBytes(32));
   return {
-    service: new OAuth2FactorService(new OAuth2FactorServiceOptions(), registry, repo, lookup, cache, encryption, makeLogger()),
+    service: new OAuth2FactorService(new OAuth2FactorServiceOptions(), registry, repo, lookup, cache, encryption, makeLogger(), policyService),
     encryption,
     registry,
+    policyService,
   };
 };
 
@@ -169,7 +183,7 @@ describe('OAuth2FactorService', () => {
     };
 
     it('throws 400 when state is missing from the callback', async () => {
-      await expect(service.completeAuthorization({ callbackUrl: new URL('https://app.example.com/cb?code=abc') })).rejects.toMatchObject({
+      await expect(service.completeAuthorization({ params: { code: 'abc' } })).rejects.toMatchObject({
         statusCode: 400,
         details: { state: 'missing from callback' },
       });
@@ -177,15 +191,30 @@ describe('OAuth2FactorService', () => {
 
     it('throws 400 when code is missing from the callback', async () => {
       const state = await seed();
-      await expect(service.completeAuthorization({ callbackUrl: new URL(`https://app.example.com/cb?state=${state}`) })).rejects.toMatchObject({
+      await expect(service.completeAuthorization({ params: { state } })).rejects.toMatchObject({
         statusCode: 400,
         details: { code: 'missing from callback' },
       });
     });
 
+    it('throws 400 when the IdP returned an error response', async () => {
+      await expect(
+        service.completeAuthorization({
+          params: { error: 'access_denied', error_description: 'user said no', error_uri: 'https://example.com/oauth-errors#denied' },
+        }),
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        details: {
+          error: 'access_denied',
+          error_description: 'user said no',
+          error_uri: 'https://example.com/oauth-errors#denied',
+        },
+      });
+    });
+
     it('throws 404 when the state has expired', async () => {
       await expect(
-        service.completeAuthorization({ callbackUrl: new URL('https://app.example.com/cb?code=abc&state=missing') }),
+        service.completeAuthorization({ params: { code: 'abc', state: 'missing' } }),
       ).rejects.toMatchObject({ statusCode: 404 });
     });
 
@@ -194,7 +223,7 @@ describe('OAuth2FactorService', () => {
       vi.mocked(providerConfig.fetchProfile).mockRejectedValueOnce(new Error('network down'));
 
       await expect(
-        service.completeAuthorization({ callbackUrl: new URL(`https://app.example.com/cb?code=abc&state=${state}`) }),
+        service.completeAuthorization({ params: { code: 'abc', state } }),
       ).rejects.toMatchObject({ statusCode: 502 });
     });
 
@@ -210,9 +239,7 @@ describe('OAuth2FactorService', () => {
       };
       vi.mocked(repo.findFactor).mockResolvedValue(existing);
 
-      const result = await service.completeAuthorization({
-        callbackUrl: new URL(`https://app.example.com/cb?code=abc&state=${state}`),
-      });
+      const result = await service.completeAuthorization({ params: { code: 'abc', state } });
 
       expect(result.kind).toBe('signed-in');
       if (result.kind !== 'signed-in') throw new Error('unreachable');
@@ -232,7 +259,7 @@ describe('OAuth2FactorService', () => {
         subject: 'gh-12345',
       });
 
-      await service.completeAuthorization({ callbackUrl: new URL(`https://app.example.com/cb?code=abc&state=${state}`) });
+      await service.completeAuthorization({ params: { code: 'abc', state } });
 
       const args = vi.mocked(repo.updateRefreshToken).mock.calls[0]![1];
       expect(encryption.decryptWithDek(args.encryptedRefreshToken, args.encryptedRefreshTokenDek)).toBe('refresh-token');
@@ -241,9 +268,7 @@ describe('OAuth2FactorService', () => {
     it('returns linked when intent=link', async () => {
       const { state } = await service.beginAuthorization({ provider: 'github', intent: 'link', actorId: 'actor-existing' });
 
-      const result = await service.completeAuthorization({
-        callbackUrl: new URL(`https://app.example.com/cb?code=abc&state=${state}`),
-      });
+      const result = await service.completeAuthorization({ params: { code: 'abc', state } });
 
       expect(result.kind).toBe('linked');
       if (result.kind !== 'linked') throw new Error('unreachable');
@@ -254,9 +279,7 @@ describe('OAuth2FactorService', () => {
       const state = await seed();
       vi.mocked(emailLookup.findActorByEmail).mockResolvedValue('actor-by-email');
 
-      const result = await service.completeAuthorization({
-        callbackUrl: new URL(`https://app.example.com/cb?code=abc&state=${state}`),
-      });
+      const result = await service.completeAuthorization({ params: { code: 'abc', state } });
 
       expect(result.kind).toBe('linked');
       if (result.kind !== 'linked') throw new Error('unreachable');
@@ -276,9 +299,7 @@ describe('OAuth2FactorService', () => {
       const state = await seed();
       vi.mocked(emailLookup.findActorByEmail).mockResolvedValue('actor-by-email');
 
-      const result = await service.completeAuthorization({
-        callbackUrl: new URL(`https://app.example.com/cb?code=abc&state=${state}`),
-      });
+      const result = await service.completeAuthorization({ params: { code: 'abc', state } });
 
       expect(result.kind).toBe('new-user');
       if (result.kind !== 'new-user') throw new Error('unreachable');
@@ -292,13 +313,23 @@ describe('OAuth2FactorService', () => {
       ({ service } = makeService(providerConfig, repo, emailLookup, cache));
       const state = await seed();
 
-      const result = await service.completeAuthorization({
-        callbackUrl: new URL(`https://app.example.com/cb?code=abc&state=${state}`),
-      });
+      const result = await service.completeAuthorization({ params: { code: 'abc', state } });
 
       expect(result.kind).toBe('new-user');
       if (result.kind !== 'new-user') throw new Error('unreachable');
       expect(result.emailConflict).toBeUndefined();
+    });
+
+    it('throws 403 when the oauth2.profile.allowed policy denies the profile', async () => {
+      const policyService = makePolicyService({ allowed: false, reason: 'org_required' });
+      ({ service } = makeService(providerConfig, repo, emailLookup, cache, policyService));
+      const { state } = await service.beginAuthorization({ provider: 'github', intent: 'sign-in' });
+
+      await expect(service.completeAuthorization({ params: { code: 'abc', state } })).rejects.toMatchObject({
+        statusCode: 403,
+        details: { profile: 'not allowed' },
+      });
+      expect(policyService.check).toHaveBeenCalledWith('oauth2.profile.allowed', { profile: expect.objectContaining({ provider: 'github' }) });
     });
   });
 
@@ -315,9 +346,7 @@ describe('OAuth2FactorService', () => {
       });
       ({ service } = makeService(providerConfig, repo, emailLookup, cache));
       const { state } = await service.beginAuthorization({ provider: 'github', intent: 'sign-in' });
-      const result = await service.completeAuthorization({
-        callbackUrl: new URL(`https://app.example.com/cb?code=abc&state=${state}`),
-      });
+      const result = await service.completeAuthorization({ params: { code: 'abc', state } });
       if (result.kind !== 'new-user') throw new Error('expected new-user');
 
       const factor = await service.createFactorFromAuthorization('actor-fresh', result.authorizationId);

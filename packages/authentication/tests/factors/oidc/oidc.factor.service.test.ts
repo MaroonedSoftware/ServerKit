@@ -20,6 +20,7 @@ import { OidcProviderRegistry, OidcProviderRegistryConfig, OidcProviderConfig } 
 import { EncryptionProvider } from '@maroonedsoftware/encryption';
 import { Logger } from '@maroonedsoftware/logger';
 import type { CacheProvider } from '@maroonedsoftware/cache';
+import type { PolicyResult, PolicyService } from '@maroonedsoftware/policies';
 import { Duration } from 'luxon';
 import crypto from 'node:crypto';
 
@@ -66,6 +67,15 @@ const makeEmailLookup = () =>
     findActorByEmail: vi.fn(async () => undefined),
   }) as unknown as OidcActorEmailLookup;
 
+const makePolicyService = (result: PolicyResult = { allowed: true }) =>
+  ({
+    check: vi.fn(async () => result),
+    assert: vi.fn(async () => undefined),
+  }) as unknown as PolicyService;
+
+const makeConfiguration = (issuer = 'https://accounts.google.com'): openidClient.Configuration =>
+  ({ serverMetadata: () => ({ issuer }) }) as unknown as openidClient.Configuration;
+
 const makeLogger = () =>
   ({
     error: vi.fn(),
@@ -87,11 +97,18 @@ const PROVIDER: OidcProviderConfig = {
 const makeRegistry = (overrides: Partial<OidcProviderConfig> = {}) =>
   new OidcProviderRegistry(new OidcProviderRegistryConfig([{ ...PROVIDER, ...overrides }]));
 
-const makeService = (registry: OidcProviderRegistry, repo: OidcFactorRepository, emailLookup: OidcActorEmailLookup, cache: CacheProvider) => {
+const makeService = (
+  registry: OidcProviderRegistry,
+  repo: OidcFactorRepository,
+  emailLookup: OidcActorEmailLookup,
+  cache: CacheProvider,
+  policyService: PolicyService = makePolicyService(),
+) => {
   const encryption = new EncryptionProvider(crypto.randomBytes(32));
   return {
-    service: new OidcFactorService(new OidcFactorServiceOptions(), registry, repo, emailLookup, cache, encryption, makeLogger()),
+    service: new OidcFactorService(new OidcFactorServiceOptions(), registry, repo, emailLookup, cache, encryption, makeLogger(), policyService),
     encryption,
+    policyService,
   };
 };
 
@@ -111,7 +128,7 @@ describe('OidcFactorService', () => {
     registry = makeRegistry();
     ({ service, encryption } = makeService(registry, repo, emailLookup, cache));
 
-    vi.mocked(openidClient.discovery).mockResolvedValue({} as openidClient.Configuration);
+    vi.mocked(openidClient.discovery).mockResolvedValue(makeConfiguration());
     vi.mocked(openidClient.buildAuthorizationUrl).mockReturnValue(TEST_AUTHORIZE_URL);
   });
 
@@ -204,20 +221,56 @@ describe('OidcFactorService', () => {
       vi.mocked(openidClient.fetchUserInfo).mockResolvedValue({ sub: 'subject-1', name: 'User One', ...userinfoOverrides } as openidClient.UserInfoResponse);
     };
 
-    it('throws 400 when the callback URL has no state param', async () => {
-      await expect(service.completeAuthorization({ callbackUrl: new URL('https://app.example.com/cb?code=xyz') })).rejects.toMatchObject({
+    it('throws 400 when the callback params have no state', async () => {
+      await expect(service.completeAuthorization({ params: { code: 'xyz' } })).rejects.toMatchObject({
         statusCode: 400,
         details: { state: 'missing from callback' },
       });
     });
 
+    it('throws 400 when the IdP returned an error response', async () => {
+      await expect(
+        service.completeAuthorization({
+          params: { error: 'login_required', error_description: 'session expired' },
+        }),
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        details: { error: 'login_required', error_description: 'session expired' },
+      });
+    });
+
     it('throws 404 when the cached state record has expired', async () => {
       await expect(
-        service.completeAuthorization({ callbackUrl: new URL('https://app.example.com/cb?code=xyz&state=missing') }),
+        service.completeAuthorization({ params: { code: 'xyz', state: 'missing' } }),
       ).rejects.toMatchObject({
         statusCode: 404,
         details: { state: 'not found or expired' },
       });
+    });
+
+    it('throws 400 when iss is supplied but does not match the discovered issuer', async () => {
+      await seedState();
+      seedTokens();
+
+      await expect(
+        service.completeAuthorization({
+          params: { code: 'xyz', state: 'state-token', iss: 'https://attacker.example' },
+        }),
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        details: { iss: 'does not match configured issuer' },
+      });
+    });
+
+    it('accepts iss when it matches the discovered issuer', async () => {
+      await seedState();
+      seedTokens();
+
+      const result = await service.completeAuthorization({
+        params: { code: 'xyz', state: 'state-token', iss: 'https://accounts.google.com' },
+      });
+
+      expect(result.kind).toBe('new-user');
     });
 
     it('returns signed-in with the existing actor when (provider, subject) is mapped', async () => {
@@ -226,9 +279,7 @@ describe('OidcFactorService', () => {
       const existing: OidcFactor = { id: 'factor-1', actorId: 'actor-1', active: true, provider: 'google', subject: 'subject-1', email: 'user@example.com' };
       vi.mocked(repo.findFactor).mockResolvedValue(existing);
 
-      const result = await service.completeAuthorization({
-        callbackUrl: new URL('https://app.example.com/cb?code=xyz&state=state-token'),
-      });
+      const result = await service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } });
 
       expect(result.kind).toBe('signed-in');
       if (result.kind !== 'signed-in') throw new Error('unreachable');
@@ -241,14 +292,14 @@ describe('OidcFactorService', () => {
     it('persists a rotated refresh token on signed-in when persistRefreshToken=true', async () => {
       registry = new OidcProviderRegistry(new OidcProviderRegistryConfig([{ ...PROVIDER, persistRefreshToken: true }]));
       ({ service, encryption } = makeService(registry, repo, emailLookup, cache));
-      vi.mocked(openidClient.discovery).mockResolvedValue({} as openidClient.Configuration);
+      vi.mocked(openidClient.discovery).mockResolvedValue(makeConfiguration());
       vi.mocked(openidClient.buildAuthorizationUrl).mockReturnValue(TEST_AUTHORIZE_URL);
       await seedState();
       seedTokens();
       const existing: OidcFactor = { id: 'factor-1', actorId: 'actor-1', active: true, provider: 'google', subject: 'subject-1' };
       vi.mocked(repo.findFactor).mockResolvedValue(existing);
 
-      await service.completeAuthorization({ callbackUrl: new URL('https://app.example.com/cb?code=xyz&state=state-token') });
+      await service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } });
 
       expect(repo.updateRefreshToken).toHaveBeenCalledTimes(1);
       const args = vi.mocked(repo.updateRefreshToken).mock.calls[0]![1];
@@ -264,7 +315,7 @@ describe('OidcFactorService', () => {
       const existing: OidcFactor = { id: 'factor-1', actorId: 'actor-1', active: true, provider: 'google', subject: 'subject-1' };
       vi.mocked(repo.findFactor).mockResolvedValue(existing);
 
-      await service.completeAuthorization({ callbackUrl: new URL('https://app.example.com/cb?code=xyz&state=state-token') });
+      await service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } });
 
       expect(repo.updateRefreshToken).not.toHaveBeenCalled();
     });
@@ -275,7 +326,7 @@ describe('OidcFactorService', () => {
       const existing: OidcFactor = { id: 'factor-1', actorId: 'actor-1', active: true, provider: 'google', subject: 'subject-1', email: 'old@example.com' };
       vi.mocked(repo.findFactor).mockResolvedValue(existing);
 
-      await service.completeAuthorization({ callbackUrl: new URL('https://app.example.com/cb?code=xyz&state=state-token') });
+      await service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } });
 
       expect(repo.updateEmail).toHaveBeenCalledWith('factor-1', 'new@example.com');
     });
@@ -284,9 +335,7 @@ describe('OidcFactorService', () => {
       await seedState({ intent: 'link', actorId: 'actor-existing' });
       seedTokens();
 
-      const result = await service.completeAuthorization({
-        callbackUrl: new URL('https://app.example.com/cb?code=xyz&state=state-token'),
-      });
+      const result = await service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } });
 
       expect(result.kind).toBe('linked');
       if (result.kind !== 'linked') throw new Error('unreachable');
@@ -302,9 +351,7 @@ describe('OidcFactorService', () => {
       seedTokens({ email: 'user@example.com', email_verified: true });
       vi.mocked(emailLookup.findActorByEmail).mockResolvedValue('actor-by-email');
 
-      const result = await service.completeAuthorization({
-        callbackUrl: new URL('https://app.example.com/cb?code=xyz&state=state-token'),
-      });
+      const result = await service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } });
 
       expect(result.kind).toBe('linked');
       if (result.kind !== 'linked') throw new Error('unreachable');
@@ -317,9 +364,7 @@ describe('OidcFactorService', () => {
       seedTokens({ email: 'user@example.com', email_verified: false });
       vi.mocked(emailLookup.findActorByEmail).mockResolvedValue('actor-by-email');
 
-      const result = await service.completeAuthorization({
-        callbackUrl: new URL('https://app.example.com/cb?code=xyz&state=state-token'),
-      });
+      const result = await service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } });
 
       expect(result.kind).toBe('new-user');
       if (result.kind !== 'new-user') throw new Error('unreachable');
@@ -331,9 +376,7 @@ describe('OidcFactorService', () => {
       await seedState();
       seedTokens({ email: 'fresh@example.com', email_verified: true });
 
-      const result = await service.completeAuthorization({
-        callbackUrl: new URL('https://app.example.com/cb?code=xyz&state=state-token'),
-      });
+      const result = await service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } });
 
       expect(result.kind).toBe('new-user');
       if (result.kind !== 'new-user') throw new Error('unreachable');
@@ -346,9 +389,7 @@ describe('OidcFactorService', () => {
       await seedState();
       seedTokens({ email: 'fresh@example.com', email_verified: true });
 
-      const result = await service.completeAuthorization({
-        callbackUrl: new URL('https://app.example.com/cb?code=xyz&state=state-token'),
-      });
+      const result = await service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } });
       if (result.kind !== 'new-user') throw new Error('unreachable');
 
       const cached = JSON.parse(cache._store.get(`oidc_authorization_${result.authorizationId}`)!);
@@ -360,7 +401,7 @@ describe('OidcFactorService', () => {
       await seedState();
       seedTokens();
 
-      await service.completeAuthorization({ callbackUrl: new URL('https://app.example.com/cb?code=xyz&state=state-token') });
+      await service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } });
 
       expect(cache._store.has('oidc_state_state-token')).toBe(false);
     });
@@ -370,11 +411,24 @@ describe('OidcFactorService', () => {
       seedTokens();
       vi.mocked(openidClient.fetchUserInfo).mockRejectedValue(new Error('userinfo down'));
 
-      const result = await service.completeAuthorization({
-        callbackUrl: new URL('https://app.example.com/cb?code=xyz&state=state-token'),
-      });
+      const result = await service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } });
 
       expect(result.kind).toBe('new-user');
+    });
+
+    it('throws 403 when the oidc.profile.allowed policy denies the profile', async () => {
+      const policyService = makePolicyService({ allowed: false, reason: 'hd_required' });
+      ({ service } = makeService(registry, repo, emailLookup, cache, policyService));
+      await seedState();
+      seedTokens();
+
+      await expect(
+        service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } }),
+      ).rejects.toMatchObject({ statusCode: 403, details: { profile: 'not allowed' } });
+      expect(policyService.check).toHaveBeenCalledWith(
+        'oidc.profile.allowed',
+        { profile: expect.objectContaining({ provider: 'google', subject: 'subject-1' }) },
+      );
     });
   });
 
@@ -396,9 +450,7 @@ describe('OidcFactorService', () => {
         claims: () => ({ sub: 'subject-1', email: 'fresh@example.com', email_verified: true }),
       } as unknown as Awaited<ReturnType<typeof openidClient.authorizationCodeGrant>>);
       vi.mocked(openidClient.fetchUserInfo).mockResolvedValue({ sub: 'subject-1' } as openidClient.UserInfoResponse);
-      const result = await service.completeAuthorization({
-        callbackUrl: new URL('https://app.example.com/cb?code=xyz&state=state-token'),
-      });
+      const result = await service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } });
       if (result.kind !== 'new-user') throw new Error('expected new-user');
 
       const factor = await service.createFactorFromAuthorization('actor-fresh', result.authorizationId);
@@ -485,9 +537,7 @@ describe('OidcFactorService', () => {
         claims: () => ({ sub: 'subject-1' }),
       } as unknown as Awaited<ReturnType<typeof openidClient.authorizationCodeGrant>>);
       vi.mocked(openidClient.fetchUserInfo).mockResolvedValue({ sub: 'subject-1' } as openidClient.UserInfoResponse);
-      const result = await service.completeAuthorization({
-        callbackUrl: new URL('https://app.example.com/cb?code=xyz&state=state-token'),
-      });
+      const result = await service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } });
       if (result.kind !== 'new-user') throw new Error('expected new-user');
 
       await expect(service.hasPendingAuthorization(result.authorizationId)).resolves.toBe(true);
@@ -537,7 +587,7 @@ describe('OidcProviderRegistry', () => {
   it('uses None client authentication for public clients', async () => {
     const noneStub = vi.fn();
     vi.mocked(openidClient.None).mockImplementation(noneStub as never);
-    vi.mocked(openidClient.discovery).mockResolvedValue({} as openidClient.Configuration);
+    vi.mocked(openidClient.discovery).mockResolvedValue(makeConfiguration());
     const registry = new OidcProviderRegistry(
       new OidcProviderRegistryConfig([{ ...PROVIDER, clientSecret: undefined }]),
     );

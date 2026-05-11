@@ -5,7 +5,9 @@ import { CacheProvider } from '@maroonedsoftware/cache';
 import { EncryptionProvider } from '@maroonedsoftware/encryption';
 import { httpError } from '@maroonedsoftware/errors';
 import { Logger } from '@maroonedsoftware/logger';
+import { PolicyService } from '@maroonedsoftware/policies';
 import { OAuth2Profile, OAuth2ProviderRegistry } from '../../providers/oauth2.provider.js';
+import { AuthorizationCallbackParams } from '../authorization.callback.types.js';
 import { OAuth2Factor, OAuth2FactorRepository } from './oauth2.factor.repository.js';
 
 /**
@@ -104,6 +106,7 @@ export class OAuth2FactorService {
     private readonly cache: CacheProvider,
     private readonly encryption: EncryptionProvider,
     private readonly logger: Logger,
+    private readonly policyService: PolicyService,
   ) {}
 
   private getStateKey(state: string) {
@@ -155,27 +158,43 @@ export class OAuth2FactorService {
   /**
    * Exchange the authorization code, fetch the provider profile, and resolve to a factor.
    *
-   * @throws HTTP 400 when `state` or `code` is missing.
+   * `params` is the standardized OAuth 2.0 authorization-response payload
+   * (RFC 6749 §4.1.2). Callers parse it from the callback `query`, form body
+   * (`response_mode=form_post`), or fragment — e.g.
+   * `Object.fromEntries(ctx.query)` — and pass it through.
+   *
+   * @throws HTTP 400 when the IdP returned an `error`, or when `state` / `code` is missing.
+   * @throws HTTP 403 when the registered `'oauth2.profile.allowed'` policy denies the profile.
    * @throws HTTP 404 when the state record has expired or `state` doesn't match.
+   * @throws HTTP 502 when the provider's `fetchProfile` call fails.
    */
-  async completeAuthorization(args: { callbackUrl: URL }): Promise<OAuth2AuthorizationResult> {
-    const callbackState = args.callbackUrl.searchParams.get('state');
-    const code = args.callbackUrl.searchParams.get('code');
-    if (!callbackState) {
+  async completeAuthorization(args: { params: AuthorizationCallbackParams }): Promise<OAuth2AuthorizationResult> {
+    const { params } = args;
+
+    if (params.error) {
+      throw httpError(400)
+        .withDetails({
+          error: params.error,
+          ...(params.error_description ? { error_description: params.error_description } : {}),
+          ...(params.error_uri ? { error_uri: params.error_uri } : {}),
+        });
+    }
+
+    if (!params.state) {
       throw httpError(400).withDetails({ state: 'missing from callback' });
     }
-    if (!code) {
+    if (!params.code) {
       throw httpError(400).withDetails({ code: 'missing from callback' });
     }
 
-    const stored = await this.lookupState(callbackState);
+    const stored = await this.lookupState(params.state);
     if (!stored) {
       throw httpError(404).withDetails({ state: 'not found or expired' });
     }
-    await this.cache.delete(this.getStateKey(callbackState));
+    await this.cache.delete(this.getStateKey(params.state));
 
     const config = this.registry.getConfig(stored.provider);
-    const tokens = await config.client.validateAuthorizationCode(code, stored.codeVerifier);
+    const tokens = await config.client.validateAuthorizationCode(params.code, stored.codeVerifier);
 
     let rawProfile: Omit<OAuth2Profile, 'provider'>;
     try {
@@ -188,6 +207,14 @@ export class OAuth2FactorService {
     }
 
     const profile: OAuth2Profile = { ...rawProfile, provider: stored.provider };
+
+    const policyResult = await this.policyService.check('oauth2.profile.allowed', { profile });
+    if (!policyResult.allowed) {
+      throw httpError(403)
+        .withDetails({ profile: 'not allowed' })
+        .withInternalDetails({ reason: policyResult.reason, details: policyResult.details });
+    }
+
     const refreshToken = config.persistRefreshToken && config.client.refreshAccessToken ? tokens.refreshToken : undefined;
     const refreshTokenExpiresAt = tokens.expiresAt ?? null;
 

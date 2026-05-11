@@ -6,7 +6,9 @@ import { CacheProvider } from '@maroonedsoftware/cache';
 import { EncryptionProvider } from '@maroonedsoftware/encryption';
 import { httpError } from '@maroonedsoftware/errors';
 import { Logger } from '@maroonedsoftware/logger';
+import { PolicyService } from '@maroonedsoftware/policies';
 import { OidcProviderRegistry } from '../../providers/oidc.provider.js';
+import { AuthorizationCallbackParams } from '../authorization.callback.types.js';
 import { OidcFactor, OidcFactorRepository } from './oidc.factor.repository.js';
 
 /**
@@ -123,7 +125,9 @@ export class OidcFactorServiceOptions {
  *
  * **Sign in** (the typical flow):
  * 1. Call {@link beginAuthorization} with `intent: 'sign-in'` → redirect the browser to `url`.
- * 2. On the callback route, call {@link completeAuthorization} with the full callback URL.
+ * 2. On the callback route, parse the standard authorization-response payload
+ *    (`code`, `state`, optionally `error`/`iss`) and call
+ *    {@link completeAuthorization} with `{ params }`.
  *    - `kind: 'signed-in'` — issue a session for `actorId`.
  *    - `kind: 'linked'` — the factor was just auto-linked; issue a session for `actorId`.
  *    - `kind: 'new-user'` — show a sign-up screen, then call {@link createFactorFromAuthorization}.
@@ -142,6 +146,7 @@ export class OidcFactorService {
     private readonly cache: CacheProvider,
     private readonly encryption: EncryptionProvider,
     private readonly logger: Logger,
+    private readonly policyService: PolicyService,
   ) {}
 
   private getStateKey(state: string) {
@@ -212,29 +217,60 @@ export class OidcFactorService {
    * Exchange the authorization code, validate the id_token, fetch userinfo, and
    * resolve to a factor (or a pending-authorization handle for new users).
    *
+   * `params` is the standardized OIDC authorization-response payload
+   * (RFC 6749 §4.1.2 + RFC 9207 `iss`). Callers parse it from the callback
+   * `query`, form body (`response_mode=form_post`), or fragment — e.g.
+   * `Object.fromEntries(ctx.query)` — and pass it through.
+   *
    * The id_token is fully validated by openid-client: signature against the
    * provider's JWKS, `iss`, `aud`, `exp`, and the `nonce` we cached in
-   * {@link beginAuthorization}. PKCE `code_verifier` is also bound to the request.
+   * {@link beginAuthorization}. PKCE `code_verifier` is also bound to the
+   * request. When `params.iss` is set, it is asserted against the discovered
+   * issuer per RFC 9207 to close the mix-up attack.
    *
-   * @throws HTTP 400 when `state` is missing from the callback URL.
+   * @throws HTTP 400 when the IdP returned an `error`, `state` is missing,
+   *   `id_token` claims are missing, or the supplied `iss` does not match.
+   * @throws HTTP 403 when the registered `'oidc.profile.allowed'` policy denies the profile.
    * @throws HTTP 404 when the state record has expired or does not exist.
    */
-  async completeAuthorization(args: { callbackUrl: URL }): Promise<OidcAuthorizationResult> {
-    const callbackState = args.callbackUrl.searchParams.get('state');
-    if (!callbackState) {
+  async completeAuthorization(args: { params: AuthorizationCallbackParams }): Promise<OidcAuthorizationResult> {
+    const { params } = args;
+
+    if (params.error) {
+      throw httpError(400)
+        .withDetails({
+          error: params.error,
+          ...(params.error_description ? { error_description: params.error_description } : {}),
+          ...(params.error_uri ? { error_uri: params.error_uri } : {}),
+        });
+    }
+
+    if (!params.state) {
       throw httpError(400).withDetails({ state: 'missing from callback' });
     }
 
-    const stored = await this.lookupState(callbackState);
+    const stored = await this.lookupState(params.state);
     if (!stored) {
       throw httpError(404).withDetails({ state: 'not found or expired' });
     }
-    await this.cache.delete(this.getStateKey(callbackState));
+    await this.cache.delete(this.getStateKey(params.state));
 
     const oidcConfig = await this.registry.getConfiguration(stored.provider);
     const providerConfig = this.registry.getConfig(stored.provider);
 
-    const tokens = await openidClient.authorizationCodeGrant(oidcConfig, args.callbackUrl, {
+    if (params.iss !== undefined) {
+      const expectedIssuer = oidcConfig.serverMetadata().issuer;
+      if (params.iss !== expectedIssuer) {
+        throw httpError(400).withDetails({ iss: 'does not match configured issuer' });
+      }
+    }
+
+    const callbackUrl = new URL(providerConfig.redirectUri.toString());
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined) callbackUrl.searchParams.set(key, value);
+    }
+
+    const tokens = await openidClient.authorizationCodeGrant(oidcConfig, callbackUrl, {
       expectedState: stored.state,
       expectedNonce: stored.nonce,
       pkceCodeVerifier: stored.codeVerifier,
@@ -257,6 +293,14 @@ export class OidcFactorService {
     }
 
     const profile = this.buildProfile(stored.provider, idTokenClaims, userinfo);
+
+    const policyResult = await this.policyService.check('oidc.profile.allowed', { profile });
+    if (!policyResult.allowed) {
+      throw httpError(403)
+        .withDetails({ profile: 'not allowed' })
+        .withInternalDetails({ reason: policyResult.reason, details: policyResult.details });
+    }
+
     const refreshToken = providerConfig.persistRefreshToken && !this.registry.isPublicClient(stored.provider) ? tokens.refresh_token : undefined;
     const refreshTokenExpiresAt = this.computeRefreshTokenExpiry(tokens);
 
