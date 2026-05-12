@@ -1,5 +1,12 @@
 # @maroonedsoftware/authentication
 
+## 4.18.1
+
+### Patch Changes
+
+- Updated dependencies [ab8e734]
+  - @maroonedsoftware/policies@0.3.0
+
 ## 4.18.0
 
 ### Minor Changes
