@@ -642,13 +642,18 @@ responsible for issuing tokens via `AuthenticationSessionService` and
 translating the outcome to its own HTTP contract.
 
 The default `DefaultMfaRequiredPolicy` requires MFA when at least one of the
-actor's available factors is not a knowledge factor and does not share its
-`method` with the primary factor. Email and OIDC qualify as a second factor
-when the primary used something else (e.g. password → email-OTP step-up), but
-the policy never asks for the same method twice in a row. Subclass to layer
+actor's available factors qualifies as a viable second factor. A factor
+disqualifies if it's a knowledge factor (a second password adds no MFA
+value), if it's the exact same instance just used as primary
+(`methodId` matches), or if it's an `email`/`oidc` factor whose method
+matches the primary's (different inboxes or different IdPs are not treated as
+meaningfully separate authenticators by default). Possession factors backed
+by physical devices — `fido`, `phone`, `authenticator` — qualify as a
+second factor even when the primary used the same method, as long as the
+`methodId` differs (e.g. two FIDO keys, two phones). Subclass to layer
 org-level overrides, rule out specific methods unconditionally, or add risk
-scoring on top, and re-register the subclass under the same
-`'auth.mfa.required'` name.
+scoring, and re-register the subclass under the same `'auth.mfa.required'`
+name.
 
 Delivery stays consumer-owned: `startFactorChallenge` returns the recipient and
 one-time `code` on its `phone` and `email` branches, and the caller is

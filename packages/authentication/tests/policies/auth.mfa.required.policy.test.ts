@@ -171,12 +171,31 @@ describe('DefaultMfaRequiredPolicy', () => {
   });
 
   it.each<AuthenticationFactorMethod>(['phone', 'fido', 'authenticator'])(
-    'excludes same-method factors when the primary is %s (no same-method-twice)',
+    'allows a different instance of the same %s method to count as a second factor (e.g. two FIDO keys)',
     async method => {
+      // makePrimary uses `${method}-pri` as methodId; the available factor uses a different methodId,
+      // so it represents a distinct physical device. For fido/phone/authenticator this qualifies.
+      const second = factor(method, 'possession', `${method}-other`);
       const result = await evaluate({
         actor,
         primaryFactor: makePrimary(method, 'possession'),
-        availableFactors: [factor(method, 'possession', `${method}-other`)],
+        availableFactors: [second],
+      });
+      expect(result.allowed).toBe(false);
+      expect((result as { details: { eligibleFactors: AuthMfaRequiredPolicyFactor[] } }).details.eligibleFactors).toEqual([
+        { method, methodId: second.methodId },
+      ]);
+    },
+  );
+
+  it.each<AuthenticationFactorMethod>(['phone', 'fido', 'authenticator', 'email', 'oidc'])(
+    'excludes the exact same factor instance when methodId matches the primary (%s)',
+    async method => {
+      // makePrimary uses `${method}-pri`; reuse it here so the candidate factor and the primary collide.
+      const result = await evaluate({
+        actor,
+        primaryFactor: makePrimary(method, 'possession'),
+        availableFactors: [factor(method, 'possession', `${method}-pri`)],
       });
       expect(result).toEqual({ allowed: true });
     },

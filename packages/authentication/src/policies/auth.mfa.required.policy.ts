@@ -30,20 +30,28 @@ export interface AuthMfaRequiredPolicyContext {
 /**
  * Default rule for deciding whether MFA is required after a primary factor.
  *
- * Filters `availableFactors` to those that qualify as a viable *second* factor —
- * meaning `kind !== 'knowledge'` (a second password doesn't add MFA value) and
- * `method !== primaryFactor.method` (don't ask for the same factor category
- * twice — using email-OTP after an email magic link, or a second OIDC sign-in
- * after the first, is just repeating the primary).
+ * Filters `availableFactors` to those that qualify as a viable *second*
+ * factor. A factor disqualifies if any of the following are true:
  *
- * Email and OIDC are eligible as a second factor when the primary used a
- * different method (e.g. password → email-OTP step-up). Subclass if your
- * security model rules them out unconditionally.
+ * - `kind === 'knowledge'` — a second knowledge factor (e.g. a backup
+ *   password) doesn't add MFA value.
+ * - `methodId === primaryFactor.methodId` — the exact same factor instance
+ *   was just used; you can't reuse it as a second factor.
+ * - `method === primaryFactor.method` AND `method` is `'email'` or `'oidc'` —
+ *   a different inbox or a different IdP isn't treated as a meaningfully
+ *   separate authenticator by default. (The user typically controls both
+ *   email accounts or both IdP accounts, so compromise of one often implies
+ *   compromise of the other.)
  *
- * If any factor survives the filter, MFA is required and the surviving factors
- * are attached to the deny result under `details.eligibleFactors` for the
- * orchestrator to stash on the issued challenge. If nothing survives — e.g. an
- * actor whose only factor is a password — MFA is skipped.
+ * Possession factors backed by physical devices — `fido`, `phone`,
+ * `authenticator` — *do* qualify when the primary used the same method but a
+ * different `methodId` (e.g. two FIDO keys, two phones, two TOTP secrets),
+ * because each instance represents a distinct device.
+ *
+ * If any factor survives the filter, MFA is required and the surviving
+ * factors are attached to the deny result under `details.eligibleFactors`
+ * for the orchestrator to stash on the issued challenge. If nothing survives
+ * — e.g. an actor whose only factor is a password — MFA is skipped.
  *
  * Subclass to layer additional rules on top (risk scoring, organization-level
  * overrides, region-specific requirements, …) without touching the
@@ -53,8 +61,15 @@ export interface AuthMfaRequiredPolicyContext {
 @Injectable()
 export class DefaultMfaRequiredPolicy extends Policy<AuthMfaRequiredPolicyContext> {
   async evaluate(context: AuthMfaRequiredPolicyContext, _envelope: PolicyEnvelope): Promise<PolicyResult> {
+    const { primaryFactor } = context;
+
     const eligibleFactors: MfaEligibleFactor[] = context.availableFactors
-      .filter(factor => factor.kind !== 'knowledge' && factor.method !== context.primaryFactor.method)
+      .filter(factor => {
+        if (factor.kind === 'knowledge') return false;
+        if (factor.methodId === primaryFactor.methodId) return false;
+        if (factor.method === primaryFactor.method && (factor.method === 'email' || factor.method === 'oidc')) return false;
+        return true;
+      })
       .map(({ method, methodId, label }) => ({ method, methodId, ...(label != null ? { label } : {}) }));
 
     if (eligibleFactors.length === 0) {
