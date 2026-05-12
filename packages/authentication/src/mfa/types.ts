@@ -1,5 +1,5 @@
 import { DateTime } from 'luxon';
-import { AuthenticationFactorMethod, AuthenticationSessionFactor, AuthenticationToken } from '../types.js';
+import { AuthenticationFactorMethod, AuthenticationSessionFactor } from '../types.js';
 
 /**
  * A factor that may be used to satisfy a secondary MFA challenge for a given
@@ -50,27 +50,25 @@ export interface MfaChallengePayload<K extends string = string> {
 }
 
 /**
- * Response branch returned when MFA is required to complete authentication.
- * Clients should prompt the user to choose one of `eligibleFactors`, call
- * {@link MfaOrchestrator.startFactorChallenge} to issue a one-time challenge,
- * and finish via {@link MfaOrchestrator.completeMfa}.
+ * Outcome of {@link MfaOrchestrator.issueOrChallenge}. Either the actor is
+ * cleared to mint a single-factor session, or a challenge has been stashed
+ * and the client must complete a second factor. The consumer is responsible
+ * for shaping the wire response in both branches.
  */
-export interface MfaRequiredResponse {
-  result: 'mfa_required';
-  /** The challenge id to pass into `startFactorChallenge` / `completeMfa`. */
-  mfaChallengeId: string;
-  /** Factors the actor may use to satisfy the secondary requirement. */
-  eligibleFactors: MfaEligibleFactor[];
-  /** When the challenge expires. */
-  expiresAt: DateTime;
-}
+export type IssueOrChallengeResult<K extends string = string> =
+  | { kind: 'allow'; actor: TargetActor<K>; primaryFactor: AuthenticationSessionFactor }
+  | { kind: 'challenge'; challenge: MfaChallengePayload<K> };
 
 /**
- * Discriminated union returned by {@link MfaOrchestrator.issueOrChallenge} and
- * {@link MfaOrchestrator.completeMfa}. Branch on `status` — either a fully
- * minted token is returned, or an MFA step is required first.
+ * Outcome of {@link MfaOrchestrator.completeMfa}. The MFA challenge has been
+ * redeemed and the secondary factor has been verified. Caller is responsible
+ * for minting the session and shaping the wire response.
  */
-export type AuthenticationTokenResponse = { result: 'token'; token: AuthenticationToken } | MfaRequiredResponse;
+export interface CompleteMfaResult<K extends string = string> {
+  actor: TargetActor<K>;
+  primaryFactor: AuthenticationSessionFactor;
+  secondaryFactor: AuthenticationSessionFactor;
+}
 
 /**
  * Request to start a per-method MFA challenge against a chosen

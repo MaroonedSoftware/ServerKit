@@ -1,8 +1,7 @@
 import { Injectable } from 'injectkit';
-import { DateTime, Duration } from 'luxon';
+import { DateTime } from 'luxon';
 import { httpError } from '@maroonedsoftware/errors';
 import { isPolicyResultDenied, PolicyService } from '@maroonedsoftware/policies';
-import { AuthenticationSessionService } from '../authentication.session.service.js';
 import { AuthenticationFactorKind, AuthenticationFactorMethod, AuthenticationSessionFactor } from '../types.js';
 import { PhoneFactorService } from '../factors/phone/phone.factor.service.js';
 import { FidoFactorService } from '../factors/fido/fido.factor.service.js';
@@ -11,39 +10,44 @@ import { EmailFactorService } from '../factors/email/email.factor.service.js';
 import { AuthMfaRequiredPolicyFactor } from '../policies/auth.mfa.required.policy.js';
 import { MfaChallengeService } from './mfa.challenge.service.js';
 import {
-  AuthenticationTokenResponse,
+  CompleteMfaResult,
   FactorChallengeProof,
   FactorChallengeStartRequest,
   FactorChallengeStartResponse,
+  IssueOrChallengeResult,
+  MfaChallengePayload,
   MfaEligibleFactor,
   TargetActor,
 } from './types.js';
 
 /**
  * Coordinates the handoff between primary and secondary authentication
- * factors. Sits on top of the per-factor services and `AuthenticationSessionService`,
- * and consults the `'auth.mfa.required'` policy to decide whether the actor
- * needs a second factor before a session is minted.
+ * factors. Sits on top of the per-factor services and consults the
+ * `'auth.mfa.required'` policy to decide whether the actor needs a second
+ * factor before a session is minted.
+ *
+ * The orchestrator is a pure state machine — it does not mint sessions or
+ * shape wire responses. Callers receive structured data and are responsible
+ * for issuing tokens and translating to their HTTP contract.
  *
  * Typical flow:
  * 1. Primary factor succeeds (password verify, OIDC callback, …).
- * 2. Caller invokes {@link issueOrChallenge}. If the policy allows, a session
- *    is minted and `{ status: 'token' }` is returned. Otherwise an MFA
- *    challenge is stashed and `{ status: 'mfa_required' }` is returned.
- * 3. Client picks a method, calls {@link startFactorChallenge} to issue a
- *    one-time code / FIDO assertion / etc. The response carries the code and
- *    recipient for `phone` and `email` — the caller is responsible for
- *    delivering it out-of-band (SMS provider, transactional email, …),
+ * 2. Caller invokes {@link issueOrChallenge}. On `kind: 'allow'` the caller
+ *    mints a single-factor session. On `kind: 'challenge'` a challenge has
+ *    been stashed and the caller surfaces the challenge details to the client.
+ * 3. Client picks a method, caller invokes {@link startFactorChallenge} to
+ *    issue a one-time code / FIDO assertion / etc. The response carries the
+ *    code and recipient for `phone` and `email` — the caller is responsible
+ *    for delivering it out-of-band (SMS provider, transactional email, …),
  *    matching the convention used by the per-factor services.
  * 4. Client submits the proof, caller invokes {@link completeMfa}. The
  *    challenge is redeemed (single-use), the proof is validated through the
- *    matching factor service, and the secondary factor is recorded on a new
- *    session.
+ *    matching factor service, and the verified secondary factor is returned
+ *    alongside the primary factor and actor so the caller can mint a session.
  */
 @Injectable()
 export class MfaOrchestrator {
   constructor(
-    private readonly sessionService: AuthenticationSessionService,
     private readonly challengeService: MfaChallengeService,
     private readonly policyService: PolicyService,
     private readonly phoneFactorService: PhoneFactorService,
@@ -54,42 +58,31 @@ export class MfaOrchestrator {
 
   /**
    * Decide whether MFA is required for `actor` having just satisfied
-   * `primaryFactor`. Mints a session immediately when the policy allows, or
-   * stashes an MFA challenge when it denies.
+   * `primaryFactor`. Returns `{ kind: 'allow' }` when the policy allows, or
+   * stashes an MFA challenge and returns `{ kind: 'challenge' }` when it
+   * denies.
    *
    * @param actor              - The actor that authenticated.
    * @param primaryFactor      - The factor that was just satisfied.
    * @param availableFactors   - Every factor on file for the actor; the policy
    *   decides which ones qualify as a viable second factor.
-   * @param claims             - Claims to embed in the resulting session.
-   * @param sessionExpiration  - Optional override for session lifetime.
-   * @returns `{ status: 'token', … }` on allow, `{ status: 'mfa_required', … }` on deny.
+   * @returns A discriminated union the caller branches on to mint a session
+   *   (`allow`) or surface the challenge details to the client (`challenge`).
    */
-  async issueOrChallenge(
-    actor: TargetActor,
+  async issueOrChallenge<K extends string = string>(
+    actor: TargetActor<K>,
     primaryFactor: AuthenticationSessionFactor,
     availableFactors: AuthMfaRequiredPolicyFactor[],
-    claims: Record<string, unknown>,
-    sessionExpiration?: Duration,
-  ): Promise<AuthenticationTokenResponse> {
+  ): Promise<IssueOrChallengeResult<K>> {
     const result = await this.policyService.check('auth.mfa.required', { actor, primaryFactor, availableFactors });
 
     if (!isPolicyResultDenied(result)) {
-      const session = await this.sessionService.createSession(actor.actorId, claims, primaryFactor, sessionExpiration);
-      const token = await this.sessionService.issueTokenForSession(session.sessionToken);
-      return { result: 'token', token };
+      return { kind: 'allow', actor, primaryFactor };
     }
 
     const eligibleFactors = (result.details?.eligibleFactors ?? []) as MfaEligibleFactor[];
-
-    const challenge = await this.challengeService.issue({ actor, primaryFactor, eligibleFactors });
-
-    return {
-      result: 'mfa_required',
-      mfaChallengeId: challenge.challengeId,
-      eligibleFactors: challenge.eligibleFactors,
-      expiresAt: challenge.expiresAt,
-    };
+    const challenge = (await this.challengeService.issue({ actor, primaryFactor, eligibleFactors })) as MfaChallengePayload<K>;
+    return { kind: 'challenge', challenge };
   }
 
   /**
@@ -171,21 +164,16 @@ export class MfaOrchestrator {
 
   /**
    * Redeem the MFA challenge and validate the submitted proof through the
-   * matching factor service. On success, mint a session that records both the
-   * primary factor (from the challenge) and the secondary factor that was just
-   * verified, and return a `{ status: 'token' }` response.
+   * matching factor service. On success, return the actor, the primary factor
+   * (carried over from the challenge), and the verified secondary factor. The
+   * caller is responsible for minting a session and shaping the wire response.
    *
    * @throws HTTP 404 when `mfaChallengeId` has expired or does not exist.
    * @throws HTTP 400 when the proof does not match the challenge's eligible list.
    * @throws Whatever the per-factor `verify*` call throws when the proof is invalid.
    */
-  async completeMfa(
-    mfaChallengeId: string,
-    proof: FactorChallengeProof,
-    claims: Record<string, unknown>,
-    sessionExpiration?: Duration,
-  ): Promise<AuthenticationTokenResponse> {
-    const challenge = await this.challengeService.peek(mfaChallengeId);
+  async completeMfa<K extends string = string>(mfaChallengeId: string, proof: FactorChallengeProof): Promise<CompleteMfaResult<K>> {
+    const challenge = (await this.challengeService.peek(mfaChallengeId)) as MfaChallengePayload<K> | null;
     if (!challenge) {
       throw httpError(404).withDetails({ mfaChallengeId: 'not found' });
     }
@@ -207,16 +195,7 @@ export class MfaOrchestrator {
       authenticatedAt: DateTime.utc(),
     };
 
-    const session = await this.sessionService.createSession(
-      challenge.actor.actorId,
-      claims,
-      [challenge.primaryFactor, secondaryFactor],
-      sessionExpiration,
-    );
-
-    const token = await this.sessionService.issueTokenForSession(session.sessionToken);
-
-    return { result: 'token', token };
+    return { actor: challenge.actor, primaryFactor: challenge.primaryFactor, secondaryFactor };
   }
 
   private async verifyProof(

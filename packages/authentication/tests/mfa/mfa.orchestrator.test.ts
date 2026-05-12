@@ -1,11 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { DateTime, Duration } from 'luxon';
+import { DateTime } from 'luxon';
 import type { CacheProvider } from '@maroonedsoftware/cache';
 import { isPolicyResultDenied, PolicyResult, PolicyService } from '@maroonedsoftware/policies';
 import { MfaOrchestrator } from '../../src/mfa/mfa.orchestrator.js';
 import { MfaChallengeService, MfaChallengeServiceOptions } from '../../src/mfa/mfa.challenge.service.js';
-import { AuthenticationSessionService, AuthenticationSessionServiceOptions } from '../../src/authentication.session.service.js';
-import { JwtProvider } from '../../src/providers/jwt.provider.js';
 import { PhoneFactorService } from '../../src/factors/phone/phone.factor.service.js';
 import { EmailFactorService } from '../../src/factors/email/email.factor.service.js';
 import { FidoFactorService } from '../../src/factors/fido/fido.factor.service.js';
@@ -29,12 +27,6 @@ const makeCache = () => {
     }),
   } as unknown as CacheProvider;
 };
-
-const makeJwtProvider = () =>
-  ({
-    create: vi.fn().mockReturnValue({ token: 'jwt-token', decoded: { exp: 1800, scope: [] } }),
-    decode: vi.fn(),
-  }) as unknown as JwtProvider;
 
 const makePolicyService = (resultFor: (name: string) => PolicyResult) =>
   ({
@@ -60,11 +52,6 @@ const phoneEligible = [{ method: 'phone' as const, methodId: 'phone-1', kind: 'p
 const makeOrchestrator = (overrides: { policy: PolicyResult }) => {
   const cache = makeCache();
   const challengeService = new MfaChallengeService(new MfaChallengeServiceOptions(), cache);
-  const sessionService = new AuthenticationSessionService(
-    new AuthenticationSessionServiceOptions('iss', 'aud', Duration.fromObject({ hours: 1 })),
-    cache,
-    makeJwtProvider(),
-  );
 
   const phoneFactor = {
     issuePhoneChallenge: vi.fn(async () => ({
@@ -95,7 +82,6 @@ const makeOrchestrator = (overrides: { policy: PolicyResult }) => {
   const policyService = makePolicyService(() => overrides.policy);
 
   const orchestrator = new MfaOrchestrator(
-    sessionService,
     challengeService,
     policyService,
     phoneFactor,
@@ -113,12 +99,16 @@ describe('MfaOrchestrator', () => {
   });
 
   describe('issueOrChallenge', () => {
-    it('mints a session and returns a token when the policy allows', async () => {
+    it("returns kind: 'allow' with the actor and primary factor when the policy allows", async () => {
       const { orchestrator, policyService } = makeOrchestrator({ policy: { allowed: true } });
 
-      const result = await orchestrator.issueOrChallenge(actor, primaryFactor, [], { role: 'admin' });
+      const result = await orchestrator.issueOrChallenge(actor, primaryFactor, []);
 
-      expect(result.result).toBe('token');
+      expect(result.kind).toBe('allow');
+      if (result.kind === 'allow') {
+        expect(result.actor).toEqual(actor);
+        expect(result.primaryFactor).toEqual(primaryFactor);
+      }
       expect(policyService.check).toHaveBeenCalledWith('auth.mfa.required', {
         actor,
         primaryFactor,
@@ -126,7 +116,7 @@ describe('MfaOrchestrator', () => {
       });
     });
 
-    it('stashes a challenge and returns mfa_required when the policy denies', async () => {
+    it("returns kind: 'challenge' with the full challenge payload when the policy denies", async () => {
       const { orchestrator } = makeOrchestrator({
         policy: {
           allowed: false,
@@ -135,26 +125,30 @@ describe('MfaOrchestrator', () => {
         },
       });
 
-      const result = await orchestrator.issueOrChallenge(actor, primaryFactor, phoneEligible, { role: 'admin' });
+      const result = await orchestrator.issueOrChallenge(actor, primaryFactor, phoneEligible);
 
-      expect(result.result).toBe('mfa_required');
-      if (result.result === 'mfa_required') {
-        expect(result.mfaChallengeId).toBeTruthy();
-        expect(result.eligibleFactors).toEqual([{ method: 'phone', methodId: 'phone-1' }]);
+      expect(result.kind).toBe('challenge');
+      if (result.kind === 'challenge') {
+        expect(result.challenge.challengeId).toBeTruthy();
+        expect(result.challenge.eligibleFactors).toEqual([{ method: 'phone', methodId: 'phone-1' }]);
+        expect(result.challenge.actor).toEqual(actor);
+        expect(result.challenge.primaryFactor).toEqual(primaryFactor);
+        expect(result.challenge.issuedAt).toBeInstanceOf(DateTime);
+        expect(result.challenge.expiresAt).toBeInstanceOf(DateTime);
       }
     });
 
-    it('surfaces labels from the policy result onto the mfa_required response', async () => {
+    it('surfaces labels from the policy result onto the challenge payload', async () => {
       const labeled = [{ method: 'phone' as const, methodId: 'phone-1', label: '+1·····1234' }];
       const { orchestrator } = makeOrchestrator({
         policy: { allowed: false, reason: 'mfa_required', details: { eligibleFactors: labeled } },
       });
 
-      const result = await orchestrator.issueOrChallenge(actor, primaryFactor, [{ ...labeled[0]!, kind: 'possession' }], { role: 'admin' });
+      const result = await orchestrator.issueOrChallenge(actor, primaryFactor, [{ ...labeled[0]!, kind: 'possession' }]);
 
-      expect(result.result).toBe('mfa_required');
-      if (result.result === 'mfa_required') {
-        expect(result.eligibleFactors).toEqual(labeled);
+      expect(result.kind).toBe('challenge');
+      if (result.kind === 'challenge') {
+        expect(result.challenge.eligibleFactors).toEqual(labeled);
       }
     });
   });
@@ -227,27 +221,51 @@ describe('MfaOrchestrator', () => {
   });
 
   describe('completeMfa', () => {
-    it('verifies the proof, redeems the challenge, and mints a token', async () => {
+    it('verifies the proof, redeems the challenge, and returns actor + factors', async () => {
       const { orchestrator, challengeService, phoneFactor } = makeOrchestrator({ policy: { allowed: true } });
+      const redeemSpy = vi.spyOn(challengeService, 'redeem');
       const challenge = await challengeService.issue({
         actor,
         primaryFactor,
         eligibleFactors: [{ method: 'phone', methodId: 'phone-1' }],
       });
 
-      const result = await orchestrator.completeMfa(
-        challenge.challengeId,
-        { method: 'phone', challengeId: 'phone-chal-1', code: '123456' },
-        { role: 'admin' },
-      );
+      const result = await orchestrator.completeMfa(challenge.challengeId, { method: 'phone', challengeId: 'phone-chal-1', code: '123456' });
 
-      expect(result.result).toBe('token');
+      expect(result.actor).toEqual(actor);
+      // primaryFactor carries over from the cached challenge — verify the structural fields. (DateTimes
+      // are serialized through the cache so exact-instant comparison isn't meaningful here.)
+      expect(result.primaryFactor).toMatchObject({ method: 'password', methodId: 'pw-1', kind: 'knowledge' });
+      expect(result.primaryFactor.issuedAt).toBeInstanceOf(DateTime);
+      expect(result.primaryFactor.authenticatedAt).toBeInstanceOf(DateTime);
+      expect(result.secondaryFactor).toMatchObject({ method: 'phone', methodId: 'phone-1', kind: 'possession' });
+      expect(result.secondaryFactor.issuedAt).toBeInstanceOf(DateTime);
+      expect(result.secondaryFactor.authenticatedAt).toBeInstanceOf(DateTime);
       expect(phoneFactor.verifyPhoneChallenge).toHaveBeenCalledWith('phone-chal-1', '123456');
+      expect(redeemSpy).toHaveBeenCalledWith(challenge.challengeId);
 
       // Second completion attempt should 404 because the challenge was redeemed.
       await expect(
-        orchestrator.completeMfa(challenge.challengeId, { method: 'phone', challengeId: 'phone-chal-1', code: '123456' }, {}),
+        orchestrator.completeMfa(challenge.challengeId, { method: 'phone', challengeId: 'phone-chal-1', code: '123456' }),
       ).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it('does not mint a session — session minting is consumer-side', async () => {
+      // The orchestrator constructor no longer accepts an AuthenticationSessionService,
+      // which is the structural guarantee this test depends on. Belt-and-braces: a
+      // successful completeMfa must return pure data with no token field.
+      const { orchestrator, challengeService } = makeOrchestrator({ policy: { allowed: true } });
+      const challenge = await challengeService.issue({
+        actor,
+        primaryFactor,
+        eligibleFactors: [{ method: 'phone', methodId: 'phone-1' }],
+      });
+
+      const result = await orchestrator.completeMfa(challenge.challengeId, { method: 'phone', challengeId: 'phone-chal-1', code: '123456' });
+
+      expect(result).not.toHaveProperty('token');
+      expect(result).not.toHaveProperty('result');
+      expect(Object.keys(result).sort()).toEqual(['actor', 'primaryFactor', 'secondaryFactor']);
     });
 
     it('rejects when the verified factor is not on the eligible list', async () => {
@@ -268,7 +286,7 @@ describe('MfaOrchestrator', () => {
       });
 
       await expect(
-        orchestrator.completeMfa(challenge.challengeId, { method: 'phone', challengeId: 'phone-chal-1', code: '123456' }, {}),
+        orchestrator.completeMfa(challenge.challengeId, { method: 'phone', challengeId: 'phone-chal-1', code: '123456' }),
       ).rejects.toMatchObject({ statusCode: 400 });
 
       // Challenge should still be redeemable because we peek-then-delete on success only.
@@ -276,16 +294,16 @@ describe('MfaOrchestrator', () => {
       expect(stillThere).not.toBeNull();
     });
 
-    it('full flow: issueOrChallenge → startFactorChallenge → completeMfa → token', async () => {
+    it('full flow: issueOrChallenge → startFactorChallenge → completeMfa → actor + factors', async () => {
       const { orchestrator, phoneFactor } = makeOrchestrator({
         policy: { allowed: false, reason: 'mfa_required', details: { eligibleFactors: [{ method: 'phone', methodId: 'phone-1' }] } },
       });
 
-      const challenge = await orchestrator.issueOrChallenge(actor, primaryFactor, phoneEligible, {});
-      expect(challenge.result).toBe('mfa_required');
-      if (challenge.result !== 'mfa_required') return;
+      const issued = await orchestrator.issueOrChallenge(actor, primaryFactor, phoneEligible);
+      expect(issued.kind).toBe('challenge');
+      if (issued.kind !== 'challenge') return;
 
-      const started = await orchestrator.startFactorChallenge(challenge.mfaChallengeId, { method: 'phone', methodId: 'phone-1' });
+      const started = await orchestrator.startFactorChallenge(issued.challenge.challengeId, { method: 'phone', methodId: 'phone-1' });
       expect(started.method).toBe('phone');
       if (started.method === 'phone') {
         // Consumer would send `started.code` to `started.phoneNumber` here.
@@ -293,13 +311,15 @@ describe('MfaOrchestrator', () => {
         expect(started.phoneNumber).toBe('+12025550123');
       }
 
-      const token = await orchestrator.completeMfa(
-        challenge.mfaChallengeId,
-        { method: 'phone', challengeId: 'phone-chal-1', code: '123456' },
-        { role: 'admin' },
-      );
+      const completed = await orchestrator.completeMfa(issued.challenge.challengeId, {
+        method: 'phone',
+        challengeId: 'phone-chal-1',
+        code: '123456',
+      });
 
-      expect(token.result).toBe('token');
+      expect(completed.actor).toEqual(actor);
+      expect(completed.primaryFactor).toMatchObject({ method: 'password', methodId: 'pw-1', kind: 'knowledge' });
+      expect(completed.secondaryFactor).toMatchObject({ method: 'phone', methodId: 'phone-1', kind: 'possession' });
       expect(phoneFactor.verifyPhoneChallenge).toHaveBeenCalledWith('phone-chal-1', '123456');
     });
   });

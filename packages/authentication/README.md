@@ -630,11 +630,16 @@ const { url } = await oauth2.beginAuthorization({ provider: 'github', intent: 's
 
 ### MFA orchestration
 
-`MfaOrchestrator` coordinates the handoff between a primary factor and a secondary
-factor. It sits on top of the per-factor services (`PhoneFactorService`,
-`EmailFactorService`, …) and `AuthenticationSessionService`, and asks the
-`'auth.mfa.required'` policy whether a second factor is needed before a session
-is minted.
+`MfaOrchestrator` coordinates the handoff between a primary factor and a
+secondary factor. It sits on top of the per-factor services
+(`PhoneFactorService`, `EmailFactorService`, …) and asks the
+`'auth.mfa.required'` policy whether a second factor is needed.
+
+The orchestrator is a pure state machine — it does not mint sessions or shape
+wire responses. `issueOrChallenge` and `completeMfa` return structured data
+(`IssueOrChallengeResult` and `CompleteMfaResult`), and the caller is
+responsible for issuing tokens via `AuthenticationSessionService` and
+translating the outcome to its own HTTP contract.
 
 The default `DefaultMfaRequiredPolicy` requires MFA when at least one of the
 actor's available factors is not a knowledge factor and not `'oidc'` or
@@ -662,18 +667,22 @@ container.bind(MfaOrchestrator).toSelf();
 // DefaultMfaRequiredPolicy is registered automatically via AuthenticationPolicyMappings.
 
 // Primary factor (e.g. password) has just succeeded:
-const result = await mfaOrchestrator.issueOrChallenge(
+const issued = await mfaOrchestrator.issueOrChallenge(
   { kind: 'user', actorId: user.id },
   primaryFactor,
   availableFactors, // [{ method, methodId, kind }, …]
-  { role: user.role },
 );
 
-if (result.status === 'mfa_required') {
-  // Return result.mfaChallengeId and result.eligibleFactors to the client.
-} else {
-  // result.token is a Bearer token response.
+if (issued.kind === 'allow') {
+  // Policy cleared the actor — mint a single-factor session yourself.
+  const session = await sessionService.createSession(issued.actor.actorId, { role: user.role }, issued.primaryFactor);
+  const token = await sessionService.issueTokenForSession(session.sessionToken);
+  return token;
 }
+
+// issued.kind === 'challenge' — surface the challenge details to the client.
+// issued.challenge.challengeId, issued.challenge.eligibleFactors, issued.challenge.expiresAt
+const mfaChallengeId = issued.challenge.challengeId;
 
 // When the client picks a method:
 const started = await mfaOrchestrator.startFactorChallenge(mfaChallengeId, { method: 'phone', methodId: 'phone-1', transport: 'sms' });
@@ -685,9 +694,14 @@ if (started.method === 'phone' && !started.alreadyIssued) {
 const completed = await mfaOrchestrator.completeMfa(
   mfaChallengeId,
   { method: 'phone', challengeId: 'phone-chal-1', code: '123456' },
-  { role: user.role },
 );
-// completed.token is the final session's Bearer token.
+// completed.actor, completed.primaryFactor, completed.secondaryFactor — mint the final session yourself.
+const session = await sessionService.createSession(
+  completed.actor.actorId,
+  { role: user.role },
+  [completed.primaryFactor, completed.secondaryFactor],
+);
+const token = await sessionService.issueTokenForSession(session.sessionToken);
 ```
 
 ---
