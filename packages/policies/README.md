@@ -10,8 +10,8 @@ pnpm add @maroonedsoftware/policies
 
 ## Features
 
-- **`Policy` base class** — implement a single `evaluate` method and return `allow()`, `deny(reason, details?)`, or `denyStepUp(reason, requirement)`
-- **Typed `PolicyResult`** — discriminated union (`{ allowed: true } | { allowed: false, reason, details? }`) with `isPolicyResultAllowed` / `isPolicyResultDenied` guards
+- **`Policy` base class** — implement a single `evaluate` method and return `allow()`, `deny(reason, details?, internalDetails?)`, or `denyStepUp(reason, requirement)`
+- **Typed `PolicyResult`** — discriminated union with `isPolicyResultAllowed` / `isPolicyResultDenied` guards; denial results carry `details` (rendered to clients) and `internalDetails` (log-only)
 - **Named registry** — register each policy under a stable name (e.g. `'email.allowed'`) so callers depend on the name and `PolicyService`, not on concrete classes
 - **Type-safe call sites** — declare a `Policies` map (`{ <name>: <ContextShape> }`) and `BasePolicyService.check`/`assert` enforce the right context per name at compile time
 - **Per-evaluation envelope** — subclass `BasePolicyService` to attach request-scoped state (current time, session, request id, …) without each policy reaching for it
@@ -86,7 +86,10 @@ if (!result.allowed) {
   throw httpError(400).withDetails({ value: result.reason });
 }
 
-// `assert` throws HTTP 403 (with `kind: 'policy_violation'` in internal details) on deny.
+// `assert` throws HTTP 403 on deny. The denial result is split across the thrown error:
+// - `result.details` (client-facing) → `HttpError.details`, rendered to the response body.
+// - `result.internalDetails` (operator/log-only) → `HttpError.internalDetails`, merged with
+//   framework context (`policyName`, `reason`, `kind: 'policy_violation'`), never on the wire.
 await policyService.assert('email.allowed', { value: 'user@example.com' });
 ```
 
@@ -107,11 +110,11 @@ return this.denyStepUp('recent_auth_required', {
 
 Abstract base class. Subclass and implement `evaluate(context, envelope): Promise<PolicyResult>`.
 
-| Helper                             | Returns                                                            | Description                                                                                          |
-| ---------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `allow()`                          | `{ allowed: true }`                                                | Allow the request                                                                                    |
-| `deny(reason, details?)`           | `{ allowed: false, reason, details? }`                             | Deny with a machine-readable reason and optional structured details                                  |
-| `denyStepUp(reason, requirement)`  | `{ allowed: false, reason, details: { kind: 'step_up_required', stepUp } }` | Deny and attach a `StepUpRequirement` clients can use to drive a re-auth challenge                   |
+| Helper                                            | Returns                                                                     | Description                                                                                                                                                                              |
+| ------------------------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `allow()`                                         | `{ allowed: true }`                                                         | Allow the request                                                                                                                                                                        |
+| `deny(reason, details?, internalDetails?)`        | `{ allowed: false, reason, details?, internalDetails? }`                    | Deny with a machine-readable reason. `details` is rendered to the HTTP response by `assert`; `internalDetails` lands in the thrown error's `internalDetails` (logs only, never on the wire). |
+| `denyStepUp(reason, requirement)`                 | `{ allowed: false, reason, details: { kind: 'step_up_required', stepUp } }` | Deny and attach a `StepUpRequirement` clients can use to drive a re-auth challenge.                                                                                                      |
 
 ### `PolicyService`
 
@@ -120,7 +123,7 @@ Abstract DI handle. Implementations supply a per-evaluation envelope.
 | Method                                   | Returns                  | Description                                                                                              |
 | ---------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------- |
 | `check(policyName, context)`             | `Promise<PolicyResult>`  | Resolve the registered policy and return its result. Throws when `policyName` is not registered.         |
-| `assert(policyName, context)`            | `Promise<void>`          | Same as `check`, but throws HTTP 403 (`kind: 'policy_violation'`) on deny.                               |
+| `assert(policyName, context)`            | `Promise<void>`          | Same as `check`, but throws HTTP 403 on deny. `result.details` is surfaced under `HttpError.details`; `result.internalDetails` is merged with framework context (`policyName`, `reason`, `kind: 'policy_violation'`) under `HttpError.internalDetails`. |
 
 ### `BasePolicyService<TPolicies, TEnvelope>`
 
@@ -135,7 +138,7 @@ Default `PolicyService`. Subclass and implement `buildEnvelope(): Promise<TEnvel
 | Type                  | Shape                                                                                                  |
 | --------------------- | ------------------------------------------------------------------------------------------------------ |
 | `PolicyResultAllowed` | `{ allowed: true }`                                                                                    |
-| `PolicyResultDenied`  | `{ allowed: false; reason: string; details?: Record<string, unknown> }`                                |
+| `PolicyResultDenied`  | `{ allowed: false; reason: string; details?: Record<string, unknown>; internalDetails?: Record<string, unknown> }` |
 | `PolicyResult`        | `PolicyResultAllowed \| PolicyResultDenied`                                                            |
 | `PolicyEnvelope`      | `{ now: DateTime }` (extend in subclasses)                                                             |
 | `StepUpRequirement`   | `{ within: Duration; acceptableMethods?; acceptableKinds?; excludeMethods? }`                          |

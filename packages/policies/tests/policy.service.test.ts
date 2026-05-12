@@ -67,17 +67,65 @@ describe('BasePolicyService', () => {
       await expect(service.assert('example_allowed', { allow: true })).resolves.toBeUndefined();
     });
 
-    it('throws HTTP 403 with policy_violation internal details when the policy denies', async () => {
-      evaluate.mockResolvedValue({ allowed: false, reason: 'nope', details: { foo: 'bar' } });
+    it('surfaces result.details on the thrown HttpError so the middleware renders them', async () => {
+      evaluate.mockResolvedValue({ allowed: false, reason: 'step_up', details: { kind: 'step_up_required', stepUp: { within: 60 } } });
       await expect(service.assert('example_allowed', { allow: false })).rejects.toMatchObject({
+        statusCode: 403,
+        details: { kind: 'step_up_required', stepUp: { within: 60 } },
+        internalDetails: {
+          policyName: 'example_allowed',
+          reason: 'step_up',
+          kind: 'policy_violation',
+        },
+      });
+    });
+
+    it('routes result.internalDetails to the error internalDetails and keeps details undefined', async () => {
+      evaluate.mockResolvedValue({ allowed: false, reason: 'nope', internalDetails: { traceId: 'abc' } });
+      const rejection = await service.assert('example_allowed', { allow: false }).catch(error => error);
+      expect(rejection).toMatchObject({
         statusCode: 403,
         internalDetails: {
           policyName: 'example_allowed',
           reason: 'nope',
           kind: 'policy_violation',
-          details: { foo: 'bar' },
+          traceId: 'abc',
         },
       });
+      expect(rejection.details).toBeUndefined();
+    });
+
+    it('handles denials carrying both details and internalDetails without overlap', async () => {
+      evaluate.mockResolvedValue({
+        allowed: false,
+        reason: 'weak_password',
+        details: { warning: 'too short', suggestions: ['add length'] },
+        internalDetails: { zxcvbnScore: 1 },
+      });
+      await expect(service.assert('example_allowed', { allow: false })).rejects.toMatchObject({
+        statusCode: 403,
+        details: { warning: 'too short', suggestions: ['add length'] },
+        internalDetails: {
+          policyName: 'example_allowed',
+          reason: 'weak_password',
+          kind: 'policy_violation',
+          zxcvbnScore: 1,
+        },
+      });
+    });
+
+    it('emits a bare 403 (no details) when the policy returns neither details nor internalDetails', async () => {
+      evaluate.mockResolvedValue({ allowed: false, reason: 'deny_list' });
+      const rejection = await service.assert('example_allowed', { allow: false }).catch(error => error);
+      expect(rejection).toMatchObject({
+        statusCode: 403,
+        internalDetails: {
+          policyName: 'example_allowed',
+          reason: 'deny_list',
+          kind: 'policy_violation',
+        },
+      });
+      expect(rejection.details).toBeUndefined();
     });
   });
 });

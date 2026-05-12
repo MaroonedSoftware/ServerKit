@@ -38,8 +38,10 @@ export abstract class PolicyService {
   abstract check(policyName: string, context: PolicyContext): Promise<PolicyResult>;
 
   /**
-   * Evaluate the policy registered under `policyName` and throw HTTP 403 with
-   * a `policy_violation` payload when denied; return normally on allow.
+   * Evaluate the policy registered under `policyName` and throw HTTP 403 when
+   * denied (with `result.details` surfaced under `HttpError.details` and
+   * `result.internalDetails` plus framework context under `HttpError.internalDetails`);
+   * return normally on allow.
    */
   abstract assert(policyName: string, context: PolicyContext): Promise<void>;
 }
@@ -96,23 +98,30 @@ export abstract class BasePolicyService<
   }
 
   /**
-   * Same as {@link check}, but throws HTTP 403 (with the policy name, reason,
-   * and any `details` attached as internal details under
-   * `kind: 'policy_violation'`) when the result is denied.
+   * Same as {@link check}, but throws HTTP 403 when the result is denied.
+   *
+   * The denial result is split across the thrown error:
+   * - `result.details` (client-facing hints) → `HttpError.details`, rendered
+   *   to the response body by `errorMiddleware`.
+   * - `result.internalDetails` (operator/log-only) → `HttpError.internalDetails`,
+   *   merged with framework-supplied context (`policyName`, `reason`,
+   *   `kind: 'policy_violation'`), never on the wire.
    *
    * @throws HTTP 403 when the policy denies the request.
    * @throws Error when no policy is registered under `policyName`.
    */
   async assert<K extends keyof TPolicies & string>(policyName: K, context: TPolicies[K]): Promise<void> {
     const result = await this.check(policyName, context);
-    if (isPolicyResultDenied(result)) {
-      throw httpError(403).withInternalDetails({
-        message: `policy violation [${policyName}]: ${result.reason}`,
-        policyName,
-        reason: result.reason,
-        kind: 'policy_violation',
-        details: result.details,
-      });
-    }
+    if (!isPolicyResultDenied(result)) return;
+
+    const error = httpError(403).withInternalDetails({
+      message: `policy violation [${policyName}]: ${result.reason}`,
+      policyName,
+      reason: result.reason,
+      kind: 'policy_violation',
+      ...(result.internalDetails ?? {}),
+    });
+    if (result.details) error.withDetails(result.details);
+    throw error;
   }
 }

@@ -11,14 +11,23 @@ import {
 
 const envelope: PolicyEnvelope = { now: DateTime.fromISO('2026-01-01T00:00:00Z', { zone: 'utc' }) };
 
-class TestPolicy extends Policy<{ allow: boolean; reason?: string; stepUp?: StepUpRequirement }> {
-  async evaluate(
-    context: { allow: boolean; reason?: string; stepUp?: StepUpRequirement },
-    _envelope: PolicyEnvelope,
-  ): Promise<PolicyResult> {
+interface TestPolicyContext {
+  allow: boolean;
+  reason?: string;
+  stepUp?: StepUpRequirement;
+  details?: Record<string, unknown>;
+  internalDetails?: Record<string, unknown>;
+}
+
+class TestPolicy extends Policy<TestPolicyContext> {
+  async evaluate(context: TestPolicyContext, _envelope: PolicyEnvelope): Promise<PolicyResult> {
     if (context.allow) return this.allow();
     if (context.stepUp) return this.denyStepUp(context.reason ?? 'step_up_required', context.stepUp);
-    return this.deny(context.reason ?? 'denied', { extra: 1 });
+    return this.deny(
+      context.reason ?? 'denied',
+      context.details ?? { extra: 1 },
+      context.internalDetails,
+    );
   }
 }
 
@@ -32,6 +41,24 @@ describe('Policy', () => {
       allowed: false,
       reason: 'nope',
       details: { extra: 1 },
+    });
+  });
+
+  it('deny() round-trips internalDetails through PolicyResultDenied', async () => {
+    const result = await new TestPolicy().evaluate(
+      {
+        allow: false,
+        reason: 'nope',
+        details: { hint: 'visible' },
+        internalDetails: { traceId: 'abc-123' },
+      },
+      envelope,
+    );
+    expect(result).toEqual({
+      allowed: false,
+      reason: 'nope',
+      details: { hint: 'visible' },
+      internalDetails: { traceId: 'abc-123' },
     });
   });
 

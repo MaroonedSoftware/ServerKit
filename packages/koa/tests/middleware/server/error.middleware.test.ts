@@ -147,6 +147,30 @@ describe('errorMiddleware', () => {
       });
     });
 
+    it('renders a step-up requirement payload under details and omits internalDetails from the wire', async () => {
+      const middleware = errorMiddleware();
+      const stepUp = {
+        within: 'PT5M',
+        acceptableMethods: ['fido'],
+        acceptableKinds: ['possession'],
+      };
+      const httpErr = httpError(403)
+        .withDetails({ kind: 'step_up_required', stepUp })
+        .withInternalDetails({ policyName: 'auth.recent_factor', reason: 'no recent factor' });
+      mockNext.mockRejectedValue(httpErr);
+
+      await middleware(mockCtx, mockNext);
+
+      expect(mockCtx.status).toBe(403);
+      expect(mockCtx.body).toEqual({
+        statusCode: 403,
+        message: httpErr.message,
+        details: { kind: 'step_up_required', stepUp },
+      });
+      const serialized = JSON.parse(JSON.stringify(mockCtx.body));
+      expect(serialized).not.toHaveProperty('internalDetails');
+    });
+
     it('should handle various HttpError status codes', async () => {
       const statusCodes = [400, 401, 403, 404, 422, 500, 503];
       const middleware = errorMiddleware();

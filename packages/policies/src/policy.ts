@@ -8,10 +8,21 @@ export type PolicyResultAllowed = { allowed: true };
 
 /**
  * Result of a denied policy evaluation. Carries a machine-readable `reason` that
- * callers can branch on to render a user-facing message, plus optional structured
- * `details` (e.g. step-up requirements via {@link Policy.denyStepUp}).
+ * callers can branch on to render a user-facing message, plus two optional
+ * structured payloads:
+ *
+ * - `details` — client-facing hints (e.g. step-up requirements via
+ *   {@link Policy.denyStepUp}, eligible factors, password feedback). Rendered
+ *   to the HTTP response body by `BasePolicyService.assert`.
+ * - `internalDetails` — operator/log-only context. Attached to the thrown
+ *   error's `internalDetails` so it shows up in logs but never on the wire.
  */
-export type PolicyResultDenied = { allowed: false; reason: string; details?: Record<string, unknown> };
+export type PolicyResultDenied = {
+  allowed: false;
+  reason: string;
+  details?: Record<string, unknown>;
+  internalDetails?: Record<string, unknown>;
+};
 
 /**
  * Discriminated union returned by every {@link Policy.evaluate} call. Branch on
@@ -86,11 +97,21 @@ export abstract class Policy<Context extends PolicyContext = PolicyContext, Enve
 
   /**
    * Build a denial result with a machine-readable `reason` (e.g. `'deny_list'`,
-   * `'invalid_format'`) and optional structured `details`. Callers branch on
-   * `reason` to render user-facing messages.
+   * `'invalid_format'`) and optional structured payloads:
+   *
+   * - `details` — client-facing hints rendered to the HTTP response body by
+   *   `BasePolicyService.assert` (e.g. step-up requirements, eligible factors,
+   *   password feedback). Callers branch on `reason` (or `details.kind`) to
+   *   drive the UI.
+   * - `internalDetails` — operator/log-only context that should never reach
+   *   the client. Surfaced under the thrown error's `internalDetails`.
    */
-  protected deny(reason: string, details?: Record<string, unknown>): PolicyResultDenied {
-    return { allowed: false, reason, details };
+  protected deny(
+    reason: string,
+    details?: Record<string, unknown>,
+    internalDetails?: Record<string, unknown>,
+  ): PolicyResultDenied {
+    return { allowed: false, reason, details, internalDetails };
   }
 
   /**
