@@ -1,5 +1,12 @@
 # @maroonedsoftware/koa
 
+## 2.1.17
+
+### Patch Changes
+
+- Updated dependencies [54dbb7c]
+  - @maroonedsoftware/authentication@4.15.0
+
 ## 2.1.16
 
 ### Patch Changes
