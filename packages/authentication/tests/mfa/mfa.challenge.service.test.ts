@@ -115,6 +115,23 @@ describe('MfaChallengeService', () => {
     expect(await service.redeem('does-not-exist')).toBeNull();
   });
 
+  it('round-trips labels on eligible factors through JSON', async () => {
+    const { cache } = makeCache();
+    const service = new MfaChallengeService(new MfaChallengeServiceOptions(), cache);
+
+    const labeledFactors = [
+      { method: 'phone' as const, methodId: 'phone-1', label: '+1·····1234' },
+      { method: 'authenticator' as const, methodId: 'auth-1', label: 'iPhone 15 Pro' },
+      { method: 'fido' as const, methodId: 'fido-1' },
+    ];
+
+    const issued = await service.issue({ actor, primaryFactor, eligibleFactors: labeledFactors });
+    const peeked = (await service.peek(issued.challengeId))!;
+
+    expect(peeked.eligibleFactors).toEqual(labeledFactors);
+    expect('label' in peeked.eligibleFactors[2]!).toBe(false);
+  });
+
   it('round-trips primary factor timestamps through JSON', async () => {
     const { cache } = makeCache();
     const service = new MfaChallengeService(new MfaChallengeServiceOptions(), cache);

@@ -118,7 +118,7 @@ describe('MfaOrchestrator', () => {
 
       const result = await orchestrator.issueOrChallenge(actor, primaryFactor, [], { role: 'admin' });
 
-      expect(result.status).toBe('token');
+      expect(result.result).toBe('token');
       expect(policyService.check).toHaveBeenCalledWith('auth.mfa.required', {
         actor,
         primaryFactor,
@@ -128,15 +128,33 @@ describe('MfaOrchestrator', () => {
 
     it('stashes a challenge and returns mfa_required when the policy denies', async () => {
       const { orchestrator } = makeOrchestrator({
-        policy: { allowed: false, reason: 'mfa_required', details: { eligibleFactors: phoneEligible.map(({ method, methodId }) => ({ method, methodId })) } },
+        policy: {
+          allowed: false,
+          reason: 'mfa_required',
+          details: { eligibleFactors: phoneEligible.map(({ method, methodId }) => ({ method, methodId })) },
+        },
       });
 
       const result = await orchestrator.issueOrChallenge(actor, primaryFactor, phoneEligible, { role: 'admin' });
 
-      expect(result.status).toBe('mfa_required');
-      if (result.status === 'mfa_required') {
+      expect(result.result).toBe('mfa_required');
+      if (result.result === 'mfa_required') {
         expect(result.mfaChallengeId).toBeTruthy();
         expect(result.eligibleFactors).toEqual([{ method: 'phone', methodId: 'phone-1' }]);
+      }
+    });
+
+    it('surfaces labels from the policy result onto the mfa_required response', async () => {
+      const labeled = [{ method: 'phone' as const, methodId: 'phone-1', label: '+1·····1234' }];
+      const { orchestrator } = makeOrchestrator({
+        policy: { allowed: false, reason: 'mfa_required', details: { eligibleFactors: labeled } },
+      });
+
+      const result = await orchestrator.issueOrChallenge(actor, primaryFactor, [{ ...labeled[0]!, kind: 'possession' }], { role: 'admin' });
+
+      expect(result.result).toBe('mfa_required');
+      if (result.result === 'mfa_required') {
+        expect(result.eligibleFactors).toEqual(labeled);
       }
     });
   });
@@ -145,9 +163,9 @@ describe('MfaOrchestrator', () => {
     it('throws 404 when the mfa challenge id is unknown', async () => {
       const { orchestrator } = makeOrchestrator({ policy: { allowed: true } });
 
-      await expect(
-        orchestrator.startFactorChallenge('does-not-exist', { method: 'phone', methodId: 'phone-1' }),
-      ).rejects.toMatchObject({ statusCode: 404 });
+      await expect(orchestrator.startFactorChallenge('does-not-exist', { method: 'phone', methodId: 'phone-1' })).rejects.toMatchObject({
+        statusCode: 404,
+      });
     });
 
     it('throws 400 when the selected factor is not on the eligible list', async () => {
@@ -158,9 +176,9 @@ describe('MfaOrchestrator', () => {
         eligibleFactors: [{ method: 'phone', methodId: 'phone-1' }],
       });
 
-      await expect(
-        orchestrator.startFactorChallenge(challenge.challengeId, { method: 'fido', methodId: 'fido-99' }),
-      ).rejects.toMatchObject({ statusCode: 400 });
+      await expect(orchestrator.startFactorChallenge(challenge.challengeId, { method: 'fido', methodId: 'fido-99' })).rejects.toMatchObject({
+        statusCode: 400,
+      });
     });
 
     it('issues a phone challenge and returns the code, recipient, and transport for the consumer to deliver', async () => {
@@ -171,11 +189,11 @@ describe('MfaOrchestrator', () => {
         eligibleFactors: [{ method: 'phone', methodId: 'phone-1' }],
       });
 
-      const response = await orchestrator.startFactorChallenge(challenge.challengeId, { method: 'phone', methodId: 'phone-1', transport: 'voice' });
+      const response = await orchestrator.startFactorChallenge(challenge.challengeId, { method: 'phone', methodId: 'phone-1', transport: 'whatsapp' });
 
       expect(response.method).toBe('phone');
       if (response.method === 'phone') {
-        expect(response.transport).toBe('voice');
+        expect(response.transport).toBe('whatsapp');
         expect(response.alreadyIssued).toBe(false);
         expect(response.phoneNumber).toBe('+12025550123');
         expect(response.code).toBe('123456');
@@ -217,9 +235,13 @@ describe('MfaOrchestrator', () => {
         eligibleFactors: [{ method: 'phone', methodId: 'phone-1' }],
       });
 
-      const result = await orchestrator.completeMfa(challenge.challengeId, { method: 'phone', challengeId: 'phone-chal-1', code: '123456' }, { role: 'admin' });
+      const result = await orchestrator.completeMfa(
+        challenge.challengeId,
+        { method: 'phone', challengeId: 'phone-chal-1', code: '123456' },
+        { role: 'admin' },
+      );
 
-      expect(result.status).toBe('token');
+      expect(result.result).toBe('token');
       expect(phoneFactor.verifyPhoneChallenge).toHaveBeenCalledWith('phone-chal-1', '123456');
 
       // Second completion attempt should 404 because the challenge was redeemed.
@@ -260,8 +282,8 @@ describe('MfaOrchestrator', () => {
       });
 
       const challenge = await orchestrator.issueOrChallenge(actor, primaryFactor, phoneEligible, {});
-      expect(challenge.status).toBe('mfa_required');
-      if (challenge.status !== 'mfa_required') return;
+      expect(challenge.result).toBe('mfa_required');
+      if (challenge.result !== 'mfa_required') return;
 
       const started = await orchestrator.startFactorChallenge(challenge.mfaChallengeId, { method: 'phone', methodId: 'phone-1' });
       expect(started.method).toBe('phone');
@@ -277,7 +299,7 @@ describe('MfaOrchestrator', () => {
         { role: 'admin' },
       );
 
-      expect(token.status).toBe('token');
+      expect(token.result).toBe('token');
       expect(phoneFactor.verifyPhoneChallenge).toHaveBeenCalledWith('phone-chal-1', '123456');
     });
   });

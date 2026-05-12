@@ -77,7 +77,7 @@ export class MfaOrchestrator {
     if (!isPolicyResultDenied(result)) {
       const session = await this.sessionService.createSession(actor.actorId, claims, primaryFactor, sessionExpiration);
       const token = await this.sessionService.issueTokenForSession(session.sessionToken);
-      return { status: 'token', token };
+      return { result: 'token', token };
     }
 
     const eligibleFactors = (result.details?.eligibleFactors ?? []) as MfaEligibleFactor[];
@@ -85,7 +85,7 @@ export class MfaOrchestrator {
     const challenge = await this.challengeService.issue({ actor, primaryFactor, eligibleFactors });
 
     return {
-      status: 'mfa_required',
+      result: 'mfa_required',
       mfaChallengeId: challenge.challengeId,
       eligibleFactors: challenge.eligibleFactors,
       expiresAt: challenge.expiresAt,
@@ -216,7 +216,7 @@ export class MfaOrchestrator {
 
     const token = await this.sessionService.issueTokenForSession(session.sessionToken);
 
-    return { status: 'token', token };
+    return { result: 'token', token };
   }
 
   private async verifyProof(

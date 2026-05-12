@@ -11,6 +11,8 @@ export interface MfaEligibleFactor {
   method: AuthenticationFactorMethod;
   /** Stable identifier for the underlying factor record (e.g. a DB row id). */
   methodId: string;
+  /** Optional human-readable label (e.g. authenticator nickname, phone last-4) for UI factor pickers. */
+  label?: string;
 }
 
 /**
@@ -54,7 +56,7 @@ export interface MfaChallengePayload<K extends string = string> {
  * and finish via {@link MfaOrchestrator.completeMfa}.
  */
 export interface MfaRequiredResponse {
-  status: 'mfa_required';
+  result: 'mfa_required';
   /** The challenge id to pass into `startFactorChallenge` / `completeMfa`. */
   mfaChallengeId: string;
   /** Factors the actor may use to satisfy the secondary requirement. */
@@ -68,14 +70,14 @@ export interface MfaRequiredResponse {
  * {@link MfaOrchestrator.completeMfa}. Branch on `status` — either a fully
  * minted token is returned, or an MFA step is required first.
  */
-export type AuthenticationTokenResponse = { status: 'token'; token: AuthenticationToken } | MfaRequiredResponse;
+export type AuthenticationTokenResponse = { result: 'token'; token: AuthenticationToken } | MfaRequiredResponse;
 
 /**
  * Request to start a per-method MFA challenge against a chosen
  * {@link MfaEligibleFactor}. Variants are discriminated on `method`.
  */
 export type FactorChallengeStartRequest =
-  | { method: 'phone'; methodId: string; transport?: 'sms' | 'voice' }
+  | { method: 'phone'; methodId: string; transport?: 'sms' | 'whatsapp' }
   | { method: 'email'; methodId: string; issueMethod?: 'code' | 'magiclink' }
   | { method: 'authenticator'; methodId: string }
   | { method: 'fido'; methodId: string };
@@ -91,10 +93,10 @@ export type FactorChallengeStartResponse =
       challengeId: string;
       expiresAt: DateTime;
       alreadyIssued: boolean;
-      transport: 'sms' | 'voice';
+      transport: 'sms' | 'whatsapp';
       /** Recipient phone number (E.164) the consumer should deliver `code` to. */
       phoneNumber: string;
-      /** The one-time code. The consumer is responsible for delivering it (SMS/voice). */
+      /** The one-time code. The consumer is responsible for delivering it (SMS/WhatsApp). */
       code: string;
     }
   | {

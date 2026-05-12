@@ -50,7 +50,7 @@ export class DefaultMfaRequiredPolicy extends Policy<AuthMfaRequiredPolicyContex
   async evaluate(context: AuthMfaRequiredPolicyContext, _envelope: PolicyEnvelope): Promise<PolicyResult> {
     const eligibleFactors: MfaEligibleFactor[] = context.availableFactors
       .filter(factor => factor.kind !== 'knowledge' && factor.method !== 'oidc' && factor.method !== 'email')
-      .map(({ method, methodId }) => ({ method, methodId }));
+      .map(({ method, methodId, label }) => ({ method, methodId, ...(label != null ? { label } : {}) }));
 
     if (eligibleFactors.length === 0) {
       return this.allow();
