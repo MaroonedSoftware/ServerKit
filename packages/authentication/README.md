@@ -25,8 +25,9 @@ pnpm add @maroonedsoftware/authentication
 - **FIDO2/WebAuthn factors** — passkey/security-key registration and sign-in via `FidoFactorService` (built on [`fido2-lib`](https://www.npmjs.com/package/fido2-lib))
 - **OpenID Connect factors** — sign-in, account linking, and refresh-token rotation via `OidcFactorService` (built on [`openid-client`](https://www.npmjs.com/package/openid-client)) with public-client support and verified-email auto-linking
 - **OAuth 2.0 factors** — non-OIDC sign-in (GitHub, Discord, Twitter/X, …) via `OAuth2FactorService` with an adapter interface that pairs cleanly with [`arctic`](https://www.npmjs.com/package/arctic)
-- **MFA orchestration** — `MfaOrchestrator` runs the primary → challenge → secondary handoff on top of the per-factor services, with a swappable `'auth.mfa.required'` policy; per-method `startFactorChallenge` responses include the code and recipient so the caller controls delivery
+- **MFA orchestration** — `MfaOrchestrator` runs the primary → challenge → secondary handoff on top of the per-factor services, with a swappable `'auth.mfa.required'` policy; per-method `issueFactorChallenge` responses include the code and recipient so the caller controls delivery
 - **Step-up policies** — `DefaultRecentFactorPolicy` and `DefaultAssuranceLevelPolicy` gate sensitive operations on a recent re-auth or a NIST 800-63B-style AAL1/AAL2 check, with embedded `StepUpRequirement` hints so clients can drive the right re-auth flow
+- **Account recovery** — `RecoveryOrchestrator` runs the forgot-password / MFA-recovery / unlock / full-recovery flow as a pure state machine on top of the per-factor services, gated by `'recovery.allowed'`; recovery codes ship as a single-use, Argon2id-hashed backup factor via `RecoveryFactorService`; recovery sessions are opaque and structurally cannot authorise app endpoints
 - **DI-friendly** — all classes are decorated with `@Injectable()` and designed for an injectkit container
 
 ## Usage
@@ -656,7 +657,7 @@ org-level overrides, rule out specific methods unconditionally, or add risk
 scoring, and re-register the subclass under the same `'auth.mfa.required'`
 name.
 
-Delivery stays consumer-owned: `startFactorChallenge` returns the recipient and
+Delivery stays consumer-owned: `issueFactorChallenge` returns the recipient and
 one-time `code` on its `phone` and `email` branches, and the caller is
 responsible for sending it via their SMS/voice provider or transactional email
 service. This matches the convention used directly by
@@ -695,7 +696,7 @@ if (issued.kind === 'allow') {
 const mfaChallengeId = issued.challenge.challengeId;
 
 // When the client picks a method:
-const started = await mfaOrchestrator.startFactorChallenge(mfaChallengeId, { method: 'phone', methodId: 'phone-1', transport: 'sms' });
+const started = await mfaOrchestrator.issueFactorChallenge(mfaChallengeId, { method: 'phone', methodId: 'phone-1', transport: 'sms' });
 if (started.method === 'phone' && !started.alreadyIssued) {
   await twilio.messages.create({ to: started.phoneNumber, from: '+15555550100', body: `Your code: ${started.code}` });
 }
@@ -761,6 +762,123 @@ const result = await policyService.check('auth.assurance.level', {
   within: Duration.fromObject({ minutes: 15 }),
 });
 ```
+
+### Account recovery
+
+`RecoveryOrchestrator` coordinates account recovery as a pure state machine
+parallel to `MfaOrchestrator`. It covers four scenarios — `password_reset`,
+`mfa_recovery`, `unlock`, and `full_recovery` — and dispatches to existing
+email / phone factor services for OTP / magic-link delivery plus a new
+`RecoveryFactorService` for single-use backup codes.
+
+Like `MfaOrchestrator`, the orchestrator returns structured data; the caller
+delivers codes out-of-band, mints application sessions on completion, and
+decides whether to invalidate pre-existing sessions. The orchestrator
+deliberately does not call into `AuthenticationSessionService` itself.
+
+For an unrecognised identifier, `initiateRecovery` still returns a challenge
+— with an empty `eligibleChannels` list — so the response cannot be used to
+probe for account existence.
+
+**Recovery codes** are stored as their own factor (one row per code, hashed
+via the bundled `PasswordHashProvider`). Plaintext is returned exactly once at
+generation time. Verification is rate-limited under a per-actor key
+(`recovery:{actorId}`) and consumes a code on success.
+
+**Recovery sessions** are issued by `RecoverySessionService` after a channel
+is verified. They live under a distinct cache key prefix
+(`recovery_session_*`) and have **no JWT issuance path**, so a recovery token
+structurally cannot be resolved through `AuthenticationSessionService.getSession`
+and cannot authorise application endpoints.
+
+Wiring:
+
+```typescript
+import {
+  RecoveryChallengeService,
+  RecoveryChallengeServiceOptions,
+  RecoveryFactorService,
+  RecoveryFactorServiceOptions,
+  RecoveryOrchestrator,
+  RecoveryOrchestratorHooksProvider,
+  RecoverySessionService,
+  RecoverySessionServiceOptions,
+} from '@maroonedsoftware/authentication';
+
+container.bind(RecoveryFactorServiceOptions).toConstantValue(new RecoveryFactorServiceOptions());
+container.bind(RecoveryFactorService).toSelf();
+container.bind(RecoveryChallengeServiceOptions).toConstantValue(new RecoveryChallengeServiceOptions());
+container.bind(RecoveryChallengeService).toSelf();
+container.bind(RecoverySessionServiceOptions).toConstantValue(new RecoverySessionServiceOptions());
+container.bind(RecoverySessionService).toSelf();
+container.bind(RecoveryOrchestratorHooksProvider).toConstantValue(
+  new RecoveryOrchestratorHooksProvider({
+    onUnlock: async actorId => {/* clear additional rate limiters */},
+    onRebindMfaFactor: async ({ actorId, method, methodId }) => {/* application-specific rebind */},
+    onFullRecovery: async ({ actorId, identityProof }) => {/* apply KYC / admin-approved proof */},
+  }),
+);
+container.bind(RecoveryOrchestrator).toSelf();
+// RecoveryAllowedPolicy is registered automatically via AuthenticationPolicyMappings.
+```
+
+Forgot-password flow:
+
+```typescript
+// 1. User submits email from a "forgot password" form (unauthenticated).
+const { challengeId, eligibleChannels, expiresAt } = await recoveryOrchestrator.initiateRecovery({
+  identifier: { kind: 'email', value: input.email },
+  reason: 'password_reset',
+});
+// Surface eligibleChannels for the user to pick from.
+// (For unknown emails the list is empty — show a generic "if your account exists, …" message.)
+
+// 2. User picks an email channel; deliver the code out-of-band.
+const issued = await recoveryOrchestrator.issueChannelChallenge(challengeId, {
+  channel: 'email',
+  methodId: eligibleChannels[0].methodId!,
+});
+if (issued.channel === 'email' && !issued.alreadyIssued) {
+  await sendgrid.send({ to: issued.emailAddress, body: `Your recovery code: ${issued.code}` });
+}
+
+// 3. User submits the code. On success, a recovery session is minted.
+const verified = await recoveryOrchestrator.verifyChannel(challengeId, {
+  channel: 'email',
+  channelChallengeId: issued.challengeId,
+  code: input.code,
+});
+// verified.recoverySessionToken is opaque, single-use, and 10-minute TTL.
+
+// 4. User submits a new password.
+await recoveryOrchestrator.completeRecovery(verified.recoverySessionToken, {
+  kind: 'resetPassword',
+  newPassword: input.newPassword,
+});
+
+// 5. Invalidate the actor's existing auth sessions so prior tokens don't keep working.
+const sessions = await sessionService.getSessionsForSubject(actorId);
+await Promise.all(sessions.map(s => sessionService.deleteSession(s.sessionToken)));
+```
+
+Recovery codes (issued from authenticated settings UI, redeemed during MFA
+recovery or full recovery):
+
+```typescript
+// Generate (or regenerate) — show codes to the user exactly once.
+const { codes, batchId } = await recoveryFactorService.generateRecoveryCodes(actorId);
+
+// During MFA recovery, the user submits a code in place of email/phone:
+await recoveryOrchestrator.issueChannelChallenge(challengeId, { channel: 'recoveryCode' });
+await recoveryOrchestrator.verifyChannel(challengeId, { channel: 'recoveryCode', code: input.code });
+```
+
+The default `RecoveryAllowedPolicy` allows recovery when at least one eligible
+channel exists for the reason; `full_recovery` additionally requires either a
+`recoveryCode` channel or `recoveryAdminApproved: true` set on the policy
+context (the orchestrator passes the actor through; supply admin approval at
+the call site or by subclassing). Subclass and re-register under
+`'recovery.allowed'` to layer org-level overrides.
 
 ---
 

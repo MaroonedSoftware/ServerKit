@@ -153,11 +153,11 @@ describe('MfaOrchestrator', () => {
     });
   });
 
-  describe('startFactorChallenge', () => {
+  describe('issueFactorChallenge', () => {
     it('throws 404 when the mfa challenge id is unknown', async () => {
       const { orchestrator } = makeOrchestrator({ policy: { allowed: true } });
 
-      await expect(orchestrator.startFactorChallenge('does-not-exist', { method: 'phone', methodId: 'phone-1' })).rejects.toMatchObject({
+      await expect(orchestrator.issueFactorChallenge('does-not-exist', { method: 'phone', methodId: 'phone-1' })).rejects.toMatchObject({
         statusCode: 404,
       });
     });
@@ -170,7 +170,7 @@ describe('MfaOrchestrator', () => {
         eligibleFactors: [{ method: 'phone', methodId: 'phone-1' }],
       });
 
-      await expect(orchestrator.startFactorChallenge(challenge.challengeId, { method: 'fido', methodId: 'fido-99' })).rejects.toMatchObject({
+      await expect(orchestrator.issueFactorChallenge(challenge.challengeId, { method: 'fido', methodId: 'fido-99' })).rejects.toMatchObject({
         statusCode: 400,
       });
     });
@@ -183,7 +183,7 @@ describe('MfaOrchestrator', () => {
         eligibleFactors: [{ method: 'phone', methodId: 'phone-1' }],
       });
 
-      const response = await orchestrator.startFactorChallenge(challenge.challengeId, { method: 'phone', methodId: 'phone-1', transport: 'whatsapp' });
+      const response = await orchestrator.issueFactorChallenge(challenge.challengeId, { method: 'phone', methodId: 'phone-1', transport: 'whatsapp' });
 
       expect(response.method).toBe('phone');
       if (response.method === 'phone') {
@@ -212,7 +212,7 @@ describe('MfaOrchestrator', () => {
         eligibleFactors: [{ method: 'phone', methodId: 'phone-1' }],
       });
 
-      const response = await orchestrator.startFactorChallenge(challenge.challengeId, { method: 'phone', methodId: 'phone-1' });
+      const response = await orchestrator.issueFactorChallenge(challenge.challengeId, { method: 'phone', methodId: 'phone-1' });
       expect(response.method).toBe('phone');
       if (response.method === 'phone') {
         expect(response.alreadyIssued).toBe(true);
@@ -294,7 +294,7 @@ describe('MfaOrchestrator', () => {
       expect(stillThere).not.toBeNull();
     });
 
-    it('full flow: issueOrChallenge → startFactorChallenge → completeMfa → actor + factors', async () => {
+    it('full flow: issueOrChallenge → issueFactorChallenge → completeMfa → actor + factors', async () => {
       const { orchestrator, phoneFactor } = makeOrchestrator({
         policy: { allowed: false, reason: 'mfa_required', details: { eligibleFactors: [{ method: 'phone', methodId: 'phone-1' }] } },
       });
@@ -303,7 +303,7 @@ describe('MfaOrchestrator', () => {
       expect(issued.kind).toBe('challenge');
       if (issued.kind !== 'challenge') return;
 
-      const started = await orchestrator.startFactorChallenge(issued.challenge.challengeId, { method: 'phone', methodId: 'phone-1' });
+      const started = await orchestrator.issueFactorChallenge(issued.challenge.challengeId, { method: 'phone', methodId: 'phone-1' });
       expect(started.method).toBe('phone');
       if (started.method === 'phone') {
         // Consumer would send `started.code` to `started.phoneNumber` here.

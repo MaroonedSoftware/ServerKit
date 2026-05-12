@@ -22,10 +22,11 @@ Flexible, type-safe configuration management with support for multiple sources a
 
 Authentication primitives for ServerKit applications.
 
-- Pluggable authentication factors: password, email (OTP/magic link), phone (OTP), authenticator app (TOTP/HOTP), FIDO2/WebAuthn
+- Pluggable authentication factors: password, email (OTP/magic link), phone (OTP), authenticator app (TOTP/HOTP), FIDO2/WebAuthn, and single-use recovery codes
 - Scheme-based handler dispatch with built-in JWT (multi-issuer Bearer) and Basic support
 - Server-side session lifecycle and JWT issuance
 - Password strength validation (zxcvbn + HaveIBeenPwned) and rate-limited verification
+- Account recovery orchestrator covering forgot-password, MFA recovery, account unlock, and full account recovery
 
 [View documentation →](./packages/authentication/README.md)
 

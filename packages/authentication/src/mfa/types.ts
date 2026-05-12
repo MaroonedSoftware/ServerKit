@@ -71,7 +71,7 @@ export interface CompleteMfaResult<K extends string = string> {
 }
 
 /**
- * Request to start a per-method MFA challenge against a chosen
+ * Request to issue a per-method MFA challenge against a chosen
  * {@link MfaEligibleFactor}. Variants are discriminated on `method`.
  */
 export type FactorChallengeStartRequest =
@@ -81,7 +81,7 @@ export type FactorChallengeStartRequest =
   | { method: 'fido'; methodId: string };
 
 /**
- * Response returned by {@link MfaOrchestrator.startFactorChallenge}. Variants
+ * Response returned by {@link MfaOrchestrator.issueFactorChallenge}. Variants
  * match {@link FactorChallengeStartRequest} but carry the per-method payload
  * that the client needs to complete the challenge.
  */

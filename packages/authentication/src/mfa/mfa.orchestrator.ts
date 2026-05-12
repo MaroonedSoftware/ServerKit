@@ -35,7 +35,7 @@ import {
  * 2. Caller invokes {@link issueOrChallenge}. On `kind: 'allow'` the caller
  *    mints a single-factor session. On `kind: 'challenge'` a challenge has
  *    been stashed and the caller surfaces the challenge details to the client.
- * 3. Client picks a method, caller invokes {@link startFactorChallenge} to
+ * 3. Client picks a method, caller invokes {@link issueFactorChallenge} to
  *    issue a one-time code / FIDO assertion / etc. The response carries the
  *    code and recipient for `phone` and `email` — the caller is responsible
  *    for delivering it out-of-band (SMS provider, transactional email, …),
@@ -100,7 +100,7 @@ export class MfaOrchestrator {
    * @throws HTTP 400 when the selected method/methodId is not on the
    *   challenge's eligible list.
    */
-  async startFactorChallenge(mfaChallengeId: string, request: FactorChallengeStartRequest): Promise<FactorChallengeStartResponse> {
+  async issueFactorChallenge(mfaChallengeId: string, request: FactorChallengeStartRequest): Promise<FactorChallengeStartResponse> {
     const challenge = await this.challengeService.peek(mfaChallengeId);
     if (!challenge) {
       throw httpError(404).withDetails({ mfaChallengeId: 'not found' });
