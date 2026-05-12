@@ -1,6 +1,6 @@
 {
   "name": "@maroonedsoftware/scim",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "SCIM 2.0 (RFC 7643/7644) server toolkit for ServerKit — schemas, filter parser, PATCH applier, error envelope, and a Koa router with abstract repositories.",
   "author": {
     "name": "Marooned Software",
