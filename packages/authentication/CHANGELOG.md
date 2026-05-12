@@ -1,5 +1,82 @@
 # @maroonedsoftware/authentication
 
+## 4.16.0
+
+### Minor Changes
+
+- 0825138: `DefaultMfaRequiredPolicy` now refines how it picks eligible second factors. A
+  factor disqualifies if it's a knowledge factor (a second password adds no MFA
+  value), if it's the exact same instance just used as primary (`methodId`
+  matches), or if it's an `email`/`oidc` factor whose method matches the
+  primary's (a different inbox or a different IdP isn't treated as a separate
+  authenticator by default). Possession factors backed by physical devices —
+  `fido`, `phone`, `authenticator` — qualify even when the primary used the
+  same method, as long as the `methodId` differs (e.g. two FIDO keys, two
+  phones).
+
+  The previous policy unconditionally excluded `'oidc'` and `'email'` as
+  second factors, which prevented common step-up flows like password →
+  email-OTP. The previous policy also didn't exclude same-instance matches,
+  which meant the primary factor could theoretically be reused as its own
+  second factor if the caller passed it in `availableFactors`.
+
+  Behavior change for consumers using the default policy:
+  - **Newly requires MFA**: password-primary actor with an email or OIDC
+    factor on file (previously bypassed MFA; now challenged for email-OTP or
+    OIDC step-up).
+  - **Newly requires MFA**: any actor with two of the same possession-method
+    factor on file (two FIDO keys, two phones, two authenticator apps) — the
+    second device now counts as a valid second factor.
+  - **Newly skips MFA**: the (rare) case where `availableFactors` echoed back
+    the exact same factor used as primary — the `methodId` match now excludes
+    it. Previously the orchestrator relied on the caller to dedupe.
+
+  Subclass `DefaultMfaRequiredPolicy` if you need to rule out specific methods
+  unconditionally or restore the previous behavior.
+
+- 2ec28e2: Refactor `MfaOrchestrator` to a pure state machine. `issueOrChallenge` and
+  `completeMfa` now return data (`IssueOrChallengeResult`, `CompleteMfaResult`)
+  instead of a wire-shaped `AuthenticationTokenResponse`; session minting and
+  response shaping move to the consumer. Removes the
+  `AuthenticationSessionService` dependency from the orchestrator and drops the
+  `claims` / `sessionExpiration` parameters. The removed types
+  `MfaRequiredResponse` and `AuthenticationTokenResponse` are no longer exported.
+
+  This is an API change to `MfaOrchestrator`'s public surface, shipped as a
+  minor bump because no published consumer has adopted the orchestrator yet.
+  `MfaChallengeService`, `DefaultMfaRequiredPolicy`, and the per-factor services
+  are unaffected — only direct callers of `MfaOrchestrator` need to migrate.
+
+  Migration: replace `result.result === 'token'` with `result.kind === 'allow'`
+  and mint the session yourself; replace `result.result === 'mfa_required'`
+  with `result.kind === 'challenge'` and shape your own response from
+  `result.challenge`.
+
+- 92b1420: Adds two step-up policies that close the loop on the helpers already exported
+  from this package (`matchesFactorConstraints`, `isFactorRecent`) and the
+  `StepUpRequirement` shape from `@maroonedsoftware/policies`.
+  - **`'auth.recent.factor'`** — `DefaultRecentFactorPolicy`. Generic step-up
+    rule: allows when at least one factor in `context.factors` matches the
+    supplied constraints (`anyOfKinds`, `anyOfMethods`, `excludeMethods`) and
+    was re-verified within `context.within` of `envelope.now`. Denies with an
+    embedded `StepUpRequirement` so clients can drive the right re-auth.
+  - **`'auth.assurance.level'`** — `DefaultAssuranceLevelPolicy`. NIST 800-63B-
+    style AAL1/AAL2 check. AAL1 allows when any one factor is fresh enough;
+    AAL2 allows when the session has knowledge + possession/biometric, or two
+    distinct non-knowledge factors (passwordless path, distinctness keyed on
+    `(method, methodId)`). On deny, the `acceptableKinds` in the embedded
+    step-up requirement points the client at the kinds that would actually
+    raise the session to the target AAL.
+
+  Both policies are agnostic to the consumer's actor model — callers pass
+  `factors` through the policy `context` rather than the envelope. Gate on
+  actor kind (e.g. reject non-human actors) at the call site or in a wrapping
+  subclass.
+
+  Both are registered in `AuthenticationPolicyMappings` and surfaced via
+  `AuthenticationPolicyContexts` for compile-time `policyService.check` type
+  safety, matching the convention used by `DefaultMfaRequiredPolicy`.
+
 ## 4.15.0
 
 ### Minor Changes
