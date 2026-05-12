@@ -5,6 +5,7 @@ import { EmailAllowedPolicy, EmailAllowedPolicyContext } from './email.allowed.p
 import { OidcProfileAllowedPolicy, OidcProfileAllowedPolicyContext } from './oidc.profile.allowed.policy.js';
 import { OAuth2ProfileAllowedPolicy, OAuth2ProfileAllowedPolicyContext } from './oauth2.profile.allowed.policy.js';
 import { PasswordAllowedPolicy, PasswordAllowedPolicyContext } from './password.allowed.policy.js';
+import { AuthMfaRequiredPolicyContext, DefaultMfaRequiredPolicy } from './auth.mfa.required.policy.js';
 
 /**
  * Names of the policies bundled with this package. Use as the policy-name keys
@@ -15,7 +16,8 @@ export type AuthenticationPolicyNames =
   | 'phone.allowed'
   | 'password.allowed'
   | 'oidc.profile.allowed'
-  | 'oauth2.profile.allowed';
+  | 'oauth2.profile.allowed'
+  | 'auth.mfa.required';
 
 /**
  * Default mapping from each bundled {@link AuthenticationPolicyNames} value to
@@ -29,6 +31,7 @@ export const AuthenticationPolicyMappings: Record<AuthenticationPolicyNames, Con
   'password.allowed': PasswordAllowedPolicy,
   'oidc.profile.allowed': OidcProfileAllowedPolicy,
   'oauth2.profile.allowed': OAuth2ProfileAllowedPolicy,
+  'auth.mfa.required': DefaultMfaRequiredPolicy,
 };
 
 /**
@@ -43,4 +46,5 @@ export type AuthenticationPolicyContexts = {
   'password.allowed': PasswordAllowedPolicyContext;
   'oidc.profile.allowed': OidcProfileAllowedPolicyContext;
   'oauth2.profile.allowed': OAuth2ProfileAllowedPolicyContext;
+  'auth.mfa.required': AuthMfaRequiredPolicyContext;
 };

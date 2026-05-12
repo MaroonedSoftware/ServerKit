@@ -25,6 +25,7 @@ pnpm add @maroonedsoftware/authentication
 - **FIDO2/WebAuthn factors** — passkey/security-key registration and sign-in via `FidoFactorService` (built on [`fido2-lib`](https://www.npmjs.com/package/fido2-lib))
 - **OpenID Connect factors** — sign-in, account linking, and refresh-token rotation via `OidcFactorService` (built on [`openid-client`](https://www.npmjs.com/package/openid-client)) with public-client support and verified-email auto-linking
 - **OAuth 2.0 factors** — non-OIDC sign-in (GitHub, Discord, Twitter/X, …) via `OAuth2FactorService` with an adapter interface that pairs cleanly with [`arctic`](https://www.npmjs.com/package/arctic)
+- **MFA orchestration** — `MfaOrchestrator` runs the primary → challenge → secondary handoff on top of the per-factor services, with a swappable `'auth.mfa.required'` policy; per-method `startFactorChallenge` responses include the code and recipient so the caller controls delivery
 - **DI-friendly** — all classes are decorated with `@Injectable()` and designed for an injectkit container
 
 ## Usage
@@ -626,6 +627,68 @@ const { url } = await oauth2.beginAuthorization({ provider: 'github', intent: 's
 **Email verification semantics.** Unlike OIDC, most OAuth 2.0 providers don't expose an `email_verified` flag — the adapter is responsible for resolving it (e.g. GitHub's `/user/emails` returns a `verified` boolean per address). Default `emailVerified: false` rather than `undefined` if the provider gives no signal; the auto-link rules treat anything other than explicit `true` as unverified.
 
 **Refresh tokens.** Same opt-in mechanism as OIDC: set `persistRefreshToken: true` and provide a `refreshAccessToken` method on the adapter. Rotated tokens are re-encrypted automatically.
+
+### MFA orchestration
+
+`MfaOrchestrator` coordinates the handoff between a primary factor and a secondary
+factor. It sits on top of the per-factor services (`PhoneFactorService`,
+`EmailFactorService`, …) and `AuthenticationSessionService`, and asks the
+`'auth.mfa.required'` policy whether a second factor is needed before a session
+is minted.
+
+The default `DefaultMfaRequiredPolicy` requires MFA when at least one of the
+actor's available factors is not a knowledge factor and not `'oidc'` or
+`'email'`. Subclass to layer org-level overrides or risk scoring on top, and
+re-register the subclass under the same `'auth.mfa.required'` name.
+
+Delivery stays consumer-owned: `startFactorChallenge` returns the recipient and
+one-time `code` on its `phone` and `email` branches, and the caller is
+responsible for sending it via their SMS/voice provider or transactional email
+service. This matches the convention used directly by
+`PhoneFactorService.issuePhoneChallenge` and `EmailFactorService.issueEmailChallenge`.
+
+```typescript
+import {
+  AuthenticationPolicyMappings,
+  DefaultMfaRequiredPolicy,
+  MfaChallengeService,
+  MfaChallengeServiceOptions,
+  MfaOrchestrator,
+} from '@maroonedsoftware/authentication';
+
+container.bind(MfaChallengeServiceOptions).toConstantValue(new MfaChallengeServiceOptions());
+container.bind(MfaChallengeService).toSelf();
+container.bind(MfaOrchestrator).toSelf();
+// DefaultMfaRequiredPolicy is registered automatically via AuthenticationPolicyMappings.
+
+// Primary factor (e.g. password) has just succeeded:
+const result = await mfaOrchestrator.issueOrChallenge(
+  { kind: 'user', actorId: user.id },
+  primaryFactor,
+  availableFactors, // [{ method, methodId, kind }, …]
+  { role: user.role },
+);
+
+if (result.status === 'mfa_required') {
+  // Return result.mfaChallengeId and result.eligibleFactors to the client.
+} else {
+  // result.token is a Bearer token response.
+}
+
+// When the client picks a method:
+const started = await mfaOrchestrator.startFactorChallenge(mfaChallengeId, { method: 'phone', methodId: 'phone-1', transport: 'sms' });
+if (started.method === 'phone' && !started.alreadyIssued) {
+  await twilio.messages.create({ to: started.phoneNumber, from: '+15555550100', body: `Your code: ${started.code}` });
+}
+
+// When the client submits the proof:
+const completed = await mfaOrchestrator.completeMfa(
+  mfaChallengeId,
+  { method: 'phone', challengeId: 'phone-chal-1', code: '123456' },
+  { role: user.role },
+);
+// completed.token is the final session's Bearer token.
+```
 
 ---
 
