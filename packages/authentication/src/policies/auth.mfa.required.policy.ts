@@ -32,8 +32,13 @@ export interface AuthMfaRequiredPolicyContext {
  *
  * Filters `availableFactors` to those that qualify as a viable *second* factor —
  * meaning `kind !== 'knowledge'` (a second password doesn't add MFA value) and
- * `method !== 'oidc' && method !== 'email'` (both fall back to out-of-band
- * proof-of-possession the user has likely already used elsewhere).
+ * `method !== primaryFactor.method` (don't ask for the same factor category
+ * twice — using email-OTP after an email magic link, or a second OIDC sign-in
+ * after the first, is just repeating the primary).
+ *
+ * Email and OIDC are eligible as a second factor when the primary used a
+ * different method (e.g. password → email-OTP step-up). Subclass if your
+ * security model rules them out unconditionally.
  *
  * If any factor survives the filter, MFA is required and the surviving factors
  * are attached to the deny result under `details.eligibleFactors` for the
@@ -49,7 +54,7 @@ export interface AuthMfaRequiredPolicyContext {
 export class DefaultMfaRequiredPolicy extends Policy<AuthMfaRequiredPolicyContext> {
   async evaluate(context: AuthMfaRequiredPolicyContext, _envelope: PolicyEnvelope): Promise<PolicyResult> {
     const eligibleFactors: MfaEligibleFactor[] = context.availableFactors
-      .filter(factor => factor.kind !== 'knowledge' && factor.method !== 'oidc' && factor.method !== 'email')
+      .filter(factor => factor.kind !== 'knowledge' && factor.method !== context.primaryFactor.method)
       .map(({ method, methodId, label }) => ({ method, methodId, ...(label != null ? { label } : {}) }));
 
     if (eligibleFactors.length === 0) {

@@ -642,9 +642,13 @@ responsible for issuing tokens via `AuthenticationSessionService` and
 translating the outcome to its own HTTP contract.
 
 The default `DefaultMfaRequiredPolicy` requires MFA when at least one of the
-actor's available factors is not a knowledge factor and not `'oidc'` or
-`'email'`. Subclass to layer org-level overrides or risk scoring on top, and
-re-register the subclass under the same `'auth.mfa.required'` name.
+actor's available factors is not a knowledge factor and does not share its
+`method` with the primary factor. Email and OIDC qualify as a second factor
+when the primary used something else (e.g. password → email-OTP step-up), but
+the policy never asks for the same method twice in a row. Subclass to layer
+org-level overrides, rule out specific methods unconditionally, or add risk
+scoring on top, and re-register the subclass under the same
+`'auth.mfa.required'` name.
 
 Delivery stays consumer-owned: `startFactorChallenge` returns the recipient and
 one-time `code` on its `phone` and `email` branches, and the caller is
