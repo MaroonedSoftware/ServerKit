@@ -6,6 +6,8 @@ import { OidcProfileAllowedPolicy, OidcProfileAllowedPolicyContext } from './oid
 import { OAuth2ProfileAllowedPolicy, OAuth2ProfileAllowedPolicyContext } from './oauth2.profile.allowed.policy.js';
 import { PasswordAllowedPolicy, PasswordAllowedPolicyContext } from './password.allowed.policy.js';
 import { AuthMfaRequiredPolicyContext, DefaultMfaRequiredPolicy } from './auth.mfa.required.policy.js';
+import { AuthRecentFactorPolicyContext, DefaultRecentFactorPolicy } from './auth.recent.factor.policy.js';
+import { AuthAssuranceLevelPolicyContext, DefaultAssuranceLevelPolicy } from './auth.assurance.level.policy.js';
 
 /**
  * Names of the policies bundled with this package. Use as the policy-name keys
@@ -17,7 +19,9 @@ export type AuthenticationPolicyNames =
   | 'password.allowed'
   | 'oidc.profile.allowed'
   | 'oauth2.profile.allowed'
-  | 'auth.mfa.required';
+  | 'auth.mfa.required'
+  | 'auth.recent.factor'
+  | 'auth.assurance.level';
 
 /**
  * Default mapping from each bundled {@link AuthenticationPolicyNames} value to
@@ -32,6 +36,8 @@ export const AuthenticationPolicyMappings: Record<AuthenticationPolicyNames, Con
   'oidc.profile.allowed': OidcProfileAllowedPolicy,
   'oauth2.profile.allowed': OAuth2ProfileAllowedPolicy,
   'auth.mfa.required': DefaultMfaRequiredPolicy,
+  'auth.recent.factor': DefaultRecentFactorPolicy,
+  'auth.assurance.level': DefaultAssuranceLevelPolicy,
 };
 
 /**
@@ -47,4 +53,6 @@ export type AuthenticationPolicyContexts = {
   'oidc.profile.allowed': OidcProfileAllowedPolicyContext;
   'oauth2.profile.allowed': OAuth2ProfileAllowedPolicyContext;
   'auth.mfa.required': AuthMfaRequiredPolicyContext;
+  'auth.recent.factor': AuthRecentFactorPolicyContext;
+  'auth.assurance.level': AuthAssuranceLevelPolicyContext;
 };

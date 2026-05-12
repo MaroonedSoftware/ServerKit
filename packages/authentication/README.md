@@ -26,6 +26,7 @@ pnpm add @maroonedsoftware/authentication
 - **OpenID Connect factors** — sign-in, account linking, and refresh-token rotation via `OidcFactorService` (built on [`openid-client`](https://www.npmjs.com/package/openid-client)) with public-client support and verified-email auto-linking
 - **OAuth 2.0 factors** — non-OIDC sign-in (GitHub, Discord, Twitter/X, …) via `OAuth2FactorService` with an adapter interface that pairs cleanly with [`arctic`](https://www.npmjs.com/package/arctic)
 - **MFA orchestration** — `MfaOrchestrator` runs the primary → challenge → secondary handoff on top of the per-factor services, with a swappable `'auth.mfa.required'` policy; per-method `startFactorChallenge` responses include the code and recipient so the caller controls delivery
+- **Step-up policies** — `DefaultRecentFactorPolicy` and `DefaultAssuranceLevelPolicy` gate sensitive operations on a recent re-auth or a NIST 800-63B-style AAL1/AAL2 check, with embedded `StepUpRequirement` hints so clients can drive the right re-auth flow
 - **DI-friendly** — all classes are decorated with `@Injectable()` and designed for an injectkit container
 
 ## Usage
@@ -711,6 +712,54 @@ const session = await sessionService.createSession(
   [completed.primaryFactor, completed.secondaryFactor],
 );
 const token = await sessionService.issueTokenForSession(session.sessionToken);
+```
+
+### Step-up policies
+
+Two policies gate sensitive operations on the freshness and shape of factors
+on the current session. Both ship as `Default*` implementations registered
+under stable names in `AuthenticationPolicyMappings` — subclass to add
+risk-scoring or org-level overrides without changing call sites.
+
+The policies are agnostic to the consumer's actor model: callers extract the
+session's `factors` array (typically from the resolved actor or session) and
+pass it through the policy `context`. Gate on actor kind (e.g. reject
+non-human actors with a different `reason`) at the call site or in a
+wrapping subclass.
+
+`'auth.recent.factor'` — `DefaultRecentFactorPolicy`. Allows when at least
+one factor in `context.factors` matches the supplied constraints
+(`anyOfKinds`, `anyOfMethods`, `excludeMethods`) and was re-verified within
+`context.within` of `envelope.now`. Denies with
+`details.kind === 'step_up_required'` and an embedded `StepUpRequirement`
+otherwise.
+
+```typescript
+const result = await policyService.check('auth.recent.factor', {
+  factors: session.factors,
+  within: Duration.fromObject({ minutes: 5 }),
+  anyOfKinds: ['possession', 'biometric'],
+  excludeMethods: ['email'],
+});
+if (!result.allowed) {
+  // Return result.details.stepUp to the client so it can drive a re-auth.
+}
+```
+
+`'auth.assurance.level'` — `DefaultAssuranceLevelPolicy`. NIST 800-63B-style
+check. `aal1` allows when any one factor is recent enough; `aal2` allows
+when the session has knowledge + possession/biometric, or two distinct
+non-knowledge factors (passwordless path, distinctness keyed on
+`(method, methodId)`). On deny, the embedded `StepUpRequirement.acceptableKinds`
+points the client at the kinds that would actually move the session to the
+target AAL.
+
+```typescript
+const result = await policyService.check('auth.assurance.level', {
+  factors: session.factors,
+  minLevel: 'aal2',
+  within: Duration.fromObject({ minutes: 15 }),
+});
 ```
 
 ---
