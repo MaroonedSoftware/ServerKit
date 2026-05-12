@@ -48,7 +48,7 @@ export interface AuthAssuranceLevelPolicyContext {
  *
  * The policy takes no opinion on the actor model — callers extract `factors`
  * from their actor or session shape before invoking. Subclass and re-register
- * under the same `'auth.assurance.level'` name to layer additional rules.
+ * under the same `'auth.session.assurance.level'` name to layer additional rules.
  */
 @Injectable()
 export class DefaultAssuranceLevelPolicy extends Policy<AuthAssuranceLevelPolicyContext> {

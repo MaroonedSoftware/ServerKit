@@ -141,7 +141,7 @@ describe('PasswordFactorService', () => {
       const result = await service.createPasswordFactor('actor-1', 'strong-pass', true);
 
       expect(result).toBe(factor);
-      expect(policyService.check).toHaveBeenCalledWith('password.allowed', { password: 'strong-pass', previousPasswords: undefined });
+      expect(policyService.check).toHaveBeenCalledWith('auth.factor.password.allowed', { password: 'strong-pass', previousPasswords: undefined });
       expect(repo.createFactor).toHaveBeenCalledTimes(1);
       const [actorId, value] = vi.mocked(repo.createFactor).mock.calls[0]!;
       expect(actorId).toBe('actor-1');
@@ -278,7 +278,7 @@ describe('PasswordFactorService', () => {
       await service.updatePasswordFactor('actor-1', 'strong-pass');
 
       expect(repo.listPreviousPasswords).toHaveBeenCalledWith('actor-1', 10);
-      expect(policyService.check).toHaveBeenCalledWith('password.allowed', { password: 'strong-pass', previousPasswords: previous });
+      expect(policyService.check).toHaveBeenCalledWith('auth.factor.password.allowed', { password: 'strong-pass', previousPasswords: previous });
     });
 
     it('updates the factor and returns it when the policy allows', async () => {
@@ -382,7 +382,7 @@ describe('PasswordFactorService', () => {
       const result = await service.changePassword('actor-1', 'strong-pass');
 
       expect(result).toBe(updated);
-      expect(policyService.check).toHaveBeenCalledWith('password.allowed', { password: 'strong-pass', previousPasswords: undefined });
+      expect(policyService.check).toHaveBeenCalledWith('auth.factor.password.allowed', { password: 'strong-pass', previousPasswords: undefined });
       const [actorId, value] = vi.mocked(repo.updateFactor).mock.calls[0]!;
       expect(actorId).toBe('actor-1');
       expect(value.hash).toBeTruthy();

@@ -426,7 +426,7 @@ describe('OidcFactorService', () => {
         service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } }),
       ).rejects.toMatchObject({ statusCode: 403, details: { profile: 'not allowed' } });
       expect(policyService.check).toHaveBeenCalledWith(
-        'oidc.profile.allowed',
+        'auth.factor.oidc.profile.allowed',
         { profile: expect.objectContaining({ provider: 'google', subject: 'subject-1' }) },
       );
     });

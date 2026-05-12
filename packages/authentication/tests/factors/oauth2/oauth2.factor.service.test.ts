@@ -329,7 +329,7 @@ describe('OAuth2FactorService', () => {
         statusCode: 403,
         details: { profile: 'not allowed' },
       });
-      expect(policyService.check).toHaveBeenCalledWith('oauth2.profile.allowed', { profile: expect.objectContaining({ provider: 'github' }) });
+      expect(policyService.check).toHaveBeenCalledWith('auth.factor.oauth2.profile.allowed', { profile: expect.objectContaining({ provider: 'github' }) });
     });
   });
 

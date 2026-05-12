@@ -164,7 +164,7 @@ export class OAuth2FactorService {
    * `Object.fromEntries(ctx.query)` — and pass it through.
    *
    * @throws HTTP 400 when the IdP returned an `error`, or when `state` / `code` is missing.
-   * @throws HTTP 403 when the registered `'oauth2.profile.allowed'` policy denies the profile.
+   * @throws HTTP 403 when the registered `'auth.factor.oauth2.profile.allowed'` policy denies the profile.
    * @throws HTTP 404 when the state record has expired or `state` doesn't match.
    * @throws HTTP 502 when the provider's `fetchProfile` call fails.
    */
@@ -208,7 +208,7 @@ export class OAuth2FactorService {
 
     const profile: OAuth2Profile = { ...rawProfile, provider: stored.provider };
 
-    const policyResult = await this.policyService.check('oauth2.profile.allowed', { profile });
+    const policyResult = await this.policyService.check('auth.factor.oauth2.profile.allowed', { profile });
     if (!policyResult.allowed) {
       throw httpError(403)
         .withDetails({ profile: 'not allowed' })

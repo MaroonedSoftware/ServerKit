@@ -25,7 +25,7 @@ export interface SupportVerificationAllowedPolicyContext<K extends string = stri
  *
  * Subclass to layer organisation-wide overrides (feature flag off, tenant
  * disablement, agent-tool IP allow-lists), then re-register under the
- * `'support.verification.allowed'` name in your DI container.
+ * `'auth.support.verification.allowed'` name in your DI container.
  */
 @Injectable()
 export class SupportVerificationAllowedPolicy extends Policy<SupportVerificationAllowedPolicyContext> {

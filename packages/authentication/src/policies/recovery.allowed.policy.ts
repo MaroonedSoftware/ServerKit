@@ -37,7 +37,7 @@ export interface RecoveryAllowedPolicyContext<K extends string = string> {
  *
  * Subclass to layer organisation-wide overrides (recovery disabled, IP allow
  * lists, deny lists, additional admin gating), then re-register under the
- * `'recovery.allowed'` name in your DI container.
+ * `'auth.recovery.allowed'` name in your DI container.
  */
 @Injectable()
 export class RecoveryAllowedPolicy extends Policy<RecoveryAllowedPolicyContext> {

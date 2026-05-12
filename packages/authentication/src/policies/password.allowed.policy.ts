@@ -22,7 +22,7 @@ export interface PasswordAllowedPolicyContext {
 /**
  * Policy that rejects passwords failing the configured strength threshold or
  * matching one of the actor's previous hashes. Register under the policy name
- * `'password.allowed'` so the bundled `PasswordFactorService` can resolve it.
+ * `'auth.factor.password.allowed'` so the bundled `PasswordFactorService` can resolve it.
  *
  * Denial reasons:
  * - `'weak_password'` — strength provider reports the password as unacceptable.

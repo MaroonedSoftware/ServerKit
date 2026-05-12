@@ -230,7 +230,7 @@ export class OidcFactorService {
    *
    * @throws HTTP 400 when the IdP returned an `error`, `state` is missing,
    *   `id_token` claims are missing, or the supplied `iss` does not match.
-   * @throws HTTP 403 when the registered `'oidc.profile.allowed'` policy denies the profile.
+   * @throws HTTP 403 when the registered `'auth.factor.oidc.profile.allowed'` policy denies the profile.
    * @throws HTTP 404 when the state record has expired or does not exist.
    */
   async completeAuthorization(args: { params: AuthorizationCallbackParams }): Promise<OidcAuthorizationResult> {
@@ -294,7 +294,7 @@ export class OidcFactorService {
 
     const profile = this.buildProfile(stored.provider, idTokenClaims, userinfo);
 
-    const policyResult = await this.policyService.check('oidc.profile.allowed', { profile });
+    const policyResult = await this.policyService.check('auth.factor.oidc.profile.allowed', { profile });
     if (!policyResult.allowed) {
       throw httpError(403)
         .withDetails({ profile: 'not allowed' })

@@ -71,7 +71,7 @@ export class RecoveryOrchestratorHooksProvider {
  * State machine:
  *
  * 1. {@link initiateRecovery} — resolve the actor, consult
- *    `'recovery.allowed'`, stash a parent challenge with the eligible channels.
+ *    `'auth.recovery.allowed'`, stash a parent challenge with the eligible channels.
  *    For unknown identifiers, the policy is consulted with an absent actor and
  *    by default returns `allow`; the orchestrator returns a challenge with an
  *    empty `eligibleChannels` list so the caller cannot probe for account
@@ -170,14 +170,14 @@ export class RecoveryOrchestrator {
    * use the response to enumerate accounts. The returned `eligibleChannels`
    * will be empty in that case.
    *
-   * @throws HTTP 403 when the `'recovery.allowed'` policy denies.
+   * @throws HTTP 403 when the `'auth.recovery.allowed'` policy denies.
    */
   async initiateRecovery<K extends string = string>(input: InitiateRecoveryInput<K>): Promise<InitiateRecoveryResult> {
     const actor = await this.resolveActor(input);
 
     const eligibleChannels = actor ? await this.eligibleChannelsFor(actor, input.reason) : [];
 
-    const policyResult = await this.policyService.check('recovery.allowed', {
+    const policyResult = await this.policyService.check('auth.recovery.allowed', {
       actor,
       reason: input.reason,
       eligibleChannels,

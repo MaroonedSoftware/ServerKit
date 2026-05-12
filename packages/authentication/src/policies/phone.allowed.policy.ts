@@ -12,7 +12,7 @@ export interface PhoneAllowedPolicyContext {
 
 /**
  * Policy that rejects phone numbers that are not in E.164 format. Register
- * under the policy name `'phone_allowed'` so the bundled `PhoneFactorService`
+ * under the policy name `'auth.factor.phone.allowed'` so the bundled `PhoneFactorService`
  * can resolve it.
  *
  * Denial reasons:

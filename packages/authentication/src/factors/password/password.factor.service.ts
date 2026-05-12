@@ -61,7 +61,7 @@ export class PasswordFactorService {
   }
 
   private async ensurePasswordAllowed(password: string, previousPasswords?: ReadonlyArray<PasswordValue>) {
-    const result = await this.policyService.check('password.allowed', { password, previousPasswords });
+    const result = await this.policyService.check('auth.factor.password.allowed', { password, previousPasswords });
     if (result.allowed) {
       return;
     }

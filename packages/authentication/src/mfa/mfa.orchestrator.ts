@@ -23,7 +23,7 @@ import {
 /**
  * Coordinates the handoff between primary and secondary authentication
  * factors. Sits on top of the per-factor services and consults the
- * `'auth.mfa.required'` policy to decide whether the actor needs a second
+ * `'auth.session.mfa.required'` policy to decide whether the actor needs a second
  * factor before a session is minted.
  *
  * The orchestrator is a pure state machine — it does not mint sessions or
@@ -74,7 +74,7 @@ export class MfaOrchestrator {
     primaryFactor: AuthenticationSessionFactor,
     availableFactors: AuthMfaRequiredPolicyFactor[],
   ): Promise<IssueOrChallengeResult<K>> {
-    const result = await this.policyService.check('auth.mfa.required', { actor, primaryFactor, availableFactors });
+    const result = await this.policyService.check('auth.session.mfa.required', { actor, primaryFactor, availableFactors });
 
     if (!isPolicyResultDenied(result)) {
       return { kind: 'allow', actor, primaryFactor };

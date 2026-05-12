@@ -46,7 +46,7 @@ export interface AuthRecentFactorPolicyContext {
  *
  * Subclass to layer additional rules on top (org-level overrides, risk
  * scoring, …) and re-register the subclass under the same
- * `'auth.recent.factor'` name in your DI container.
+ * `'auth.session.recent.factor'` name in your DI container.
  */
 @Injectable()
 export class DefaultRecentFactorPolicy extends Policy<AuthRecentFactorPolicyContext> {

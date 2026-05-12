@@ -208,7 +208,7 @@ export class PhoneFactorService {
       };
     }
 
-    const policyResult = await this.policyService.check('phone.allowed', { value });
+    const policyResult = await this.policyService.check('auth.factor.phone.allowed', { value });
     if (!policyResult.allowed) {
       const msg =
         policyResult.reason === 'deny_list'

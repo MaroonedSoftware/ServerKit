@@ -116,9 +116,9 @@ describe('EmailFactorService', () => {
       });
     });
 
-    it("invokes the 'email.allowed' policy with the normalized email value", async () => {
+    it("invokes the 'auth.factor.email.allowed' policy with the normalized email value", async () => {
       await service.registerEmailFactor('  USER@Example.COM  ', 'code');
-      expect(policyService.check).toHaveBeenCalledWith('email.allowed', { value: 'user@example.com' });
+      expect(policyService.check).toHaveBeenCalledWith('auth.factor.email.allowed', { value: 'user@example.com' });
     });
 
     it('returns the existing pending registration with alreadyRegistered=true when one is cached', async () => {

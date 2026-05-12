@@ -109,7 +109,7 @@ describe('MfaOrchestrator', () => {
         expect(result.actor).toEqual(actor);
         expect(result.primaryFactor).toEqual(primaryFactor);
       }
-      expect(policyService.check).toHaveBeenCalledWith('auth.mfa.required', {
+      expect(policyService.check).toHaveBeenCalledWith('auth.session.mfa.required', {
         actor,
         primaryFactor,
         availableFactors: [],

@@ -55,7 +55,7 @@ export interface AuthMfaRequiredPolicyContext {
  *
  * Subclass to layer additional rules on top (risk scoring, organization-level
  * overrides, region-specific requirements, …) without touching the
- * orchestrator. Re-register the subclass under the same `'auth.mfa.required'`
+ * orchestrator. Re-register the subclass under the same `'auth.session.mfa.required'`
  * name in your DI container.
  */
 @Injectable()

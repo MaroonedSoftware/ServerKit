@@ -179,7 +179,7 @@ export class EmailFactorService {
   }
 
   private async ensureEmailAllowed(value: string) {
-    const policyResult = await this.policyService.check('email.allowed', { value });
+    const policyResult = await this.policyService.check('auth.factor.email.allowed', { value });
 
     if (!policyResult.allowed) {
       const msg =

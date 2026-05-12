@@ -25,9 +25,9 @@ pnpm add @maroonedsoftware/authentication
 - **FIDO2/WebAuthn factors** — passkey/security-key registration and sign-in via `FidoFactorService` (built on [`fido2-lib`](https://www.npmjs.com/package/fido2-lib))
 - **OpenID Connect factors** — sign-in, account linking, and refresh-token rotation via `OidcFactorService` (built on [`openid-client`](https://www.npmjs.com/package/openid-client)) with public-client support and verified-email auto-linking
 - **OAuth 2.0 factors** — non-OIDC sign-in (GitHub, Discord, Twitter/X, …) via `OAuth2FactorService` with an adapter interface that pairs cleanly with [`arctic`](https://www.npmjs.com/package/arctic)
-- **MFA orchestration** — `MfaOrchestrator` runs the primary → challenge → secondary handoff on top of the per-factor services, with a swappable `'auth.mfa.required'` policy; per-method `issueFactorChallenge` responses include the code and recipient so the caller controls delivery
+- **MFA orchestration** — `MfaOrchestrator` runs the primary → challenge → secondary handoff on top of the per-factor services, with a swappable `'auth.session.mfa.required'` policy; per-method `issueFactorChallenge` responses include the code and recipient so the caller controls delivery
 - **Step-up policies** — `DefaultRecentFactorPolicy` and `DefaultAssuranceLevelPolicy` gate sensitive operations on a recent re-auth or a NIST 800-63B-style AAL1/AAL2 check, with embedded `StepUpRequirement` hints so clients can drive the right re-auth flow
-- **Account recovery** — `RecoveryOrchestrator` runs the forgot-password / MFA-recovery / unlock / full-recovery flow as a pure state machine on top of the per-factor services, gated by `'recovery.allowed'`; recovery codes ship as a single-use, Argon2id-hashed backup factor via `RecoveryFactorService`; recovery sessions are opaque and structurally cannot authorise app endpoints
+- **Account recovery** — `RecoveryOrchestrator` runs the forgot-password / MFA-recovery / unlock / full-recovery flow as a pure state machine on top of the per-factor services, gated by `'auth.recovery.allowed'`; recovery codes ship as a single-use, Argon2id-hashed backup factor via `RecoveryFactorService`; recovery sessions are opaque and structurally cannot authorise app endpoints
 - **DI-friendly** — all classes are decorated with `@Injectable()` and designed for an injectkit container
 
 ## Usage
@@ -635,7 +635,7 @@ const { url } = await oauth2.beginAuthorization({ provider: 'github', intent: 's
 `MfaOrchestrator` coordinates the handoff between a primary factor and a
 secondary factor. It sits on top of the per-factor services
 (`PhoneFactorService`, `EmailFactorService`, …) and asks the
-`'auth.mfa.required'` policy whether a second factor is needed.
+`'auth.session.mfa.required'` policy whether a second factor is needed.
 
 The orchestrator is a pure state machine — it does not mint sessions or shape
 wire responses. `issueOrChallenge` and `completeMfa` return structured data
@@ -654,7 +654,7 @@ by physical devices — `fido`, `phone`, `authenticator` — qualify as a
 second factor even when the primary used the same method, as long as the
 `methodId` differs (e.g. two FIDO keys, two phones). Subclass to layer
 org-level overrides, rule out specific methods unconditionally, or add risk
-scoring, and re-register the subclass under the same `'auth.mfa.required'`
+scoring, and re-register the subclass under the same `'auth.session.mfa.required'`
 name.
 
 Delivery stays consumer-owned: `issueFactorChallenge` returns the recipient and
@@ -728,7 +728,7 @@ pass it through the policy `context`. Gate on actor kind (e.g. reject
 non-human actors with a different `reason`) at the call site or in a
 wrapping subclass.
 
-`'auth.recent.factor'` — `DefaultRecentFactorPolicy`. Allows when at least
+`'auth.session.recent.factor'` — `DefaultRecentFactorPolicy`. Allows when at least
 one factor in `context.factors` matches the supplied constraints
 (`anyOfKinds`, `anyOfMethods`, `excludeMethods`) and was re-verified within
 `context.within` of `envelope.now`. Denies with
@@ -736,7 +736,7 @@ one factor in `context.factors` matches the supplied constraints
 otherwise.
 
 ```typescript
-const result = await policyService.check('auth.recent.factor', {
+const result = await policyService.check('auth.session.recent.factor', {
   factors: session.factors,
   within: Duration.fromObject({ minutes: 5 }),
   anyOfKinds: ['possession', 'biometric'],
@@ -747,7 +747,7 @@ if (!result.allowed) {
 }
 ```
 
-`'auth.assurance.level'` — `DefaultAssuranceLevelPolicy`. NIST 800-63B-style
+`'auth.session.assurance.level'` — `DefaultAssuranceLevelPolicy`. NIST 800-63B-style
 check. `aal1` allows when any one factor is recent enough; `aal2` allows
 when the session has knowledge + possession/biometric, or two distinct
 non-knowledge factors (passwordless path, distinctness keyed on
@@ -756,7 +756,7 @@ points the client at the kinds that would actually move the session to the
 target AAL.
 
 ```typescript
-const result = await policyService.check('auth.assurance.level', {
+const result = await policyService.check('auth.session.assurance.level', {
   factors: session.factors,
   minLevel: 'aal2',
   within: Duration.fromObject({ minutes: 15 }),
@@ -878,7 +878,7 @@ channel exists for the reason; `full_recovery` additionally requires either a
 `recoveryCode` channel or `recoveryAdminApproved: true` set on the policy
 context (the orchestrator passes the actor through; supply admin approval at
 the call site or by subclassing). Subclass and re-register under
-`'recovery.allowed'` to layer org-level overrides.
+`'auth.recovery.allowed'` to layer org-level overrides.
 
 ---
 
@@ -1084,9 +1084,9 @@ Cache-backed storage for PKCE state (RFC 7636). Wraps an injected `CacheProvider
 | `deleteChallenge(codeChallenge)`                             | `Promise<void>`          | Remove the entry — call after a successful exchange for single-use semantics |
 | `deleteVerifier(codeVerifier)`                               | `Promise<void>`          | Same as `deleteChallenge`, but derives the challenge from the verifier       |
 
-### Policies (`email.allowed`, `phone.allowed`)
+### Policies (`auth.factor.email.allowed`, `auth.factor.phone.allowed`)
 
-Email and phone validation are dispatched through `PolicyService` from [`@maroonedsoftware/policies`](../policies/README.md). The bundled `EmailFactorService` and `PhoneFactorService` call `policyService.check('email.allowed', { value })` and `policyService.check('phone.allowed', { value })` respectively, then map the machine-readable `reason` on a denial to a user-facing HTTP 400 (`{ value: <message> }`).
+Email and phone validation are dispatched through `PolicyService` from [`@maroonedsoftware/policies`](../policies/README.md). The bundled `EmailFactorService` and `PhoneFactorService` call `policyService.check('auth.factor.email.allowed', { value })` and `policyService.check('auth.factor.phone.allowed', { value })` respectively, then map the machine-readable `reason` on a denial to a user-facing HTTP 400 (`{ value: <message> }`).
 
 This package ships two `Policy` implementations you can register against those names — or subclass / replace to add stricter rules (regional phone filtering, dynamic deny lists, MX record probing, etc.) without modifying the factor services.
 
@@ -1122,8 +1122,8 @@ import {
 } from '@maroonedsoftware/authentication';
 
 type AuthPolicies = {
-  'email.allowed': { value: string };
-  'phone.allowed': { value: string };
+  'auth.factor.email.allowed': { value: string };
+  'auth.factor.phone.allowed': { value: string };
 };
 
 @Injectable()
@@ -1138,8 +1138,8 @@ registry.register(EmailAllowedPolicy).useClass(EmailAllowedPolicy).asSingleton()
 registry.register(PhoneAllowedPolicy).useClass(PhoneAllowedPolicy).asSingleton();
 registry.register(PolicyRegistryMap).useFactory(() => {
   const map = new PolicyRegistryMap();
-  map.set('email.allowed', EmailAllowedPolicy);
-  map.set('phone.allowed', PhoneAllowedPolicy);
+  map.set('auth.factor.email.allowed', EmailAllowedPolicy);
+  map.set('auth.factor.phone.allowed', PhoneAllowedPolicy);
   return map;
 });
 registry.register(PolicyService).useClass(AuthPolicyService).asSingleton();

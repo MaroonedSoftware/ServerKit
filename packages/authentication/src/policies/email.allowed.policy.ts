@@ -25,7 +25,7 @@ export class EmailAllowedPolicyOptions {
 /**
  * Policy that rejects malformed email addresses and addresses whose domain
  * appears in {@link EmailAllowedPolicyOptions.emailDomainDenyList}. Register
- * under the policy name `'email_allowed'` so the bundled `EmailFactorService`
+ * under the policy name `'auth.factor.email.allowed'` so the bundled `EmailFactorService`
  * can resolve it.
  *
  * Denial reasons:

@@ -16,16 +16,16 @@ import { SupportVerificationAllowedPolicy, SupportVerificationAllowedPolicyConte
  * in your `PolicyRegistryMap` (or as a union when extending it).
  */
 export type AuthenticationPolicyNames =
-  | 'email.allowed'
-  | 'phone.allowed'
-  | 'password.allowed'
-  | 'oidc.profile.allowed'
-  | 'oauth2.profile.allowed'
-  | 'auth.mfa.required'
-  | 'auth.recent.factor'
-  | 'auth.assurance.level'
-  | 'recovery.allowed'
-  | 'support.verification.allowed';
+  | 'auth.factor.email.allowed'
+  | 'auth.factor.phone.allowed'
+  | 'auth.factor.password.allowed'
+  | 'auth.factor.oidc.profile.allowed'
+  | 'auth.factor.oauth2.profile.allowed'
+  | 'auth.session.mfa.required'
+  | 'auth.session.recent.factor'
+  | 'auth.session.assurance.level'
+  | 'auth.recovery.allowed'
+  | 'auth.support.verification.allowed';
 
 /**
  * Default mapping from each bundled {@link AuthenticationPolicyNames} value to
@@ -34,33 +34,33 @@ export type AuthenticationPolicyNames =
  * or merge with application-specific mappings before registering.
  */
 export const AuthenticationPolicyMappings: Record<AuthenticationPolicyNames, Constructor<Policy>> = {
-  'email.allowed': EmailAllowedPolicy,
-  'phone.allowed': PhoneAllowedPolicy,
-  'password.allowed': PasswordAllowedPolicy,
-  'oidc.profile.allowed': OidcProfileAllowedPolicy,
-  'oauth2.profile.allowed': OAuth2ProfileAllowedPolicy,
-  'auth.mfa.required': DefaultMfaRequiredPolicy,
-  'auth.recent.factor': DefaultRecentFactorPolicy,
-  'auth.assurance.level': DefaultAssuranceLevelPolicy,
-  'recovery.allowed': RecoveryAllowedPolicy,
-  'support.verification.allowed': SupportVerificationAllowedPolicy,
+  'auth.factor.email.allowed': EmailAllowedPolicy,
+  'auth.factor.phone.allowed': PhoneAllowedPolicy,
+  'auth.factor.password.allowed': PasswordAllowedPolicy,
+  'auth.factor.oidc.profile.allowed': OidcProfileAllowedPolicy,
+  'auth.factor.oauth2.profile.allowed': OAuth2ProfileAllowedPolicy,
+  'auth.session.mfa.required': DefaultMfaRequiredPolicy,
+  'auth.session.recent.factor': DefaultRecentFactorPolicy,
+  'auth.session.assurance.level': DefaultAssuranceLevelPolicy,
+  'auth.recovery.allowed': RecoveryAllowedPolicy,
+  'auth.support.verification.allowed': SupportVerificationAllowedPolicy,
 };
 
 /**
  * Mapping from each bundled policy name to its expected context shape. Pass
  * this (or an intersection with your own `Policies` map) as the `TPolicies`
  * type parameter to `BasePolicyService` to get compile-time type safety on
- * `policyService.check('email.allowed', ...)` and friends.
+ * `policyService.check('auth.factor.email.allowed', ...)` and friends.
  */
 export type AuthenticationPolicyContexts = {
-  'email.allowed': EmailAllowedPolicyContext;
-  'phone.allowed': PhoneAllowedPolicyContext;
-  'password.allowed': PasswordAllowedPolicyContext;
-  'oidc.profile.allowed': OidcProfileAllowedPolicyContext;
-  'oauth2.profile.allowed': OAuth2ProfileAllowedPolicyContext;
-  'auth.mfa.required': AuthMfaRequiredPolicyContext;
-  'auth.recent.factor': AuthRecentFactorPolicyContext;
-  'auth.assurance.level': AuthAssuranceLevelPolicyContext;
-  'recovery.allowed': RecoveryAllowedPolicyContext;
-  'support.verification.allowed': SupportVerificationAllowedPolicyContext;
+  'auth.factor.email.allowed': EmailAllowedPolicyContext;
+  'auth.factor.phone.allowed': PhoneAllowedPolicyContext;
+  'auth.factor.password.allowed': PasswordAllowedPolicyContext;
+  'auth.factor.oidc.profile.allowed': OidcProfileAllowedPolicyContext;
+  'auth.factor.oauth2.profile.allowed': OAuth2ProfileAllowedPolicyContext;
+  'auth.session.mfa.required': AuthMfaRequiredPolicyContext;
+  'auth.session.recent.factor': AuthRecentFactorPolicyContext;
+  'auth.session.assurance.level': AuthAssuranceLevelPolicyContext;
+  'auth.recovery.allowed': RecoveryAllowedPolicyContext;
+  'auth.support.verification.allowed': SupportVerificationAllowedPolicyContext;
 };

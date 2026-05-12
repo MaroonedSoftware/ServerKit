@@ -110,9 +110,9 @@ describe('PhoneFactorService', () => {
       });
     });
 
-    it("invokes the 'phone.allowed' policy with the phone value", async () => {
+    it("invokes the 'auth.factor.phone.allowed' policy with the phone value", async () => {
       await service.registerPhoneFactor('+12025550123');
-      expect(policyService.check).toHaveBeenCalledWith('phone.allowed', { value: '+12025550123' });
+      expect(policyService.check).toHaveBeenCalledWith('auth.factor.phone.allowed', { value: '+12025550123' });
     });
 
     it('returns the existing pending registration with alreadyRegistered=true when one is cached for the value', async () => {

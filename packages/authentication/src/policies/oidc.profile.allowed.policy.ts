@@ -16,7 +16,7 @@ export interface OidcProfileAllowedPolicyContext {
 /**
  * Policy that gates which verified OIDC profiles are allowed to sign in or
  * link a factor. The default implementation allows every profile; subclass
- * and register your subclass under the policy name `'oidc.profile.allowed'`
+ * and register your subclass under the policy name `'auth.factor.oidc.profile.allowed'`
  * to enforce Workspace-domain restrictions, sub allowlists, or other
  * provider-specific rules.
  *

@@ -15,7 +15,7 @@ export interface OAuth2ProfileAllowedPolicyContext {
 /**
  * Policy that gates which OAuth 2.0 profiles are allowed to sign in or link
  * a factor. The default implementation allows every profile; subclass and
- * register your subclass under the policy name `'oauth2.profile.allowed'`
+ * register your subclass under the policy name `'auth.factor.oauth2.profile.allowed'`
  * to enforce organisation membership, MFA-required rules, or provider-
  * specific restrictions.
  *

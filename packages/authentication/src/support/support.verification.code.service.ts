@@ -66,7 +66,7 @@ export class SupportVerificationCodeServiceOptions {
  * the limiter.
  *
  * **Policy gating:** every operation runs through the
- * `'support.verification.allowed'` policy so applications can layer in an
+ * `'auth.support.verification.allowed'` policy so applications can layer in an
  * org-wide kill switch or per-actor disablement.
  *
  * **Audit:** issuance, successful verification, and verification failures
@@ -95,7 +95,7 @@ export class SupportVerificationCodeService {
   }
 
   private async assertPolicy(operation: 'issue' | 'verify', actor: TargetActor) {
-    const result = await this.policyService.check('support.verification.allowed', { actor, operation });
+    const result = await this.policyService.check('auth.support.verification.allowed', { actor, operation });
     if (isPolicyResultDenied(result)) {
       throw httpError(403)
         .withDetails({ reason: result.reason })
@@ -131,7 +131,7 @@ export class SupportVerificationCodeService {
    * typically display the code in the user's app alongside a countdown to
    * `expiresAt` so the user can read it over the phone to a support agent.
    *
-   * @throws HTTP 403 when the `'support.verification.allowed'` policy denies.
+   * @throws HTTP 403 when the `'auth.support.verification.allowed'` policy denies.
    */
   async issueCode<K extends string = string>(actor: TargetActor<K>): Promise<SupportVerificationIssueResult> {
     await this.assertPolicy('issue', actor);
@@ -164,7 +164,7 @@ export class SupportVerificationCodeService {
    * `support_verification:{actorId}` so brute-force search across the
    * 6-digit space is bounded.
    *
-   * @throws HTTP 403 when the `'support.verification.allowed'` policy denies.
+   * @throws HTTP 403 when the `'auth.support.verification.allowed'` policy denies.
    * @throws HTTP 404 when no secret has been issued for the actor.
    * @throws HTTP 429 when rate-limited.
    * @throws HTTP 401 (`WWW-Authenticate: Bearer error="invalid_code"`) when no in-window code matches, or the code has already been consumed.
