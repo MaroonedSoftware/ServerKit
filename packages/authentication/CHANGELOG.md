@@ -1,5 +1,64 @@
 # @maroonedsoftware/authentication
 
+## 4.17.0
+
+### Minor Changes
+
+- e840690: Adds an account recovery surface as a pure state machine parallel to
+  `MfaOrchestrator`. Covers the four recovery scenarios — forgot password,
+  MFA / lost second factor, account unlock, and full account recovery — and
+  introduces recovery codes as a new factor.
+  - **`RecoveryCodeFactorService`** — generates a batch of single-use,
+    high-entropy backup codes per actor, hashed via the bundled
+    `PasswordHashProvider` (Argon2id). Plaintext is returned exactly once at
+    generation time; verification is rate-limited (`recovery:{actorId}`) and
+    consumes a code single-use. New `RecoveryCodeFactorRepository` for storage.
+  - **`RecoveryOrchestrator`** — state machine with `initiateRecovery`,
+    `issueChannelChallenge`, `verifyChannel`, and `completeRecovery`. Reuses
+    existing email/phone factor `issue*Challenge` paths for delivery and
+    delegates password reset / unlock to `PasswordFactorService.changePassword`
+    and `clearRateLimit`. Unknown identifiers return an empty-channels
+    challenge to prevent user enumeration. The orchestrator returns structured
+    data and lets consumers shape wire responses and invalidate auth sessions.
+  - **`RecoverySessionService`** — short-lived, opaque, single-use session
+    with **no JWT issuance path** and a distinct cache key prefix
+    (`recovery_session_*`). Structurally cannot be resolved via
+    `AuthenticationSessionService.getSession`, so a recovery token can never
+    authorise application endpoints.
+  - **`RecoveryAllowedPolicy`** (`'recovery.allowed'`) — registered in
+    `AuthenticationPolicyMappings`. Default: allow when at least one eligible
+    channel exists for the reason; full recovery requires either a recovery
+    code or an admin-approval flag.
+  - **`RecoveryChannelChallengeRequest`** and friends in `recovery/types.ts`
+    for compile-time discriminated-union handling of the email / phone /
+    recoveryCode channels.
+
+  **Breaking-flavoured rename**: `MfaOrchestrator.startFactorChallenge` is
+  renamed to `MfaOrchestrator.issueFactorChallenge` to match the per-factor
+  `issueEmailChallenge` / `issuePhoneChallenge` family it delegates to (and the
+  new `RecoveryOrchestrator.issueChannelChallenge`). Update call sites.
+
+- b6e5df2: Adds a support-verification code surface — a rotating TOTP an authenticated
+  user displays in their app and reads aloud to a customer-support agent so the
+  agent can confirm they're speaking with the account holder.
+  - **`SupportVerificationCodeService`** — issues and verifies a per-actor
+    rotating 6-digit TOTP. Secrets are generated lazily on first
+    `issueCode`, stored encrypted via `EncryptionProvider`, and rotate every
+    30s. `verifyCode` accepts the current period ±1 (drift window) and records
+    consumed counters in cache so the same code cannot be replayed within the
+    verifier's drift window. Verification is rate-limited via the injected
+    `RateLimiterCompatibleAbstract` keyed `support_verification:{actorId}`,
+    and issuance/success/failure are emitted via the injected `Logger`. New
+    `SupportVerificationSecretRepository` for storage.
+  - **`SupportVerificationAllowedPolicy`** (`'support.verification.allowed'`) —
+    registered in `AuthenticationPolicyMappings`. Default: allow when an
+    authenticated actor is present, deny otherwise. Subclass to layer org-wide
+    feature flags or tenant-level disablement.
+
+  This is **not** an authentication factor: it grants no access on its own
+  and never appears in `AuthenticationSessionFactor`. It is an out-of-band
+  identity assertion for the support-call use case.
+
 ## 4.16.0
 
 ### Minor Changes
