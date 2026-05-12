@@ -9,6 +9,7 @@ import { AuthMfaRequiredPolicyContext, DefaultMfaRequiredPolicy } from './auth.m
 import { AuthRecentFactorPolicyContext, DefaultRecentFactorPolicy } from './auth.recent.factor.policy.js';
 import { AuthAssuranceLevelPolicyContext, DefaultAssuranceLevelPolicy } from './auth.assurance.level.policy.js';
 import { RecoveryAllowedPolicy, RecoveryAllowedPolicyContext } from './recovery.allowed.policy.js';
+import { SupportVerificationAllowedPolicy, SupportVerificationAllowedPolicyContext } from './support.verification.allowed.policy.js';
 
 /**
  * Names of the policies bundled with this package. Use as the policy-name keys
@@ -23,7 +24,8 @@ export type AuthenticationPolicyNames =
   | 'auth.mfa.required'
   | 'auth.recent.factor'
   | 'auth.assurance.level'
-  | 'recovery.allowed';
+  | 'recovery.allowed'
+  | 'support.verification.allowed';
 
 /**
  * Default mapping from each bundled {@link AuthenticationPolicyNames} value to
@@ -41,6 +43,7 @@ export const AuthenticationPolicyMappings: Record<AuthenticationPolicyNames, Con
   'auth.recent.factor': DefaultRecentFactorPolicy,
   'auth.assurance.level': DefaultAssuranceLevelPolicy,
   'recovery.allowed': RecoveryAllowedPolicy,
+  'support.verification.allowed': SupportVerificationAllowedPolicy,
 };
 
 /**
@@ -59,4 +62,5 @@ export type AuthenticationPolicyContexts = {
   'auth.recent.factor': AuthRecentFactorPolicyContext;
   'auth.assurance.level': AuthAssuranceLevelPolicyContext;
   'recovery.allowed': RecoveryAllowedPolicyContext;
+  'support.verification.allowed': SupportVerificationAllowedPolicyContext;
 };
