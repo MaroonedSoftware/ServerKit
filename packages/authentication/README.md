@@ -146,7 +146,7 @@ registry.register(AuthenticationHandlerMap).useMap().set('basic', BasicAuthentic
 
 ### Session management
 
-`AuthenticationSessionService` stores sessions in a cache and issues JWTs that reference them. Revoking a session invalidates all tokens derived from it.
+`AuthenticationSessionService` stores sessions in a cache and issues JWTs that reference them. Revoking a session invalidates all tokens derived from it. Each session is stamped with a `familyId` so refresh-token rotation can detect token theft.
 
 ```typescript
 import { AuthenticationSessionService } from '@maroonedsoftware/authentication';
@@ -162,15 +162,54 @@ const session = await sessionService.createSession(
   { issuedAt: now, authenticatedAt: now, method: 'password', methodId: user.passwordFactorId, kind: 'knowledge' },
 );
 
-// Issue a signed JWT
-const token = await sessionService.issueTokenForSession(session.sessionToken);
-// token.accessToken → "eyJhbGci..."
+// Issue a signed access token + single-use refresh token
+const tokens = await sessionService.issueTokenForSession(session.sessionToken);
+// tokens.accessToken  → "eyJhbGci..."
+// tokens.refreshToken → "eyJhbGci..." (single-use, rotated via refreshSession)
 
 // Validate a JWT and retrieve the session on subsequent requests
 const { session, jwtPayload } = await sessionService.lookupSessionFromJwt(incomingJwt);
 
+// Exchange a refresh token for a fresh pair (rotates the jti, marks the old one consumed)
+const rotated = await sessionService.refreshSession(tokens.refreshToken!);
+
+// Rotate the session on privilege change (e.g. after MFA step-up) — mints a new
+// sessionToken, carries the familyId forward, deletes the old session, fires
+// onSessionRevoked({ reason: 'rotate' }) and onSessionCreated.
+const stepUp = await sessionService.rotateSession(session.sessionToken, { acr: 'high', mfa_satisfied: true });
+
 // Revoke (logout)
 await sessionService.deleteSession(session.sessionToken);
+```
+
+#### Refresh-token rotation and theft detection
+
+Refresh tokens are single-use JWTs that carry `kind: 'refresh'`, `jti`, `familyId`, and `sessionToken` claims. Every issuance registers the `jti` in a family blob (`auth_refresh_family_{familyId}`). On `refreshSession`:
+
+- The previous `jti` is marked consumed (`auth_refresh_consumed_{jti}` sentinel with TTL = `max(remaining-token-lifetime, 60s)`).
+- A new `jti` is minted and added to the family.
+- If a client ever presents a `jti` that is already consumed, **every session in the family is revoked** and the family entry is deleted. This is the theft signal — observe it via the `onRefreshReuseDetected` hook.
+
+Family-blob TTL is reset on every rotation so it can never expire mid-chain.
+
+#### Lifecycle hooks
+
+Register callbacks on `AuthenticationSessionServiceOptions.hooks` to observe session events without monkey-patching. Hooks fire **after** the cache write/delete commits, run sequentially, are awaited, and errors are logged but never propagated.
+
+```typescript
+new AuthenticationSessionServiceOptions(
+  'https://auth.example.com',
+  'https://api.example.com',
+  Duration.fromObject({ minutes: 15 }), // access token + session TTL
+  Duration.fromObject({ days: 30 }),    // refresh token TTL
+  {
+    onSessionCreated:        session => audit.log('session.created', session),
+    onSessionRefreshed:      (session, { previousJti }) => audit.log('session.refreshed', { session, previousJti }),
+    onSessionRevoked:        (session, { reason }) => audit.log('session.revoked', { session, reason }),
+    onValidationFailed:      (sessionToken, { reason }) => audit.log('session.validation_failed', { sessionToken, reason }),
+    onRefreshReuseDetected:  ({ familyId, jti, sessionToken }) => security.alert('refresh.theft', { familyId, jti, sessionToken }),
+  },
+);
 ```
 
 ---
@@ -1024,8 +1063,10 @@ Abstract base class. Implement `verify(username: string, password: string): Prom
 | `lookupSessionFromJwt(jwt, ignoreExpiration?)`                      | `Promise<{ session, jwtPayload }>`               | Validate a JWT and retrieve its session                    |
 | `getSession(token)`                                                 | `Promise<AuthenticationSession \| undefined>`    | Retrieve a session by token                                |
 | `getSessionsForSubject(subject)`                                    | `Promise<AuthenticationSession[]>`               | Get all active sessions for a subject                      |
-| `issueTokenForSession(sessionToken)`                                | `Promise<AuthenticationToken>`                   | Issue a signed JWT for an existing session                 |
-| `deleteSession(token)`                                              | `Promise<void>`                                  | Revoke a session                                           |
+| `issueTokenForSession(sessionToken)`                                | `Promise<AuthenticationToken>`                   | Issue an access token AND a single-use refresh token       |
+| `refreshSession(refreshToken)`                                      | `Promise<AuthenticationToken>`                   | Rotate the refresh token's `jti`; revokes the family on replay |
+| `rotateSession(token, claimOverrides?, expiration?)`                | `Promise<{ session, accessToken, refreshToken, ... }>` | Mint a new session for a privilege change (e.g. MFA step-up) |
+| `deleteSession(token, reason?)`                                     | `Promise<void>`                                  | Revoke a session and clean up its refresh-token family entry |
 
 ### `AuthenticationSession`
 
@@ -1040,6 +1081,7 @@ Server-side session record stored in cache. Time fields are Luxon `DateTime` ins
 | `lastAccessedAt` | `DateTime`                        | When the session was most recently accessed.                             |
 | `factors`        | `AuthenticationSessionFactor[]`   | Factors satisfied during this session.                                   |
 | `claims`         | `Record<string, unknown>`         | Arbitrary claims to embed in tokens issued from this session.            |
+| `familyId`       | `string \| undefined`             | Refresh-token family this session belongs to. Carried across `rotateSession`. |
 
 ### `AuthenticationSessionFactor`
 

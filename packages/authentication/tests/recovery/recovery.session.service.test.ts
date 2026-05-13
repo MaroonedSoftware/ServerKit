@@ -4,6 +4,7 @@ import type { CacheProvider } from '@maroonedsoftware/cache';
 import { RecoverySessionService, RecoverySessionServiceOptions } from '../../src/recovery/recovery.session.service.js';
 import { AuthenticationSessionService, AuthenticationSessionServiceOptions } from '../../src/authentication.session.service.js';
 import type { JwtProvider } from '../../src/providers/jwt.provider.js';
+import type { Logger } from '@maroonedsoftware/logger';
 
 const makeCache = () => {
   const store = new Map<string, string>();
@@ -92,7 +93,12 @@ describe('RecoverySessionService', () => {
       'https://api.example.com',
       Duration.fromObject({ hours: 1 }),
     );
-    const authService = new AuthenticationSessionService(authOptions, cache, { create: vi.fn(), decode: vi.fn() } as unknown as JwtProvider);
+    const authService = new AuthenticationSessionService(
+      authOptions,
+      cache,
+      { create: vi.fn(), decode: vi.fn() } as unknown as JwtProvider,
+      { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as unknown as Logger,
+    );
 
     expect(await authService.getSession(session.recoverySessionToken)).toBeUndefined();
     expect(cache.store.has(`auth_session_${session.recoverySessionToken}`)).toBe(false);
