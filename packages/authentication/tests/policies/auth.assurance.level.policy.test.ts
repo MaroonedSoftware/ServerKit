@@ -38,13 +38,14 @@ describe('DefaultAssuranceLevelPolicy', () => {
 
     it('denies with step-up requirement when no factors are present', async () => {
       const result = await evaluate({ factors: [], minLevel: 'aal1', within: fiveMinutes });
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         allowed: false,
         reason: 'current session does not meet aal1',
         details: {
           kind: 'step_up_required',
           stepUp: { within: fiveMinutes, acceptableKinds: ['knowledge', 'possession', 'biometric'] },
         },
+        headers: { 'WWW-Authenticate': 'Bearer error="aal1_required"' },
       });
     });
 
@@ -123,13 +124,14 @@ describe('DefaultAssuranceLevelPolicy', () => {
         minLevel: 'aal2',
         within: fiveMinutes,
       });
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         allowed: false,
         reason: 'current session does not meet aal2',
         details: {
           kind: 'step_up_required',
           stepUp: { within: fiveMinutes, acceptableKinds: ['possession', 'biometric'] },
         },
+        headers: { 'WWW-Authenticate': 'Bearer error="aal2_required"' },
       });
     });
 
@@ -139,13 +141,14 @@ describe('DefaultAssuranceLevelPolicy', () => {
         minLevel: 'aal2',
         within: fiveMinutes,
       });
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         allowed: false,
         reason: 'current session does not meet aal2',
         details: {
           kind: 'step_up_required',
           stepUp: { within: fiveMinutes, acceptableKinds: ['knowledge', 'possession', 'biometric'] },
         },
+        headers: { 'WWW-Authenticate': 'Bearer error="aal2_required"' },
       });
     });
 

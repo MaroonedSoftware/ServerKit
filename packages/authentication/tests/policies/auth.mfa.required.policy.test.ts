@@ -49,10 +49,11 @@ describe('DefaultMfaRequiredPolicy', () => {
   it('requires MFA and returns the eligible factor list when a possession factor is available', async () => {
     const phone = factor('phone', 'possession');
     const result = await evaluate({ actor, primaryFactor: makePrimary('password'), availableFactors: [phone] });
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       allowed: false,
       reason: 'mfa_required',
       details: { eligibleFactors: [{ method: 'phone', methodId: phone.methodId }] },
+      headers: { 'WWW-Authenticate': 'Bearer error="mfa_required"' },
     });
   });
 

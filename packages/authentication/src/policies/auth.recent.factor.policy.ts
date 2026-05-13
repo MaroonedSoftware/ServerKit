@@ -67,6 +67,6 @@ export class DefaultRecentFactorPolicy extends Policy<AuthRecentFactorPolicyCont
       ...(context.anyOfMethods ? { acceptableMethods: context.anyOfMethods } : {}),
       ...(context.anyOfKinds ? { acceptableKinds: context.anyOfKinds } : {}),
       ...(context.excludeMethods ? { excludeMethods: context.excludeMethods } : {}),
-    });
+    }).withHeaders({ 'WWW-Authenticate': 'Bearer error="step_up_required"' });
   }
 }

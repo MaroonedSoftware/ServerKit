@@ -36,10 +36,11 @@ describe('DefaultRecentFactorPolicy', () => {
 
   it('denies with a step-up requirement when no factors are present', async () => {
     const result = await evaluate({ factors: [], within: fiveMinutes });
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       allowed: false,
       reason: 'no recent factor satisfies the step-up requirement',
       details: { kind: 'step_up_required', stepUp: { within: fiveMinutes } },
+      headers: { 'WWW-Authenticate': 'Bearer error="step_up_required"' },
     });
   });
 
@@ -105,7 +106,7 @@ describe('DefaultRecentFactorPolicy', () => {
       anyOfMethods: ['fido', 'phone'],
       excludeMethods: ['email'],
     });
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       allowed: false,
       reason: 'no recent factor satisfies the step-up requirement',
       details: {
@@ -117,6 +118,7 @@ describe('DefaultRecentFactorPolicy', () => {
           excludeMethods: ['email'],
         },
       },
+      headers: { 'WWW-Authenticate': 'Bearer error="step_up_required"' },
     });
   });
 });

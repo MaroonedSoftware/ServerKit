@@ -71,6 +71,39 @@ describe('Policy', () => {
       details: { kind: 'step_up_required', stepUp: requirement },
     });
   });
+
+  it('deny().withHeaders() attaches headers to the denial', async () => {
+    class HeaderPolicy extends Policy<{ allow: boolean }> {
+      async evaluate(context: { allow: boolean }): Promise<PolicyResult> {
+        if (context.allow) return this.allow();
+        return this.deny('mfa_required').withHeaders({ 'WWW-Authenticate': 'Bearer error="mfa_required"' });
+      }
+    }
+    const result = await new HeaderPolicy().evaluate({ allow: false }, envelope);
+    expect(result).toMatchObject({
+      allowed: false,
+      reason: 'mfa_required',
+      headers: { 'WWW-Authenticate': 'Bearer error="mfa_required"' },
+    });
+  });
+
+  it('denyStepUp().withHeaders() composes with the step-up details', async () => {
+    class StepUpHeaderPolicy extends Policy<{ allow: boolean }> {
+      async evaluate(context: { allow: boolean }): Promise<PolicyResult> {
+        if (context.allow) return this.allow();
+        return this.denyStepUp('aal2_required', { within: Duration.fromObject({ minutes: 15 }) }).withHeaders({
+          'WWW-Authenticate': 'Bearer error="aal2_required"',
+        });
+      }
+    }
+    const result = await new StepUpHeaderPolicy().evaluate({ allow: false }, envelope);
+    expect(result).toMatchObject({
+      allowed: false,
+      reason: 'aal2_required',
+      details: { kind: 'step_up_required', stepUp: { within: Duration.fromObject({ minutes: 15 }) } },
+      headers: { 'WWW-Authenticate': 'Bearer error="aal2_required"' },
+    });
+  });
 });
 
 describe('PolicyResult type guards', () => {

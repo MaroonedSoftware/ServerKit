@@ -127,5 +127,18 @@ describe('BasePolicyService', () => {
       });
       expect(rejection.details).toBeUndefined();
     });
+
+    it('forwards result.headers to HttpError.withHeaders so they reach the response', async () => {
+      evaluate.mockResolvedValue({
+        allowed: false,
+        reason: 'mfa_required',
+        headers: { 'WWW-Authenticate': 'Bearer error="mfa_required"' },
+      });
+      const rejection = await service.assert('example_allowed', { allow: false }).catch(error => error);
+      expect(rejection).toMatchObject({
+        statusCode: 403,
+        headers: { 'WWW-Authenticate': 'Bearer error="mfa_required"' },
+      });
+    });
   });
 });

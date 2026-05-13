@@ -6,6 +6,7 @@ import { OidcProfileAllowedPolicy, OidcProfileAllowedPolicyContext } from './oid
 import { OAuth2ProfileAllowedPolicy, OAuth2ProfileAllowedPolicyContext } from './oauth2.profile.allowed.policy.js';
 import { PasswordAllowedPolicy, PasswordAllowedPolicyContext } from './password.allowed.policy.js';
 import { AuthMfaRequiredPolicyContext, DefaultMfaRequiredPolicy } from './auth.mfa.required.policy.js';
+import { AuthMfaSatisfiedPolicyContext, DefaultMfaSatisfiedPolicy } from './auth.mfa.satisfied.policy.js';
 import { AuthRecentFactorPolicyContext, DefaultRecentFactorPolicy } from './auth.recent.factor.policy.js';
 import { AuthAssuranceLevelPolicyContext, DefaultAssuranceLevelPolicy } from './auth.assurance.level.policy.js';
 import { RecoveryAllowedPolicy, RecoveryAllowedPolicyContext } from './recovery.allowed.policy.js';
@@ -22,6 +23,7 @@ export type AuthenticationPolicyNames =
   | 'auth.factor.oidc.profile.allowed'
   | 'auth.factor.oauth2.profile.allowed'
   | 'auth.session.mfa.required'
+  | 'auth.session.mfa.satisfied'
   | 'auth.session.recent.factor'
   | 'auth.session.assurance.level'
   | 'auth.recovery.allowed'
@@ -40,6 +42,7 @@ export const AuthenticationPolicyMappings: Record<AuthenticationPolicyNames, Con
   'auth.factor.oidc.profile.allowed': OidcProfileAllowedPolicy,
   'auth.factor.oauth2.profile.allowed': OAuth2ProfileAllowedPolicy,
   'auth.session.mfa.required': DefaultMfaRequiredPolicy,
+  'auth.session.mfa.satisfied': DefaultMfaSatisfiedPolicy,
   'auth.session.recent.factor': DefaultRecentFactorPolicy,
   'auth.session.assurance.level': DefaultAssuranceLevelPolicy,
   'auth.recovery.allowed': RecoveryAllowedPolicy,
@@ -59,6 +62,7 @@ export type AuthenticationPolicyContexts = {
   'auth.factor.oidc.profile.allowed': OidcProfileAllowedPolicyContext;
   'auth.factor.oauth2.profile.allowed': OAuth2ProfileAllowedPolicyContext;
   'auth.session.mfa.required': AuthMfaRequiredPolicyContext;
+  'auth.session.mfa.satisfied': AuthMfaSatisfiedPolicyContext;
   'auth.session.recent.factor': AuthRecentFactorPolicyContext;
   'auth.session.assurance.level': AuthAssuranceLevelPolicyContext;
   'auth.recovery.allowed': RecoveryAllowedPolicyContext;

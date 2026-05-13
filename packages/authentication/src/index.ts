@@ -38,6 +38,7 @@ export * from './policies/password.allowed.policy.js';
 export * from './policies/oidc.profile.allowed.policy.js';
 export * from './policies/oauth2.profile.allowed.policy.js';
 export * from './policies/auth.mfa.required.policy.js';
+export * from './policies/auth.mfa.satisfied.policy.js';
 export * from './policies/auth.recent.factor.policy.js';
 export * from './policies/auth.assurance.level.policy.js';
 export * from './policies/recovery.allowed.policy.js';

@@ -728,12 +728,41 @@ pass it through the policy `context`. Gate on actor kind (e.g. reject
 non-human actors with a different `reason`) at the call site or in a
 wrapping subclass.
 
+`'auth.session.mfa.satisfied'` — `DefaultMfaSatisfiedPolicy`. Gate-style rule
+consulted by `@maroonedsoftware/koa`'s `requirePolicy()` (and by anything else
+that asks "does this session as-it-stands count as MFA-satisfied?"). Allows
+when the session has at least two factors and at least one is not of
+`kind: 'knowledge'`. Denies with `WWW-Authenticate: Bearer error="mfa_required"`
+attached as a header so SPAs can detect MFA-required responses the same way
+they detect 401s.
+
+Note this is a different question from `'auth.session.mfa.required'` (which
+the orchestrator consults during a primary→secondary handoff). Subclass to
+grant MFA credit to single-factor sessions whose underlying method delegates
+MFA elsewhere — e.g. an `oidc` factor from an IdP that enforces 2FA upstream:
+
+```typescript
+@Injectable()
+class OidcAwareMfaSatisfiedPolicy extends Policy<AuthMfaSatisfiedPolicyContext> {
+  async evaluate({ session }: AuthMfaSatisfiedPolicyContext) {
+    if (session.factors.some(f => f.method === 'oidc')) return this.allow();
+    if (session.factors.length >= 2 && !session.factors.every(f => f.kind === 'knowledge')) {
+      return this.allow();
+    }
+    return this.deny('mfa_required').withHeaders({ 'WWW-Authenticate': 'Bearer error="mfa_required"' });
+  }
+}
+
+// At bootstrap, replace the default registration:
+registry.register(PolicyRegistryMap).useMap().add('auth.session.mfa.satisfied', OidcAwareMfaSatisfiedPolicy);
+```
+
 `'auth.session.recent.factor'` — `DefaultRecentFactorPolicy`. Allows when at least
 one factor in `context.factors` matches the supplied constraints
 (`anyOfKinds`, `anyOfMethods`, `excludeMethods`) and was re-verified within
 `context.within` of `envelope.now`. Denies with
-`details.kind === 'step_up_required'` and an embedded `StepUpRequirement`
-otherwise.
+`details.kind === 'step_up_required'`, an embedded `StepUpRequirement`, and
+`WWW-Authenticate: Bearer error="step_up_required"` otherwise.
 
 ```typescript
 const result = await policyService.check('auth.session.recent.factor', {

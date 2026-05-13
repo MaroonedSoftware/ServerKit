@@ -8,7 +8,7 @@ export type PolicyResultAllowed = { allowed: true };
 
 /**
  * Result of a denied policy evaluation. Carries a machine-readable `reason` that
- * callers can branch on to render a user-facing message, plus two optional
+ * callers can branch on to render a user-facing message, plus three optional
  * structured payloads:
  *
  * - `details` — client-facing hints (e.g. step-up requirements via
@@ -16,13 +16,57 @@ export type PolicyResultAllowed = { allowed: true };
  *   to the HTTP response body by `BasePolicyService.assert`.
  * - `internalDetails` — operator/log-only context. Attached to the thrown
  *   error's `internalDetails` so it shows up in logs but never on the wire.
+ * - `headers` — HTTP headers to attach to the thrown error when this result is
+ *   asserted (e.g. `WWW-Authenticate` for auth/MFA policies, `Retry-After` for
+ *   rate-limit policies). Forwarded to `HttpError.withHeaders`. Set via the
+ *   fluent {@link Policy.deny | deny()}{@link PolicyDenialBuilder.withHeaders | .withHeaders()}
+ *   chain.
  */
 export type PolicyResultDenied = {
   allowed: false;
   reason: string;
   details?: Record<string, unknown>;
   internalDetails?: Record<string, unknown>;
+  headers?: Record<string, string>;
 };
+
+/**
+ * Builder returned by {@link Policy.deny} and {@link Policy.denyStepUp} so
+ * policies can fluently attach extra payloads to a denial. Implements
+ * {@link PolicyResultDenied} so the returned value flows directly through
+ * `PolicyResult` consumers without an explicit conversion.
+ */
+export class PolicyDenialBuilder implements PolicyResultDenied {
+  readonly allowed = false as const;
+  reason: string;
+  details?: Record<string, unknown>;
+  internalDetails?: Record<string, unknown>;
+  headers?: Record<string, string>;
+
+  constructor(reason: string, details?: Record<string, unknown>, internalDetails?: Record<string, unknown>) {
+    this.reason = reason;
+    this.details = details;
+    this.internalDetails = internalDetails;
+  }
+
+  /**
+   * Attach HTTP headers to the denial. `BasePolicyService.assert` forwards
+   * them to the thrown {@link import('@maroonedsoftware/errors').HttpError}'s
+   * `withHeaders`. Use for `WWW-Authenticate`, `Retry-After`, etc.
+   *
+   * Replaces any previously-set headers (matches `HttpError.withHeaders`
+   * semantics).
+   *
+   * @example
+   * ```ts
+   * return this.deny('mfa_required').withHeaders({ 'WWW-Authenticate': 'Bearer error="mfa_required"' });
+   * ```
+   */
+  withHeaders(headers: Record<string, string>): this {
+    this.headers = headers;
+    return this;
+  }
+}
 
 /**
  * Discriminated union returned by every {@link Policy.evaluate} call. Branch on
@@ -110,8 +154,8 @@ export abstract class Policy<Context extends PolicyContext = PolicyContext, Enve
     reason: string,
     details?: Record<string, unknown>,
     internalDetails?: Record<string, unknown>,
-  ): PolicyResultDenied {
-    return { allowed: false, reason, details, internalDetails };
+  ): PolicyDenialBuilder {
+    return new PolicyDenialBuilder(reason, details, internalDetails);
   }
 
   /**
@@ -120,7 +164,7 @@ export abstract class Policy<Context extends PolicyContext = PolicyContext, Enve
    * can programmatically drive the user through a re-auth challenge before
    * retrying the gated operation.
    */
-  protected denyStepUp(reason: string, requirement: StepUpRequirement): PolicyResultDenied {
+  protected denyStepUp(reason: string, requirement: StepUpRequirement): PolicyDenialBuilder {
     return this.deny(reason, { kind: 'step_up_required', stepUp: requirement });
   }
 

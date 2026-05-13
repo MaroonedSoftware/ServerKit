@@ -39,9 +39,10 @@ export abstract class PolicyService {
 
   /**
    * Evaluate the policy registered under `policyName` and throw HTTP 403 when
-   * denied (with `result.details` surfaced under `HttpError.details` and
-   * `result.internalDetails` plus framework context under `HttpError.internalDetails`);
-   * return normally on allow.
+   * denied (with `result.details` surfaced under `HttpError.details`,
+   * `result.internalDetails` plus framework context under `HttpError.internalDetails`,
+   * and `result.headers` forwarded to `HttpError.withHeaders`); return
+   * normally on allow.
    */
   abstract assert(policyName: string, context: PolicyContext): Promise<void>;
 }
@@ -106,6 +107,8 @@ export abstract class BasePolicyService<
    * - `result.internalDetails` (operator/log-only) → `HttpError.internalDetails`,
    *   merged with framework-supplied context (`policyName`, `reason`,
    *   `kind: 'policy_violation'`), never on the wire.
+   * - `result.headers` → `HttpError.withHeaders`, attached to the HTTP
+   *   response (e.g. `WWW-Authenticate` for auth/MFA policies).
    *
    * @throws HTTP 403 when the policy denies the request.
    * @throws Error when no policy is registered under `policyName`.
@@ -122,6 +125,7 @@ export abstract class BasePolicyService<
       ...(result.internalDetails ?? {}),
     });
     if (result.details) error.withDetails(result.details);
+    if (result.headers) error.withHeaders(result.headers);
     throw error;
   }
 }

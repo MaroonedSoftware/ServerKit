@@ -90,6 +90,7 @@ if (!result.allowed) {
 // - `result.details` (client-facing) → `HttpError.details`, rendered to the response body.
 // - `result.internalDetails` (operator/log-only) → `HttpError.internalDetails`, merged with
 //   framework context (`policyName`, `reason`, `kind: 'policy_violation'`), never on the wire.
+// - `result.headers` → `HttpError.withHeaders`, attached to the HTTP response.
 await policyService.assert('email.allowed', { value: 'user@example.com' });
 ```
 
@@ -104,6 +105,18 @@ return this.denyStepUp('recent_auth_required', {
 });
 ```
 
+### Response headers on deny
+
+`deny(...)` and `denyStepUp(...)` return a `PolicyDenialBuilder` with a fluent `.withHeaders(headers)` setter. `BasePolicyService.assert` forwards them to `HttpError.withHeaders` so the response carries them. Use for `WWW-Authenticate` on auth/MFA policies, `Retry-After` on rate-limit policies, etc.:
+
+```ts
+return this.deny('mfa_required').withHeaders({ 'WWW-Authenticate': 'Bearer error="mfa_required"' });
+
+return this.denyStepUp('aal2_required', { within: Duration.fromObject({ minutes: 15 }) }).withHeaders({
+  'WWW-Authenticate': 'Bearer error="aal2_required"',
+});
+```
+
 ## API
 
 ### `Policy<Context, Envelope>`
@@ -113,8 +126,8 @@ Abstract base class. Subclass and implement `evaluate(context, envelope): Promis
 | Helper                                            | Returns                                                                     | Description                                                                                                                                                                              |
 | ------------------------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `allow()`                                         | `{ allowed: true }`                                                         | Allow the request                                                                                                                                                                        |
-| `deny(reason, details?, internalDetails?)`        | `{ allowed: false, reason, details?, internalDetails? }`                    | Deny with a machine-readable reason. `details` is rendered to the HTTP response by `assert`; `internalDetails` lands in the thrown error's `internalDetails` (logs only, never on the wire). |
-| `denyStepUp(reason, requirement)`                 | `{ allowed: false, reason, details: { kind: 'step_up_required', stepUp } }` | Deny and attach a `StepUpRequirement` clients can use to drive a re-auth challenge.                                                                                                      |
+| `deny(reason, details?, internalDetails?)`        | `PolicyDenialBuilder` (implements `PolicyResultDenied`)                     | Deny with a machine-readable reason. `details` is rendered to the HTTP response by `assert`; `internalDetails` lands in the thrown error's `internalDetails` (logs only, never on the wire). Chain `.withHeaders({...})` to attach HTTP headers (e.g. `WWW-Authenticate`). |
+| `denyStepUp(reason, requirement)`                 | `PolicyDenialBuilder`                                                       | Deny and attach a `StepUpRequirement` clients can use to drive a re-auth challenge. Chain `.withHeaders({...})` to attach response headers.                                                                                                              |
 
 ### `PolicyService`
 
@@ -123,7 +136,7 @@ Abstract DI handle. Implementations supply a per-evaluation envelope.
 | Method                                   | Returns                  | Description                                                                                              |
 | ---------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------- |
 | `check(policyName, context)`             | `Promise<PolicyResult>`  | Resolve the registered policy and return its result. Throws when `policyName` is not registered.         |
-| `assert(policyName, context)`            | `Promise<void>`          | Same as `check`, but throws HTTP 403 on deny. `result.details` is surfaced under `HttpError.details`; `result.internalDetails` is merged with framework context (`policyName`, `reason`, `kind: 'policy_violation'`) under `HttpError.internalDetails`. |
+| `assert(policyName, context)`            | `Promise<void>`          | Same as `check`, but throws HTTP 403 on deny. `result.details` is surfaced under `HttpError.details`; `result.internalDetails` is merged with framework context (`policyName`, `reason`, `kind: 'policy_violation'`) under `HttpError.internalDetails`; `result.headers` is forwarded to `HttpError.withHeaders`. |
 
 ### `BasePolicyService<TPolicies, TEnvelope>`
 
@@ -138,7 +151,7 @@ Default `PolicyService`. Subclass and implement `buildEnvelope(): Promise<TEnvel
 | Type                  | Shape                                                                                                  |
 | --------------------- | ------------------------------------------------------------------------------------------------------ |
 | `PolicyResultAllowed` | `{ allowed: true }`                                                                                    |
-| `PolicyResultDenied`  | `{ allowed: false; reason: string; details?: Record<string, unknown>; internalDetails?: Record<string, unknown> }` |
+| `PolicyResultDenied`  | `{ allowed: false; reason: string; details?: Record<string, unknown>; internalDetails?: Record<string, unknown>; headers?: Record<string, string> }` |
 | `PolicyResult`        | `PolicyResultAllowed \| PolicyResultDenied`                                                            |
 | `PolicyEnvelope`      | `{ now: DateTime }` (extend in subclasses)                                                             |
 | `StepUpRequirement`   | `{ within: Duration; acceptableMethods?; acceptableKinds?; excludeMethods? }`                          |

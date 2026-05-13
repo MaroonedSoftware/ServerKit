@@ -44,6 +44,7 @@
     "@maroonedsoftware/errors": "workspace:*",
     "@maroonedsoftware/logger": "workspace:*",
     "@maroonedsoftware/multipart": "workspace:*",
+    "@maroonedsoftware/policies": "workspace:*",
     "@maroonedsoftware/utilities": "workspace:*",
     "co-body": "^6.2.0",
     "inflation": "^2.1.0",

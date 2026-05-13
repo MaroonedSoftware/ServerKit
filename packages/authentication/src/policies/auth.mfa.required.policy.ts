@@ -76,6 +76,6 @@ export class DefaultMfaRequiredPolicy extends Policy<AuthMfaRequiredPolicyContex
       return this.allow();
     }
 
-    return this.deny('mfa_required', { eligibleFactors });
+    return this.deny('mfa_required', { eligibleFactors }).withHeaders({ 'WWW-Authenticate': 'Bearer error="mfa_required"' });
   }
 }

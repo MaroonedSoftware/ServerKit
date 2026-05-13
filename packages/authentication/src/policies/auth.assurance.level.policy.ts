@@ -61,7 +61,7 @@ export class DefaultAssuranceLevelPolicy extends Policy<AuthAssuranceLevelPolicy
       return this.denyStepUp('current session does not meet aal1', {
         within,
         acceptableKinds: ['knowledge', 'possession', 'biometric'] satisfies ReadonlyArray<AuthenticationFactorKind>,
-      });
+      }).withHeaders({ 'WWW-Authenticate': 'Bearer error="aal1_required"' });
     }
 
     const knowledgeCount = fresh.filter(factor => factor.kind === 'knowledge').length;
@@ -76,6 +76,8 @@ export class DefaultAssuranceLevelPolicy extends Policy<AuthAssuranceLevelPolicy
     const acceptableKinds: ReadonlyArray<AuthenticationFactorKind> =
       knowledgeCount >= 1 ? ['possession', 'biometric'] : ['knowledge', 'possession', 'biometric'];
 
-    return this.denyStepUp('current session does not meet aal2', { within, acceptableKinds });
+    return this.denyStepUp('current session does not meet aal2', { within, acceptableKinds }).withHeaders({
+      'WWW-Authenticate': 'Bearer error="aal2_required"',
+    });
   }
 }

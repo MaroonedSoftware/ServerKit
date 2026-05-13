@@ -23,7 +23,7 @@ Peer dependencies: `koa`, `@koa/router`, `@koa/cors`.
 - **bodyParserMiddleware** — Parses JSON, form, text, multipart, or raw body by allowed content types
 - **defaultParserMappings** — Pre-built MIME-type-to-parser map for use with `bodyParserMiddleware`
 - **requireSignature** — Router middleware that verifies a request HMAC signature against `ctx.rawBody`
-- **requireSecurity** — Router middleware that enforces a valid authentication session, with optional MFA enforcement
+- **requirePolicy** — Router middleware that enforces a valid authentication session and a named policy (defaults to `auth.session.mfa.satisfied`); pluggable via `PolicyService`
 
 ## Usage
 
@@ -124,19 +124,27 @@ router.get('/api/me', async ctx => {
 
 ### Authorization
 
-`requireSecurity` is router middleware that runs after `authenticationMiddleware`. It throws 401 when the request is unauthenticated and, by default, when multi-factor authentication has not been satisfied.
+`requirePolicy` is router middleware that runs after `authenticationMiddleware`. It throws **401** with `WWW-Authenticate: Bearer error="invalid_token"` when the request is unauthenticated, and **403** when the named policy denies. The policy's own deny shape carries the response details and any `WWW-Authenticate` value (e.g. `Bearer error="mfa_required"`).
 
-A session satisfies MFA when it carries at least two factors and at least one factor is not of `kind: 'knowledge'` (i.e. a `possession` or `biometric` factor was also satisfied). MFA failures emit `WWW-Authenticate: Bearer error="mfa_required"`; missing/invalid sessions emit `Bearer error="invalid_token"`.
+By default, `requirePolicy()` enforces the `'auth.session.mfa.satisfied'` policy — bundled with `@maroonedsoftware/authentication` as `DefaultMfaSatisfiedPolicy`. It allows when the session carries at least two factors and at least one is not of `kind: 'knowledge'`. Override by registering your own class against the same name in `PolicyRegistryMap` (e.g. to grant MFA credit to `oidc` sessions when your IdP enforces 2FA upstream).
 
 ```typescript
-import { requireSecurity } from '@maroonedsoftware/koa';
+import { requirePolicy } from '@maroonedsoftware/koa';
 
-// Require any authenticated user with MFA (default)
-router.get('/api/profile', requireSecurity(), handler);
+// Default MFA gate
+router.get('/api/profile', requirePolicy(), handler);
 
-// Authentication only — useful for step-up routes such as MFA enrollment
-router.post('/api/mfa/enroll', requireSecurity({ requireMfa: false }), handler);
+// AAL2 step-up gate (uses 'auth.session.assurance.level')
+router.post('/api/admin/dangerous', requirePolicy({ policy: 'auth.session.assurance.level' }), handler);
+
+// Recent-factor step-up gate (uses 'auth.session.recent.factor')
+router.post('/api/billing/update', requirePolicy({ policy: 'auth.session.recent.factor' }), handler);
+
+// Authenticated-only — useful for step-up routes such as MFA enrollment
+router.post('/api/mfa/enroll', requirePolicy({ policy: false }), handler);
 ```
+
+The middleware resolves `PolicyService` from `ctx.container` per request and calls `policyService.assert(name, { session })`. Headers, details, and internal log context come from the policy's deny payload — see `@maroonedsoftware/policies` and `@maroonedsoftware/authentication` for the policy authoring API.
 
 ### CORS
 
@@ -279,7 +287,7 @@ The default mappings are:
 | `authenticationMiddleware()`           | Resolves `Authorization` header via `AuthenticationSchemeHandler`; populates `ctx.authenticationSession` |
 | `bodyParserMiddleware(contentTypes)`    | Parses body by allowed MIME types; throws 400/411/415/422 on invalid input                         |
 | `requireSignature(optionsKey)`          | Verifies HMAC of `ctx.rawBody` against a request header; throws 401 on mismatch                   |
-| `requireSecurity(options?)`             | Throws 401 when the session is invalid; with default `{ requireMfa: true }` also throws 401 (`mfa_required`) unless MFA is satisfied |
+| `requirePolicy(options?)`               | Throws 401 when the session is invalid; otherwise asserts `options.policy` (default `'auth.session.mfa.satisfied'`) via `PolicyService`, which throws 403 with policy-supplied details/headers on deny. Pass `{ policy: false }` to skip the policy check. |
 
 ### Parser options
 
