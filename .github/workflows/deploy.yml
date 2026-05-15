@@ -27,6 +27,11 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v5
 
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: latest
+
       - name: Create and publish versions
         id: changesets
         uses: changesets/action@v1
