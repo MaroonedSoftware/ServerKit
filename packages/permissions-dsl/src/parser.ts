@@ -43,7 +43,7 @@ semantics.addOperation<unknown>('ast', {
             subjects: subjects.asIteration().children.map(c => callAst<SubjectTypeNode>(c)),
         } satisfies RelationNode;
     },
-    SubjectType_userset(ns, _hash, rel) {
+    SubjectType_userset(ns, _dot, rel) {
         return {
             kind: 'subject',
             loc: span(this),
@@ -52,7 +52,7 @@ semantics.addOperation<unknown>('ast', {
             wildcard: false,
         } satisfies SubjectTypeNode;
     },
-    SubjectType_wildcard(ns, _colon, _star) {
+    SubjectType_wildcard(ns, _dot, _star) {
         return {
             kind: 'subject',
             loc: span(this),

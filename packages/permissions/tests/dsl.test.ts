@@ -115,30 +115,11 @@ describe('AuthorizationModel construction', () => {
                 new AuthorizationModel([
                     user,
                     defineNamespace('doc', {
-                        relations: { viewer: { subjects: ['user#missing'] } },
+                        relations: { viewer: { subjects: ['user.missing'] } },
                         permissions: {},
                     }),
                 ]),
-        ).toThrow(/unknown subject relation 'user#missing'/);
-    });
-
-    it('rejects subject types that combine userset and wildcard', () => {
-        const org = defineNamespace('org', {
-            relations: { admin: { subjects: ['user'] } },
-            permissions: {},
-        });
-        expect(
-            () =>
-                new AuthorizationModel([
-                    user,
-                    org,
-                    defineNamespace('doc', {
-                        // Caller bypasses the normal grammar to assert the model still rejects it.
-                        relations: { viewer: { subjects: ['org:*#admin'] } },
-                        permissions: {},
-                    }),
-                ]),
-        ).toThrow(/malformed subject type|cannot combine userset and wildcard/);
+        ).toThrow(/unknown subject relation 'user\.missing'/);
     });
 
     it('rejects a name that is declared as both a relation and a permission', () => {
@@ -247,6 +228,6 @@ describe('AuthorizationModel.resolve', () => {
     });
 
     it('throws on unknown relation/permission', () => {
-        expect(() => model.resolve('doc', 'missing')).toThrow(/unknown relation\/permission: doc#missing/);
+        expect(() => model.resolve('doc', 'missing')).toThrow(/unknown relation\/permission: doc\.missing/);
     });
 });

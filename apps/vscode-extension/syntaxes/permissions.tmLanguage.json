@@ -1,0 +1,118 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "name": "ServerKit Permissions",
+    "scopeName": "source.serverkit.permissions",
+    "patterns": [
+        { "include": "#comment" },
+        { "include": "#namespace" }
+    ],
+    "repository": {
+        "comment": {
+            "match": "//.*$",
+            "name": "comment.line.double-slash.permissions"
+        },
+        "namespace": {
+            "begin": "\\b(namespace)\\b\\s+([a-z][a-z0-9_]*)\\s*(\\{)",
+            "beginCaptures": {
+                "1": { "name": "keyword.control.namespace.permissions" },
+                "2": { "name": "entity.name.type.namespace.permissions" },
+                "3": { "name": "punctuation.section.block.begin.permissions" }
+            },
+            "end": "(\\})",
+            "endCaptures": {
+                "1": { "name": "punctuation.section.block.end.permissions" }
+            },
+            "patterns": [
+                { "include": "#comment" },
+                { "include": "#relation" },
+                { "include": "#permission" }
+            ]
+        },
+        "relation": {
+            "begin": "\\b(relation)\\b\\s+([a-z][a-z0-9_]*)\\s*(:)",
+            "beginCaptures": {
+                "1": { "name": "keyword.control.relation.permissions" },
+                "2": { "name": "variable.other.relation.permissions" },
+                "3": { "name": "punctuation.separator.colon.permissions" }
+            },
+            "end": "(?=$|//)",
+            "patterns": [
+                { "include": "#comment" },
+                { "include": "#subject" },
+                {
+                    "match": ",",
+                    "name": "punctuation.separator.comma.permissions"
+                }
+            ]
+        },
+        "subject": {
+            "patterns": [
+                {
+                    "match": "([a-z][a-z0-9_]*)\\s*(\\.)\\s*(\\*)",
+                    "captures": {
+                        "1": { "name": "entity.name.type.permissions" },
+                        "2": { "name": "punctuation.separator.dot.permissions" },
+                        "3": { "name": "constant.language.wildcard.permissions" }
+                    }
+                },
+                {
+                    "match": "([a-z][a-z0-9_]*)\\s*(\\.)\\s*([a-z][a-z0-9_]*)",
+                    "captures": {
+                        "1": { "name": "entity.name.type.permissions" },
+                        "2": { "name": "punctuation.separator.dot.permissions" },
+                        "3": { "name": "entity.name.type.userset.permissions" }
+                    }
+                },
+                {
+                    "match": "[a-z][a-z0-9_]*",
+                    "name": "entity.name.type.permissions"
+                }
+            ]
+        },
+        "permission": {
+            "begin": "\\b(permission)\\b\\s+([a-z][a-z0-9_]*)\\s*(=)",
+            "beginCaptures": {
+                "1": { "name": "keyword.control.permission.permissions" },
+                "2": { "name": "entity.name.function.permission.permissions" },
+                "3": { "name": "keyword.operator.assignment.permissions" }
+            },
+            "end": "(?=$|//)",
+            "patterns": [
+                { "include": "#comment" },
+                { "include": "#expression" }
+            ]
+        },
+        "expression": {
+            "patterns": [
+                {
+                    "match": "->",
+                    "name": "keyword.operator.ttu.permissions"
+                },
+                {
+                    "match": "\\|",
+                    "name": "keyword.operator.union.permissions"
+                },
+                {
+                    "match": "&",
+                    "name": "keyword.operator.intersection.permissions"
+                },
+                {
+                    "match": "-(?!>)",
+                    "name": "keyword.operator.exclusion.permissions"
+                },
+                {
+                    "match": "\\(",
+                    "name": "punctuation.section.group.begin.permissions"
+                },
+                {
+                    "match": "\\)",
+                    "name": "punctuation.section.group.end.permissions"
+                },
+                {
+                    "match": "[a-z][a-z0-9_]*",
+                    "name": "variable.other.permissions"
+                }
+            ]
+        }
+    }
+}

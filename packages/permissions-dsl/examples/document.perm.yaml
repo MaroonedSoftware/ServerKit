@@ -1,0 +1,42 @@
+# Validation fixture for examples/document.perm. Run with:
+#   pdsl validate packages/permissions-dsl/examples/document.perm.yaml
+
+schemaFile: ./document.perm
+
+relationships: |-
+  # Folder hierarchy: engineering > docs
+  folder:engineering.viewer@user:alice
+  folder:docs.parent@folder:engineering
+
+  # Documents
+  doc:readme.parent@folder:docs
+  doc:readme.owner@user:alice
+  doc:readme.viewer@user:carol
+
+  doc:secret.owner@user:alice
+  doc:secret.banned@user:alice
+
+assertions:
+  assertTrue:
+    # Alice owns the readme, so she can edit and view it.
+    - doc:readme.edit@user:alice
+    - doc:readme.view@user:alice
+    # Carol is a direct viewer.
+    - doc:readme.view@user:carol
+    # Folder hierarchy: anyone who can view the engineering folder also
+    # views the readme (engineering > docs > readme).
+    - doc:readme.view@user:alice
+
+  assertFalse:
+    # Bob has no grants anywhere.
+    - doc:readme.view@user:bob
+    - doc:readme.edit@user:bob
+    # Carol is only a viewer, not an editor.
+    - doc:readme.edit@user:carol
+    # Alice is the owner of the secret doc but is also banned from deleting it.
+    - doc:secret.delete@user:alice
+
+validation:
+  doc:readme.view:
+    - "[user:alice] is <doc:readme.owner>"
+    - "[user:carol] is <doc:readme.viewer>"

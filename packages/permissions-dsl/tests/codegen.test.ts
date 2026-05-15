@@ -29,11 +29,11 @@ describe('codegen', () => {
         const file = renderNamespace(
             ns(`namespace doc {
   relation a: user
-  relation b: user, user:*, org#admin
+  relation b: user, user.*, org.admin
 }`),
         );
         expect(file.source).toContain(`a: { subjects: ['user'] }`);
-        expect(file.source).toContain(`b: { subjects: ['user', 'user:*', 'org#admin'] }`);
+        expect(file.source).toContain(`b: { subjects: ['user', 'user.*', 'org.admin'] }`);
     });
 
     it('renders all expression operators', () => {

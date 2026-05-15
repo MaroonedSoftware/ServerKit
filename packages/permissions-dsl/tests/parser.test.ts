@@ -16,9 +16,9 @@ describe('parser', () => {
     it('parses relations with bare, wildcard, and userset subjects', () => {
         const file = p(`namespace doc {
   relation a: user
-  relation b: user:*
-  relation c: org#admin
-  relation d: user, user:*, org#admin
+  relation b: user.*
+  relation c: org.admin
+  relation d: user, user.*, org.admin
 }`);
         const ns = file.namespaces[0]!;
         const [a, b, c, d] = ns.members;

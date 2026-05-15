@@ -15,16 +15,70 @@ pnpm add @maroonedsoftware/permissions
 - **Relation tuples** — Zod-validated `RelationTuple` shape with concrete, wildcard, and userset subjects
 - **Pluggable storage** — implement the abstract `PermissionsTupleRepository` against your database of choice (typically Kysely/Postgres)
 - **Check evaluator** — recursive evaluator with per-request memo, cycle guard, and a configurable max-depth bound
+- **Trace explainer** — `explain` returns a hierarchical `CheckTrace` showing exactly which evaluator branches fired; drives `pdsl explain` and the VSCode playground
+- **In-memory repository** — `InMemoryTupleRepository` for fixtures, tests, and ad-hoc tooling without a database
 - **Pluggable metrics** — `CheckMetricsSink` lets you forward per-Check observations to whatever telemetry backend is in use; ships with a `LoggingMetricsSink` for log-based metrics
 
 ## Concepts
 
-The library follows the Zanzibar paper's vocabulary:
+The library follows the Zanzibar paper's vocabulary, with one notational
+swap from the original paper — see [Tuple syntax](#tuple-syntax) below:
 
 - A **namespace** is the type of an object (`doc`, `folder`, `org`, …).
-- A **relation** is an edge stored as a tuple — `<object>#<relation>@<subject>`.
+- A **relation** is an edge stored as a tuple — `<object>.<relation>@<subject>`.
 - A **permission** is a userset rewrite expression evaluated over relations.
-- A **subject** is either a concrete object (`user:alice`), a wildcard (`user:*`), or a userset (`org:42#admin`).
+- A **subject** is either a concrete object (`user:alice`), a wildcard (`user.*`), or a userset (`org:42.admin`).
+
+## Tuple syntax
+
+Relationships are stored and serialised as strings with this grammar:
+
+```
+tuple   = object "." relation "@" subject
+object  = type ":" id
+subject = type ":" id            // concrete subject
+        | type ".*"              // wildcard subject (everyone of that type)
+        | object "." relation    // userset subject (a group)
+```
+
+Examples:
+
+| Form     | Example                                | Reading                                                       |
+| -------- | -------------------------------------- | ------------------------------------------------------------- |
+| concrete | `doc:readme.viewer@user:alice`         | alice can `viewer` the `readme` doc                           |
+| wildcard | `doc:readme.viewer@user.*`             | every user can `viewer` the `readme` doc (public grant)       |
+| userset  | `doc:readme.viewer@org:42.admin`       | every admin of org 42 can `viewer` the `readme` doc           |
+
+The two separators do conceptually different jobs:
+
+- `:` is for **runtime identity** — binds a concrete id to a type
+  (`user:alice`, `doc:readme`). Anything between `:` and the next `.`/`@`
+  is the id.
+- `.` is for **schema-level scoping** — names a relation or wildcard *on*
+  a type (`user.*`, `org:42.admin`, `doc:readme.viewer`).
+
+Because the two separators are distinct, object ids may contain dots
+safely (the `:` unambiguously marks where the id begins). Coming from
+the Zanzibar paper or SpiceDB? Translate `#` → `.` and `:*` → `.*`; the
+structure is otherwise identical.
+
+`parseTuple` and `stringifyTuple` are inverses — every tuple round-trips
+through its canonical string form unchanged. Same goes for `parseSubject`
+/ `formatSubject`.
+
+### `user:alice` vs `user.*`
+
+The two forms are not interchangeable, and a `relation` may allow either
+or both via its subject-type list:
+
+- `user:alice` is a **per-user grant**. Storing
+  `doc:readme.viewer@user:alice` grants `viewer` to that specific user.
+- `user.*` is a **public grant**. Storing `doc:readme.viewer@user.*`
+  grants `viewer` to **every** user at once.
+
+Omitting `user.*` from a relation's subject types makes it impossible to
+write a public tuple for that relation — useful when you want to be sure
+nothing on a resource can be made world-readable.
 
 ## Usage
 
@@ -51,7 +105,7 @@ const folder = defineNamespace('folder', {
 const doc = defineNamespace('doc', {
   relations: {
     parent: { subjects: ['folder'] },
-    viewer: { subjects: ['user', 'user:*', 'org#admin'] },
+    viewer: { subjects: ['user', 'user.*', 'org.admin'] },
     owner: { subjects: ['user'] },
     banned: { subjects: ['user'] },
   },
@@ -159,8 +213,8 @@ Allowed subjects on a relation are declared as strings:
 | String form           | Meaning                                                |
 | --------------------- | ------------------------------------------------------ |
 | `user`                | Any concrete subject from the `user` namespace         |
-| `user:*`              | Wildcard — every subject of that namespace allowed     |
-| `org#admin`           | Userset — every subject satisfying `admin` on any `org`|
+| `user.*`              | Wildcard — every subject of that namespace allowed     |
+| `org.admin`           | Userset — every subject satisfying `admin` on any `org`|
 
 ### `AuthorizationModel`
 
@@ -183,6 +237,51 @@ Allowed subjects on a relation are declared as strings:
 ### `check(model, repo, object, relationOrPermission, subject, sink?)`
 
 Returns `Promise<boolean>`. Throws if the namespace or relation/permission is unknown.
+
+### `explain(model, repo, object, relationOrPermission, subject)`
+
+Sibling of `check` that returns an `ExplainResult` containing both the
+boolean outcome and a hierarchical `CheckTrace`. Unlike `check`, the
+explainer does not short-circuit child evaluation — every branch of a
+union/intersection runs so the resulting trace is fully debuggable.
+Use for `--explain` CLI output, the VSCode playground, or any tooling
+that needs to surface *why* a check decision came out the way it did.
+Not for the hot request path.
+
+```ts
+import { explain, formatTrace } from '@maroonedsoftware/permissions';
+
+const result = await explain(model, repo, object, 'view', subject);
+console.log(result.allowed ? 'ALLOWED' : 'DENIED');
+console.log(formatTrace(result.trace));
+```
+
+`CheckTrace` is a discriminated union — one variant per evaluator step
+(`direct`, `computed`, `tupleToUserset`, `union`, `intersection`,
+`exclusion`) plus three meta nodes (`cycle`, `maxDepth`, `cached`).
+Every node carries an `allowed` flag.
+
+### `InMemoryTupleRepository`
+
+Public `PermissionsTupleRepository` implementation backed by a plain
+array. Deduplicates writes by canonical tuple string. Use for fixtures,
+unit tests, and tooling (the `pdsl validate` runner and VSCode
+playground both build on it).
+
+```ts
+import { InMemoryTupleRepository, parseTuple } from '@maroonedsoftware/permissions';
+
+const repo = new InMemoryTupleRepository([
+  parseTuple('doc:readme.owner@user:alice'),
+  parseTuple('folder:eng.viewer@user:bob'),
+]);
+```
+
+### Tuple string helpers
+
+`stringifyTuple` / `parseTuple` and `formatSubject` / `parseSubject` are
+inverses — every tuple or subject round-trips through its canonical
+string form. Useful for logs, fixtures, and serialising over the wire.
 
 ### `CheckMetrics`
 

@@ -135,8 +135,9 @@ Zanzibar-style relationship-based access control.
 
 - Authorization model DSL with `direct`, `computed`, `tupleToUserset`, `union`, `intersection`, `exclusion`
 - Validated `AuthorizationModel` — bad models fail at startup, not at Check time
-- Pluggable `PermissionsTupleRepository` for any storage backend
+- Pluggable `PermissionsTupleRepository` for any storage backend, plus a built-in `InMemoryTupleRepository` for tests and tooling
 - Recursive Check evaluator with per-request memo, cycle guard, and pluggable metrics sink
+- `explain()` returns a hierarchical `CheckTrace` for debugging why a check passed or failed
 
 [View documentation →](./packages/permissions/README.md)
 
@@ -144,12 +145,13 @@ Zanzibar-style relationship-based access control.
 
 ### Permissions DSL
 
-A surface-syntax DSL and compiler (`pdsl` CLI) for authoring permissions declaratively.
+A surface-syntax DSL and compiler (`pdsl` CLI) for authoring permissions declaratively, plus a test/checker for them.
 
 - Human-readable `.perm` files with `|` union, `&` intersection, `-` exclusion, `->` tupleToUserset operators
 - Ohm-based grammar with caret-annotated diagnostics
 - Generates TypeScript that calls the `@maroonedsoftware/permissions` builders
-- `pdsl` CLI walks up from cwd to find `permissions.config.json` and compiles every matched namespace
+- SpiceDB-style `.perm.yaml` fixtures with `assertTrue` / `assertFalse` / `validation` blocks
+- `pdsl` CLI subcommands: `compile`, `validate <fixture>`, `check`, and `explain` (with trace output)
 
 [View documentation →](./packages/permissions-dsl/README.md)
 

@@ -1,0 +1,142 @@
+{
+  "name": "serverkit-vscode-extension",
+  "displayName": "ServerKit",
+  "description": "Language support for ServerKit .perm permission DSL files.",
+  "version": "0.0.1",
+  "author": {
+    "name": "Marooned Software",
+    "url": "https://github.com/MaroonedSoftware/serverkit"
+  },
+  "bugs": {
+    "url": "https://github.com/MaroonedSoftware/serverkit/issues"
+  },
+  "homepage": "https://github.com/MaroonedSoftware/serverkit/apps/vscode-extension#readme",
+  "keywords": [
+    "serverkit",
+    "permissions",
+    "vscode",
+    "extension"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MaroonedSoftware/serverkit.git"
+  },
+  "private": true,
+  "type": "module",
+  "publisher": "MaroonedSoftware",
+  "engines": {
+    "vscode": "^1.105.1"
+  },
+  "icon": "images/icon.png",
+  "categories": [
+    "Programming Languages",
+    "Linters"
+  ],
+  "activationEvents": [
+    "onLanguage:serverkit-permissions",
+    "workspaceContains:**/*.perm"
+  ],
+  "main": "./dist/client/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "serverkit-permissions",
+        "aliases": [
+          "ServerKit Permissions",
+          "permissions"
+        ],
+        "extensions": [
+          ".perm"
+        ],
+        "configuration": "./language-configuration/permissions-language-config.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "serverkit-permissions",
+        "scopeName": "source.serverkit.permissions",
+        "path": "./syntaxes/permissions.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "serverkit.permissions.openPlayground",
+        "title": "ServerKit Permissions: Open Playground",
+        "category": "ServerKit",
+        "icon": "$(play)"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "serverkit.permissions.openPlayground",
+          "when": "resourceLangId == serverkit-permissions",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configurationDefaults": {
+      "editor.tokenColorCustomizations": {
+        "textMateRules": [
+          {
+            "scope": [
+              "keyword.operator.union.permissions",
+              "keyword.operator.intersection.permissions",
+              "keyword.operator.exclusion.permissions",
+              "keyword.operator.ttu.permissions"
+            ],
+            "settings": {
+              "foreground": "#4EC9B0"
+            }
+          },
+          {
+            "scope": [
+              "constant.language.wildcard.permissions"
+            ],
+            "settings": {
+              "foreground": "#C586C0",
+              "fontStyle": "bold"
+            }
+          },
+          {
+            "scope": [
+              "entity.name.type.userset.permissions"
+            ],
+            "settings": {
+              "fontStyle": "italic"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "vsce": {
+    "packagePath": "serverkit.vsix"
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "build:ci": "eslint --max-warnings=0 && pnpm run build",
+    "build:icon": "node scripts/build.icon.mjs",
+    "dev": "node esbuild.mjs --watch",
+    "lint": "eslint --fix",
+    "format": "prettier --write .",
+    "package": "pnpm run build:icon && pnpm run build && pnpm exec vsce package --no-dependencies",
+    "vscode:install": "pnpm run package && cursor --install-extension serverkit.vsix",
+    "vscode:uninstall": "cursor --uninstall-extension serverkit.vsix"
+  },
+  "dependencies": {
+    "@maroonedsoftware/permissions": "workspace:*",
+    "@maroonedsoftware/permissions-dsl": "workspace:*",
+    "vscode-languageclient": "^9.0.1",
+    "vscode-languageserver": "^9.0.1",
+    "vscode-languageserver-textdocument": "^1.0.12"
+  },
+  "devDependencies": {
+    "@repo/config-eslint": "workspace:*",
+    "@repo/config-typescript": "workspace:*",
+    "@types/vscode": "^1.105.1",
+    "@vscode/vsce": "^3.9.1",
+    "esbuild": "^0.28.0",
+    "sharp": "^0.34.1"
+  }
+}

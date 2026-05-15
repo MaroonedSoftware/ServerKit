@@ -18,6 +18,13 @@
     },
     "test:ci": {
       "dependsOn": ["^test:ci"]
+    },
+    "vscode:install": {
+      "dependsOn": ["build"],
+      "cache": false
+    },
+    "vscode:uninstall": {
+      "dependsOn": ["^vscode:uninstall"]
     }
   }
 }

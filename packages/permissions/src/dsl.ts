@@ -71,8 +71,8 @@ export const exclusion = (base: UsersetExpr, subtract: UsersetExpr): UsersetExpr
  * Allowed subject types for a relation. Encoded as strings:
  *
  * - `<namespace>` — concrete subjects of that namespace, e.g. `user`.
- * - `<namespace>:*` — wildcard subject of that namespace allowed.
- * - `<namespace>#<relation>` — userset subject (e.g. `org#admin`).
+ * - `<namespace>.*` — wildcard subject of that namespace allowed.
+ * - `<namespace>.<relation>` — userset subject (e.g. `org.admin`).
  */
 export type SubjectType = string;
 
@@ -116,12 +116,12 @@ const NAMESPACE_PATTERN = /^[a-z][a-z0-9_]*$/;
 const RELATION_PATTERN = /^[a-z][a-z0-9_]*$/;
 
 const parseSubjectType = (s: SubjectType): { namespace: string; relation?: string; wildcard: boolean } => {
-    if (s.includes('#')) {
-        const [namespace, relation] = s.split('#');
-        return { namespace: namespace ?? '', relation: relation ?? '', wildcard: false };
-    }
-    if (s.endsWith(':*')) {
+    if (s.endsWith('.*')) {
         return { namespace: s.slice(0, -2), wildcard: true };
+    }
+    const dot = s.indexOf('.');
+    if (dot !== -1) {
+        return { namespace: s.slice(0, dot), relation: s.slice(dot + 1), wildcard: false };
     }
     return { namespace: s, wildcard: false };
 };
@@ -165,7 +165,7 @@ export class AuthorizationModel {
     }
 
     /**
-     * Resolve `namespace#name` to the userset expression to evaluate.
+     * Resolve `namespace.name` to the userset expression to evaluate.
      *
      * Plain relations have implicit `direct` semantics — they carry stored
      * tuples but no rewrite. Permissions delegate to their declared expression.
@@ -179,7 +179,7 @@ export class AuthorizationModel {
             return ns.permissions[name as keyof typeof ns.permissions]!;
         }
         if (name in ns.relations) return direct();
-        throw new Error(`unknown relation/permission: ${namespace}#${name}`);
+        throw new Error(`unknown relation/permission: ${namespace}.${name}`);
     }
 
     private validate(): void {
@@ -204,21 +204,16 @@ export class AuthorizationModel {
     }
 
     private validateSubjectType(ns: string, rel: string, s: SubjectType): void {
-        const { namespace, relation, wildcard } = parseSubjectType(s);
+        const { namespace, relation } = parseSubjectType(s);
         if (!NAMESPACE_PATTERN.test(namespace)) {
-            throw new Error(`${ns}#${rel}: malformed subject type '${s}'`);
+            throw new Error(`${ns}.${rel}: malformed subject type '${s}'`);
         }
         const target = this.byName.get(namespace);
         if (!target) {
-            throw new Error(`${ns}#${rel}: unknown subject namespace '${namespace}'`);
+            throw new Error(`${ns}.${rel}: unknown subject namespace '${namespace}'`);
         }
-        if (relation !== undefined) {
-            if (!(relation in target.relations)) {
-                throw new Error(`${ns}#${rel}: unknown subject relation '${namespace}#${relation}'`);
-            }
-            if (wildcard) {
-                throw new Error(`${ns}#${rel}: subject type '${s}' cannot combine userset and wildcard`);
-            }
+        if (relation !== undefined && !(relation in target.relations)) {
+            throw new Error(`${ns}.${rel}: unknown subject relation '${namespace}.${relation}'`);
         }
     }
 
@@ -240,19 +235,19 @@ export class AuthorizationModel {
                 return;
             case 'computed': {
                 if (!(expr.relation in ns.relations) && !(expr.relation in ns.permissions)) {
-                    throw new Error(`${ns.name}#${where}: computed references unknown '${expr.relation}'`);
+                    throw new Error(`${ns.name}.${where}: computed references unknown '${expr.relation}'`);
                 }
                 return;
             }
             case 'tupleToUserset': {
                 const tupleRel = ns.relations[expr.tupleRelation];
                 if (!tupleRel) {
-                    throw new Error(`${ns.name}#${where}: tupleToUserset walks unknown tuple relation '${expr.tupleRelation}'`);
+                    throw new Error(`${ns.name}.${where}: tupleToUserset walks unknown tuple relation '${expr.tupleRelation}'`);
                 }
                 // `expr.computedRelation` must exist on at least one of the namespaces
                 // the tuple relation accepts as a subject — otherwise the walk can never
                 // resolve. We don't require it on *all* of them: a relation like
-                // `owner: [user, org#admin]` legitimately mixes subject namespaces, and
+                // `owner: [user, org.admin]` legitimately mixes subject namespaces, and
                 // the evaluator skips ones that can't satisfy the computedRelation.
                 const candidateNamespaces = new Set<string>();
                 for (const s of tupleRel.subjects) {
@@ -270,7 +265,7 @@ export class AuthorizationModel {
                 }
                 if (!resolved) {
                     throw new Error(
-                        `${ns.name}#${where}: tupleToUserset references '${expr.computedRelation}' which is not defined on any subject namespace of '${expr.tupleRelation}'`,
+                        `${ns.name}.${where}: tupleToUserset references '${expr.computedRelation}' which is not defined on any subject namespace of '${expr.tupleRelation}'`,
                     );
                 }
                 return;
@@ -278,7 +273,7 @@ export class AuthorizationModel {
             case 'union':
             case 'intersection':
                 if (expr.children.length === 0) {
-                    throw new Error(`${ns.name}#${where}: ${expr.kind} requires at least one child`);
+                    throw new Error(`${ns.name}.${where}: ${expr.kind} requires at least one child`);
                 }
                 expr.children.forEach(c => this.validateExpr(ns, where, c));
                 return;

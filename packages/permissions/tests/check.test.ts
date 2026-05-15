@@ -54,7 +54,7 @@ describe('check — direct tuples', () => {
     const model = new AuthorizationModel([
         userNs,
         defineNamespace('doc', {
-            relations: { viewer: { subjects: ['user', 'user:*'] } },
+            relations: { viewer: { subjects: ['user', 'user.*'] } },
             permissions: {},
         }),
     ]);
@@ -109,7 +109,7 @@ describe('check — userset rewrites', () => {
     });
     const docNs = defineNamespace('doc', {
         relations: {
-            viewer: { subjects: ['user', 'org#admin'] },
+            viewer: { subjects: ['user', 'org.admin'] },
             owner: { subjects: ['user'] },
         },
         permissions: {
@@ -119,7 +119,7 @@ describe('check — userset rewrites', () => {
     });
     const model = new AuthorizationModel([userNs, orgNs, docNs]);
 
-    it('resolves through a userset subject (org#admin)', async () => {
+    it('resolves through a userset subject (org.admin)', async () => {
         const repo = new InMemoryRepo([
             {
                 object: { namespace: 'doc', id: 'd1' },
@@ -286,11 +286,11 @@ describe('check — guards', () => {
         const model = new AuthorizationModel([
             userNs,
             defineNamespace('doc', {
-                relations: { viewer: { subjects: ['user', 'doc#viewer'] } },
+                relations: { viewer: { subjects: ['user', 'doc.viewer'] } },
                 permissions: {},
             }),
         ]);
-        // d1 viewer -> d1#viewer (self-userset). The cycle guard should kick in.
+        // d1 viewer -> d1.viewer (self-userset). The cycle guard should kick in.
         const repo = new InMemoryRepo([
             {
                 object: { namespace: 'doc', id: 'd1' },

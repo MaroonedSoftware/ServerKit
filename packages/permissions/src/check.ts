@@ -1,6 +1,6 @@
 import type { AuthorizationModel, UsersetExpr } from './dsl.js';
 import type { PermissionsTupleRepository } from './tuples.repository.js';
-import type { ObjectRef, SubjectRef } from './tuple.js';
+import { type ObjectRef, type SubjectRef, formatSubject } from './tuple.js';
 import { type CheckMetrics, type CheckMetricsSink, newCheckMetrics, noopMetricsSink } from './check.metrics.js';
 
 const MAX_DEPTH = 32;
@@ -13,19 +13,8 @@ interface CheckCtx {
     metrics: CheckMetrics;
 }
 
-const formatSubject = (s: SubjectRef): string => {
-    switch (s.kind) {
-        case 'concrete':
-            return `${s.namespace}:${s.id}`;
-        case 'wildcard':
-            return `${s.namespace}:*`;
-        case 'userset':
-            return `${s.namespace}:${s.id}#${s.relation}`;
-    }
-};
-
 const memoKey = (object: ObjectRef, relation: string, subject: SubjectRef): string =>
-    `${object.namespace}:${object.id}#${relation}@${formatSubject(subject)}`;
+    `${object.namespace}:${object.id}.${relation}@${formatSubject(subject)}`;
 
 /**
  * Evaluate whether `subject` satisfies `relationOrPermission` on `object`

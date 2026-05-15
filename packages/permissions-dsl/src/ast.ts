@@ -44,8 +44,8 @@ export interface RelationNode extends Located {
 
 /**
  * One entry in a relation's subject list. Encodes the three surface forms:
- * bare (`user`), userset (`document#owner` — `relation` set), and wildcard
- * (`user:*` — `wildcard` true).
+ * bare (`user`), userset (`document.owner` — `relation` set), and wildcard
+ * (`user.*` — `wildcard` true).
  */
 export interface SubjectTypeNode extends Located {
     kind: 'subject';

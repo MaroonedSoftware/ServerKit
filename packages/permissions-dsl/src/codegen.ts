@@ -36,8 +36,8 @@ const usedBuilders = (ns: NamespaceNode): Set<string> => {
 };
 
 const subjectLiteral = (s: SubjectTypeNode): string => {
-    if (s.relation !== undefined) return `'${s.namespace}#${s.relation}'`;
-    if (s.wildcard) return `'${s.namespace}:*'`;
+    if (s.relation !== undefined) return `'${s.namespace}.${s.relation}'`;
+    if (s.wildcard) return `'${s.namespace}.*'`;
     return `'${s.namespace}'`;
 };
 

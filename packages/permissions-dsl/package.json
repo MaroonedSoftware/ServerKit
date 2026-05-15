@@ -31,11 +31,12 @@
     "pdsl": "./dist/cli.js"
   },
   "files": [
-    "dist/**"
+    "dist/**",
+    "examples/**"
   ],
   "scripts": {
     "build": "tsup src/index.ts src/cli.ts --format esm --sourcemap --dts && tsc --emitDeclarationOnly --declaration && cp src/permissions.ohm dist/permissions.ohm",
-    "build:ci": "eslint --max-warnings=0 && pnpm run build",
+    "build:ci": "eslint --max-warnings=0 && pnpm run build && node dist/cli.js validate 'examples/*.perm.yaml'",
     "lint": "eslint --fix",
     "format": "prettier --write .",
     "test": "vitest run",
@@ -44,7 +45,9 @@
   "dependencies": {
     "@maroonedsoftware/permissions": "workspace:*",
     "ohm-js": "^17.5.0",
-    "prettier": "^3.8.3"
+    "prettier": "^3.8.3",
+    "yaml": "^2.8.4",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@repo/config-eslint": "workspace:*",

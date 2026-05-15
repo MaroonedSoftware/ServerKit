@@ -1,0 +1,22 @@
+// Example permissions schema for a documents-and-folders system.
+// Loaded by document.perm.yaml in this directory.
+
+namespace user {}
+
+namespace folder {
+  relation viewer: user, user.*, folder.viewer
+  relation parent: folder
+  permission view = viewer | parent->view
+}
+
+namespace doc {
+  relation parent: folder
+  relation owner:  user
+  relation editor: user, doc.owner
+  relation viewer: user, user.*, doc.editor
+  relation banned: user
+
+  permission edit   = owner | editor
+  permission view   = edit | viewer | parent->view
+  permission delete = edit - banned
+}

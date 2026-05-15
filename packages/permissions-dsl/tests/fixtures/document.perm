@@ -1,8 +1,8 @@
 namespace document {
   relation parent: folder
   relation owner:  user
-  relation editor: user, document#owner
-  relation viewer: user, user:*, document#editor
+  relation editor: user, document.owner
+  relation viewer: user, user.*, document.editor
   relation banned: user
 
   // edit = owner OR editor

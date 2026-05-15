@@ -12,8 +12,8 @@ Permissions {
   Member           = Relation | Permission
 
   Relation         = "relation" identifier ":" NonemptyListOf<SubjectType, ",">
-  SubjectType      = identifier "#" identifier   -- userset
-                   | identifier ":" "*"          -- wildcard
+  SubjectType      = identifier "." identifier   -- userset
+                   | identifier "." "*"          -- wildcard
                    | identifier                  -- bare
 
   Permission       = "permission" identifier "=" Expr

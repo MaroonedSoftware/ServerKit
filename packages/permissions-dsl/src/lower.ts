@@ -30,8 +30,8 @@ export interface LowerResult {
 }
 
 const subjectToString = (s: SubjectTypeNode): SubjectType => {
-    if (s.relation !== undefined) return `${s.namespace}#${s.relation}`;
-    if (s.wildcard) return `${s.namespace}:*`;
+    if (s.relation !== undefined) return `${s.namespace}.${s.relation}`;
+    if (s.wildcard) return `${s.namespace}.*`;
     return s.namespace;
 };
 
@@ -120,13 +120,13 @@ const validateRefs = (opts: LowerOptions, file: FileNode): void => {
         switch (expr.kind) {
             case 'ref':
                 if (!relNames.has(expr.name) && !permNames.has(expr.name)) {
-                    fail(opts, expr.loc, `${ns.name}#${where.name}: reference to unknown '${expr.name}'`);
+                    fail(opts, expr.loc, `${ns.name}.${where.name}: reference to unknown '${expr.name}'`);
                 }
                 return;
             case 'ttu': {
                 const tupRel = ns.members.find((m): m is RelationNode => m.kind === 'relation' && m.name === expr.tupleRelation);
                 if (!tupRel) {
-                    fail(opts, expr.loc, `${ns.name}#${where.name}: tupleToUserset walks unknown tuple relation '${expr.tupleRelation}'`);
+                    fail(opts, expr.loc, `${ns.name}.${where.name}: tupleToUserset walks unknown tuple relation '${expr.tupleRelation}'`);
                 }
                 // computedRelation must exist on at least one subject namespace of tupleRelation
                 let resolved = false;
@@ -144,7 +144,7 @@ const validateRefs = (opts: LowerOptions, file: FileNode): void => {
                     fail(
                         opts,
                         expr.loc,
-                        `${ns.name}#${where.name}: tupleToUserset references '${expr.computedRelation}' which is not defined on any subject namespace of '${expr.tupleRelation}'`,
+                        `${ns.name}.${where.name}: tupleToUserset references '${expr.computedRelation}' which is not defined on any subject namespace of '${expr.tupleRelation}'`,
                     );
                 }
                 return;
@@ -152,7 +152,7 @@ const validateRefs = (opts: LowerOptions, file: FileNode): void => {
             case 'union':
             case 'intersection':
                 if (expr.children.length === 0) {
-                    fail(opts, expr.loc, `${ns.name}#${where.name}: ${expr.kind} requires at least one child`);
+                    fail(opts, expr.loc, `${ns.name}.${where.name}: ${expr.kind} requires at least one child`);
                 }
                 expr.children.forEach(c => checkExpr(ns, where, c));
                 return;
@@ -169,12 +169,12 @@ const validateRefs = (opts: LowerOptions, file: FileNode): void => {
                 for (const s of m.subjects) {
                     const target = nsByName.get(s.namespace);
                     if (!target) {
-                        fail(opts, s.loc, `${ns.name}#${m.name}: unknown subject namespace '${s.namespace}'`);
+                        fail(opts, s.loc, `${ns.name}.${m.name}: unknown subject namespace '${s.namespace}'`);
                     }
                     if (s.relation !== undefined) {
                         const exists = target.members.some(mm => mm.name === s.relation);
                         if (!exists) {
-                            fail(opts, s.loc, `${ns.name}#${m.name}: unknown subject relation '${s.namespace}#${s.relation}'`);
+                            fail(opts, s.loc, `${ns.name}.${m.name}: unknown subject relation '${s.namespace}.${s.relation}'`);
                         }
                     }
                 }

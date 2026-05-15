@@ -1,7 +1,11 @@
 packages:
+  - apps/*
   - packages/*
 allowBuilds:
   '@swc/core': true
+  '@vscode/vsce-sign': true
   cbor-extract: true
   esbuild: true
+  keytar: false
   protobufjs: true
+  sharp: true
