@@ -150,8 +150,6 @@ const classifySubjects = (subjects: string[]): Map<string, SubjectAllowance> => 
 const findNamespace = (name: string | undefined) => (name ? schema?.namespaces.find(n => n.name === name) : undefined);
 const findRelation = (ns: ReturnType<typeof findNamespace>, name: string | undefined): SchemaRelation | undefined =>
     ns?.relations.find(r => r.name === name);
-const isPermission = (ns: ReturnType<typeof findNamespace>, name: string | undefined): boolean =>
-    !!ns?.permissions.includes(name ?? '');
 
 // ─── Generic select helpers ──────────────────────────────────────────────────
 
