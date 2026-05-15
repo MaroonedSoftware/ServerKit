@@ -16,6 +16,8 @@ export interface PermissionsConfig {
     prettier: boolean;
     /** Optional override for the import specifier used in generated code. */
     permissionsImport?: string;
+    /** Absolute path to the directory used for the on-disk compile cache. Defaults (via `loadConfig` and the programmatic API) to `<rootDir>/node_modules/.cache/pdsl`. */
+    cacheDir?: string;
     output: {
         /** Directory all output paths resolve against. Defaults to `rootDir`. */
         baseDir: string;
@@ -31,6 +33,7 @@ interface RawConfig {
     patterns?: string[];
     prettier?: boolean;
     permissionsImport?: string;
+    cacheDir?: string;
     output?: {
         baseDir?: string;
         namespace?: string;
@@ -71,11 +74,13 @@ export const loadConfig = async (configPath: string): Promise<{ config: Permissi
         throw new Error(`config ${abs}: 'output.namespace' must contain {filename} placeholder`);
     }
     const baseDir = resolveDir(rootDir, output.baseDir, rootDir);
+    const cacheDir = resolveDir(rootDir, raw.cacheDir, resolve(rootDir, 'node_modules', '.cache', 'pdsl'));
     const config: PermissionsConfig = {
         rootDir,
         patterns,
         prettier: raw.prettier ?? false,
         permissionsImport: raw.permissionsImport,
+        cacheDir,
         output: {
             baseDir,
             namespace: output.namespace,

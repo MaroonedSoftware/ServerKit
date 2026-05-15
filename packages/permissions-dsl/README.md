@@ -115,6 +115,19 @@ Each input namespace becomes `<output.namespace>` (with `{filename}`
 replaced by the namespace name). The aggregate `output.model` re-exports
 each namespace and constructs an `AuthorizationModel`.
 
+### Compile cache
+
+The compiler keeps a manifest under `<rootDir>/node_modules/.cache/pdsl/`
+and skips re-rendering namespaces whose source and visible-namespace set
+are unchanged. The cache invalidates automatically when the compiler
+version bumps or when any of `output`, `permissionsImport`, or
+`prettier` change. Override the location with `"cacheDir": "..."` in
+`permissions.config.json`.
+
+The `CompileResult` returned from a programmatic `compile()` includes
+`cached` (namespaces served from the manifest) and `orphaned` (generated
+files removed because their source namespace no longer exists).
+
 ## CLI
 
 ```
@@ -192,3 +205,18 @@ console.log(formatTrace(trace));
 Useful inside Vitest/Jest suites when you want to assert authorization
 behavior alongside the rest of your application tests, without spinning
 up a database.
+
+### Other public exports
+
+- `validateFile({ source, filename, siblings? })` — runs the parse +
+  sibling-merge + lower pipeline against one `.perm` source string.
+  Returns `{ file, lowered, error? }`. Used by the compiler and the
+  VSCode language server; available for any tool that wants to validate
+  a single buffer with cross-file references resolved.
+- `AggregateCompileError` — thrown by `compile()` when one or more files
+  produce `CompileError`s. The `.errors` array carries each child
+  diagnostic with its source span so callers can render them all at once
+  instead of one at a time.
+- `yamlParse` / `yamlStringify` — passthrough re-exports of the `yaml`
+  package, so consumers that already depend on `permissions-dsl` (for
+  the fixture API) don't need to take a second YAML dependency.

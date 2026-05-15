@@ -7,3 +7,4 @@ export * from './compiler.js';
 export * from './diagnostics.js';
 export * from './fixture.js';
 export * from './validate.js';
+export * from './yaml.js';

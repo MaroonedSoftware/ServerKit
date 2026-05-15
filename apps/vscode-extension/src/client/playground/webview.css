@@ -20,13 +20,9 @@ header .hint {
     font-size: 0.85rem;
 }
 main {
-    display: grid;
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
     gap: 1.25rem;
-}
-@media (min-width: 900px) {
-    main { grid-template-columns: 1fr 1fr; }
-    section.schema { grid-column: 1 / -1; }
 }
 section { display: flex; flex-direction: column; gap: 0.5rem; }
 section h2 {
@@ -96,3 +92,219 @@ pre#trace {
     font-size: 0.85rem;
     padding: 0.15rem 0;
 }
+
+/* ── Structured tuple builders ─────────────────────────────────────────── */
+
+fieldset.builder {
+    border: 1px solid var(--vscode-widget-border, var(--vscode-input-border, rgba(127, 127, 127, 0.3)));
+    border-radius: 4px;
+    padding: 0.5rem 0.75rem 0.65rem;
+    margin: 0;
+}
+fieldset.builder legend {
+    padding: 0 0.4rem;
+    color: var(--vscode-descriptionForeground);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.builder-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: var(--vscode-editor-font-size, 13px);
+}
+.builder-row .object,
+.builder-row .subject {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem;
+}
+.builder-row .sep {
+    color: var(--vscode-descriptionForeground);
+    font-weight: 600;
+}
+.builder-row .at {
+    color: var(--vscode-descriptionForeground);
+    padding: 0 0.15rem;
+    font-weight: 600;
+}
+.builder-row select,
+.builder-row input.id {
+    font-family: inherit;
+    font-size: inherit;
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border, transparent);
+    border-radius: 3px;
+    padding: 0.25rem 0.4rem;
+    min-width: 0;
+}
+.builder-row select {
+    min-width: 6rem;
+}
+.builder-row input.id {
+    width: 8rem;
+}
+.builder-row select:disabled,
+.builder-row input.id:disabled {
+    opacity: 0.5;
+}
+.builder-row button.add {
+    margin-left: auto;
+    padding: 0.3rem 0.7rem;
+    background: var(--vscode-button-secondaryBackground, var(--vscode-button-background));
+    color: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground));
+}
+.builder-row button.add:hover {
+    background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground));
+}
+
+.kind-toggle {
+    display: inline-flex;
+    border: 1px solid var(--vscode-input-border, rgba(127, 127, 127, 0.3));
+    border-radius: 3px;
+    overflow: hidden;
+    margin-right: 0.25rem;
+}
+.kind-toggle button {
+    background: transparent;
+    color: var(--vscode-foreground);
+    border: 0;
+    border-right: 1px solid var(--vscode-input-border, rgba(127, 127, 127, 0.3));
+    padding: 0.25rem 0.6rem;
+    font-size: 0.8rem;
+    cursor: pointer;
+    font-family: var(--vscode-font-family);
+}
+.kind-toggle button:last-child {
+    border-right: 0;
+}
+.kind-toggle button.active {
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+}
+.kind-toggle button:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.error.inline {
+    margin-top: 0.35rem;
+    min-height: 0;
+}
+
+details.raw {
+    margin: 0.25rem 0 0;
+}
+details.raw summary {
+    color: var(--vscode-descriptionForeground);
+    font-size: 0.78rem;
+    cursor: pointer;
+    padding: 0.2rem 0;
+}
+details.raw[open] summary {
+    margin-bottom: 0.3rem;
+}
+details.raw input {
+    width: 100%;
+}
+
+.toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0.25rem 0 1.5rem;
+}
+.toolbar button {
+    background: var(--vscode-button-secondaryBackground, var(--vscode-button-background));
+    color: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground));
+    border: 0;
+    border-radius: 3px;
+    padding: 0.35rem 0.7rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+    font-family: var(--vscode-font-family);
+}
+.toolbar button:hover {
+    background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground));
+}
+.toolbar #toolbar-status {
+    margin-left: auto;
+    font-size: 0.78rem;
+    color: var(--vscode-descriptionForeground);
+}
+
+.discover-panel {
+    border: 1px solid var(--vscode-widget-border, rgba(127, 127, 127, 0.3));
+    border-radius: 4px;
+    padding: 0.5rem 0.6rem 0.6rem;
+    margin: -0.75rem 0 1rem;
+    background: var(--vscode-editorWidget-background, transparent);
+}
+.discover-panel[hidden] { display: none; }
+.discover-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.8rem;
+    color: var(--vscode-descriptionForeground);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.4rem;
+}
+.discover-header strong { font-weight: 600; color: var(--vscode-foreground); }
+.discover-header button.close {
+    background: transparent;
+    color: var(--vscode-foreground);
+    border: 0;
+    padding: 0 0.3rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+.discover-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    max-height: 18rem;
+    overflow: auto;
+}
+.discover-row {
+    padding: 0.4rem 0.5rem;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+.discover-row:hover { background: var(--vscode-list-hoverBackground); }
+.discover-row.muted { color: var(--vscode-descriptionForeground); cursor: default; }
+.discover-row.bad { color: var(--vscode-errorForeground); cursor: default; }
+.discover-row-head {
+    display: flex;
+    gap: 0.5rem;
+    align-items: baseline;
+}
+.discover-row-head .muted { font-size: 0.75rem; }
+.discover-snippet {
+    display: block;
+    margin-top: 0.2rem;
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 0.75rem;
+    color: var(--vscode-descriptionForeground);
+    white-space: pre;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.validation {
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 0.78rem;
+    white-space: pre-wrap;
+    margin-top: -0.25rem;
+}
+.validation.good { color: var(--vscode-testing-iconPassed, #1f9d55); }
+.validation.bad { color: var(--vscode-errorForeground, #c5252c); }
+.validation strong { font-weight: 600; }

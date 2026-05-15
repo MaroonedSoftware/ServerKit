@@ -3,7 +3,7 @@ import { glob } from 'node:fs/promises';
 import { formatTrace } from '@maroonedsoftware/permissions';
 import { compile } from './compiler.js';
 import { findConfig, loadConfig } from './config.js';
-import { CompileError, ParseError } from './diagnostics.js';
+import { AggregateCompileError, CompileError, ParseError } from './diagnostics.js';
 import { loadFixture } from './fixture.js';
 import { explainRelationship, formatReport, runFixture } from './validate.js';
 
@@ -106,9 +106,15 @@ const runCompile = async (args: CompileArgs): Promise<number> => {
     }
     const { config, configPath } = await loadConfig(path);
     const result = await compile(config);
-    process.stdout.write(`pdsl: compiled ${result.namespaces.length} namespace(s) from ${result.inputs.length} file(s) (config: ${configPath})\n`);
+    const wrote = result.outputs.length;
+    const reused = result.cached.length;
+    const summary = `pdsl: compiled ${result.namespaces.length} namespace(s) from ${result.inputs.length} file(s) — wrote ${wrote}, reused ${reused} from cache (config: ${configPath})\n`;
+    process.stdout.write(summary);
     for (const out of result.outputs) {
         process.stdout.write(`  → ${out}\n`);
+    }
+    for (const removed of result.orphaned) {
+        process.stdout.write(`  ✗ ${removed} (orphaned)\n`);
     }
     return 0;
 };
@@ -182,7 +188,10 @@ const main = async (): Promise<number> => {
 main()
     .then(code => process.exit(code))
     .catch(err => {
-        if (err instanceof ParseError || err instanceof CompileError) {
+        if (err instanceof AggregateCompileError) {
+            for (const e of err.errors) process.stderr.write(`${e.message}\n\n`);
+            process.stderr.write(`pdsl: ${err.errors.length} error(s)\n`);
+        } else if (err instanceof ParseError || err instanceof CompileError) {
             process.stderr.write(`${err.message}\n`);
         } else if (err instanceof Error) {
             process.stderr.write(`pdsl: ${err.message}\n`);

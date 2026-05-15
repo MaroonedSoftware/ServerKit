@@ -9,7 +9,54 @@ import {
     type RelationTuple,
     type SubjectRef,
 } from '@maroonedsoftware/permissions';
+import type { FileNode, NamespaceNode } from './ast.js';
+import { CompileError } from './diagnostics.js';
+import { lower, type LowerResult } from './lower.js';
+import { parse } from './parser.js';
 import type { LoadedFixture } from './fixture.js';
+
+/** Input to {@link validateFile} — a single source plus any sibling namespaces visible from elsewhere in the project. */
+export interface ValidateFileOptions {
+    source: string;
+    filename: string;
+    /** Namespaces declared in other files. Local namespaces always take precedence on name collisions. */
+    siblings?: NamespaceNode[];
+}
+
+/** Result of {@link validateFile}. `error` is set iff a {@link CompileError} was caught; `lowered` is set on success. */
+export interface ValidateFileResult {
+    file: FileNode;
+    lowered?: LowerResult;
+    error?: CompileError;
+}
+
+/**
+ * Parse a single `.perm` source, merge sibling namespaces from elsewhere in the
+ * project (deduped by name, local-first), then run {@link lower} against the
+ * merged view. Used by both the compiler's per-file validation loop and the
+ * language server's on-keystroke validation so they enforce the same rules.
+ *
+ * Returns `{ file, lowered }` on success; `{ file, error }` when `lower`
+ * throws a {@link CompileError}. Parse errors propagate, since the caller has
+ * no `file` to return.
+ */
+export const validateFile = (opts: ValidateFileOptions): ValidateFileResult => {
+    const { source, filename, siblings = [] } = opts;
+    const file = parse({ source, filename });
+    const localNames = new Set(file.namespaces.map(n => n.name));
+    const merged: FileNode = {
+        kind: 'file',
+        loc: file.loc,
+        namespaces: [...file.namespaces, ...siblings.filter(s => !localNames.has(s.name))],
+    };
+    try {
+        const lowered = lower(merged, { source, filename });
+        return { file, lowered };
+    } catch (err) {
+        if (err instanceof CompileError) return { file, error: err };
+        throw err;
+    }
+};
 
 /**
  * Single assertion outcome inside a {@link FixtureReport}. `line` is the

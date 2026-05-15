@@ -95,3 +95,20 @@ export class ParseError extends CompileError {
         });
     }
 }
+
+/**
+ * Wraps one or more {@link CompileError}s collected during a multi-file
+ * compile so callers can report every diagnostic at once instead of stopping
+ * at the first failure. The `message` is the concatenation of each child
+ * error's pre-formatted message separated by blank lines, suitable for direct
+ * terminal output.
+ */
+export class AggregateCompileError extends Error {
+    readonly errors: readonly CompileError[];
+
+    constructor(errors: CompileError[]) {
+        super(errors.map(e => e.message).join('\n\n'));
+        this.name = 'AggregateCompileError';
+        this.errors = errors;
+    }
+}
