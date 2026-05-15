@@ -42,8 +42,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
     };
 
+    const permWatcher = vscode.workspace.createFileSystemWatcher('**/*.perm');
+    context.subscriptions.push(permWatcher);
+
     const clientOptions: LanguageClientOptions = {
         documentSelector: [{ scheme: 'file', language: 'serverkit-permissions' }],
+        synchronize: { fileEvents: permWatcher },
     };
 
     client = new LanguageClient('serverkitPermissions', 'ServerKit Permissions Language Server', serverOptions, clientOptions);

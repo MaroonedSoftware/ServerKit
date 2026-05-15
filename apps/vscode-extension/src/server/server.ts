@@ -3,6 +3,7 @@ import {
     createConnection,
     DiagnosticSeverity,
     DocumentSymbol,
+    FileChangeType,
     ProposedFeatures,
     SymbolKind,
     TextDocumentSyncKind,
@@ -12,6 +13,7 @@ import {
 } from 'vscode-languageserver/node.js';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { CompileError, lower, parse, type FileNode, type MemberNode, type NamespaceNode } from '@maroonedsoftware/permissions-dsl';
+import { WorkspaceIndex } from './workspace.index.js';
 import {
     check,
     explain,
@@ -30,6 +32,8 @@ import {
 
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
+const workspaceIndex = new WorkspaceIndex();
+let initialScan: Promise<void> = Promise.resolve();
 
 const uriToFilename = (uri: string): string => {
     try {
@@ -39,10 +43,16 @@ const uriToFilename = (uri: string): string => {
     }
 };
 
-const compileError = (text: string, filename: string): CompileError | undefined => {
+const compileError = (text: string, filename: string, siblings: NamespaceNode[]): CompileError | undefined => {
     try {
         const file = parse({ source: text, filename });
-        lower(file, { source: text, filename });
+        const merged: FileNode = {
+            kind: 'file',
+            loc: file.loc,
+            // Local namespaces first so local diagnostics throw before sibling-only ones.
+            namespaces: [...file.namespaces, ...siblings.filter(s => !file.namespaces.some(n => n.name === s.name))],
+        };
+        lower(merged, { source: text, filename });
         return undefined;
     } catch (err) {
         if (err instanceof CompileError) return err;
@@ -50,20 +60,33 @@ const compileError = (text: string, filename: string): CompileError | undefined 
     }
 };
 
-const validate = (doc: TextDocument): void => {
+const validate = async (doc: TextDocument): Promise<void> => {
+    await initialScan;
     const text = doc.getText();
     const filename = uriToFilename(doc.uri);
     const diagnostics: Diagnostic[] = [];
-    const err = compileError(text, filename);
+    const err = compileError(text, filename, workspaceIndex.siblings(doc.uri));
     if (err) {
-        diagnostics.push({
-            severity: DiagnosticSeverity.Error,
-            range: spanToRange(text, err.span),
-            message: err.message.replace(/^.*?error:\s*/m, '').split('\n')[0] ?? err.message,
-            source: 'pdsl',
-        });
+        // Span coordinates are offsets into the source passed to `lower()` — which is
+        // the local document. If the span lands past the end of the local text it
+        // belongs to a sibling namespace's node; let that file's own validation
+        // surface the diagnostic instead.
+        if (err.span.start <= text.length && err.span.end <= text.length) {
+            diagnostics.push({
+                severity: DiagnosticSeverity.Error,
+                range: spanToRange(text, err.span),
+                message: err.message.replace(/^.*?error:\s*/m, '').split('\n')[0] ?? err.message,
+                source: 'pdsl',
+            });
+        }
     }
     void connection.sendDiagnostics({ uri: doc.uri, diagnostics });
+};
+
+const revalidateAll = (): void => {
+    for (const doc of documents.all()) {
+        void validate(doc);
+    }
 };
 
 const parseSilently = (text: string, filename: string): FileNode | undefined => {
@@ -91,19 +114,51 @@ const namespaceSymbol = (text: string, ns: NamespaceNode): DocumentSymbol => ({
     children: ns.members.map(m => memberSymbol(text, m)),
 });
 
-connection.onInitialize(
-    (): InitializeResult => ({
+connection.onInitialize((params): InitializeResult => {
+    const folderPaths: string[] = [];
+    if (params.workspaceFolders) {
+        for (const f of params.workspaceFolders) folderPaths.push(uriToFilename(f.uri));
+    } else if (params.rootUri) {
+        folderPaths.push(uriToFilename(params.rootUri));
+    } else if (params.rootPath) {
+        folderPaths.push(params.rootPath);
+    }
+    initialScan = workspaceIndex.initialScan(folderPaths).then(() => revalidateAll());
+
+    return {
         capabilities: {
             textDocumentSync: TextDocumentSyncKind.Incremental,
             documentSymbolProvider: true,
+            workspace: { workspaceFolders: { supported: true } },
         },
-    }),
-);
+    };
+});
 
-documents.onDidChangeContent(change => validate(change.document));
-documents.onDidOpen(change => validate(change.document));
+documents.onDidChangeContent(change => {
+    workspaceIndex.updateFromText(change.document.uri, change.document.getText());
+    void validate(change.document);
+});
+documents.onDidOpen(change => {
+    workspaceIndex.updateFromText(change.document.uri, change.document.getText());
+    void validate(change.document);
+});
 documents.onDidClose(change => {
     void connection.sendDiagnostics({ uri: change.document.uri, diagnostics: [] });
+});
+
+connection.onDidChangeWatchedFiles(async params => {
+    for (const change of params.changes) {
+        if (change.type === FileChangeType.Deleted) {
+            workspaceIndex.remove(change.uri);
+        } else {
+            // Created or Changed. If the file is open in the editor, the
+            // document-sync path already has fresher content — skip the disk read.
+            if (!documents.get(change.uri)) {
+                await workspaceIndex.updateFromDisk(change.uri);
+            }
+        }
+    }
+    revalidateAll();
 });
 
 connection.onDocumentSymbol(params => {
@@ -150,7 +205,7 @@ const loadRequest = (req: CheckRequest): { repo: InMemoryTupleRepository; tuples
         try {
             tuples.push(parseTuple(trimmed));
         } catch (err) {
-            throw new Error(`relationships line ${i + 1}: ${err instanceof Error ? err.message : String(err)}`);
+            throw new Error(`relationships line ${i + 1}: ${err instanceof Error ? err.message : String(err)}`, { cause: err });
         }
     }
     const repo = new InMemoryTupleRepository(tuples);
