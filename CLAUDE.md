@@ -205,3 +205,13 @@ Source and test filenames use **dot separators**, not hyphens. Compose the name 
 - Test files mirror their source: `scim.user.service.test.ts`
 
 Index/barrel files are `index.ts`. Do not introduce hyphenated filenames; match the existing convention across packages.
+
+## Conventions
+
+- **Dates and times**: use Luxon's `DateTime`, `Duration`, and `Interval` instead of the native JS `Date`, and instead of ad-hoc duration math on milliseconds. Convert at boundaries only (`DateTime.fromJSDate` / `.toJSDate()`, `.toISO()`); keep everything in between as Luxon types.
+- **Formatting**: 2-space indent, single quotes, semicolons, print width 150 (see `.prettierrc`).
+- **TypeScript**: strict mode with `noUncheckedIndexedAccess`. Decorators enabled for DI.
+- **No hyphens — anywhere.** This applies to:
+  - Catalog keys (document kinds, requirement keys, job names, product keys, rule keys, anything stored as a string identifier in a `Record<string, …>` catalog) — use **dot notation**. Examples: `agreement.terms.of.service`, `enterprise.user`.
+  - File names — use dot-separated multi-word names (`local.storage.driver.ts`), not kebab-case (`local-storage-driver.ts`).
+  - Code identifiers — use camelCase / PascalCase, never kebab-case.
