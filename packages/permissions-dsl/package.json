@@ -1,6 +1,6 @@
 {
   "name": "@maroonedsoftware/permissions-dsl",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A surface-syntax DSL and compiler (pdsl CLI) for @maroonedsoftware/permissions — author Zanzibar-style namespaces in .perm files and generate TypeScript that drives the runtime authorization model.",
   "author": {
     "name": "Marooned Software",
