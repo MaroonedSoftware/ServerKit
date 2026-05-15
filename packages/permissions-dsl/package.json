@@ -1,0 +1,53 @@
+{
+  "name": "@maroonedsoftware/permissions-dsl",
+  "version": "0.0.1",
+  "description": "A surface-syntax DSL and compiler (pdsl CLI) for @maroonedsoftware/permissions — author Zanzibar-style namespaces in .perm files and generate TypeScript that drives the runtime authorization model.",
+  "author": {
+    "name": "Marooned Software",
+    "url": "https://github.com/MaroonedSoftware/serverkit"
+  },
+  "bugs": {
+    "url": "https://github.com/MaroonedSoftware/serverkit/issues"
+  },
+  "homepage": "https://github.com/MaroonedSoftware/serverkit/packages/permissions-dsl#readme",
+  "keywords": [
+    "authorization",
+    "permissions",
+    "rebac",
+    "serverkit",
+    "typescript",
+    "zanzibar"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MaroonedSoftware/serverkit.git"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "license": "MIT",
+  "bin": {
+    "pdsl": "./dist/cli.js"
+  },
+  "files": [
+    "dist/**"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts src/cli.ts --format esm --sourcemap --dts && tsc --emitDeclarationOnly --declaration && cp src/permissions.ohm dist/permissions.ohm",
+    "build:ci": "eslint --max-warnings=0 && pnpm run build",
+    "lint": "eslint --fix",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:ci": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@maroonedsoftware/permissions": "workspace:*",
+    "ohm-js": "^17.5.0",
+    "prettier": "^3.8.3"
+  },
+  "devDependencies": {
+    "@repo/config-eslint": "workspace:*",
+    "@repo/config-typescript": "workspace:*"
+  }
+}

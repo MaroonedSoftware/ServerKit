@@ -1,0 +1,37 @@
+// Symbolic operators with conventional precedence:
+//   -   exclusion        — lowest, left-assoc, binary
+//   |   union            — middle, n-ary
+//   &   intersection     — highest, n-ary
+//   ->  tupleToUserset   — postfix on an identifier (parent->viewer)
+// Subject lists use commas (a list of allowed types, not a union expression).
+Permissions {
+  File             = Namespace+
+
+  Namespace        = "namespace" identifier "{" Member* "}"
+
+  Member           = Relation | Permission
+
+  Relation         = "relation" identifier ":" NonemptyListOf<SubjectType, ",">
+  SubjectType      = identifier "#" identifier   -- userset
+                   | identifier ":" "*"          -- wildcard
+                   | identifier                  -- bare
+
+  Permission       = "permission" identifier "=" Expr
+
+  Expr             = ExclusionExpr
+  ExclusionExpr    = ExclusionExpr "-" UnionExpr  -- minus
+                   | UnionExpr
+  UnionExpr        = NonemptyListOf<IntersectionExpr, "|">
+  IntersectionExpr = NonemptyListOf<Atom, "&">
+  Atom             = "(" Expr ")"                  -- group
+                   | identifier "->" identifier    -- ttu
+                   | identifier                    -- ref
+
+  identifier       = ~keyword identStart identRest*
+  identStart       = lower
+  identRest        = lower | digit | "_"
+  keyword          = ("namespace" | "relation" | "permission") ~identRest
+
+  comment          = "//" (~"\n" any)*
+  space           += comment
+}

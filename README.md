@@ -142,6 +142,19 @@ Zanzibar-style relationship-based access control.
 
 ---
 
+### Permissions DSL
+
+A surface-syntax DSL and compiler (`pdsl` CLI) for authoring permissions declaratively.
+
+- Human-readable `.perm` files with `|` union, `&` intersection, `-` exclusion, `->` tupleToUserset operators
+- Ohm-based grammar with caret-annotated diagnostics
+- Generates TypeScript that calls the `@maroonedsoftware/permissions` builders
+- `pdsl` CLI walks up from cwd to find `permissions.config.json` and compiles every matched namespace
+
+[View documentation →](./packages/permissions-dsl/README.md)
+
+---
+
 ### Policies
 
 Small, DI-friendly framework for encoding allow/deny rules as named, injectable `Policy` classes.

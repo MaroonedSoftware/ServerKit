@@ -1,0 +1,9 @@
+namespace folder {
+  relation viewer: user
+  relation owner: user
+  permission view = viewer | owner
+}
+
+namespace user {
+  relation self: user
+}
