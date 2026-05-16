@@ -1,0 +1,113 @@
+{
+    "name": "@maroonedsoftware/johnny5",
+    "version": "0.0.1",
+    "description": "CLI framework for ServerKit-based applications — plugin registration, doctor runner, and opt-in Postgres/Redis/Docker integrations",
+    "author": {
+        "name": "Marooned Software",
+        "url": "https://github.com/MaroonedSoftware/serverkit"
+    },
+    "bugs": {
+        "url": "https://github.com/MaroonedSoftware/serverkit/issues"
+    },
+    "homepage": "https://github.com/MaroonedSoftware/serverkit/packages/johnny5#readme",
+    "keywords": [
+        "backend",
+        "cli",
+        "doctor",
+        "framework",
+        "injectkit",
+        "serverkit",
+        "typescript"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/MaroonedSoftware/serverkit.git"
+    },
+    "private": false,
+    "type": "module",
+    "main": "./dist/index.js",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        },
+        "./serverkit": {
+            "types": "./dist/integrations/serverkit/index.d.ts",
+            "import": "./dist/integrations/serverkit/index.js"
+        },
+        "./postgres": {
+            "types": "./dist/integrations/postgres/index.d.ts",
+            "import": "./dist/integrations/postgres/index.js"
+        },
+        "./redis": {
+            "types": "./dist/integrations/redis/index.d.ts",
+            "import": "./dist/integrations/redis/index.js"
+        },
+        "./docker": {
+            "types": "./dist/integrations/docker/index.d.ts",
+            "import": "./dist/integrations/docker/index.js"
+        },
+        "./versions": {
+            "types": "./dist/integrations/versions/index.d.ts",
+            "import": "./dist/integrations/versions/index.js"
+        },
+        "./filesystem": {
+            "types": "./dist/integrations/filesystem/index.d.ts",
+            "import": "./dist/integrations/filesystem/index.js"
+        }
+    },
+    "license": "MIT",
+    "files": [
+        "dist/**"
+    ],
+    "scripts": {
+        "build": "tsup",
+        "build:ci": "eslint --max-warnings=0 && pnpm run build",
+        "dev": "tsup --watch",
+        "lint": "eslint --fix",
+        "format": "prettier --write .",
+        "test": "vitest run",
+        "test:ci": "vitest run --coverage"
+    },
+    "dependencies": {
+        "@clack/prompts": "^0.11.0",
+        "@maroonedsoftware/appconfig": "workspace:*",
+        "@maroonedsoftware/logger": "workspace:*",
+        "commander": "^14.0.3",
+        "execa": "^9.6.0",
+        "injectkit": "^1.2.0"
+    },
+    "peerDependencies": {
+        "@maroonedsoftware/koa": "workspace:*",
+        "ioredis": "^5.10.0",
+        "kysely": "^0.28.0",
+        "pg": "^8.20.0"
+    },
+    "peerDependenciesMeta": {
+        "@maroonedsoftware/koa": {
+            "optional": true
+        },
+        "ioredis": {
+            "optional": true
+        },
+        "kysely": {
+            "optional": true
+        },
+        "pg": {
+            "optional": true
+        }
+    },
+    "devDependencies": {
+        "@maroonedsoftware/koa": "workspace:*",
+        "@repo/config-eslint": "workspace:*",
+        "@repo/config-typescript": "workspace:*",
+        "@types/pg": "^8.20.0",
+        "ioredis": "^5.10.1",
+        "kysely": "^0.28.6",
+        "pg": "^8.20.0",
+        "tsup": "^8.5.1",
+        "vitest": "^4.1.5"
+    }
+}

@@ -82,6 +82,19 @@ Background job processing powered by PostgreSQL-backed queues.
 
 ---
 
+### Johnny5
+
+A CLI framework for ServerKit-based applications.
+
+- `createCliApp` assembles a `commander` program from declarative `CommandModule` definitions
+- Built-in `doctor` runner with auto-remediation hooks and a rich `Check` API
+- Workspace-package plugin discovery via a top-level `"johnny5"` field in each plugin's `package.json`
+- Opt-in integrations exposed as subpath exports: ServerKit DI bootstrap, Postgres / Redis / Docker / filesystem / version checks
+
+[View documentation →](./packages/johnny5/README.md)
+
+---
+
 ### Koa
 
 Koa middleware, body parsing, and utilities for ServerKit.
