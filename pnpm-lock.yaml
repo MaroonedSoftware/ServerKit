@@ -320,6 +320,12 @@ importers:
       '@maroonedsoftware/koa':
         specifier: workspace:*
         version: link:../koa
+      '@maroonedsoftware/permissions':
+        specifier: workspace:*
+        version: link:../permissions
+      '@maroonedsoftware/permissions-dsl':
+        specifier: workspace:*
+        version: link:../permissions-dsl
       '@repo/config-eslint':
         specifier: workspace:*
         version: link:../config-eslint

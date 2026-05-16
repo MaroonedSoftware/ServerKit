@@ -75,6 +75,25 @@ Key behaviours:
 - **`passthrough: true`** forwards unknown options and extra positional args verbatim, useful for proxying through to a wrapped binary.
 - **Return value** — return a non-zero number from `run` to `process.exit(code)`. Throwing logs the error and exits 1.
 
+## Safety guards
+
+Two declarative fields on `CommandModule` let you fence in commands that shouldn't run unchecked:
+
+```ts
+const drop = defineCommand({
+    description: 'drop the database',
+    dangerous: true,                                // prompts Y/N in a TTY; refuses without --yes in CI
+    allowedEnvironments: ['development', 'staging'], // refuses unless NODE_ENV matches
+    run: async (_opts, ctx) => {
+        ctx.logger.success('dropped');
+    },
+});
+```
+
+- **`dangerous: true`** auto-registers a `-y, --yes` flag (skipped if you already declared one) and runs a confirmation prompt before `run`. In non-TTY contexts `--yes` is required; without it the command exits 1.
+- **`dangerous: { confirm: 'typed', phrase: 'DROP PRODUCTION' }`** requires the user to retype an exact phrase. `phrase` defaults to the full command path (e.g. `db drop`). A custom `message` overrides the prompt text.
+- **`allowedEnvironments: ['development']`** reads `NODE_ENV` from `ctx.env`. Pass the spec form `{ allowed: ['dev'], variable: 'APP_ENV' }` to read a different variable. The guard runs before any dangerous prompt, so a misconfigured environment fails fast.
+
 ## CliContext
 
 Every command, check, and plugin hook receives the same `CliContext`:
@@ -117,6 +136,8 @@ import { envFile, portsFree } from '@maroonedsoftware/johnny5/filesystem';
 import { postgresReachable } from '@maroonedsoftware/johnny5/postgres';
 import { redisReachable } from '@maroonedsoftware/johnny5/redis';
 import { dockerServicesUp } from '@maroonedsoftware/johnny5/docker';
+import { kyselyTableExists } from '@maroonedsoftware/johnny5/kysely';
+import { permissionsSchemaCompiled, permissionsFixturesPass, permissionsModelLoads } from '@maroonedsoftware/johnny5/permissions';
 
 const checks = [
     nodeVersion({ min: 22 }),
@@ -126,8 +147,19 @@ const checks = [
     postgresReachable(),                       // reads DATABASE_URL from AppConfig / env
     redisReachable({ hostConfigKey: 'REDIS_HOST', portConfigKey: 'REDIS_PORT' }),
     dockerServicesUp({ autoStart: true }),     // adds an autoFix that runs `docker compose up -d`
+    kyselyTableExists({ db, table: 'relation_tuples' }),    // verify a migration-managed table
+    permissionsSchemaCompiled(),                             // .perm files in sync with generated TS
+    permissionsFixturesPass({ patterns: ['permissions/**/*.perm.yaml'] }),
+    permissionsModelLoads({ loadModel: async () => (await import('./permissions/generated/index.js')).model }),
 ];
 ```
+
+The `kysely` and `permissions` subpaths lazy-load their peer deps (`kysely`, `@maroonedsoftware/permissions`, `@maroonedsoftware/permissions-dsl`), so the bundle cost is paid only by the checks you actually wire up.
+
+- **`permissionsSchemaCompiled({ configPath? })`** runs `compile()` in dry-run mode and fails if any generated TypeScript would be rewritten or removed. `doctor --fix` performs the real compile.
+- **`permissionsFixturesPass({ patterns })`** evaluates every matched `.perm.yaml` fixture. See `pdsl validate` for the full TAP-style report.
+- **`permissionsModelLoads({ loadModel })`** surfaces duplicate-namespace / unresolved-reference errors from the `AuthorizationModel` constructor at doctor time instead of on the first runtime Check.
+- **`kyselyTableExists({ db, table, schema? })`** asks Kysely's introspection API whether a table exists. Pair with the permissions tuples table, the jobs table, or any other migration-managed schema.
 
 Custom checks are just `Check` objects — there's no registration step:
 
@@ -260,6 +292,8 @@ const create = defineCommand({
 | `/postgres` | `postgresReachable` (lazy-loads `pg`). |
 | `/redis` | `redisReachable` (lazy-loads `ioredis`). |
 | `/docker` | `dockerServicesUp`. |
+| `/kysely` | `kyselyTableExists` (lazy-loads `kysely`). |
+| `/permissions` | `permissionsSchemaCompiled`, `permissionsFixturesPass`, `permissionsModelLoads` (lazy-load `@maroonedsoftware/permissions[-dsl]`). |
 
 ## License
 

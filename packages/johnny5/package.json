@@ -56,6 +56,14 @@
         "./filesystem": {
             "types": "./dist/integrations/filesystem/index.d.ts",
             "import": "./dist/integrations/filesystem/index.js"
+        },
+        "./kysely": {
+            "types": "./dist/integrations/kysely/index.d.ts",
+            "import": "./dist/integrations/kysely/index.js"
+        },
+        "./permissions": {
+            "types": "./dist/integrations/permissions/index.d.ts",
+            "import": "./dist/integrations/permissions/index.js"
         }
     },
     "license": "MIT",
@@ -81,12 +89,20 @@
     },
     "peerDependencies": {
         "@maroonedsoftware/koa": "workspace:*",
+        "@maroonedsoftware/permissions": "workspace:*",
+        "@maroonedsoftware/permissions-dsl": "workspace:*",
         "ioredis": "^5.10.0",
         "kysely": "^0.28.0",
         "pg": "^8.20.0"
     },
     "peerDependenciesMeta": {
         "@maroonedsoftware/koa": {
+            "optional": true
+        },
+        "@maroonedsoftware/permissions": {
+            "optional": true
+        },
+        "@maroonedsoftware/permissions-dsl": {
             "optional": true
         },
         "ioredis": {
@@ -101,6 +117,8 @@
     },
     "devDependencies": {
         "@maroonedsoftware/koa": "workspace:*",
+        "@maroonedsoftware/permissions": "workspace:*",
+        "@maroonedsoftware/permissions-dsl": "workspace:*",
         "@repo/config-eslint": "workspace:*",
         "@repo/config-typescript": "workspace:*",
         "@types/pg": "^8.20.0",

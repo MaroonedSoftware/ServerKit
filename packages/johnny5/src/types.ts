@@ -25,6 +25,24 @@ export interface ArgSpec {
     variadic?: boolean;
 }
 
+/** Confirmation policy applied before a destructive command runs. */
+export interface DangerousSpec {
+    /** `yes` (default) shows a Y/N prompt; `typed` requires the user to retype `phrase`. */
+    confirm?: 'yes' | 'typed';
+    /** Exact string the user must enter under `confirm: 'typed'`. Defaults to the full command path. */
+    phrase?: string;
+    /** Override the prompt message shown to the user. */
+    message?: string;
+}
+
+/** Restricts which runtime environments a command may execute in. */
+export interface EnvironmentGuardSpec {
+    /** Env values that allow this command to run. */
+    allowed: string[];
+    /** Env var to read. Defaults to `NODE_ENV`. */
+    variable?: string;
+}
+
 /**
  * A single CLI command unit. `defineCommand` is the recommended way to create one
  * so TypeScript can infer `Opts` from the literal.
@@ -40,6 +58,18 @@ export interface CommandModule<Opts = Record<string, unknown>> {
     run: (opts: Opts, ctx: CliContext, args: string[]) => Promise<number | void>;
     /** When true, unknown options and excess positional args are forwarded to `run` verbatim instead of triggering commander errors. */
     passthrough?: boolean;
+    /**
+     * Marks the command as destructive. Adds a `-y, --yes` flag (unless one is
+     * already declared) and refuses to run without confirmation. In a TTY the
+     * user is prompted; in non-interactive contexts `--yes` is required.
+     */
+    dangerous?: boolean | DangerousSpec;
+    /**
+     * Limits which runtime environments may execute this command. Pass either a
+     * list of allowed values for `NODE_ENV`, or a full `EnvironmentGuardSpec`
+     * to read a different variable.
+     */
+    allowedEnvironments?: string[] | EnvironmentGuardSpec;
 }
 
 /** A `CommandModule` plus the path under which it should appear in the CLI tree. */

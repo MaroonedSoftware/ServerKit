@@ -207,6 +207,71 @@ describe('compile', () => {
         expect(after.mtimeMs).toBe(before.mtimeMs);
     });
 
+    it('dryRun reports pending writes without touching disk', async () => {
+        await writeFixture('doc.perm', `namespace doc { relation owner: user permission edit = owner }`);
+        await writeFixture('user.perm', `namespace user { relation self: user }`);
+        const cfg = {
+            rootDir: workDir,
+            patterns: ['*.perm'],
+            prettier: false,
+            output: { baseDir: workDir, namespace: 'out/{filename}.ts', model: 'out/index.ts' },
+        } as const;
+
+        // Warm up: real compile populates the cache and writes outputs.
+        await compile(cfg);
+        const docOut = join(workDir, 'out/doc.ts');
+        const before = await stat(docOut);
+
+        // Edit the source so a recompile would regenerate doc.ts.
+        await writeFixture('doc.perm', `namespace doc { relation owner: user permission view = owner }`);
+        await new Promise(r => setTimeout(r, 10));
+
+        const dry = await compile(cfg, { dryRun: true });
+        expect(dry.outputs.some(p => p.endsWith('doc.ts'))).toBe(true);
+
+        // Disk is untouched: doc.ts mtime and contents reflect the pre-edit state.
+        const after = await stat(docOut);
+        expect(after.mtimeMs).toBe(before.mtimeMs);
+        const doc = await readFile(docOut, 'utf8');
+        expect(doc).toMatch(/\bedit:/);
+        expect(doc).not.toMatch(/\bview:/);
+    });
+
+    it('dryRun lists orphans without deleting them', async () => {
+        await writeFixture('doc.perm', `namespace doc { relation owner: user }`);
+        await writeFixture('user.perm', `namespace user { relation self: user }`);
+        const cfg = {
+            rootDir: workDir,
+            patterns: ['*.perm'],
+            prettier: false,
+            output: { baseDir: workDir, namespace: 'out/{filename}.ts', model: 'out/index.ts' },
+        } as const;
+        await compile(cfg);
+        expect(existsSync(join(workDir, 'out/doc.ts'))).toBe(true);
+
+        // Drop doc.perm but only ask for a dry-run.
+        await rm(join(workDir, 'doc.perm'));
+        const dry = await compile(cfg, { dryRun: true });
+        expect(dry.orphaned.some(p => p.endsWith('doc.ts'))).toBe(true);
+        // doc.ts is still on disk because dryRun skips the rm.
+        expect(existsSync(join(workDir, 'out/doc.ts'))).toBe(true);
+    });
+
+    it('dryRun reports clean state as zero outputs and zero orphans', async () => {
+        await writeFixture('doc.perm', `namespace doc { relation owner: user }\nnamespace user { relation self: user }`);
+        const cfg = {
+            rootDir: workDir,
+            patterns: ['*.perm'],
+            prettier: false,
+            output: { baseDir: workDir, namespace: 'out/{filename}.ts', model: 'out/index.ts' },
+        } as const;
+        await compile(cfg);
+        const dry = await compile(cfg, { dryRun: true });
+        expect(dry.outputs).toEqual([]);
+        expect(dry.orphaned).toEqual([]);
+        expect(dry.cached.sort()).toEqual(['doc', 'user']);
+    });
+
     it('uses the configured permissionsImport for generated code', async () => {
         await writeFixture('a.perm', `namespace doc { relation x: user }\nnamespace user { relation self: user }`);
         await compile({

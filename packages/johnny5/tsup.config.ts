@@ -9,6 +9,8 @@ export default defineConfig({
         'integrations/docker/index': 'src/integrations/docker/index.ts',
         'integrations/versions/index': 'src/integrations/versions/index.ts',
         'integrations/filesystem/index': 'src/integrations/filesystem/index.ts',
+        'integrations/kysely/index': 'src/integrations/kysely/index.ts',
+        'integrations/permissions/index': 'src/integrations/permissions/index.ts',
     },
     format: ['esm'],
     target: 'node22',

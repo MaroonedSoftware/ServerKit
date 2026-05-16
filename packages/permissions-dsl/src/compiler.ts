@@ -72,6 +72,19 @@ const readCompilerVersion = async (): Promise<string> => {
     }
 };
 
+/** Options that tweak how {@link compile} runs without affecting compilation semantics. */
+export interface CompileOptions {
+    /**
+     * When `true`, run the full parse/validate/codegen pipeline but skip every
+     * side effect: don't write outputs, don't delete orphans, don't update the
+     * cache manifest. The returned `CompileResult` still lists what *would*
+     * have been written (`outputs`) and removed (`orphaned`), so callers can
+     * detect drift without touching disk. Useful for CI/doctor checks that ask
+     * "is the generated TypeScript in sync with the .perm sources?".
+     */
+    dryRun?: boolean;
+}
+
 /**
  * Compile every `.perm` file matched by `config.patterns` into TypeScript.
  * Pipeline: discover → parse → cross-file duplicate-namespace check → per-file
@@ -88,12 +101,15 @@ const readCompilerVersion = async (): Promise<string> => {
  * re-exports the namespaces and constructs an `AuthorizationModel`. Generated
  * files whose source namespace no longer exists are deleted.
  *
+ * Pass `{ dryRun: true }` to plan without writing — see {@link CompileOptions}.
+ *
  * @throws {AggregateCompileError} when one or more files produce
  *   {@link CompileError}s (grammar errors, duplicate or unknown names,
  *   tupleToUserset references that don't resolve, or invalid models).
  * @throws {Error} if no files match `patterns`.
  */
-export const compile = async (config: PermissionsConfig): Promise<CompileResult> => {
+export const compile = async (config: PermissionsConfig, options: CompileOptions = {}): Promise<CompileResult> => {
+    const dryRun = options.dryRun === true;
     const inputs = await expandPatterns(config);
     if (inputs.length === 0) {
         throw new Error(`no files matched patterns: ${config.patterns.join(', ')}`);
@@ -210,7 +226,7 @@ export const compile = async (config: PermissionsConfig): Promise<CompileResult>
 
             const file = renderNamespace(ns, { permissionsImport: config.permissionsImport });
             const formatted = config.prettier ? await formatWithPrettier(file.source, outPath) : file.source;
-            const written = await writeIfChanged(outPath, formatted);
+            const written = dryRun ? await wouldWrite(outPath, formatted) : await writeIfChanged(outPath, formatted);
             if (written) writtenOutputs.push(outPath);
             fileEntry.outputs[ns.name] = { path: outPath, contentHash: hashString(formatted) };
         }
@@ -225,7 +241,7 @@ export const compile = async (config: PermissionsConfig): Promise<CompileResult>
     const indexContentHash = hashString(formattedIndex);
     const indexNeedsWrite = prevManifest.index === null || prevManifest.index.path !== modelOut || prevManifest.index.contentHash !== indexContentHash;
     if (indexNeedsWrite) {
-        const written = await writeIfChanged(modelOut, formattedIndex);
+        const written = dryRun ? await wouldWrite(modelOut, formattedIndex) : await writeIfChanged(modelOut, formattedIndex);
         if (written) writtenOutputs.push(modelOut);
     }
 
@@ -237,26 +253,38 @@ export const compile = async (config: PermissionsConfig): Promise<CompileResult>
     for (const prevEntry of Object.values(prevManifest.files)) {
         for (const o of Object.values(prevEntry.outputs)) {
             if (!currentOutputs.has(o.path)) {
-                await rm(o.path, { force: true });
+                if (!dryRun) await rm(o.path, { force: true });
                 orphaned.push(o.path);
             }
         }
     }
     if (prevManifest.index && prevManifest.index.path !== modelOut) {
-        await rm(prevManifest.index.path, { force: true });
+        if (!dryRun) await rm(prevManifest.index.path, { force: true });
         orphaned.push(prevManifest.index.path);
     }
 
-    // 7. Persist the manifest.
-    const nextManifest: CacheManifest = {
-        version: 1,
-        configHash,
-        files: newFiles,
-        index: { path: modelOut, contentHash: indexContentHash },
-    };
-    await saveManifest(manifestPath, nextManifest);
+    // 7. Persist the manifest (skipped under dryRun so the next real compile still has accurate state).
+    if (!dryRun) {
+        const nextManifest: CacheManifest = {
+            version: 1,
+            configHash,
+            files: newFiles,
+            index: { path: modelOut, contentHash: indexContentHash },
+        };
+        await saveManifest(manifestPath, nextManifest);
+    }
 
     return { inputs, outputs: writtenOutputs, namespaces: namespaceNames, cached: cachedNamespaces, orphaned };
+};
+
+/** Like {@link writeIfChanged}, but never touches disk — returns whether a write *would* occur. */
+const wouldWrite = async (outPath: string, content: string): Promise<boolean> => {
+    try {
+        const existing = await readFile(outPath, 'utf8');
+        return existing !== content;
+    } catch {
+        return true;
+    }
 };
 
 const arrayEquals = (a: string[], b: string[]): boolean => a.length === b.length && a.every((v, i) => v === b[i]);

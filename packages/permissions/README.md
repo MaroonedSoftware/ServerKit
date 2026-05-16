@@ -294,6 +294,27 @@ string form. Useful for logs, fixtures, and serialising over the wire.
 | `maxDepth`       | Greatest recursion depth reached                      |
 | `hitMaxDepth`    | True if the evaluator hit the max-depth guard (32)    |
 
+## Doctor checks
+
+`@maroonedsoftware/johnny5/permissions` ships ready-made checks for the
+`my-cli doctor` runner — they keep `.perm` authoring artifacts honest and
+catch model errors before they reach a runtime `check`:
+
+```ts
+import { permissionsModelLoads } from '@maroonedsoftware/johnny5/permissions';
+import { kyselyTableExists } from '@maroonedsoftware/johnny5/kysely';
+
+const checks = [
+    permissionsModelLoads({ loadModel: async () => (await import('./permissions/generated/index.js')).model }),
+    kyselyTableExists({ db, table: 'relation_tuples' }),
+];
+```
+
+See the [`@maroonedsoftware/johnny5` README](../johnny5/README.md#built-in-check-libraries)
+for the full list — it also covers `permissionsSchemaCompiled` (`.perm` ↔
+generated TS drift) and `permissionsFixturesPass` (every `*.perm.yaml`
+asserts as expected).
+
 ## License
 
 MIT

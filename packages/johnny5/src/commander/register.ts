@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import type { CliContext, CommandModule, DiscoveredCommand, OptionSpec } from '../types.js';
+import { checkEnvironmentGuard, confirmDangerous, needsYesOption } from './safety.js';
 
 const applyOption = (cmd: Command, spec: OptionSpec): void => {
     if (spec.required) {
@@ -31,8 +32,9 @@ const deriveOptionKey = (flags: string): string => {
     return stripped.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
 };
 
-const attachLeaf = (parent: Command, leafName: string, mod: CommandModule, ctx: CliContext, sourceLabel: string): void => {
+const attachLeaf = (parent: Command, leafName: string, mod: CommandModule, ctx: CliContext, sourceLabel: string, fullPath: string[]): void => {
     const cmd = parent.command(leafName).description(mod.description);
+    const pathLabel = fullPath.join(' ');
 
     for (const arg of mod.args ?? []) {
         const argName = arg.variadic ? `${arg.name}...` : arg.name;
@@ -43,6 +45,8 @@ const attachLeaf = (parent: Command, leafName: string, mod: CommandModule, ctx: 
     for (const opt of mod.options ?? []) {
         applyOption(cmd, opt);
     }
+
+    if (needsYesOption(mod)) cmd.option('-y, --yes', 'Skip confirmation prompt for this destructive command', false);
 
     if (mod.passthrough) cmd.allowUnknownOption(true).allowExcessArguments(true);
 
@@ -61,6 +65,19 @@ const attachLeaf = (parent: Command, leafName: string, mod: CommandModule, ctx: 
             const key = deriveOptionKey(optSpec.flags);
             if (opts[key] === undefined && process.env[optSpec.envVar] !== undefined) {
                 opts[key] = process.env[optSpec.envVar];
+            }
+        }
+
+        if (!checkEnvironmentGuard(mod, ctx, pathLabel)) {
+            process.exit(1);
+            return;
+        }
+
+        if (mod.dangerous) {
+            const proceed = await confirmDangerous(mod, ctx, pathLabel, opts['yes'] === true);
+            if (!proceed) {
+                process.exit(1);
+                return;
             }
         }
 
@@ -112,6 +129,6 @@ export const registerCommands = (program: Command, discovered: DiscoveredCommand
         const leafName = entry.path[entry.path.length - 1];
         if (!leafName) continue;
         const sourceLabel = entry.source === 'plugin' ? (entry.sourceName ?? 'plugin') : 'core';
-        attachLeaf(parent, leafName, entry.module, ctx, sourceLabel);
+        attachLeaf(parent, leafName, entry.module, ctx, sourceLabel, entry.path);
     }
 };
