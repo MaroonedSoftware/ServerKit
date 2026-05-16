@@ -2,7 +2,7 @@
   "name": "serverkit-vscode-extension",
   "displayName": "ServerKit",
   "description": "Language support for ServerKit .perm permission DSL files.",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "author": {
     "name": "Marooned Software",
     "url": "https://github.com/MaroonedSoftware/serverkit"
