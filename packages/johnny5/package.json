@@ -1,6 +1,6 @@
 {
     "name": "@maroonedsoftware/johnny5",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "description": "CLI framework for ServerKit-based applications — plugin registration, doctor runner, and opt-in Postgres/Redis/Docker integrations",
     "author": {
         "name": "Marooned Software",
