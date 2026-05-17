@@ -1,5 +1,13 @@
 # @maroonedsoftware/koa
 
+## 2.2.2
+
+### Patch Changes
+
+- Updated dependencies [7c85ab4]
+- Updated dependencies [3ed349d]
+  - @maroonedsoftware/multipart@1.2.0
+
 ## 2.2.1
 
 ### Patch Changes

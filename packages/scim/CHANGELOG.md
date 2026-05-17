@@ -1,5 +1,11 @@
 # @maroonedsoftware/scim
 
+## 0.1.11
+
+### Patch Changes
+
+- @maroonedsoftware/koa@2.2.2
+
 ## 0.1.10
 
 ### Patch Changes
