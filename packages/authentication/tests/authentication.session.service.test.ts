@@ -201,14 +201,14 @@ describe('AuthenticationSessionService', () => {
 
     it('throws 401 when the session subject does not match the JWT subject', async () => {
       const session = makeStoredSession({ subject: 'user-1' });
-      jwtProvider.decode = vi.fn().mockReturnValue({ sessionToken: 'session-token', subject: 'user-2' });
+      jwtProvider.decode = vi.fn().mockReturnValue({ sessionToken: 'session-token', sub: 'user-2' });
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(session));
       await expect(service.lookupSessionFromJwt('valid.jwt')).rejects.toMatchObject({ statusCode: 401 });
     });
 
     it('returns the session and decoded JWT payload on success', async () => {
       const session = makeStoredSession({ subject: 'user-1' });
-      const payload = { sessionToken: 'session-token', subject: 'user-1' };
+      const payload = { sessionToken: 'session-token', sub: 'user-1' };
       jwtProvider.decode = vi.fn().mockReturnValue(payload);
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(session));
       const result = await service.lookupSessionFromJwt('valid.jwt');
@@ -226,14 +226,20 @@ describe('AuthenticationSessionService', () => {
 
     it('deletes the session key from cache', async () => {
       const session = makeStoredSession();
-      cache.get = vi.fn().mockResolvedValueOnce(JSON.stringify(session)).mockResolvedValueOnce(JSON.stringify(['session-token']));
+      cache.get = vi
+        .fn()
+        .mockResolvedValueOnce(JSON.stringify(session))
+        .mockResolvedValueOnce(JSON.stringify(['session-token']));
       await service.deleteSession('session-token');
       expect(cache.delete).toHaveBeenCalledWith('auth_session_session-token');
     });
 
     it('removes the token from the subject session list', async () => {
       const session = makeStoredSession();
-      cache.get = vi.fn().mockResolvedValueOnce(JSON.stringify(session)).mockResolvedValueOnce(JSON.stringify(['session-token']));
+      cache.get = vi
+        .fn()
+        .mockResolvedValueOnce(JSON.stringify(session))
+        .mockResolvedValueOnce(JSON.stringify(['session-token']));
       await service.deleteSession('session-token');
       expect(cache.update).toHaveBeenCalledWith('auth_session_subject_user-1', JSON.stringify([]));
     });
@@ -276,14 +282,20 @@ describe('AuthenticationSessionService', () => {
 
     it('returns all sessions for the subject', async () => {
       const session = makeStoredSession();
-      cache.get = vi.fn().mockResolvedValueOnce(JSON.stringify(['session-token'])).mockResolvedValueOnce(JSON.stringify(session));
+      cache.get = vi
+        .fn()
+        .mockResolvedValueOnce(JSON.stringify(['session-token']))
+        .mockResolvedValueOnce(JSON.stringify(session));
       const result = await service.getSessionsForSubject('user-1');
       expect(result).toHaveLength(1);
       expect(result[0]!.sessionToken).toBe('session-token');
     });
 
     it('omits sessions that no longer exist in cache', async () => {
-      cache.get = vi.fn().mockResolvedValueOnce(JSON.stringify(['stale-token'])).mockResolvedValueOnce(null);
+      cache.get = vi
+        .fn()
+        .mockResolvedValueOnce(JSON.stringify(['stale-token']))
+        .mockResolvedValueOnce(null);
       const result = await service.getSessionsForSubject('user-1');
       expect(result).toEqual([]);
     });
@@ -534,12 +546,7 @@ describe('AuthenticationSessionService', () => {
       const harness = makeLiveHarness();
       const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider, harness.logger);
       const onSessionRefreshed = vi.fn();
-      const svcWithHook = new AuthenticationSessionService(
-        makeOptions({ onSessionRefreshed }),
-        harness.cache,
-        harness.jwtProvider,
-        harness.logger,
-      );
+      const svcWithHook = new AuthenticationSessionService(makeOptions({ onSessionRefreshed }), harness.cache, harness.jwtProvider, harness.logger);
 
       const session = await svc.createSession('user-1', {}, makeFactor());
       const first = await svcWithHook.issueTokenForSession(session.sessionToken);
@@ -680,12 +687,7 @@ describe('AuthenticationSessionService', () => {
       const onSessionCreated = vi.fn().mockImplementation(() => {
         throw new Error('hook exploded');
       });
-      const svc = new AuthenticationSessionService(
-        makeOptions({ onSessionCreated }),
-        harness.cache,
-        harness.jwtProvider,
-        harness.logger,
-      );
+      const svc = new AuthenticationSessionService(makeOptions({ onSessionCreated }), harness.cache, harness.jwtProvider, harness.logger);
 
       // Must not throw despite the failing hook.
       const session = await svc.createSession('user-1', {}, makeFactor());
@@ -696,12 +698,7 @@ describe('AuthenticationSessionService', () => {
     it('fires onValidationFailed when lookupSessionFromJwt cannot resolve the session', async () => {
       const harness = makeLiveHarness();
       const onValidationFailed = vi.fn();
-      const svc = new AuthenticationSessionService(
-        makeOptions({ onValidationFailed }),
-        harness.cache,
-        harness.jwtProvider,
-        harness.logger,
-      );
+      const svc = new AuthenticationSessionService(makeOptions({ onValidationFailed }), harness.cache, harness.jwtProvider, harness.logger);
       (harness.jwtProvider.decode as ReturnType<typeof vi.fn>).mockReturnValue({
         sessionToken: 'ghost-token',
         subject: 'user-1',

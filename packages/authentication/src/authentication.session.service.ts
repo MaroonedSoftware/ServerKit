@@ -3,12 +3,7 @@ import { unauthorizedError } from '@maroonedsoftware/errors';
 import { DateTime, Duration } from 'luxon';
 import { deepmergeCustom } from 'deepmerge-ts';
 import { Logger } from '@maroonedsoftware/logger';
-import {
-  AuthenticationSession,
-  AuthenticationSessionFactor,
-  AuthenticationToken,
-  SessionRevocationReason,
-} from './types.js';
+import { AuthenticationSession, AuthenticationSessionFactor, AuthenticationToken, SessionRevocationReason } from './types.js';
 import type { AuthenticationSessionHooks } from './types.js';
 import { CacheProvider } from '@maroonedsoftware/cache';
 import { JwtProvider } from './providers/jwt.provider.js';
@@ -225,13 +220,7 @@ export class AuthenticationSessionService {
       familyId: session.familyId,
       sessionToken: session.sessionToken,
     };
-    const { token } = this.jwtProvider.create(
-      payload,
-      session.subject,
-      this.options.issuer,
-      this.options.audience,
-      this.options.refreshExpiresIn,
-    );
+    const { token } = this.jwtProvider.create(payload, session.subject, this.options.issuer, this.options.audience, this.options.refreshExpiresIn);
     return { token, jti, familyId: session.familyId };
   }
 
@@ -410,12 +399,10 @@ export class AuthenticationSessionService {
       });
     }
 
-    if (session.subject !== jwtPayload.subject) {
-      await this.runHook('onValidationFailed', hook =>
-        hook(jwtPayload.sessionToken ?? '', { reason: 'subject_mismatch' }),
-      );
+    if (session.subject !== jwtPayload.sub) {
+      await this.runHook('onValidationFailed', hook => hook(jwtPayload.sessionToken ?? '', { reason: 'subject_mismatch' }));
       throw unauthorizedError('Bearer error="invalid_token"').withInternalDetails({
-        message: `session ${jwtPayload.sessionToken} not valid for ${jwtPayload.subject}`,
+        message: `session ${jwtPayload.sessionToken} not valid for ${jwtPayload.sub}`,
       });
     }
 
@@ -600,9 +587,7 @@ export class AuthenticationSessionService {
    *   resolves to a live session.
    */
   async refreshSession(refreshToken: string): Promise<AuthenticationToken> {
-    const decoded = this.jwtProvider.decode(refreshToken, this.options.issuer) as
-      | (RefreshTokenPayload & { exp?: number })
-      | undefined;
+    const decoded = this.jwtProvider.decode(refreshToken, this.options.issuer) as (RefreshTokenPayload & { exp?: number }) | undefined;
     if (!decoded || decoded.kind !== 'refresh' || !decoded.jti || !decoded.familyId || !decoded.sessionToken) {
       await this.runHook('onValidationFailed', hook => hook('', { reason: 'refresh_token_invalid' }));
       throw unauthorizedError('Bearer error="invalid_token"');
@@ -626,10 +611,7 @@ export class AuthenticationSessionService {
       throw unauthorizedError('Bearer error="invalid_token"');
     }
 
-    const consumedTtlSeconds = Math.max(
-      decoded.exp ? decoded.exp - Math.floor(Date.now() / 1000) : 0,
-      MIN_CONSUMED_TTL_SECONDS,
-    );
+    const consumedTtlSeconds = Math.max(decoded.exp ? decoded.exp - Math.floor(Date.now() / 1000) : 0, MIN_CONSUMED_TTL_SECONDS);
     await this.cache.set(consumedKey, '1', Duration.fromObject({ seconds: consumedTtlSeconds }));
 
     const tokens = await this.issueTokensForLoadedSession(session);
