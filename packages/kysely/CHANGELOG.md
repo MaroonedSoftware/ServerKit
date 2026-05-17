@@ -1,5 +1,12 @@
 # @maroonedsoftware/kysely
 
+## 0.6.1
+
+### Patch Changes
+
+- Updated dependencies [108c1d4]
+  - @maroonedsoftware/errors@1.7.0
+
 ## 0.6.0
 
 ### Minor Changes

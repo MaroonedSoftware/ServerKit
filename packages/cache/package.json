@@ -1,6 +1,6 @@
 {
   "name": "@maroonedsoftware/cache",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Cache utilities for ServerKit.",
   "keywords": [
     "backend",

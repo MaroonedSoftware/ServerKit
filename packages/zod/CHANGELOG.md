@@ -1,5 +1,12 @@
 # @maroonedsoftware/zod
 
+## 0.4.2
+
+### Patch Changes
+
+- Updated dependencies [108c1d4]
+  - @maroonedsoftware/errors@1.7.0
+
 ## 0.4.1
 
 ### Patch Changes
