@@ -87,7 +87,7 @@ describe('JwtAuthenticationHandler', () => {
       });
     });
 
-    it('passes the decoded payload to the matching issuer and returns its result', async () => {
+    it('passes the raw token and decoded payload to the matching issuer and returns its result', async () => {
       const token = signToken({ iss: 'https://auth.example.com', sub: 'user-1', custom: 'claim' });
       const validSession = makeValidSession();
       const issuer: JwtAuthenticationIssuer = { parse: vi.fn().mockResolvedValue(validSession) };
@@ -96,6 +96,7 @@ describe('JwtAuthenticationHandler', () => {
       const result = await handler.authenticate('bearer', token);
 
       expect(issuer.parse).toHaveBeenCalledWith(
+        token,
         expect.objectContaining({ iss: 'https://auth.example.com', sub: 'user-1', custom: 'claim' }),
       );
       expect(result).toBe(validSession);
@@ -112,7 +113,7 @@ describe('JwtAuthenticationHandler', () => {
       const result = await handler.authenticate('bearer', token);
 
       expect(issuerA.parse).not.toHaveBeenCalled();
-      expect(issuerB.parse).toHaveBeenCalledWith(expect.objectContaining({ iss: 'https://issuer-b.example.com' }));
+      expect(issuerB.parse).toHaveBeenCalledWith(token, expect.objectContaining({ iss: 'https://issuer-b.example.com' }));
       expect(result).toBe(sessionB);
     });
 

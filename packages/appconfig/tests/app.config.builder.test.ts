@@ -55,6 +55,15 @@ describe('AppConfigBuilder', () => {
   });
 
   describe('build()', () => {
+    it('returns a usable empty config when no sources are registered', async () => {
+      const builder = new AppConfigBuilder();
+      // `deepmerge()` with zero arguments returns `undefined`, which would crash
+      // every downstream consumer. The builder must hand back an empty object
+      // so the missing-key error surfaces at the call site instead.
+      const config = await builder.build();
+      expect(config.get('anything')).toBeUndefined();
+    });
+
     it('should build config from a single source', async () => {
       const builder = new AppConfigBuilder();
       const source: AppConfigSource = {

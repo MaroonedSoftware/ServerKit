@@ -2,6 +2,7 @@ import { Injectable } from 'injectkit';
 import { AppConfigProvider } from '../app.config.provider.js';
 import { ObjectVisitorMeta } from '../object.visitor.js';
 import { SecretManagerServiceClient } from '@google-cloud/secret-manager';
+import { ServerkitError } from '@maroonedsoftware/errors';
 import { tryParseJson } from '../helpers.js';
 
 /**
@@ -67,6 +68,10 @@ export class AppConfigProviderGcpSecrets implements AppConfigProvider {
    * @returns `true` if the value matches the provider's regex pattern, `false` otherwise.
    */
   canParse(value: string): boolean {
+    // `.test()` with a `/g`-flagged regex advances `lastIndex`, which can cause a
+    // false negative on a subsequent call against the same string. Reset before
+    // testing so behavior is independent of call order.
+    this.prefix.lastIndex = 0;
     return this.prefix.test(value);
   }
 
@@ -74,8 +79,11 @@ export class AppConfigProviderGcpSecrets implements AppConfigProvider {
    * Fetches a secret from GCP Secret Manager.
    *
    * @param secretId - The name of the secret to fetch.
-   * @returns A promise that resolves to the secret value, or an empty string if the secret
-   *   couldn't be fetched.
+   * @returns A promise that resolves to the secret value.
+   * @throws {ServerkitError} When Secret Manager rejects the access request (e.g. missing
+   *   secret, IAM denial, network failure). The original error is attached via `withCause`
+   *   and the failing `secretId` / `projectId` are recorded in `internalDetails`. Surfacing
+   *   the failure prevents callers booting with an empty password / API key.
    * @internal
    */
   private async getSecret(secretId: string): Promise<string> {
@@ -85,8 +93,11 @@ export class AppConfigProviderGcpSecrets implements AppConfigProvider {
       });
       return secret.payload?.data?.toString() ?? '';
     } catch (error) {
-      console.error(error);
-      return '';
+      // Surface failures loudly: silently returning `''` lets services boot with
+      // an empty password / API key, which is far worse than a hard failure here.
+      throw new ServerkitError(`AppConfigProviderGcpSecrets: failed to resolve secret "${secretId}" in project "${this.projectId}"`)
+        .withCause(error as Error)
+        .withInternalDetails({ secretId, projectId: this.projectId });
     }
   }
 
@@ -103,6 +114,8 @@ export class AppConfigProviderGcpSecrets implements AppConfigProvider {
    * @param meta - Metadata about the value's location in the configuration object.
    * @returns A promise that resolves when all secrets have been fetched and the
    *   transformation is complete.
+   * @throws {ServerkitError} Propagated from {@link getSecret} when any referenced secret
+   *   cannot be resolved. The build call site is expected to fail loud and stop boot.
    *
    * @example
    * ```typescript

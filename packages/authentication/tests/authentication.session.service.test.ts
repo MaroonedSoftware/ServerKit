@@ -407,7 +407,7 @@ describe('AuthenticationSessionService', () => {
     });
 
     it('produces session DateTimes that survive a refresh via updateSession', async () => {
-      // updateSession reads from cache, calls .plus() on the deserialized expiresAt,
+      // updateSession reads from cache, rewrites `expiresAt` to `now + expiration`,
       // and writes back — exercising the full DateTime ↔ Unix-int round-trip.
       const store = new Map<string, string>();
       cache.get = vi.fn().mockImplementation(async (k: string) => store.get(k) ?? null);
@@ -419,10 +419,41 @@ describe('AuthenticationSessionService', () => {
       });
 
       const created = await service.createSession('user-1', {}, makeFactor());
+      const beforeUpdate = DateTime.utc();
       const updated = await service.updateSession(created.sessionToken, 'user-1', Duration.fromObject({ minutes: 30 }));
+      const afterUpdate = DateTime.utc();
 
-      expect(updated.expiresAt.toUnixInteger()).toBe(created.expiresAt.toUnixInteger() + 30 * 60);
+      // Absolute, not additive: `expiresAt` is rewritten to `now + 30min`, so it must
+      // fall within the [beforeUpdate, afterUpdate] window plus 30 minutes — not be
+      // stacked on top of the original `createSession` expiry.
+      const lowerBound = beforeUpdate.plus({ minutes: 30 }).toUnixInteger();
+      const upperBound = afterUpdate.plus({ minutes: 30 }).toUnixInteger();
+      expect(updated.expiresAt.toUnixInteger()).toBeGreaterThanOrEqual(lowerBound);
+      expect(updated.expiresAt.toUnixInteger()).toBeLessThanOrEqual(upperBound);
       expect(updated.lastAccessedAt.toUnixInteger()).toBeGreaterThanOrEqual(created.lastAccessedAt.toUnixInteger());
+    });
+
+    it('does not stretch sessions past policy on repeated updateSession calls (absolute, not additive)', async () => {
+      // Regression: an earlier implementation did `expiresAt = expiresAt.plus(expiration)`,
+      // which let a chatty client extend a session well past its configured lifetime by
+      // calling updateSession on every request.
+      const store = new Map<string, string>();
+      cache.get = vi.fn().mockImplementation(async (k: string) => store.get(k) ?? null);
+      cache.set = vi.fn().mockImplementation(async (k: string, v: string) => {
+        store.set(k, v);
+      });
+      cache.update = vi.fn().mockImplementation(async (k: string, v: string) => {
+        store.set(k, v);
+      });
+
+      const created = await service.createSession('user-1', {}, makeFactor());
+      const updated1 = await service.updateSession(created.sessionToken, 'user-1', Duration.fromObject({ minutes: 30 }));
+      const updated2 = await service.updateSession(created.sessionToken, 'user-1', Duration.fromObject({ minutes: 30 }));
+
+      // The two calls should yield expiries within ~a second of each other — definitely
+      // not 30 minutes apart, which is what additive extension would produce.
+      const delta = Math.abs(updated2.expiresAt.toUnixInteger() - updated1.expiresAt.toUnixInteger());
+      expect(delta).toBeLessThan(5);
     });
   });
 

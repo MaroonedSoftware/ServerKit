@@ -11,11 +11,20 @@ export interface PostgresError extends Error {
   code: string;
 }
 
+// Postgres SQLSTATE codes are 5 characters, each upper-case A-Z or 0-9 — see
+// https://www.postgresql.org/docs/current/errcodes-appendix.html. Matching
+// against this shape avoids mis-classifying generic Node errors (e.g. fs
+// `ENOENT`) whose `code` is also a string.
+const POSTGRES_CODE_PATTERN = /^[0-9A-Z]{5}$/;
+
 /**
- * Type guard to check if an error is a PostgreSQL error with a code property.
+ * Type guard that narrows to {@link PostgresError} by checking for a string `code`
+ * property in the 5-character SQLSTATE shape. Generic Node errors with a `code`
+ * (e.g. `ENOENT`, `EPERM`) are intentionally rejected so they don't get routed
+ * through the Postgres mapper and emerge as opaque HTTP 500s.
  *
  * @param error - The error to check.
- * @returns True if the error has a `code` property, false otherwise.
+ * @returns `true` when `error.code` matches `/^[0-9A-Z]{5}$/`.
  *
  * @example
  * ```ts
@@ -25,7 +34,9 @@ export interface PostgresError extends Error {
  * ```
  */
 export const isPostgresError = (error: Error): error is PostgresError => {
-  return 'code' in error;
+  if (!('code' in error)) return false;
+  const code = (error as { code: unknown }).code;
+  return typeof code === 'string' && POSTGRES_CODE_PATTERN.test(code);
 };
 
 /**

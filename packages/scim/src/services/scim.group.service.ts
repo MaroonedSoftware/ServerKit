@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { DateTime } from 'luxon';
 import { Injectable } from 'injectkit';
 import { Logger } from '@maroonedsoftware/logger';
 import { ScimGroupRepository } from '../repositories/scim.group.repository.js';
@@ -55,7 +56,7 @@ export class ScimGroupService {
     if (existing) {
       throw scimError(409, 'uniqueness', 'Conflict').withDetails({ message: `displayName "${payload.displayName}" already exists` });
     }
-    const now = new Date().toISOString();
+    const now = DateTime.utc().toISO();
     const id = payload.id ?? randomUUID();
     const group: ScimGroup = {
       ...payload,
@@ -93,7 +94,7 @@ export class ScimGroupService {
         throw scimError(409, 'uniqueness', 'Conflict').withDetails({ message: `displayName "${payload.displayName}" already exists` });
       }
     }
-    const now = new Date().toISOString();
+    const now = DateTime.utc().toISO();
     const group: ScimGroup = {
       ...payload,
       id,
@@ -122,7 +123,7 @@ export class ScimGroupService {
     patched.id = existing.id;
     patched.meta = {
       ...existing.meta,
-      lastModified: new Date().toISOString(),
+      lastModified: DateTime.utc().toISO(),
     };
     return this.repository.replace(id, patched);
   }

@@ -158,51 +158,51 @@ describe('EncryptionProvider', () => {
   });
 
   describe('createKey', () => {
-    it('returns a 32-byte key and a 16-byte salt when called without a salt', () => {
-      const { key, salt } = EncryptionProvider.createKey('correct horse battery staple');
+    it('returns a 32-byte key and a 16-byte salt when called without a salt', async () => {
+      const { key, salt } = await EncryptionProvider.createKey('correct horse battery staple');
       expect(key).toBeInstanceOf(Buffer);
       expect(salt).toBeInstanceOf(Buffer);
       expect(key.length).toBe(32);
       expect(salt.length).toBe(16);
     });
 
-    it('produces a key suitable for the EncryptionProvider constructor', () => {
-      const { key } = EncryptionProvider.createKey('passphrase');
+    it('produces a key suitable for the EncryptionProvider constructor', async () => {
+      const { key } = await EncryptionProvider.createKey('passphrase');
       expect(() => new EncryptionProvider(key)).not.toThrow();
     });
 
-    it('returns a different key and salt on each call when no salt is provided', () => {
-      const a = EncryptionProvider.createKey('same passphrase');
-      const b = EncryptionProvider.createKey('same passphrase');
+    it('returns a different key and salt on each call when no salt is provided', async () => {
+      const a = await EncryptionProvider.createKey('same passphrase');
+      const b = await EncryptionProvider.createKey('same passphrase');
       expect(a.salt.equals(b.salt)).toBe(false);
       expect(a.key.equals(b.key)).toBe(false);
     });
 
-    it('is deterministic when called with the same secret and salt', () => {
+    it('is deterministic when called with the same secret and salt', async () => {
       const passphrase = 'persisted-secret';
-      const { key, salt } = EncryptionProvider.createKey(passphrase);
-      const { key: rederived } = EncryptionProvider.createKey(passphrase, salt);
+      const { key, salt } = await EncryptionProvider.createKey(passphrase);
+      const { key: rederived } = await EncryptionProvider.createKey(passphrase, salt);
       expect(key.equals(rederived)).toBe(true);
     });
 
-    it('echoes back the salt that was passed in', () => {
+    it('echoes back the salt that was passed in', async () => {
       const customSalt = randomBytes(16);
-      const { salt } = EncryptionProvider.createKey('passphrase', customSalt);
+      const { salt } = await EncryptionProvider.createKey('passphrase', customSalt);
       expect(salt.equals(customSalt)).toBe(true);
     });
 
-    it('produces different keys for different secrets given the same salt', () => {
+    it('produces different keys for different secrets given the same salt', async () => {
       const sharedSalt = randomBytes(16);
-      const a = EncryptionProvider.createKey('secret-one', sharedSalt);
-      const b = EncryptionProvider.createKey('secret-two', sharedSalt);
+      const a = await EncryptionProvider.createKey('secret-one', sharedSalt);
+      const b = await EncryptionProvider.createKey('secret-two', sharedSalt);
       expect(a.key.equals(b.key)).toBe(false);
     });
 
-    it('round-trips ciphertext across two providers when the salt is reused', () => {
+    it('round-trips ciphertext across two providers when the salt is reused', async () => {
       const passphrase = 'shared-secret';
-      const { key, salt } = EncryptionProvider.createKey(passphrase);
+      const { key, salt } = await EncryptionProvider.createKey(passphrase);
       const a = new EncryptionProvider(key);
-      const b = new EncryptionProvider(EncryptionProvider.createKey(passphrase, salt).key);
+      const b = new EncryptionProvider((await EncryptionProvider.createKey(passphrase, salt)).key);
       expect(b.decrypt(a.encrypt('hello'))).toBe('hello');
     });
   });

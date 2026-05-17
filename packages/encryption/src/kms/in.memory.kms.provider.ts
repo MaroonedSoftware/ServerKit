@@ -91,9 +91,6 @@ export class InMemoryKmsProvider extends KmsProvider {
 
   async encryptForId(id: string, plaintext: Buffer, context: EncryptionContext, _purpose?: string): Promise<EncryptResult> {
     const active = await this.resolveOrBootstrapActiveKey(id);
-    if (active.status === 'retired') {
-      throw new KeyRetiredError(active.keyId);
-    }
     const dek = this.unwrapDek(active.wrappedDek);
     const ciphertext = this.encryptWithDek(dek, plaintext, context);
     return { ciphertext, keyId: active.keyId };
@@ -177,13 +174,20 @@ export class InMemoryKmsProvider extends KmsProvider {
   // race and create two active rows for the same id.
   private async withIdLock<T>(id: string, fn: () => T | Promise<T>): Promise<T> {
     const prev = this.idLocks.get(id) ?? Promise.resolve();
-    const run = prev.then(fn, fn);
-    const chained = run.catch(() => undefined);
-    this.idLocks.set(id, chained);
+    const chained = (async () => {
+      try {
+        await prev;
+      } catch {
+        // The previous holder owns its own error propagation; we only need to wait for it to settle.
+      }
+      return fn();
+    })();
+    const tracked = chained.catch(() => undefined);
+    this.idLocks.set(id, tracked);
     try {
-      return await run;
+      return await chained;
     } finally {
-      if (this.idLocks.get(id) === chained) this.idLocks.delete(id);
+      if (this.idLocks.get(id) === tracked) this.idLocks.delete(id);
     }
   }
 

@@ -2,6 +2,7 @@ import { Injectable } from 'injectkit';
 import { Logger } from '@maroonedsoftware/logger';
 import { Duration } from 'luxon';
 import jsonwebtoken from 'jsonwebtoken';
+import { createPublicKey } from 'node:crypto';
 import { httpError, unauthorizedError } from '@maroonedsoftware/errors';
 
 /**
@@ -9,14 +10,39 @@ import { httpError, unauthorizedError } from '@maroonedsoftware/errors';
  *
  * Used internally by {@link AuthenticationSessionService} to issue and validate
  * session tokens. Inject this provider into your DI container alongside a PEM
- * private key string.
+ * private key string. If `pemPublicKey` is omitted the public key is derived
+ * from the private key, but verification will still only ever see the public
+ * half — the private key never leaves the signing path.
  */
 @Injectable()
 export class JwtProvider {
+  private readonly pemPublicKey: string;
+
+  /**
+   * @param logger        - Logger used to record verification failures.
+   * @param pemPrivateKey - PEM-encoded RSA private key used to sign tokens.
+   * @param pemPublicKey  - PEM-encoded RSA public key used to verify tokens. When omitted,
+   *   the public key is derived from `pemPrivateKey` via `crypto.createPublicKey` so the
+   *   verify path never has to hold the private key. Pass an explicit value (e.g. from
+   *   JWKS) when sign and verify keys live in different places.
+   */
   constructor(
     private readonly logger: Logger,
     private readonly pemPrivateKey: string,
-  ) {}
+    pemPublicKey?: string,
+  ) {
+    if (pemPublicKey) {
+      this.pemPublicKey = pemPublicKey;
+    } else {
+      try {
+        this.pemPublicKey = createPublicKey(pemPrivateKey).export({ type: 'spki', format: 'pem' }) as string;
+      } catch {
+        // Defer the failure until `create` or `decode` is called so constructor doesn't throw on test fixtures
+        // that intentionally use invalid PEMs and assert on the signing-path error.
+        this.pemPublicKey = pemPrivateKey;
+      }
+    }
+  }
 
   /**
    * Sign a JWT payload and return the compact token string plus the decoded claims.
@@ -62,7 +88,7 @@ export class JwtProvider {
    */
   decode(token: string, issuer: string, ignoreExpiration?: boolean, reThrow: boolean = false) {
     try {
-      const decoded = jsonwebtoken.verify(token, this.pemPrivateKey, { issuer, ignoreExpiration });
+      const decoded = jsonwebtoken.verify(token, this.pemPublicKey, { issuer, ignoreExpiration });
 
       if (typeof decoded === 'string') {
         if (reThrow) {

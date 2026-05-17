@@ -30,6 +30,10 @@ export class AuthenticationSchemeHandler {
   /**
    * Resolve an {@link AuthenticationSession} from the raw `Authorization` header value.
    *
+   * Splits the header on the first space only — the value passed to the handler retains
+   * any subsequent spaces, so schemes with space-separated parameters (e.g.
+   * `Digest username="x", nonce="y"`) reach the handler intact.
+   *
    * @param authorizationHeader - The full `Authorization` header string (e.g. `"Bearer <token>"`),
    *   or `undefined` if the header was absent.
    * @returns The resolved {@link AuthenticationSession}, or {@link invalidAuthenticationSession}
@@ -37,7 +41,11 @@ export class AuthenticationSchemeHandler {
    */
   async handle(authorizationHeader?: string) {
     if (authorizationHeader) {
-      const [scheme, value] = authorizationHeader.split(' ');
+      // Split only on the first space so schemes with space-separated parameters
+      // (e.g. `Digest username="x", nonce="y"`) retain their full value.
+      const separator = authorizationHeader.indexOf(' ');
+      const scheme = separator === -1 ? '' : authorizationHeader.slice(0, separator);
+      const value = separator === -1 ? '' : authorizationHeader.slice(separator + 1);
       if (!scheme || !value) {
         this.logger.warn('Invalid authorization header');
         return invalidAuthenticationSession;

@@ -105,9 +105,12 @@ import type { JwtPayload } from 'jsonwebtoken';
 
 @Injectable()
 class MyIssuer extends JwtAuthenticationIssuer {
-  async parse(payload: JwtPayload): Promise<AuthenticationSession> {
-    // Verify signature, expiry, audience, etc.
-    return { subject: payload.sub!, sessionToken: payload.jti!, ... };
+  // `parse` receives both the raw token and the (unverified) decoded payload.
+  // Implementations MUST verify the signature against trusted key material
+  // before trusting any claim in `payload`.
+  async parse(token: string, payload: JwtPayload): Promise<AuthenticationSession> {
+    const verified = jsonwebtoken.verify(token, MY_PUBLIC_KEY, { algorithms: ['RS256'], issuer: '...' }) as JwtPayload;
+    return { subject: verified.sub!, sessionToken: verified.jti!, ... };
   }
 }
 
@@ -1043,7 +1046,7 @@ Handles `bearer` tokens by decoding the JWT, extracting the `iss` claim, and del
 
 ### `JwtAuthenticationIssuer`
 
-Abstract base class. Implement `parse(payload: JwtPayload): Promise<AuthenticationSession>` to validate tokens from a specific issuer. Register instances in `JwtAuthenticationIssuerMap` keyed by the `iss` claim value.
+Abstract base class. Implement `parse(token: string, payload: JwtPayload): Promise<AuthenticationSession>` to validate tokens from a specific issuer. Implementations **must** verify the signature using the raw `token` — the `payload` argument comes from an unverified `jsonwebtoken.decode` call and cannot be trusted on its own. Register instances in `JwtAuthenticationIssuerMap` keyed by the `iss` claim value.
 
 ### `BasicAuthenticationHandler`
 
@@ -1058,7 +1061,7 @@ Abstract base class. Implement `verify(username: string, password: string): Prom
 | Method                                                              | Returns                                           | Description                                                |
 | ------------------------------------------------------------------- | ------------------------------------------------- | ---------------------------------------------------------- |
 | `createSession(subject, claims, factors, expiration?)`              | `Promise<AuthenticationSession>`                  | Create and cache a new session                             |
-| `updateSession(token, subject, expiration?, claims?, factor?)`      | `Promise<AuthenticationSession>`                  | Merge claims/factors and extend session expiry             |
+| `updateSession(token, subject, expiration?, claims?, factor?)`      | `Promise<AuthenticationSession>`                  | Merge claims/factors and reset `expiresAt` to `now + expiration` (absolute, not additive) |
 | `createOrUpdateSession(token?, subject, claims, factor, expiration?)` | `Promise<AuthenticationSession>`                | Create or update depending on whether the token resolves   |
 | `lookupSessionFromJwt(jwt, ignoreExpiration?)`                      | `Promise<{ session, jwtPayload }>`               | Validate a JWT and retrieve its session                    |
 | `getSession(token)`                                                 | `Promise<AuthenticationSession \| undefined>`    | Retrieve a session by token                                |
@@ -1111,10 +1114,12 @@ Abstract base class. Implement `get`, `set`, `update`, and `delete` to plug in a
 
 ### `JwtProvider`
 
+Constructed with `(logger, pemPrivateKey, pemPublicKey?)`. When `pemPublicKey` is omitted, the public half is derived from `pemPrivateKey` via `crypto.createPublicKey` — so verification never has to hold the signing key. Pass an explicit `pemPublicKey` (e.g. from JWKS) when sign and verify keys live in different places.
+
 | Method                                                 | Returns                       | Description                          |
 | ------------------------------------------------------ | ----------------------------- | ------------------------------------ |
-| `create(payload, subject, issuer, audience, expiresIn)` | `{ token, decoded }`         | Sign an RS256 JWT                    |
-| `decode(token, issuer, ignoreExpiration?, reThrow?)`   | `JwtPayload \| undefined`    | Verify and decode an RS256 JWT       |
+| `create(payload, subject, issuer, audience, expiresIn)` | `{ token, decoded }`         | Sign an RS256 JWT (uses the private key)    |
+| `decode(token, issuer, ignoreExpiration?, reThrow?)`   | `JwtPayload \| undefined`    | Verify and decode an RS256 JWT (uses the public key) |
 
 ### `OtpProvider`
 

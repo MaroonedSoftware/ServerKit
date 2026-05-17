@@ -14,7 +14,7 @@ pnpm add @maroonedsoftware/encryption
 - **Random IVs** — a fresh 96-bit IV per encryption means identical plaintexts always produce different ciphertexts
 - **Direct encryption** — `encrypt` / `decrypt` for straightforward use cases
 - **Envelope encryption** — `encryptWithNewDek` / `decryptWithDek` for per-record key isolation and efficient key rotation
-- **Passphrase-derived keys** — `EncryptionProvider.createKey(secret)` stretches a passphrase into a 32-byte key with PBKDF2
+- **Passphrase-derived keys** — `EncryptionProvider.createKey(secret)` stretches a passphrase into a 32-byte key with Argon2id (memory-hard, OWASP-recommended)
 - **PKCE helpers** — `pkceCreateVerifier` / `pkceCreateChallenge` for OAuth 2.0 PKCE (RFC 7636) flows
 - **DI-friendly** — decorated with `@Injectable()` for injectkit containers
 
@@ -43,15 +43,16 @@ registry.register(EncryptionProvider).useFactory(() => {
 
 #### Deriving a key from a passphrase
 
-If you don't have raw key material — only a human-supplied passphrase — use `EncryptionProvider.createKey(secret, salt?)` to stretch it into a 32-byte master key with PBKDF2 (HMAC-SHA-512, 65 535 iterations).
+If you don't have raw key material — only a human-supplied passphrase — use `EncryptionProvider.createKey(secret, salt?)` to stretch it into a 32-byte master key with Argon2id (the OWASP-recommended memory-hard KDF, shared with `@maroonedsoftware/authentication`'s password hashing via `ARGON2ID_DEFAULTS`).
 
 ```typescript
-// First boot: derive and persist the salt alongside whatever the key protects
-const { key, salt } = EncryptionProvider.createKey(process.env.SECRET!);
+// First boot: derive and persist the salt alongside whatever the key protects.
+// createKey is async — it offloads work to a native Argon2id worker.
+const { key, salt } = await EncryptionProvider.createKey(process.env.SECRET!);
 await persistSalt(salt); // salt is not secret — store it next to ciphertext
 
 // Subsequent boots: re-derive the same key by passing the stored salt back in
-const { key } = EncryptionProvider.createKey(process.env.SECRET!, await loadSalt());
+const { key } = await EncryptionProvider.createKey(process.env.SECRET!, await loadSalt());
 const enc = new EncryptionProvider(key);
 ```
 
@@ -129,9 +130,9 @@ Throws HTTP 400 when the key is not exactly 32 bytes.
 
 ---
 
-### `EncryptionProvider.createKey(secret: string, salt?: Buffer): { key: Buffer; salt: Buffer }`
+### `EncryptionProvider.createKey(secret: string, salt?: Buffer): Promise<{ key: Buffer; salt: Buffer }>`
 
-Static helper that derives a 32-byte master key from a passphrase using PBKDF2 (HMAC-SHA-512, 65 535 iterations).
+Static helper that derives a 32-byte master key from a passphrase using Argon2id with the shared `ARGON2ID_DEFAULTS` parameters (m=19 MiB, t=2, p=1; OWASP 2024). Async because the underlying `@node-rs/argon2` call runs in a native worker.
 
 | Parameter | Type     | Description                                                                                                            |
 | --------- | -------- | ---------------------------------------------------------------------------------------------------------------------- |

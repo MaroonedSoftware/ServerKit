@@ -170,5 +170,22 @@ describe('JwtProvider', () => {
       expect(result).toBeUndefined();
       expect(logger.error).toHaveBeenCalled();
     });
+
+    it('verifies with the public half of the key pair, not the private key', () => {
+      // The provider derives a public key from the private PEM at construction time;
+      // an explicit public PEM passed in should still be enough on its own to verify
+      // tokens minted by another provider holding the matching private key.
+      const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+      const privatePem = privateKey.export({ type: 'pkcs8', format: 'pem' }) as string;
+      const publicPem = publicKey.export({ type: 'spki', format: 'pem' }) as string;
+
+      const signer = new JwtProvider(logger, privatePem);
+      const verifier = new JwtProvider(logger, 'not-a-real-pem-key', publicPem);
+
+      const { token } = signer.create({ role: 'admin' }, 'user-1', 'https://auth.example.com', 'aud', Duration.fromObject({ hours: 1 }));
+
+      const result = verifier.decode(token, 'https://auth.example.com');
+      expect(result).toMatchObject({ role: 'admin', sub: 'user-1' });
+    });
   });
 });

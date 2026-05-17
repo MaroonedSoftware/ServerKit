@@ -227,9 +227,14 @@ describe('PostgresErrorHandler', () => {
   });
 
   describe('isPostgresError', () => {
-    it('should return true for errors with code property', () => {
+    it('should return true for errors with a 5-character SQLSTATE-shaped code', () => {
       const error = createPostgresError('23505');
       expect(isPostgresError(error)).toBe(true);
+    });
+
+    it('accepts SQLSTATE codes containing letters (e.g. 22P02, 40P01)', () => {
+      expect(isPostgresError(createPostgresError('22P02'))).toBe(true);
+      expect(isPostgresError(createPostgresError('40P01'))).toBe(true);
     });
 
     it('should return false for plain Error', () => {
@@ -240,6 +245,20 @@ describe('PostgresErrorHandler', () => {
     it('should return false for error with code deleted', () => {
       const error = new Error('no code') as Error & { code?: string };
       delete error.code;
+      expect(isPostgresError(error)).toBe(false);
+    });
+
+    it('rejects Node SystemError-style codes like ENOENT', () => {
+      // Regression: the old guard `'code' in error` matched any Error with a code
+      // property, so fs / net / axios errors were silently mapped to HTTP 500.
+      const fsError = new Error('file not found') as Error & { code: string };
+      fsError.code = 'ENOENT';
+      expect(isPostgresError(fsError)).toBe(false);
+    });
+
+    it('rejects errors whose code is not a string', () => {
+      const error = new Error('weird') as Error & { code: unknown };
+      error.code = 23505;
       expect(isPostgresError(error)).toBe(false);
     });
   });

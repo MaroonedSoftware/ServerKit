@@ -1,23 +1,20 @@
 import { hash as argon2Hash, verify as argon2Verify } from '@node-rs/argon2';
+import { ARGON2ID_DEFAULTS } from '@maroonedsoftware/encryption';
 import { Injectable } from 'injectkit';
 import { PasswordHashProvider, PasswordHashResult } from './password.hash.provider.js';
 
 /**
- * Argon2id parameters following the OWASP Password Storage Cheat Sheet (2024):
- * m=19 MiB, t=2, p=1, 32-byte output.
+ * Re-export of the shared Argon2id parameters from `@maroonedsoftware/encryption`
+ * so existing imports of `ARGON2ID_DEFAULTS` from this package keep working and
+ * password hashing / key derivation can't drift apart.
  *
- * Argon2id is the `@node-rs/argon2` library default, so we omit `algorithm`
- * here rather than importing the `const enum` (it cannot be re-exported under
+ * Argon2id is the `@node-rs/argon2` library default, so we omit `algorithm` here
+ * rather than importing the `const enum` (which cannot be re-exported under
  * `isolatedModules`).
  *
  * @see https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html
  */
-export const ARGON2ID_DEFAULTS = {
-  memoryCost: 19_456,
-  timeCost: 2,
-  parallelism: 1,
-  outputLen: 32,
-} as const;
+export { ARGON2ID_DEFAULTS };
 
 /**
  * Argon2id {@link PasswordHashProvider}. Stores a self-describing PHC string

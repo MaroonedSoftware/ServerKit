@@ -3,7 +3,7 @@ import { OnError } from '../src/on.error.decorator.js';
 
 describe('OnError decorator', () => {
   describe('class method error handling', () => {
-    it('should call handler when method throws synchronous error', () => {
+    it('should call handler and rethrow when method throws synchronous error', () => {
       const handler = vi.fn();
       const error = new Error('Test error');
 
@@ -15,12 +15,12 @@ describe('OnError decorator', () => {
       }
 
       const instance = new TestClass();
-      expect(() => instance.method()).not.toThrow();
+      expect(() => instance.method()).toThrow(error);
       expect(handler).toHaveBeenCalledOnce();
       expect(handler).toHaveBeenCalledWith(error);
     });
 
-    it('should call handler when async method rejects', async () => {
+    it('should call handler and rethrow when async method rejects', async () => {
       const handler = vi.fn();
       const error = new Error('Async error');
 
@@ -32,9 +32,28 @@ describe('OnError decorator', () => {
       }
 
       const instance = new TestClass();
-      await instance.method();
+      await expect(instance.method()).rejects.toBe(error);
       expect(handler).toHaveBeenCalledOnce();
       expect(handler).toHaveBeenCalledWith(error);
+    });
+
+    it('lets the handler map the error by throwing a different one', () => {
+      const original = new Error('original');
+      const mapped = new Error('mapped');
+      const handler = vi.fn((_e: Error) => {
+        throw mapped;
+      });
+
+      @OnError(handler)
+      class TestClass {
+        method(): void {
+          throw original;
+        }
+      }
+
+      const instance = new TestClass();
+      expect(() => instance.method()).toThrow(mapped);
+      expect(handler).toHaveBeenCalledWith(original);
     });
 
     it('should not call handler when method succeeds', () => {
@@ -115,13 +134,13 @@ describe('OnError decorator', () => {
       }
 
       const instance = new TestClass();
-      instance.method('test', 42);
+      expect(() => instance.method('test', 42)).toThrow(error);
       expect(handler).toHaveBeenCalledWith(error);
     });
   });
 
   describe('getter error handling', () => {
-    it('should call handler when getter throws error', () => {
+    it('should call handler and rethrow when getter throws error', () => {
       const handler = vi.fn();
       const error = new Error('Getter error');
 
@@ -133,7 +152,7 @@ describe('OnError decorator', () => {
       }
 
       const instance = new TestClass();
-      expect(() => instance.value).not.toThrow();
+      expect(() => instance.value).toThrow(error);
       expect(handler).toHaveBeenCalledOnce();
       expect(handler).toHaveBeenCalledWith(error);
     });
@@ -155,7 +174,7 @@ describe('OnError decorator', () => {
   });
 
   describe('setter error handling', () => {
-    it('should call handler when setter throws error', () => {
+    it('should call handler and rethrow when setter throws error', () => {
       const handler = vi.fn();
       const error = new Error('Setter error');
 
@@ -171,7 +190,7 @@ describe('OnError decorator', () => {
       const instance = new TestClass();
       expect(() => {
         instance.value = 'test';
-      }).not.toThrow();
+      }).toThrow(error);
       expect(handler).toHaveBeenCalledOnce();
       expect(handler).toHaveBeenCalledWith(error);
     });
@@ -217,8 +236,8 @@ describe('OnError decorator', () => {
       }
 
       const instance = new TestClass();
-      instance.method1();
-      instance.method2();
+      expect(() => instance.method1()).toThrow(error1);
+      expect(() => instance.method2()).toThrow(error2);
 
       expect(handler).toHaveBeenCalledTimes(2);
       expect(handler).toHaveBeenNthCalledWith(1, error1);
@@ -241,7 +260,7 @@ describe('OnError decorator', () => {
       class DerivedClass extends BaseClass {}
 
       const instance = new DerivedClass();
-      instance.method();
+      expect(() => instance.method()).toThrow(error);
 
       expect(handler).toHaveBeenCalledOnce();
       expect(handler).toHaveBeenCalledWith(error);

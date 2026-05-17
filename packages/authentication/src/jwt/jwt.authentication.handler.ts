@@ -28,7 +28,10 @@ export class JwtAuthenticationIssuerMap extends Map<string, JwtAuthenticationIss
  *
  * Decodes the JWT (without signature verification) to extract the `iss` claim,
  * looks up the corresponding {@link JwtAuthenticationIssuer} in the injected
- * {@link JwtAuthenticationIssuerMap}, and delegates full verification to it.
+ * {@link JwtAuthenticationIssuerMap}, and delegates full verification — including
+ * signature checking — to the issuer. Both the raw `token` and the unverified
+ * `payload` are forwarded so issuers can call `jsonwebtoken.verify(token, …)`
+ * directly against their trusted key material.
  *
  * Returns {@link invalidAuthenticationSession} when:
  * - The scheme is not `bearer`
@@ -64,7 +67,7 @@ export class JwtAuthenticationHandler implements AuthenticationHandler {
       const issuer = this.issuerMap.get(decoded.iss ?? '');
 
       if (issuer) {
-        return await issuer.parse(decoded);
+        return await issuer.parse(value, decoded);
       } else {
         this.logger.warn('No JwtAuthenticationIssuer found for issuer', { issuer: decoded.iss });
       }

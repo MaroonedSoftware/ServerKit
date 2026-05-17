@@ -74,10 +74,12 @@ export class PgBossJobRunner extends JobRunner {
    * 2. Sets up the cron schedule (for scheduled jobs)
    * 3. Starts a worker to process jobs from the queue
    *
-   * Job instances are resolved from the DI container for each execution,
-   * allowing for proper scoping and dependency injection.
+   * Each item in a batch resolves its `Job` instance from the DI container
+   * individually and execution is awaited via `Promise.allSettled`, so pg-boss
+   * does not acknowledge a batch until every job has actually finished and
+   * one job's failure cannot suppress its sibling's logs.
    *
-   * @returns A promise that resolves when all workers are set up.
+   * @returns A promise that resolves when all workers are registered with pg-boss.
    */
   async start(): Promise<void> {
     await this.pgboss.start();
@@ -96,15 +98,17 @@ export class PgBossJobRunner extends JobRunner {
         identifier = registration;
       }
 
-      this.pgboss.work(name, async (jobs: PgJob<object>[]) => {
-        const jobRunner = this.container.get<Job>(identifier);
-        jobs.map(async job => {
-          try {
-            await jobRunner.run(job.data);
-          } catch (error) {
-            this.logger.error(error);
-          }
-        });
+      await this.pgboss.work(name, async (jobs: PgJob<object>[]) => {
+        await Promise.allSettled(
+          jobs.map(async job => {
+            const jobRunner = this.container.get<Job>(identifier);
+            try {
+              await jobRunner.run(job.data);
+            } catch (error) {
+              this.logger.error(error);
+            }
+          }),
+        );
       });
     }
   }

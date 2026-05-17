@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { DateTime } from 'luxon';
 import { Injectable } from 'injectkit';
 import { Logger } from '@maroonedsoftware/logger';
 import { ScimUserRepository } from '../repositories/scim.user.repository.js';
@@ -57,7 +58,7 @@ export class ScimUserService {
     if (existing) {
       throw scimError(409, 'uniqueness', 'Conflict').withDetails({ message: `userName "${payload.userName}" already exists` });
     }
-    const now = new Date().toISOString();
+    const now = DateTime.utc().toISO();
     const id = payload.id ?? randomUUID();
     const user: ScimUser = {
       ...payload,
@@ -96,7 +97,7 @@ export class ScimUserService {
         throw scimError(409, 'uniqueness', 'Conflict').withDetails({ message: `userName "${payload.userName}" already exists` });
       }
     }
-    const now = new Date().toISOString();
+    const now = DateTime.utc().toISO();
     const user: ScimUser = {
       ...payload,
       id,
@@ -126,7 +127,7 @@ export class ScimUserService {
     patched.id = existing.id;
     patched.meta = {
       ...existing.meta,
-      lastModified: new Date().toISOString(),
+      lastModified: DateTime.utc().toISO(),
     };
     return this.repository.replace(id, patched);
   }

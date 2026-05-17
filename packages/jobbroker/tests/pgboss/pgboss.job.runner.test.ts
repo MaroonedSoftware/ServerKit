@@ -207,6 +207,52 @@ describe('PgBossJobRunner', () => {
       expect(testJobInstance.run).toHaveBeenCalledTimes(3);
     });
 
+    it('does not resolve the worker callback until every job in the batch has settled', async () => {
+      // Regression: an earlier implementation used a fire-and-forget `jobs.map`
+      // which returned before any per-job promise settled, so pg-boss would ack
+      // the batch and lose the in-flight execution if the process restarted.
+      let resolveJob: (() => void) | undefined;
+      const inFlight = new Promise<void>(resolve => {
+        resolveJob = resolve;
+      });
+      vi.spyOn(testJobInstance, 'run').mockReturnValue(inFlight);
+
+      await runner.start();
+      const workCall = vi.mocked(mockPgBoss.work).mock.calls[0]!;
+      const workerCallback = workCall[1] as (jobs: PgJob<object>[]) => Promise<void>;
+
+      const callbackPromise = workerCallback([{ id: 'job-1', data: { message: 'wait' } } as unknown as PgJob<object>]);
+      let settled = false;
+      const tracked = callbackPromise.then(() => {
+        settled = true;
+      });
+
+      await new Promise(resolve => setImmediate(resolve));
+      expect(settled).toBe(false);
+
+      resolveJob!();
+      await tracked;
+      expect(settled).toBe(true);
+    });
+
+    it('resolves a fresh job instance for each item in the batch', async () => {
+      // The DI container may register the Job as transient; resolving once and
+      // reusing the instance across concurrent jobs would corrupt per-instance state.
+      await runner.start();
+      const workCall = vi.mocked(mockPgBoss.work).mock.calls[0]!;
+      const workerCallback = workCall[1] as (jobs: PgJob<object>[]) => Promise<void>;
+
+      vi.mocked(mockContainer.get).mockClear();
+
+      await workerCallback([
+        { id: 'job-1', data: { message: 'a' } } as unknown as PgJob<object>,
+        { id: 'job-2', data: { message: 'b' } } as unknown as PgJob<object>,
+        { id: 'job-3', data: { message: 'c' } } as unknown as PgJob<object>,
+      ]);
+
+      expect(mockContainer.get).toHaveBeenCalledTimes(3);
+    });
+
     it('should use correct job identifier from cron registration', async () => {
       registrations.clear();
       registrations.set('cron-job', { job: TestJob, cron: '0 0 * * *' });

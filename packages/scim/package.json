@@ -46,7 +46,8 @@
     "@maroonedsoftware/koa": "workspace:*",
     "@maroonedsoftware/logger": "workspace:*",
     "@maroonedsoftware/utilities": "workspace:*",
-    "injectkit": "^1.2.0"
+    "injectkit": "^1.2.0",
+    "luxon": "^3.7.2"
   },
   "peerDependencies": {
     "@koa/router": "^15.2.0",

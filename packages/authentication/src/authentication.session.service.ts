@@ -277,7 +277,10 @@ export class AuthenticationSessionService {
   }
 
   /**
-   * Update an existing session's claims and/or factors and extend its expiry.
+   * Update an existing session's claims and/or factors and reset its expiry.
+   *
+   * `expiresAt` is rewritten to `now + expiration` (absolute, not additive) so that
+   * repeated calls cannot stretch a session beyond the configured lifetime.
    *
    * Claims are deep-merged into the existing session claims (arrays are de-duplicated).
    * For factors, an existing entry with the same `methodId` has its `authenticatedAt`
@@ -289,7 +292,8 @@ export class AuthenticationSessionService {
    *
    * @param sessionToken - The opaque session token from {@link AuthenticationSession.sessionToken}.
    * @param subject      - Must match the session's recorded subject; throws 401 otherwise.
-   * @param expiration   - Additional time to extend the session by; defaults to {@link AuthenticationSessionServiceOptions.expiresIn}.
+   * @param expiration   - Lifetime applied from "now" as the session's new `expiresAt`; defaults
+   *   to {@link AuthenticationSessionServiceOptions.expiresIn}.
    * @param claims       - Additional claims to deep-merge into the session.
    * @param factor       - Factor to upsert into the session's factor list.
    * @returns The updated {@link AuthenticationSession}.
@@ -339,7 +343,7 @@ export class AuthenticationSessionService {
 
     expiration ??= this.options.expiresIn;
 
-    session.expiresAt = session.expiresAt.plus(expiration);
+    session.expiresAt = DateTime.utc().plus(expiration);
     session.lastAccessedAt = DateTime.utc();
 
     await this.cache.update(this.getSessionKey(sessionToken), this.serializeSession(session), expiration);

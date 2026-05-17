@@ -427,7 +427,12 @@ export class EmailFactorService {
       throw httpError(400).withInternalDetails({ redirectUrl: 'must be a valid http or https URL' });
     }
     const nonce = crypto.randomBytes(16).toString('base64');
-    const html = `<!DOCTYPE html><html><head lang="en"><meta http-equiv="Content-Type" content="text/html; charset=utf-8" /></head><body><script nonce="${nonce}" type="text/javascript">window.onload = async function() {window.location.href = "${redirectUrl}";}</script></body></html>`;
+    // `JSON.stringify` produces a safely-escaped JS string literal (quotes,
+    // backslashes, and control chars are encoded), so the URL cannot escape
+    // out of the assignment regardless of what the WHATWG URL parser leaves
+    // behind in the fragment/path.
+    const safeUrl = JSON.stringify(redirectUrl.toString());
+    const html = `<!DOCTYPE html><html><head lang="en"><meta http-equiv="Content-Type" content="text/html; charset=utf-8" /></head><body><script nonce="${nonce}" type="text/javascript">window.onload = async function() {window.location.href = ${safeUrl};}</script></body></html>`;
     return { html, nonce };
   }
 

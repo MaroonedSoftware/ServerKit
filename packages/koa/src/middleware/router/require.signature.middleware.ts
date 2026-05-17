@@ -1,4 +1,4 @@
-import { createHmac, BinaryToTextEncoding } from 'node:crypto';
+import { createHmac, timingSafeEqual, BinaryToTextEncoding } from 'node:crypto';
 import { ServerKitRouterMiddleware } from '../../serverkit.middleware.js';
 import { httpError } from '@maroonedsoftware/errors';
 import { AppConfig } from '@maroonedsoftware/appconfig';
@@ -26,6 +26,7 @@ export type SignatureOptions = {
  * Reads {@link SignatureOptions} from `AppConfig` using `optionsKey`, then:
  * - Computes `HMAC(algorithm, secret).update(ctx.rawBody).digest(digest)`
  * - Reads the expected signature from the request header named `options.header`
+ * - Compares the digests with `crypto.timingSafeEqual` (constant-time)
  * - Throws HTTP 401 (with internal diagnostics) if the signatures do not match
  * - Calls `next()` otherwise
  *
@@ -53,7 +54,9 @@ export const requireSignature = (optionsKey: string): ServerKitRouterMiddleware 
 
     const signature = ctx.get(header);
     const computedSignature = hmac.digest(digest);
-    if (computedSignature !== signature) {
+    const expected = Buffer.from(computedSignature);
+    const provided = Buffer.from(signature ?? '');
+    if (expected.length !== provided.length || !timingSafeEqual(expected, provided)) {
       throw httpError(401).withInternalDetails({
         message: 'Invalid signature',
         header,

@@ -17,21 +17,23 @@ const makeValidSession = (): AuthenticationSession => ({
 });
 
 class PassthroughIssuer extends JwtAuthenticationIssuer {
-  async parse(_payload: JwtPayload): Promise<AuthenticationSession> {
+  async parse(_token: string, _payload: JwtPayload): Promise<AuthenticationSession> {
     return makeValidSession();
   }
 }
 
 class RejectingIssuer extends JwtAuthenticationIssuer {
-  async parse(_payload: JwtPayload): Promise<AuthenticationSession> {
+  async parse(_token: string, _payload: JwtPayload): Promise<AuthenticationSession> {
     throw new Error('Token validation failed');
   }
 }
 
 class PayloadCapturingIssuer extends JwtAuthenticationIssuer {
+  capturedToken: string | null = null;
   capturedPayload: JwtPayload | null = null;
 
-  async parse(payload: JwtPayload): Promise<AuthenticationSession> {
+  async parse(token: string, payload: JwtPayload): Promise<AuthenticationSession> {
+    this.capturedToken = token;
     this.capturedPayload = payload;
     return makeValidSession();
   }
@@ -53,19 +55,19 @@ describe('JwtAuthenticationIssuer', () => {
   describe('parse', () => {
     it('should return a Promise', () => {
       const issuer = new PassthroughIssuer();
-      const result = issuer.parse({ sub: 'user-1', iss: 'https://auth.example.com' });
+      const result = issuer.parse('token-stub', { sub: 'user-1', iss: 'https://auth.example.com' });
       expect(result).toBeInstanceOf(Promise);
     });
 
     it('should resolve to an AuthenticationSession', async () => {
       const issuer = new PassthroughIssuer();
-      const result = await issuer.parse({ sub: 'user-1', iss: 'https://auth.example.com' });
+      const result = await issuer.parse('token-stub', { sub: 'user-1', iss: 'https://auth.example.com' });
 
       expect(result).toBeDefined();
       expect(result.subject).toBe('user-1');
     });
 
-    it('should receive the full decoded JWT payload', async () => {
+    it('should receive both the raw token and the decoded payload', async () => {
       const issuer = new PayloadCapturingIssuer();
       const payload: JwtPayload = {
         iss: 'https://auth.example.com',
@@ -77,14 +79,15 @@ describe('JwtAuthenticationIssuer', () => {
         customClaim: 'value',
       };
 
-      await issuer.parse(payload);
+      await issuer.parse('raw.jwt.token', payload);
 
+      expect(issuer.capturedToken).toBe('raw.jwt.token');
       expect(issuer.capturedPayload).toEqual(payload);
     });
 
     it('should propagate errors thrown during parsing', async () => {
       const issuer = new RejectingIssuer();
-      await expect(issuer.parse({ sub: 'user-1' })).rejects.toThrow('Token validation failed');
+      await expect(issuer.parse('token-stub', { sub: 'user-1' })).rejects.toThrow('Token validation failed');
     });
 
     it('should work with a mock implementation via vi.fn()', async () => {
@@ -92,19 +95,19 @@ describe('JwtAuthenticationIssuer', () => {
       const validSession = makeValidSession();
       vi.spyOn(issuer, 'parse').mockResolvedValue(validSession);
 
-      const result = await issuer.parse({ sub: 'user-1' });
+      const result = await issuer.parse('token-stub', { sub: 'user-1' });
       expect(result).toBe(validSession);
     });
 
     it('concrete subclass can return invalidAuthenticationSession', async () => {
       class AlwaysInvalidIssuer extends JwtAuthenticationIssuer {
-        async parse(_payload: JwtPayload): Promise<AuthenticationSession> {
+        async parse(_token: string, _payload: JwtPayload): Promise<AuthenticationSession> {
           return invalidAuthenticationSession;
         }
       }
 
       const issuer = new AlwaysInvalidIssuer();
-      const result = await issuer.parse({ sub: 'user-1' });
+      const result = await issuer.parse('token-stub', { sub: 'user-1' });
       expect(result).toBe(invalidAuthenticationSession);
     });
   });

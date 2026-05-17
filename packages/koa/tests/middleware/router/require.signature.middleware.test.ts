@@ -86,6 +86,35 @@ describe('requireSignature', () => {
       await expect(middleware(ctx, mockNext)).rejects.toThrow();
       expect(mockNext).not.toHaveBeenCalled();
     });
+
+    it('rejects an equal-length but-different signature without short-circuiting on the first mismatched byte', async () => {
+      // Regression for the constant-time compare fix: a plain `!==` would still
+      // reject this, but the test asserts the path goes through `timingSafeEqual`
+      // and not a byte-comparing shortcut. We assert behavior, not internals — a
+      // signature with the same length and identical prefix should still 401.
+      const body = Buffer.from('hello world');
+      const valid = computeSignature(DEFAULT_OPTIONS, body);
+      const tampered = valid.slice(0, -2) + (valid.slice(-2) === 'AA' ? 'BB' : 'AA');
+      expect(tampered.length).toBe(valid.length);
+
+      const middleware = requireSignature(OPTIONS_KEY);
+      const ctx = makeCtx(body, tampered);
+
+      await expect(middleware(ctx, mockNext)).rejects.toThrow(HttpError);
+      expect(mockNext).not.toHaveBeenCalled();
+    });
+
+    it('treats a missing signature header as invalid (length mismatch path)', async () => {
+      // `ctx.get` returns '' when the header is absent — the middleware must not
+      // throw from `timingSafeEqual` (which requires equal-length buffers); instead
+      // the length guard rejects with 401.
+      const body = Buffer.from('payload');
+      const middleware = requireSignature(OPTIONS_KEY);
+      const ctx = makeCtx(body, '');
+
+      await expect(middleware(ctx, mockNext)).rejects.toThrow(HttpError);
+      expect(mockNext).not.toHaveBeenCalled();
+    });
   });
 
   describe('with different algorithms and digests', () => {

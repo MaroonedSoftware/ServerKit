@@ -98,6 +98,20 @@ describe('AuthenticationSchemeHandler', () => {
       expect(basicHandler.authenticate).not.toHaveBeenCalled();
     });
 
+    it('preserves spaces in the value when the scheme uses parameterised credentials', async () => {
+      // `split(' ')` would have truncated this to `username="x",`. The first-space
+      // split keeps the full digest payload intact for the handler.
+      const digestValue = 'username="bob", realm="api", nonce="abc def", uri="/api/v1/resource"';
+      const digestHandler: AuthenticationHandler = {
+        authenticate: vi.fn().mockResolvedValue(makeValidSession()),
+      };
+      handlers.set('digest', digestHandler);
+
+      await handler.handle(`Digest ${digestValue}`);
+
+      expect(digestHandler.authenticate).toHaveBeenCalledWith('digest', digestValue);
+    });
+
     it('propagates errors thrown by the scheme handler', async () => {
       const error = new Error('auth failed');
       const failingHandler: AuthenticationHandler = {

@@ -1,12 +1,28 @@
 import { httpError } from '@maroonedsoftware/errors';
-import { createCipheriv, createDecipheriv, randomBytes, pbkdf2Sync } from 'crypto';
+import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
+import { hashRaw as argon2HashRaw } from '@node-rs/argon2';
 import { Injectable } from 'injectkit';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12; // 96-bit IV — recommended for GCM
 const TAG_LENGTH = 16; // 128-bit auth tag — GCM default
 const SEPARATOR = ':';
-const ITERATION = 65535;
+
+/**
+ * Argon2id parameters following the OWASP Password Storage Cheat Sheet (2024):
+ * m=19 MiB, t=2, p=1, 32-byte output. Shared by both
+ * {@link EncryptionProvider.createKey} (key derivation) and the
+ * `Argon2idPasswordHashProvider` in `@maroonedsoftware/authentication`
+ * (password hashing) so the two cannot drift apart.
+ *
+ * @see https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html
+ */
+export const ARGON2ID_DEFAULTS = {
+  memoryCost: 19_456,
+  timeCost: 2,
+  parallelism: 1,
+  outputLen: 32,
+} as const;
 
 /**
  * Provides AES-256-GCM authenticated encryption and decryption.
@@ -53,8 +69,9 @@ export class EncryptionProvider {
   }
 
   /**
-   * Derive a 32-byte master key from a passphrase using PBKDF2 (HMAC-SHA-512,
-   * 65,535 iterations).
+   * Derive a 32-byte master key from a passphrase using Argon2id, the
+   * OWASP-recommended memory-hard KDF (and the same algorithm
+   * `@maroonedsoftware/authentication` uses for password hashing).
    *
    * Use this to bootstrap an `EncryptionProvider` from a passphrase rather
    * than from raw key material. The salt must be persisted on first derivation
@@ -72,16 +89,21 @@ export class EncryptionProvider {
    * @example
    * ```typescript
    * // First boot: derive and persist the salt
-   * const { key, salt } = EncryptionProvider.createKey(process.env.SECRET!);
+   * const { key, salt } = await EncryptionProvider.createKey(process.env.SECRET!);
    * await persistSalt(salt);
    *
    * // Subsequent boots: re-derive with the stored salt
-   * const { key } = EncryptionProvider.createKey(process.env.SECRET!, await loadSalt());
+   * const { key } = await EncryptionProvider.createKey(process.env.SECRET!, await loadSalt());
    * const enc = new EncryptionProvider(key);
    * ```
    */
-  static createKey(secret: string, salt: Buffer = randomBytes(16)): { key: Buffer; salt: Buffer } {
-    const key = pbkdf2Sync(secret, salt, ITERATION, 32, 'sha512');
+  static async createKey(secret: string, salt: Buffer = randomBytes(16)): Promise<{ key: Buffer; salt: Buffer }> {
+    // Argon2id is `@node-rs/argon2`'s default — we omit `algorithm` rather than
+    // importing the `const enum` (which trips `isolatedModules` under tsup's dts build).
+    const key = await argon2HashRaw(secret, {
+      salt,
+      ...ARGON2ID_DEFAULTS,
+    });
     return { key, salt };
   }
 

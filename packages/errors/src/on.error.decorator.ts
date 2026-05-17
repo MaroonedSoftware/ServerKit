@@ -26,6 +26,7 @@ const generateDescriptor = (descriptor: PropertyDescriptor, handler: ErrorHandle
           return getter.apply(this);
         } catch (error) {
           handler(error as Error);
+          throw error;
         }
       };
     }
@@ -36,6 +37,7 @@ const generateDescriptor = (descriptor: PropertyDescriptor, handler: ErrorHandle
           return setter.apply(this, [v]);
         } catch (error) {
           handler(error as Error);
+          throw error;
         }
       };
     }
@@ -52,12 +54,14 @@ const generateDescriptor = (descriptor: PropertyDescriptor, handler: ErrorHandle
       if (result && result instanceof Promise) {
         return result.catch((error: unknown) => {
           handler(error as Error);
+          throw error;
         });
       }
 
       return result;
     } catch (error) {
       handler(error as Error);
+      throw error;
     }
   };
 
@@ -67,7 +71,10 @@ const generateDescriptor = (descriptor: PropertyDescriptor, handler: ErrorHandle
 /**
  * Class decorator that automatically wraps all methods, getters, and setters in a class
  * with error handling. When any decorated method throws an error (synchronously or asynchronously),
- * the provided error handler is called.
+ * the provided error handler is invoked and then the original error is **re-thrown** so the
+ * caller's `try`/`catch` still observes the failure. Handlers that want to map an error to a
+ * different type (e.g. {@link PostgresErrorHandler}) should throw their replacement — that
+ * throw short-circuits the re-throw and the mapped error reaches the caller instead.
  *
  * The decorator:
  * - Wraps all methods (including async methods) with try-catch
@@ -75,7 +82,8 @@ const generateDescriptor = (descriptor: PropertyDescriptor, handler: ErrorHandle
  * - Does not wrap the constructor
  * - Does not wrap non-method properties
  *
- * @param handler - The error handler function to call when an error is caught.
+ * @param handler - The error handler function. Receives the caught error; may either return
+ *   (in which case the original error is re-thrown after the handler runs) or throw a replacement.
  * @returns A class decorator function.
  *
  * @example

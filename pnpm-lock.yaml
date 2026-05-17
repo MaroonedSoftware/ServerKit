@@ -78,6 +78,9 @@ importers:
 
   packages/appconfig:
     dependencies:
+      '@maroonedsoftware/errors':
+        specifier: workspace:*
+        version: link:../errors
       deepmerge-ts:
         specifier: ^7.1.5
         version: 7.1.5
@@ -257,6 +260,9 @@ importers:
       '@maroonedsoftware/errors':
         specifier: workspace:*
         version: link:../errors
+      '@node-rs/argon2':
+        specifier: ^2.0.2
+        version: 2.0.2
       injectkit:
         specifier: ^1.2.0
         version: 1.2.0
@@ -573,6 +579,9 @@ importers:
       injectkit:
         specifier: ^1.2.0
         version: 1.2.0
+      luxon:
+        specifier: ^3.7.2
+        version: 3.7.2
     devDependencies:
       '@koa/router':
         specifier: ^15.5.0

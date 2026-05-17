@@ -588,8 +588,9 @@ export class FidoFactorService {
    * @throws HTTP 404 when the challenge has expired or does not exist.
    * @throws HTTP 401 (`WWW-Authenticate: Bearer error="invalid_factor"`) when
    *   the credential id is unknown for this actor, the matching factor is
-   *   inactive, or the credential does not belong to the factor that was
-   *   scoped at issue time.
+   *   inactive, the credential does not belong to the factor that was scoped
+   *   at issue time, or the factor has no replay counter recorded (which
+   *   would otherwise let any assertion pass).
    * @throws HTTP 401 (`WWW-Authenticate: Bearer error="invalid_credentials"`)
    *   when signature verification fails. The original `fido2-lib` error is
    *   attached as the cause.
@@ -610,6 +611,16 @@ export class FidoFactorService {
     }
 
     const expectedAssertionResult = payload.assertionExpectations as ExpectedAssertionResult;
+
+    // A null/undefined counter would let fido2-lib accept any counter value,
+    // defeating replay protection. Treat it as a hard failure rather than
+    // silently degrading to "no counter check".
+    if (factor.counter == null) {
+      throw unauthorizedError('Bearer error="invalid_factor"').withInternalDetails({
+        message: 'FIDO factor is missing its replay counter',
+        factorId: factor.id,
+      });
+    }
 
     expectedAssertionResult.publicKey = factor.publicKey;
     expectedAssertionResult.prevCounter = factor.counter;

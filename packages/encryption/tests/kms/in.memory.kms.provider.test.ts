@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { randomBytes } from 'crypto';
-import { InMemoryKmsKeyMaterial, InMemoryKmsProvider } from '../../src/kms/in-memory.kms.provider.js';
+import { InMemoryKmsKeyMaterial, InMemoryKmsProvider } from '../../src/kms/in.memory.kms.provider.js';
 import { asNormalizedValue } from '../../src/kms/kms.provider.js';
 import { KeyNotFoundError, KeyRetiredError, KmsError } from '../../src/kms/kms.errors.js';
 
@@ -136,6 +136,36 @@ describe('InMemoryKmsProvider', () => {
       expect(new Set(keyIds).size).toBe(3);
       const versions = keyIds.map(k => Number(k.match(/:v(\d+):/)![1]));
       expect(versions.sort()).toEqual([2, 3, 4]);
+    });
+
+    it('serialises subsequent operations even after a queued op rejects', async () => {
+      // Regression: an earlier implementation used `prev.then(fn, fn)`, so if a
+      // preceding holder rejected the next `fn` was invoked with the rejection
+      // reason as its argument — silently passing through the lock and breaking
+      // serialisation. The async/await rewrite must wait for `prev` to settle
+      // (success or failure) before scheduling the next `fn`.
+      type LockHolder = { withIdLock: <T>(id: string, fn: () => Promise<T>) => Promise<T> };
+      const internal = provider as unknown as LockHolder;
+
+      let secondStarted = false;
+      let firstSettled = false;
+
+      const failing = internal.withIdLock('lock-id', async () => {
+        await new Promise(resolve => setImmediate(resolve));
+        firstSettled = true;
+        throw new Error('intentional failure');
+      });
+
+      const subsequent = internal.withIdLock('lock-id', async () => {
+        secondStarted = true;
+        // When the previous op was in flight the second must not have started yet.
+        expect(firstSettled).toBe(true);
+        return 'ok';
+      });
+
+      await expect(failing).rejects.toThrow('intentional failure');
+      await expect(subsequent).resolves.toBe('ok');
+      expect(secondStarted).toBe(true);
     });
 
     it('serializes concurrent bootstraps — only one v1 key created', async () => {

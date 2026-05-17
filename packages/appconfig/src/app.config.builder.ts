@@ -85,7 +85,11 @@ export class AppConfigBuilder {
    */
   async build<T = Record<string, unknown>>(): Promise<AppConfig<T>> {
     const sourceTasks = await Promise.all(this.sources.map(x => x.load()));
-    const mergedConfig = deepmerge(...sourceTasks) as T;
+    // `deepmerge` with zero arguments returns `undefined`, which would crash
+    // every downstream consumer with an opaque "cannot read property of
+    // undefined". A misconfigured builder should still yield a usable empty
+    // config object so the error surfaces at the missing-key call site.
+    const mergedConfig = (sourceTasks.length === 0 ? {} : deepmerge(...sourceTasks)) as T;
 
     const tasks: Promise<void>[] = [];
     const parse = (value: unknown, meta: ObjectVisitorMeta) => {

@@ -45,8 +45,6 @@ describe('AppConfigProviderGcpSecrets', () => {
       it('should return true for values matching default pattern', () => {
         const provider = new AppConfigProviderGcpSecrets('my-project');
         expect(provider.canParse('${gcp:MY_SECRET}')).toBe(true);
-        // Reset lastIndex for global regex before next test
-        provider.canParse('reset');
         expect(provider.canParse('prefix ${gcp:ANOTHER_SECRET} suffix')).toBe(true);
       });
 
@@ -55,6 +53,16 @@ describe('AppConfigProviderGcpSecrets', () => {
         expect(provider.canParse('gcp:MY_SECRET')).toBe(false);
         expect(provider.canParse('${MY_SECRET}')).toBe(false);
         expect(provider.canParse('MY_SECRET')).toBe(false);
+      });
+
+      it('returns true on consecutive calls with the same matching string (no stale /g lastIndex)', () => {
+        // Regression: the default regex carries the /g flag, and `.test()` advances
+        // `lastIndex` on every call, which used to make the second call against the
+        // same string return false. Resetting `lastIndex` before each test fixes it.
+        const provider = new AppConfigProviderGcpSecrets('my-project');
+        expect(provider.canParse('${gcp:MY_SECRET}')).toBe(true);
+        expect(provider.canParse('${gcp:MY_SECRET}')).toBe(true);
+        expect(provider.canParse('${gcp:MY_SECRET}')).toBe(true);
       });
     });
 
@@ -182,9 +190,9 @@ describe('AppConfigProviderGcpSecrets', () => {
       expect(owner.value).toBe(true);
     });
 
-    it('should handle errors and return empty string', async () => {
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      mockAccessSecretVersion.mockRejectedValue(new Error('Secret not found'));
+    it('throws a ServerkitError when Secret Manager rejects, leaving the config value untouched', async () => {
+      const underlying = new Error('Secret not found');
+      mockAccessSecretVersion.mockRejectedValue(underlying);
 
       const provider = new AppConfigProviderGcpSecrets('my-project');
       const owner: Record<string, unknown> = { value: '${gcp:MISSING_SECRET}' };
@@ -195,11 +203,13 @@ describe('AppConfigProviderGcpSecrets', () => {
         propertyType: 'string',
       };
 
-      await provider.parse('${gcp:MISSING_SECRET}', meta);
-
-      expect(consoleErrorSpy).toHaveBeenCalled();
-      expect(owner.value).toBe('');
-      consoleErrorSpy.mockRestore();
+      await expect(provider.parse('${gcp:MISSING_SECRET}', meta)).rejects.toMatchObject({
+        message: expect.stringContaining('MISSING_SECRET'),
+        cause: underlying,
+      });
+      // The config value must not be silently overwritten with `''` — surfacing the
+      // failure is the entire point of throwing here.
+      expect(owner.value).toBe('${gcp:MISSING_SECRET}');
     });
 
     it('should handle missing payload data', async () => {

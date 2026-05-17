@@ -39,7 +39,8 @@
   },
   "dependencies": {
     "injectkit": "^1.2.0",
-    "@maroonedsoftware/errors": "workspace:*"
+    "@maroonedsoftware/errors": "workspace:*",
+    "@node-rs/argon2": "^2.0.2"
   },
   "devDependencies": {
     "@repo/config-eslint": "workspace:*",
