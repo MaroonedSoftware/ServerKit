@@ -65,7 +65,7 @@ export class BusboyWrapper extends Busboy {
     super({ headers: req.headers as BusboyHeaders, limits });
 
     this.req = req;
-    this.req.on('close', () => this.cleanup());
+    this.req.on('close', this.onRequestClose);
 
     this.on('field', this.onField)
       .on('file', this.onFile)
@@ -83,7 +83,8 @@ export class BusboyWrapper extends Busboy {
    * @returns A promise that resolves to a Map of field names to their parsed data.
    *          If multiple values exist for a field name, they are stored as an array.
    *
-   * @throws {HttpError} 413 error if parts, files, or fields limits are exceeded
+   * @throws {HttpError} 413 if the parts, files, or fields limit is exceeded.
+   * @throws {HttpError} 400 if the client disconnects before the request body completes.
    *
    * @example
    * ```typescript
@@ -220,10 +221,20 @@ export class BusboyWrapper extends Busboy {
   }
 
   /**
+   * Surface a premature client disconnect as an abort error. `req.complete === true`
+   * means the body arrived intact and busboy is still draining buffered data —
+   * in that case let `finalize()` handle cleanup once `'finish'` fires.
+   */
+  private readonly onRequestClose = () => {
+    if (this.finished || this.req.complete) return;
+    this.onEnd(httpError(400).withInternalDetails({ reason: 'client aborted upload before body completed' }));
+  };
+
+  /**
    * Cleans up event listeners to prevent memory leaks.
    */
   private cleanup() {
-    this.req.removeListener('close', this.cleanup);
+    this.req.removeListener('close', this.onRequestClose);
     this.removeListener('field', this.onField);
     this.removeListener('file', this.onFile);
     this.removeListener('error', this.onEnd);

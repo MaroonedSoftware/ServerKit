@@ -192,7 +192,10 @@ console.log('Uploaded files:', uploadedFiles);
 
 ### Error Handling
 
-The parser throws HTTP 413 errors when limits are exceeded:
+The parser throws `HttpError` for two cases:
+
+- **`413`** — a configured limit (parts, files, fields) was exceeded.
+- **`400`** — the client disconnected before the request body finished.
 
 ```typescript
 import { MultipartBody } from '@maroonedsoftware/multipart';
@@ -203,6 +206,9 @@ try {
   if (error.statusCode === 413) {
     // Handle limit exceeded
     console.error('Upload too large:', error.internalDetails?.reason);
+  } else if (error.statusCode === 400) {
+    // Client disconnected mid-upload
+    console.error('Upload aborted:', error.internalDetails?.reason);
   }
   throw error;
 }

@@ -1,3 +1,4 @@
+// For real-HTTP behavior (close-race, abort handling) see multipart.body.http.integration.test.ts
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { IncomingMessage } from 'node:http';
 import { Readable } from 'node:stream';
