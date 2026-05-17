@@ -1,5 +1,12 @@
 # @maroonedsoftware/koa
 
+## 2.2.4
+
+### Patch Changes
+
+- Updated dependencies [db65060]
+  - @maroonedsoftware/authentication@4.21.1
+
 ## 2.2.3
 
 ### Patch Changes
