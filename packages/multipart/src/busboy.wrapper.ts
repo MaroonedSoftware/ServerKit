@@ -1,7 +1,7 @@
 import { IncomingMessage } from 'node:http';
 import { Busboy, BusboyFileStream, BusboyHeaders } from '@fastify/busboy';
 import { Writable } from 'node:stream';
-import { httpError, ServerkitError } from '@maroonedsoftware/errors';
+import { httpError } from '@maroonedsoftware/errors';
 import { FileHandler, MultipartData, MultipartLimits } from './types.js';
 
 /**
@@ -48,9 +48,6 @@ export class BusboyWrapper extends Busboy {
   /** Whether busboy has finished parsing the request */
   private finished = false;
 
-  /** Whether parse() has been invoked. The wrapper is single-shot. */
-  private started = false;
-
   /** A null stream used to drain file streams when errors occur */
   private readonly nullStream = new Writable({
     write(_chunk, _encding, callback) {
@@ -72,7 +69,9 @@ export class BusboyWrapper extends Busboy {
   }
 
   /**
-   * Parses the multipart request body. May be called at most once per instance.
+   * Parses the multipart request body. Single-shot per instance — the request body
+   * can only be consumed once. The public `MultipartBody.parse()` guards against
+   * accidental re-entry.
    *
    * @param fileHandler - A callback function to handle file uploads as they are received
    * @returns A promise that resolves to a Map of field names to their parsed data.
@@ -80,7 +79,6 @@ export class BusboyWrapper extends Busboy {
    *
    * @throws {HttpError} 413 if the parts, files, fields, or per-file size limit is exceeded.
    * @throws {HttpError} 400 if the client disconnects before the request body completes.
-   * @throws {ServerkitError} synchronously if called more than once on the same instance.
    *
    * @example
    * ```typescript
@@ -94,11 +92,6 @@ export class BusboyWrapper extends Busboy {
    * ```
    */
   parse(fileHandler: FileHandler) {
-    if (this.started) {
-      throw new ServerkitError('BusboyWrapper.parse() may only be called once per instance');
-    }
-    this.started = true;
-
     return new Promise<Map<string, MultipartData | MultipartData[]>>((resolve, reject) => {
       this.fileHandler = fileHandler;
       this.resolve = resolve;

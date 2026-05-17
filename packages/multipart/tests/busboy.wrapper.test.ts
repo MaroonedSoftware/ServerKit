@@ -5,7 +5,7 @@ import { Readable } from 'node:stream';
 import { EventEmitter } from 'node:events';
 import { BusboyWrapper } from '../src/busboy.wrapper.js';
 import { FileHandler, isMultipartFieldData } from '../src/types.js';
-import { httpError, IsServerkitError } from '@maroonedsoftware/errors';
+import { httpError } from '@maroonedsoftware/errors';
 
 // Mock @fastify/busboy
 vi.mock('@fastify/busboy', () => {
@@ -91,20 +91,6 @@ describe('BusboyWrapper', () => {
       const fileHandler: FileHandler = vi.fn().mockResolvedValue(undefined);
       wrapper.parse(fileHandler);
       expect(mockReq.on).toHaveBeenCalledWith('close', expect.any(Function));
-    });
-
-    it('should throw a ServerkitError synchronously if called more than once', () => {
-      const wrapper = new BusboyWrapper(mockReq);
-      const fileHandler: FileHandler = vi.fn().mockResolvedValue(undefined);
-      wrapper.parse(fileHandler);
-      let caught: unknown;
-      try {
-        wrapper.parse(fileHandler);
-      } catch (err) {
-        caught = err;
-      }
-      expect(IsServerkitError(caught)).toBe(true);
-      expect((caught as Error).message).toMatch(/may only be called once/);
     });
 
     it('should resolve with fields map when parsing completes', async () => {
