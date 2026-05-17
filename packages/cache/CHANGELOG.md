@@ -1,5 +1,12 @@
 # @maroonedsoftware/cache
 
+## 0.1.5
+
+### Patch Changes
+
+- Updated dependencies [108c1d4]
+  - @maroonedsoftware/errors@1.7.0
+
 ## 0.1.4
 
 ### Patch Changes
