@@ -58,6 +58,7 @@
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
     "@types/koa": "^3.0.2",
+    "@types/luxon": "^3.7.1",
     "@types/supertest": "^6.0.3",
     "koa": "^3.2.0",
     "supertest": "^7.1.4"
