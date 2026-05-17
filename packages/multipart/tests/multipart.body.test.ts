@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { IncomingMessage } from 'node:http';
-import { MultipartBody } from '../src/multipart.body.js';
+import { MultipartBody, MAX_FILE_SIZE } from '../src/multipart.body.js';
 import { FileHandler, MultipartLimits } from '../src/types.js';
+import { IsServerkitError } from '@maroonedsoftware/errors';
 
 // Track instances created
 const mockInstances: Array<{
@@ -243,6 +244,33 @@ describe('MultipartBody', () => {
         files: 1,
         fileSize: MAX_FILE_SIZE,
       });
+    });
+
+    it('should throw a ServerkitError synchronously if parse() is called more than once', async () => {
+      const body = new MultipartBody(mockReq);
+      const fileHandler: FileHandler = vi.fn().mockResolvedValue(undefined);
+
+      const firstCall = body.parse(fileHandler);
+      // Resolve so the unhandled-rejection bookkeeping stays clean.
+      (mockInstances[0] as any)._resolve(new Map());
+      await firstCall;
+
+      let caught: unknown;
+      try {
+        body.parse(fileHandler);
+      } catch (err) {
+        caught = err;
+      }
+      expect(IsServerkitError(caught)).toBe(true);
+      expect((caught as Error).message).toMatch(/may only be called once/);
+      // No new BusboyWrapper should have been constructed.
+      expect(mockInstances).toHaveLength(1);
+    });
+  });
+
+  describe('MAX_FILE_SIZE export', () => {
+    it('should equal 20 MB', () => {
+      expect(MAX_FILE_SIZE).toBe(20 * 1024 * 1024);
     });
   });
 });

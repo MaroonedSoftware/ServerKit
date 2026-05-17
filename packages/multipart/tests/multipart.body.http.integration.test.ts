@@ -89,6 +89,40 @@ describe('MultipartBody (real HTTP)', () => {
     expect(bytesSeen).toBe(big.length);
   });
 
+  it('rejects with a 413 HttpError when a single file exceeds the per-file fileSize limit', async () => {
+    let parseError: unknown;
+
+    handler = async (req, res) => {
+      try {
+        const body = new MultipartBody(req, { files: 1, fileSize: 1024 }); // 1 KB cap
+        await body.parse(async (_field, stream) => {
+          for await (const _chunk of stream) {
+            // drain
+          }
+        });
+        res.writeHead(200);
+        res.end('ok');
+      } catch (err) {
+        parseError = err;
+        if (!res.headersSent) res.writeHead(413);
+        res.end();
+      }
+    };
+
+    const big = Buffer.alloc(8 * 1024, 0x42); // 8 KB > 1 KB cap
+    const res = await fetch(`${baseUrl}/`, {
+      method: 'POST',
+      body: buildForm('toobig.bin', big),
+      signal: AbortSignal.timeout(2000),
+    });
+
+    expect(res.status).toBe(413);
+    const err = parseError as { statusCode?: number; internalDetails?: { reason?: string; filename?: string } };
+    expect(err.statusCode).toBe(413);
+    expect(err.internalDetails?.reason).toBe('Reached file size limit');
+    expect(err.internalDetails?.filename).toBe('toobig.bin');
+  });
+
   it('rejects with a 400 HttpError when the client aborts before the body completes', async () => {
     let parseError: unknown;
     const firstChunkReceived = new Promise<void>(resolve => {

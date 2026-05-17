@@ -1,10 +1,15 @@
 import { IncomingMessage } from 'node:http';
+import { ServerkitError } from '@maroonedsoftware/errors';
 import { BusboyWrapper } from './busboy.wrapper.js';
 import { FileHandler, MultipartData } from './types.js';
 import { MultipartLimits } from './types.js';
 
-/** Default maximum file size: 20 MB */
-const MAX_FILE_SIZE = 20 * 1024 * 1024;
+/**
+ * Default maximum file size enforced by `MultipartBody` when the caller does not
+ * override the `fileSize` limit. Currently 20 MB. Exported so consumers can
+ * compose larger limits without having to redeclare the magic number.
+ */
+export const MAX_FILE_SIZE = 20 * 1024 * 1024;
 
 /**
  * High-level API for parsing multipart/form-data request bodies.
@@ -39,6 +44,9 @@ export class MultipartBody {
    * @param _limits - Default limits applied to all parse operations.
    *                  Defaults to 1 file maximum and 20MB file size limit.
    */
+  /** Guards against `parse()` being invoked more than once on the same instance. */
+  private parseCalled = false;
+
   constructor(
     private readonly req: IncomingMessage,
     private readonly _limits: MultipartLimits = {
@@ -60,7 +68,10 @@ export class MultipartBody {
    *          Field names are keys, and values are either a single MultipartData object
    *          or an array if multiple values were submitted for the same field name.
    *
-   * @throws {HttpError} 413 error if configured limits are exceeded
+   * @throws {HttpError} 413 if a configured limit (parts, files, fields, file size) is exceeded.
+   * @throws {HttpError} 400 if the client disconnects before the request body completes.
+   * @throws {ServerkitError} synchronously if `parse()` is called more than once on the
+   *                          same instance — the request body can only be consumed once.
    *
    * @example
    * ```typescript
@@ -74,6 +85,11 @@ export class MultipartBody {
    * ```
    */
   parse(fileHandler: FileHandler, limits?: MultipartLimits): Promise<Map<string, MultipartData | MultipartData[]>> {
+    if (this.parseCalled) {
+      throw new ServerkitError('MultipartBody.parse() may only be called once per request — the body has already been consumed');
+    }
+    this.parseCalled = true;
+
     const busboy = new BusboyWrapper(this.req, { ...this._limits, ...limits });
 
     return busboy.parse(fileHandler);

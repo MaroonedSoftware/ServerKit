@@ -1,7 +1,7 @@
 import { IncomingMessage } from 'node:http';
 import { Busboy, BusboyFileStream, BusboyHeaders } from '@fastify/busboy';
 import { Writable } from 'node:stream';
-import { httpError } from '@maroonedsoftware/errors';
+import { httpError, ServerkitError } from '@maroonedsoftware/errors';
 import { FileHandler, MultipartData, MultipartLimits } from './types.js';
 
 /**
@@ -48,6 +48,9 @@ export class BusboyWrapper extends Busboy {
   /** Whether busboy has finished parsing the request */
   private finished = false;
 
+  /** Whether parse() has been invoked. The wrapper is single-shot. */
+  private started = false;
+
   /** A null stream used to drain file streams when errors occur */
   private readonly nullStream = new Writable({
     write(_chunk, _encding, callback) {
@@ -56,35 +59,28 @@ export class BusboyWrapper extends Busboy {
   });
 
   /**
-   * Creates a new BusboyWrapper instance.
+   * Creates a new BusboyWrapper instance. Listener wiring is deferred to `parse()`
+   * so that events fired before parsing begins cannot be silently dropped by the
+   * placeholder `resolve` / `reject` slots.
    *
    * @param req - The incoming HTTP request containing multipart data
    * @param limits - Optional limits configuration for parsing
    */
   constructor(req: IncomingMessage, limits?: MultipartLimits) {
     super({ headers: req.headers as BusboyHeaders, limits });
-
     this.req = req;
-    this.req.on('close', this.onRequestClose);
-
-    this.on('field', this.onField)
-      .on('file', this.onFile)
-      .on('finish', this.onEnd)
-      .on('error', this.onEnd)
-      .on('partsLimit', this.onPartsLimit)
-      .on('filesLimit', this.onFilesLimit)
-      .on('fieldsLimit', this.onFieldsLimit);
   }
 
   /**
-   * Parses the multipart request body.
+   * Parses the multipart request body. May be called at most once per instance.
    *
    * @param fileHandler - A callback function to handle file uploads as they are received
    * @returns A promise that resolves to a Map of field names to their parsed data.
    *          If multiple values exist for a field name, they are stored as an array.
    *
-   * @throws {HttpError} 413 if the parts, files, or fields limit is exceeded.
+   * @throws {HttpError} 413 if the parts, files, fields, or per-file size limit is exceeded.
    * @throws {HttpError} 400 if the client disconnects before the request body completes.
+   * @throws {ServerkitError} synchronously if called more than once on the same instance.
    *
    * @example
    * ```typescript
@@ -98,10 +94,25 @@ export class BusboyWrapper extends Busboy {
    * ```
    */
   parse(fileHandler: FileHandler) {
+    if (this.started) {
+      throw new ServerkitError('BusboyWrapper.parse() may only be called once per instance');
+    }
+    this.started = true;
+
     return new Promise<Map<string, MultipartData | MultipartData[]>>((resolve, reject) => {
       this.fileHandler = fileHandler;
       this.resolve = resolve;
       this.reject = reject;
+
+      this.req.on('close', this.onRequestClose);
+      this.on('field', this.onField)
+        .on('file', this.onFile)
+        .on('finish', this.onEnd)
+        .on('error', this.onEnd)
+        .on('partsLimit', this.onPartsLimit)
+        .on('filesLimit', this.onFilesLimit)
+        .on('fieldsLimit', this.onFieldsLimit);
+
       this.req.pipe(this);
     });
   }
@@ -137,10 +148,23 @@ export class BusboyWrapper extends Busboy {
   }
 
   /**
-   * Handler for parsed file uploads.
+   * Handler for parsed file uploads. Attaches a `'limit'` listener to each file
+   * stream so that per-file size truncation surfaces as a 413 rejection instead
+   * of being silently delivered to the user's handler as a partial file.
    */
   private onFile(fieldname: string, stream: BusboyFileStream, filename: string, encoding: string, mimeType: string) {
     this.setData(fieldname, { stream, filename, encoding, mimeType });
+
+    stream.once('limit', () => {
+      this.onEnd(
+        httpError(413).withInternalDetails({
+          reason: 'Reached file size limit',
+          fieldname,
+          filename,
+        }),
+      );
+    });
+
     if (this.fileHandler) {
       this.pendingFiles++;
       this.fileHandler(fieldname, stream, filename, encoding, mimeType)
@@ -168,12 +192,13 @@ export class BusboyWrapper extends Busboy {
   private reject(_?: Error) {}
 
   /**
-   * Handler called when parsing completes or an error occurs.
-   * When called without an error from the 'finish' event, marks parsing as finished
-   * and defers resolution until all pending file handlers have completed.
+   * Handler called when parsing completes or an error occurs. On error, unpipes
+   * the request from busboy so the rest of the body is not silently drained
+   * after the promise has already been rejected.
    */
   private onEnd(err?: Error) {
     if (err) {
+      this.req.unpipe(this);
       this.cleanup();
       this.reject(err);
     } else {

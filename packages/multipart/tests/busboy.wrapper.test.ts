@@ -5,7 +5,7 @@ import { Readable } from 'node:stream';
 import { EventEmitter } from 'node:events';
 import { BusboyWrapper } from '../src/busboy.wrapper.js';
 import { FileHandler, isMultipartFieldData } from '../src/types.js';
-import { httpError } from '@maroonedsoftware/errors';
+import { httpError, IsServerkitError } from '@maroonedsoftware/errors';
 
 // Mock @fastify/busboy
 vi.mock('@fastify/busboy', () => {
@@ -37,6 +37,7 @@ describe('BusboyWrapper', () => {
     };
     mockReq = {
       pipe: vi.fn().mockReturnValue(mockStream),
+      unpipe: vi.fn(),
       on: vi.fn(),
       removeListener: vi.fn(),
       headers: mockHeaders,
@@ -53,15 +54,14 @@ describe('BusboyWrapper', () => {
       expect(wrapper).toBeInstanceOf(BusboyWrapper);
     });
 
-    it('should set up event listeners', () => {
+    it('should be an EventEmitter (via Busboy)', () => {
       const wrapper = new BusboyWrapper(mockReq);
-      // The wrapper extends Busboy which extends EventEmitter
       expect(wrapper).toBeInstanceOf(EventEmitter);
     });
 
-    it('should register request close handler', () => {
+    it('should not register any req listeners until parse() is called', () => {
       new BusboyWrapper(mockReq);
-      expect(mockReq.on).toHaveBeenCalledWith('close', expect.any(Function));
+      expect(mockReq.on).not.toHaveBeenCalled();
     });
 
     it('should accept limits option', () => {
@@ -84,6 +84,27 @@ describe('BusboyWrapper', () => {
       const fileHandler: FileHandler = vi.fn().mockResolvedValue(undefined);
       wrapper.parse(fileHandler);
       expect(mockReq.pipe).toHaveBeenCalledWith(wrapper);
+    });
+
+    it('should register the request close handler when parse() runs', () => {
+      const wrapper = new BusboyWrapper(mockReq);
+      const fileHandler: FileHandler = vi.fn().mockResolvedValue(undefined);
+      wrapper.parse(fileHandler);
+      expect(mockReq.on).toHaveBeenCalledWith('close', expect.any(Function));
+    });
+
+    it('should throw a ServerkitError synchronously if called more than once', () => {
+      const wrapper = new BusboyWrapper(mockReq);
+      const fileHandler: FileHandler = vi.fn().mockResolvedValue(undefined);
+      wrapper.parse(fileHandler);
+      let caught: unknown;
+      try {
+        wrapper.parse(fileHandler);
+      } catch (err) {
+        caught = err;
+      }
+      expect(IsServerkitError(caught)).toBe(true);
+      expect((caught as Error).message).toMatch(/may only be called once/);
     });
 
     it('should resolve with fields map when parsing completes', async () => {
@@ -202,6 +223,21 @@ describe('BusboyWrapper', () => {
       await expect(parsePromise).rejects.toThrow('Parse error');
     });
 
+    it('should reject with 413 when a file stream emits "limit"', async () => {
+      const wrapper = new BusboyWrapper(mockReq);
+      const fileHandler: FileHandler = vi.fn().mockResolvedValue(undefined);
+      const parsePromise = wrapper.parse(fileHandler);
+
+      const fileStream = new Readable({ read() {} });
+      wrapper.emit('file', 'big', fileStream, 'big.bin', '7bit', 'application/octet-stream');
+      fileStream.emit('limit');
+
+      await expect(parsePromise).rejects.toMatchObject({
+        statusCode: 413,
+        internalDetails: { reason: 'Reached file size limit', filename: 'big.bin', fieldname: 'big' },
+      });
+    });
+
     it('should handle partsLimit event', async () => {
       const wrapper = new BusboyWrapper(mockReq);
       const fileHandler: FileHandler = vi.fn().mockResolvedValue(undefined);
@@ -266,18 +302,56 @@ describe('BusboyWrapper', () => {
       expect(mockReq.removeListener).toHaveBeenCalledWith('close', expect.any(Function));
     });
 
-    it('should handle request close event', () => {
+    it('should unpipe req from busboy on error so the body is not silently drained', async () => {
       const wrapper = new BusboyWrapper(mockReq);
-      const closeHandler = (mockReq.on as ReturnType<typeof vi.fn>).mock.calls.find(call => call[0] === 'close')?.[1];
+      const fileHandler: FileHandler = vi.fn().mockResolvedValue(undefined);
+      const parsePromise = wrapper.parse(fileHandler);
 
+      wrapper.emit('error', new Error('boom'));
+
+      await expect(parsePromise).rejects.toThrow('boom');
+      expect(mockReq.unpipe).toHaveBeenCalledWith(wrapper);
+    });
+
+    it('should not unpipe on the happy path', async () => {
+      const wrapper = new BusboyWrapper(mockReq);
+      const fileHandler: FileHandler = vi.fn().mockResolvedValue(undefined);
+      const parsePromise = wrapper.parse(fileHandler);
+
+      wrapper.emit('finish');
+      await parsePromise;
+
+      expect(mockReq.unpipe).not.toHaveBeenCalled();
+    });
+
+    it('should treat req close as an abort when req.complete is false', async () => {
+      Object.defineProperty(mockReq, 'complete', { value: false, configurable: true });
+      const wrapper = new BusboyWrapper(mockReq);
+      const fileHandler: FileHandler = vi.fn().mockResolvedValue(undefined);
+      const parsePromise = wrapper.parse(fileHandler);
+
+      const closeHandler = (mockReq.on as ReturnType<typeof vi.fn>).mock.calls.find(call => call[0] === 'close')?.[1];
       expect(closeHandler).toBeDefined();
-      if (closeHandler) {
-        // Call the cleanup handler
-        closeHandler();
-        // The cleanup method should be called, which removes listeners
-        // Since cleanup is private, we verify it was set up correctly
-        expect(mockReq.on).toHaveBeenCalledWith('close', expect.any(Function));
-      }
+      closeHandler!();
+
+      await expect(parsePromise).rejects.toMatchObject({
+        statusCode: 400,
+        internalDetails: { reason: 'client aborted upload before body completed' },
+      });
+    });
+
+    it('should ignore req close when req.complete is true (let finalize handle teardown)', async () => {
+      Object.defineProperty(mockReq, 'complete', { value: true, configurable: true });
+      const wrapper = new BusboyWrapper(mockReq);
+      const fileHandler: FileHandler = vi.fn().mockResolvedValue(undefined);
+      const parsePromise = wrapper.parse(fileHandler);
+
+      const closeHandler = (mockReq.on as ReturnType<typeof vi.fn>).mock.calls.find(call => call[0] === 'close')?.[1];
+      closeHandler!();
+      wrapper.emit('finish');
+
+      const result = await parsePromise;
+      expect(result).toBeInstanceOf(Map);
     });
   });
 

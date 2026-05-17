@@ -67,7 +67,7 @@ new MultipartBody(req: IncomingMessage, limits?: MultipartLimits)
 **Default limits:**
 
 - `files`: 1
-- `fileSize`: 20 MB
+- `fileSize`: 20 MB (also exported as `MAX_FILE_SIZE` for callers that want to scale relative to the default)
 
 #### `parse(fileHandler, limits?)`
 
@@ -104,7 +104,7 @@ Configuration options for limiting request sizes:
 | `fieldNameSize` | `number` | 100      | Max field name size in bytes     |
 | `fieldSize`     | `number` | 1 MB     | Max field value size in bytes    |
 | `fields`        | `number` | Infinity | Max number of non-file fields    |
-| `fileSize`      | `number` | Infinity | Max file size in bytes           |
+| `fileSize`      | `number` | Infinity | Max file size in bytes (exceeding it rejects with 413 `Reached file size limit`) |
 | `files`         | `number` | Infinity | Max number of file fields        |
 | `parts`         | `number` | Infinity | Max total parts (fields + files) |
 | `headerPairs`   | `number` | 2000     | Max header key-value pairs       |
@@ -192,27 +192,32 @@ console.log('Uploaded files:', uploadedFiles);
 
 ### Error Handling
 
-The parser throws `HttpError` for two cases:
+The parser throws `HttpError` for two HTTP-shaped cases:
 
-- **`413`** — a configured limit (parts, files, fields) was exceeded.
-- **`400`** — the client disconnected before the request body finished.
+- **`413`** — a configured limit was exceeded. `internalDetails.reason` is one of `Reached parts limit`, `Reached files limit`, `Reached fields limit`, or `Reached file size limit` (the last also includes `fieldname` and `filename`).
+- **`400`** — the client disconnected before the request body finished streaming.
+
+It also throws a plain `ServerkitError` **synchronously** if you call `parse()` twice on the same `MultipartBody` — the request body can only be consumed once.
 
 ```typescript
 import { MultipartBody } from '@maroonedsoftware/multipart';
+import { IsServerkitError } from '@maroonedsoftware/errors';
 
 try {
   const fields = await multipart.parse(fileHandler);
 } catch (error) {
   if (error.statusCode === 413) {
-    // Handle limit exceeded
-    console.error('Upload too large:', error.internalDetails?.reason);
+    console.error('Upload rejected:', error.internalDetails?.reason);
   } else if (error.statusCode === 400) {
-    // Client disconnected mid-upload
     console.error('Upload aborted:', error.internalDetails?.reason);
+  } else if (IsServerkitError(error)) {
+    console.error('Usage error:', error.message);
   }
   throw error;
 }
 ```
+
+> **Note:** A `MultipartBody` instance is single-shot — once `parse()` has been called, a second call throws. Construct a fresh `MultipartBody` per request.
 
 ## Example
 

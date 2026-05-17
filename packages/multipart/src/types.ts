@@ -93,6 +93,11 @@ export const isMultipartFileData = (data: MultipartData): data is FileData => {
  * Configuration options for limiting multipart request sizes.
  * Used to prevent resource exhaustion from malicious or oversized uploads.
  *
+ * The `@default` annotations below reflect the underlying `@fastify/busboy`
+ * defaults that apply when an unset option is passed straight through. When
+ * accessed via `MultipartBody`, the wrapper supplies its own stricter defaults
+ * for `files` (1) and `fileSize` (`MAX_FILE_SIZE`, 20 MB) unless overridden.
+ *
  * @see https://github.com/fastify/busboy/blob/main/lib/main.d.ts#L104
  */
 export interface MultipartLimits {
@@ -103,27 +108,27 @@ export interface MultipartLimits {
   fieldNameSize?: number | undefined;
   /**
    * Maximum field value size in bytes.
-   * @default 1048576 (1MB)
+   * @default 1048576 (1 MB)
    */
   fieldSize?: number | undefined;
   /**
    * Maximum number of non-file fields.
-   * @default Infinity
+   * @default Infinity (busboy) — not overridden by `MultipartBody`.
    */
   fields?: number | undefined;
   /**
    * Maximum file size in bytes for multipart forms.
-   * @default Infinity
+   * @default Infinity (busboy) — `MultipartBody` defaults to `MAX_FILE_SIZE` (20 MB).
    */
   fileSize?: number | undefined;
   /**
    * Maximum number of file fields for multipart forms.
-   * @default Infinity
+   * @default Infinity (busboy) — `MultipartBody` defaults to `1`.
    */
   files?: number | undefined;
   /**
    * Maximum number of parts (fields + files) for multipart forms.
-   * @default Infinity
+   * @default Infinity (busboy) — not overridden by `MultipartBody`.
    */
   parts?: number | undefined;
   /**
