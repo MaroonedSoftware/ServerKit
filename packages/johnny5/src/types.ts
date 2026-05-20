@@ -1,4 +1,5 @@
 import type { AppConfig } from '@maroonedsoftware/appconfig';
+import type { Daemons } from './util/daemons.js';
 import type { CliLogger } from './util/logger.js';
 import type { Shell } from './util/shell.js';
 
@@ -119,6 +120,8 @@ export interface CliContext {
     paths: CliPaths;
     logger: CliLogger;
     shell: Shell;
+    /** Project-scoped manager for long-running detached processes (storybook, dev servers, …). */
+    daemons: Daemons;
     config: AppConfig;
     isInteractive: () => boolean;
     env: NodeJS.ProcessEnv;

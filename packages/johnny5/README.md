@@ -103,7 +103,8 @@ Every command, check, and plugin hook receives the same `CliContext`:
 | `paths.cwd` | `process.cwd()` at startup. |
 | `paths.repoRoot` | Nearest ancestor containing `pnpm-workspace.yaml`, else `cwd`. |
 | `logger` | ANSI-coloured console logger (`info`/`warn`/`error`/`debug`/`success`). Override via `createCliApp({ logger })`. |
-| `shell` | `execa` wrapper bound to `repoRoot`; `run` returns the result promise, `runStreaming` inherits stdio and returns the exit code. |
+| `shell` | `execa` wrapper bound to `repoRoot`; `run` returns the result promise, `runStreaming` inherits stdio and returns the exit code, `runDetached` spawns a detached background process. |
+| `daemons` | Project-scoped manager for long-running detached processes. See [Background daemons](#background-daemons). |
 | `config` | An `AppConfig` instance. Defaults to one with only the dotenv provider attached; pass `config` to `createCliApp` for the full builder. |
 | `env` | `process.env`. |
 | `isInteractive()` | True when both stdin and stdout are TTYs. |
@@ -218,6 +219,44 @@ Behaviour worth knowing:
 
 For finer control, call `bootstrapForCli({ modules, config })` directly and manage the container/shutdown lifecycle yourself.
 
+## Background daemons
+
+Commands often need to start a long-running dev process (Storybook, a watch-mode bundler, a vendor daemon) and let the user's terminal go free. `ctx.daemons` is built for that:
+
+```ts
+const start = defineCommand({
+    description: 'start storybook in the background',
+    run: async (_opts, ctx) => {
+        const status = ctx.daemons.start({
+            name: 'storybook',
+            command: 'pnpm',
+            args: ['--filter', '@acme/ui', 'exec', 'storybook', 'dev', '-p', '6006', '--no-open'],
+        });
+        ctx.logger.success(`storybook running (pid ${status.pid}) — log: ${status.logFile}`);
+    },
+});
+
+const stop = defineCommand({
+    description: 'stop storybook',
+    run: async (_opts, ctx) => {
+        ctx.daemons.stop('storybook') ? ctx.logger.success('stopped') : ctx.logger.warn('not running');
+    },
+});
+```
+
+What you get:
+
+- **Idempotent `start`** — when a daemon is already running, the default `onExisting: 'reuse'` policy returns the existing handle and skips the spawn. Use `'restart'` to terminate-and-respawn, or `'error'` to throw.
+- **`stop`, `status`, `list`** — `stop` sends `SIGTERM` (override via `{ signal }`) and deletes the pid file. `status(name)` returns the recorded `{ pid, running, logFile, pidFile, command, args, cwd, startedAt }` (or `undefined`). `list()` returns the status of every daemon registered for the current project.
+- **Project-scoped state** — pid and log files are placed under `<johnnyPaths.runtime>/<projectSlug>/` and `<johnnyPaths.log>/<projectSlug>/`. The slug is `<basename>-<sha256(repoRoot).slice(0,8)>`, so two checkouts of the same repo at different paths get distinct daemon namespaces while remaining easy to identify in `ls` output.
+- **OS-native locations** — `johnnyPaths('johnny5')` returns the conventional dirs for each platform: macOS `~/Library/Logs/johnny5` + `$TMPDIR/johnny5`; Linux `$XDG_STATE_HOME/johnny5` + `$XDG_RUNTIME_DIR/johnny5`; Windows `%LOCALAPPDATA%\johnny5\{Log,Temp}`. Logs are append-only and rotate-friendly; pid files live in runtime/temp dirs that the OS may clear on reboot — exactly the right behaviour for stale records.
+
+Under the hood, daemons are spawned via `Shell.runDetached(command, args, { logFile, cwd?, env? })`. Drop down to it directly when you want detached spawn without the pid-file bookkeeping:
+
+```ts
+const { pid, logFile } = ctx.shell.runDetached('node', ['worker.js'], { logFile: '/tmp/worker.log' });
+```
+
 ## Plugin discovery
 
 Workspace packages can contribute commands without the CLI entrypoint knowing about them. In a plugin package's `package.json`:
@@ -285,7 +324,7 @@ const create = defineCommand({
 
 | Path | Provides |
 | --- | --- |
-| `@maroonedsoftware/johnny5` | `createCliApp`, `defineCommand`, `registerCommands`, `runChecks`, `buildContext`, `buildDefaultAppConfig`, `loadWorkspacePlugins`, `createShell`, `createDefaultLogger`, `prompts`, `unwrap`, `isInteractive`, plus the `Check` / `CommandModule` / `CliContext` types. |
+| `@maroonedsoftware/johnny5` | `createCliApp`, `defineCommand`, `registerCommands`, `runChecks`, `buildContext`, `buildDefaultAppConfig`, `loadWorkspacePlugins`, `createShell`, `createDaemons`, `johnnyPaths`, `projectSlug`, `createDefaultLogger`, `prompts`, `unwrap`, `isInteractive`, plus the `Check` / `CommandModule` / `CliContext` / `Daemons` types. |
 | `/serverkit` | `bootstrapForCli`, `configureServerKitModules`, `getOrBootstrapContainer`, `requireContainer`. |
 | `/versions` | `nodeVersion`, `pnpmVersion`. |
 | `/filesystem` | `envFile`, `portsFree`. |

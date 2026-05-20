@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { AppConfigBuilder, AppConfigProviderDotenv, type AppConfig } from '@maroonedsoftware/appconfig';
 import type { CliContext, CliPaths } from './types.js';
+import { createDaemons } from './util/daemons.js';
 import type { CliLogger } from './util/logger.js';
 import { createDefaultLogger } from './util/logger.js';
 import { createShell } from './util/shell.js';
@@ -92,12 +93,14 @@ export const buildContext = async (options: BuildContextOptions = {}): Promise<C
 
     const logger = options.logger ?? createDefaultLogger({ verbose: options.verbose });
     const shell = createShell(repoRoot, logger);
+    const daemons = createDaemons(repoRoot, shell, logger);
     const config = options.config ?? (await buildDefaultAppConfig());
 
     return {
         paths,
         logger,
         shell,
+        daemons,
         config,
         env: process.env,
         isInteractive,
