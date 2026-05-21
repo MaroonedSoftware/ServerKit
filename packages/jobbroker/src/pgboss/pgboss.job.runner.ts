@@ -12,7 +12,8 @@ import { Logger } from '@maroonedsoftware/logger';
  * @returns True if the registration is a {@link PgBossJobRegistration} with cron schedule.
  * @internal
  */
-const isPgBossJobRegistration = (registration: object): registration is PgBossJobRegistration => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const isPgBossJobRegistration = (registration: any): registration is PgBossJobRegistration => {
   return registration && 'job' in registration && 'cron' in registration;
 };
 

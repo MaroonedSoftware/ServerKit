@@ -41,13 +41,13 @@
     "@maroonedsoftware/errors": "workspace:*",
     "deepmerge-ts": "^7.1.5",
     "dotenv": "^17.4.2",
-    "injectkit": "^1.2.0"
+    "injectkit": "^1.4.1"
   },
   "devDependencies": {
     "@google-cloud/secret-manager": "^6.1.2",
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
-    "yaml": "^2.8.4"
+    "yaml": "^2.9.0"
   },
   "peerDependencies": {
     "@google-cloud/secret-manager": "^6.1.1",

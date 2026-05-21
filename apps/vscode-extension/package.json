@@ -134,9 +134,9 @@
   "devDependencies": {
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
-    "@types/vscode": "^1.105.1",
+    "@types/vscode": "^1.120.0",
     "@vscode/vsce": "^3.9.1",
     "esbuild": "^0.28.0",
-    "sharp": "^0.34.1"
+    "sharp": "^0.34.5"
   }
 }

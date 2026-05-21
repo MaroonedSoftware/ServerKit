@@ -42,10 +42,10 @@
   "dependencies": {
     "@maroonedsoftware/errors": "workspace:*",
     "@maroonedsoftware/utilities": "workspace:*",
-    "injectkit": "^1.2.0",
-    "kysely": "^0.28.17",
+    "injectkit": "^1.4.1",
+    "kysely": "^0.29.2",
     "luxon": "^3.7.2",
-    "pg": "^8.20.0"
+    "pg": "^8.21.0"
   },
   "devDependencies": {
     "@repo/config-eslint": "workspace:*",

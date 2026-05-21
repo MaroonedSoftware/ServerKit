@@ -38,9 +38,9 @@
     "test:ci": "vitest run --coverage"
   },
   "dependencies": {
-    "injectkit": "^1.2.0",
     "@maroonedsoftware/errors": "workspace:*",
-    "@node-rs/argon2": "^2.0.2"
+    "@node-rs/argon2": "^2.0.2",
+    "injectkit": "^1.4.1"
   },
   "devDependencies": {
     "@repo/config-eslint": "workspace:*",

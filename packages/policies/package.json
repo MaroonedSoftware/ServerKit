@@ -38,8 +38,8 @@
     "test:ci": "vitest run --coverage"
   },
   "dependencies": {
-    "injectkit": "^1.2.0",
     "@maroonedsoftware/errors": "workspace:*",
+    "injectkit": "^1.4.1",
     "luxon": "^3.7.2"
   },
   "devDependencies": {
