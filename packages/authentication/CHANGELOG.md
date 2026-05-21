@@ -1,5 +1,16 @@
 # @maroonedsoftware/authentication
 
+## 4.21.2
+
+### Patch Changes
+
+- a167ee3: Bump runtime dependencies (notably `injectkit` to 1.4.1) and relax the pgboss job registration type guard so it accepts the updated `Identifier` shape.
+- Updated dependencies [a167ee3]
+  - @maroonedsoftware/cache@0.1.6
+  - @maroonedsoftware/encryption@0.5.1
+  - @maroonedsoftware/logger@1.1.1
+  - @maroonedsoftware/policies@0.4.2
+
 ## 4.21.1
 
 ### Patch Changes

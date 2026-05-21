@@ -1,5 +1,11 @@
 # @maroonedsoftware/kysely
 
+## 0.6.2
+
+### Patch Changes
+
+- a167ee3: Bump runtime dependencies (notably `injectkit` to 1.4.1) and relax the pgboss job registration type guard so it accepts the updated `Identifier` shape.
+
 ## 0.6.1
 
 ### Patch Changes

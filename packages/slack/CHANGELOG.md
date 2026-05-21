@@ -1,5 +1,13 @@
 # @maroonedsoftware/slack
 
+## 1.8.2
+
+### Patch Changes
+
+- a167ee3: Bump runtime dependencies (notably `injectkit` to 1.4.1) and relax the pgboss job registration type guard so it accepts the updated `Identifier` shape.
+- Updated dependencies [a167ee3]
+  - @maroonedsoftware/logger@1.1.1
+
 ## 1.8.1
 
 ### Patch Changes

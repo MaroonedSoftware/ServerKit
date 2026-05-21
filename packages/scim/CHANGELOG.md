@@ -1,5 +1,15 @@
 # @maroonedsoftware/scim
 
+## 0.1.14
+
+### Patch Changes
+
+- a167ee3: Bump runtime dependencies (notably `injectkit` to 1.4.1) and relax the pgboss job registration type guard so it accepts the updated `Identifier` shape.
+- Updated dependencies [a167ee3]
+  - @maroonedsoftware/authentication@4.21.2
+  - @maroonedsoftware/koa@2.2.5
+  - @maroonedsoftware/logger@1.1.1
+
 ## 0.1.13
 
 ### Patch Changes

@@ -1,5 +1,17 @@
 # @maroonedsoftware/johnny5
 
+## 1.1.1
+
+### Patch Changes
+
+- a167ee3: Bump runtime dependencies (notably `injectkit` to 1.4.1) and relax the pgboss job registration type guard so it accepts the updated `Identifier` shape.
+- Updated dependencies [a167ee3]
+  - @maroonedsoftware/appconfig@1.5.1
+  - @maroonedsoftware/koa@2.2.5
+  - @maroonedsoftware/logger@1.1.1
+  - @maroonedsoftware/permissions@0.2.1
+  - @maroonedsoftware/permissions-dsl@0.4.1
+
 ## 1.1.0
 
 ### Minor Changes

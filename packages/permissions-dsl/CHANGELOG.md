@@ -1,5 +1,13 @@
 # @maroonedsoftware/permissions-dsl
 
+## 0.4.1
+
+### Patch Changes
+
+- a167ee3: Bump runtime dependencies (notably `injectkit` to 1.4.1) and relax the pgboss job registration type guard so it accepts the updated `Identifier` shape.
+- Updated dependencies [a167ee3]
+  - @maroonedsoftware/permissions@0.2.1
+
 ## 0.4.0
 
 ### Minor Changes

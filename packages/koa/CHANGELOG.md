@@ -1,5 +1,16 @@
 # @maroonedsoftware/koa
 
+## 2.2.5
+
+### Patch Changes
+
+- a167ee3: Bump runtime dependencies (notably `injectkit` to 1.4.1) and relax the pgboss job registration type guard so it accepts the updated `Identifier` shape.
+- Updated dependencies [a167ee3]
+  - @maroonedsoftware/appconfig@1.5.1
+  - @maroonedsoftware/authentication@4.21.2
+  - @maroonedsoftware/logger@1.1.1
+  - @maroonedsoftware/policies@0.4.2
+
 ## 2.2.4
 
 ### Patch Changes
