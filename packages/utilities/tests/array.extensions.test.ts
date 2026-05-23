@@ -1,26 +1,42 @@
 import { describe, it, expect, vi } from 'vitest';
 import '../src/array.extensions.js';
 
-describe('Array.prototype.unique', () => {
+describe('Array.prototype.uniqueBy', () => {
   it('deduplicates by property key, keeping the first occurrence', () => {
     const items = [
       { id: 1, name: 'a' },
       { id: 2, name: 'b' },
       { id: 1, name: 'c' },
     ];
-    const result = items.unique('id');
+    const result = items.uniqueBy('id');
     expect(result).toHaveLength(2);
     expect(result.map(r => r.name)).toEqual(['a', 'b']);
   });
 
-  it('deduplicates by function selector', () => {
+  it('deduplicates by function selector returning a property value', () => {
     const items = [{ tag: 'x' }, { tag: 'y' }, { tag: 'x' }];
-    const result = items.unique(t => t.tag);
+    const result = items.uniqueBy(t => t.tag);
     expect(result.map(r => r.tag)).toEqual(['x', 'y']);
   });
 
+  it('deduplicates by a computed value not present on the element', () => {
+    const items = [{ email: 'A@x.com' }, { email: 'a@x.com' }, { email: 'b@x.com' }];
+    const result = items.uniqueBy(t => t.email.toLowerCase());
+    expect(result.map(r => r.email)).toEqual(['A@x.com', 'b@x.com']);
+  });
+
+  it('deduplicates by a composed key', () => {
+    const items = [
+      { first: 'a', last: 'b' },
+      { first: 'a', last: 'b' },
+      { first: 'a', last: 'c' },
+    ];
+    const result = items.uniqueBy(t => `${t.first}|${t.last}`);
+    expect(result).toHaveLength(2);
+  });
+
   it('returns an empty array for an empty input', () => {
-    expect([].unique(t => t)).toEqual([]);
+    expect([].uniqueBy(t => t)).toEqual([]);
   });
 });
 
@@ -94,31 +110,31 @@ describe('Array.prototype.intersect', () => {
   });
 });
 
-describe('Array.prototype.compare', () => {
+describe('Array.prototype.arrayEquals', () => {
   it('returns true for arrays with the same elements in the same order', () => {
-    expect([1, 2, 3].compare([1, 2, 3])).toBe(true);
+    expect([1, 2, 3].arrayEquals([1, 2, 3])).toBe(true);
   });
 
   it('returns false for arrays of different lengths', () => {
-    expect([1, 2].compare([1, 2, 3])).toBe(false);
+    expect([1, 2].arrayEquals([1, 2, 3])).toBe(false);
   });
 
   it('returns false when elements differ at any index', () => {
-    expect([1, 2, 3].compare([1, 9, 3])).toBe(false);
+    expect([1, 2, 3].arrayEquals([1, 9, 3])).toBe(false);
   });
 
   it('uses strict equality (does not deep-compare)', () => {
-    expect([{ a: 1 }].compare([{ a: 1 }])).toBe(false);
+    expect([{ a: 1 }].arrayEquals([{ a: 1 }])).toBe(false);
   });
 
   it('defers to the supplied comparer when provided', () => {
-    expect([{ a: 1 }, { a: 2 }].compare([{ a: 1 }, { a: 2 }], (x, y) => x.a === y.a)).toBe(true);
-    expect([{ a: 1 }, { a: 2 }].compare([{ a: 1 }, { a: 3 }], (x, y) => x.a === y.a)).toBe(false);
+    expect([{ a: 1 }, { a: 2 }].arrayEquals([{ a: 1 }, { a: 2 }], (x, y) => x.a === y.a)).toBe(true);
+    expect([{ a: 1 }, { a: 2 }].arrayEquals([{ a: 1 }, { a: 3 }], (x, y) => x.a === y.a)).toBe(false);
   });
 
   it('returns false for length mismatch even when a comparer is provided', () => {
     const comparer = vi.fn(() => true);
-    expect([1, 2].compare([1, 2, 3], comparer)).toBe(false);
+    expect([1, 2].arrayEquals([1, 2, 3], comparer)).toBe(false);
     expect(comparer).not.toHaveBeenCalled();
   });
 });
@@ -187,7 +203,7 @@ describe('Array.prototype.takeWhileAggregate', () => {
 
 describe('prototype installs', () => {
   it('marks extension methods as non-enumerable', () => {
-    for (const name of ['unique', 'cast', 'deleteProperties', 'intersect', 'compare', 'binarySearch', 'takeWhile', 'takeWhileAggregate']) {
+    for (const name of ['uniqueBy', 'cast', 'deleteProperties', 'intersect', 'arrayEquals', 'binarySearch', 'takeWhile', 'takeWhileAggregate']) {
       const descriptor = Object.getOwnPropertyDescriptor(Array.prototype, name);
       expect(descriptor?.enumerable, `${name} should be non-enumerable`).toBe(false);
     }

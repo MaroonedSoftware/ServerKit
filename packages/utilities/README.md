@@ -218,7 +218,9 @@ The package ships an opt-in side-effect module that augments the global `Array` 
 import '@maroonedsoftware/utilities/extensions';
 ```
 
-Methods are installed with `Object.defineProperty` as non-enumerable, writable, configurable descriptors, so they will not show up in `for…in` loops or `Object.keys`. Each install is guarded with `Object.prototype.hasOwnProperty.call(prototype, name)`, so the module is safe to import multiple times and will not overwrite a method that already exists on the prototype.
+Methods are installed with `Object.defineProperty` as non-enumerable, writable, configurable descriptors, so they will not show up in `for…in` loops or `Object.keys`. Each install is guarded with `Object.prototype.hasOwnProperty.call(prototype, name)`, so the module is safe to import multiple times and will not overwrite a method that already exists on the prototype. When a name is already taken (e.g. by a future Node release or another library), the install is skipped and a single `console.warn` per colliding name is emitted so the divergence is discoverable.
+
+The two most generically-named methods are intentionally namespaced — `arrayEquals` (not `equals` or `compare`) and `uniqueBy` (not `unique`) — to reduce the chance of a future TC39 `Array.prototype` addition silently shadowing them.
 
 Free-function alternatives for the string predicates are exported from the main entry — use them when you need to operate on `string | null | undefined` without throwing:
 
@@ -248,19 +250,19 @@ const mixed: Array<number | string> = [1, 2, 3];
 const nums = mixed.cast<number>(); // typed as number[], same reference
 ```
 
-#### `Array<T>.compare(other: T[], comparer?: (a: T, b: T) => boolean): boolean`
+#### `Array<T>.arrayEquals(other: T[], comparer?: (a: T, b: T) => boolean): boolean`
 
-Returns true when both arrays have the same length and every index matches.
+Returns true when both arrays have the same length and every index matches. Named to avoid colliding with a future `Array.prototype.compare`, which would conventionally return a sort-style `number`, not a boolean.
 
 - **Without** a comparer: elements are compared with strict equality (`===`). Shallow — nested objects are compared by reference.
 - **With** a comparer: defers element equality to the supplied function. Length is still checked first and short-circuits before the comparer runs.
 
 ```typescript
-[1, 2, 3].compare([1, 2, 3]);   // true
-[1, 2, 3].compare([1, 2]);      // false
-[{ a: 1 }].compare([{ a: 1 }]); // false (different references)
+[1, 2, 3].arrayEquals([1, 2, 3]);   // true
+[1, 2, 3].arrayEquals([1, 2]);      // false
+[{ a: 1 }].arrayEquals([{ a: 1 }]); // false (different references)
 
-[{ id: 1 }, { id: 2 }].compare([{ id: 1 }, { id: 2 }], (x, y) => x.id === y.id);
+[{ id: 1 }, { id: 2 }].arrayEquals([{ id: 1 }, { id: 2 }], (x, y) => x.id === y.id);
 // => true
 ```
 
@@ -315,16 +317,21 @@ A blend of `map` and `reduce` with an early-exit. Walks the array, threading `ac
 // => [1, 3, 6, 10]
 ```
 
-#### `Array<T>.unique<K extends keyof T>(selector: K | ((t: T) => T[K])): T[]`
+#### `Array<T>.uniqueBy(selector: keyof T | ((t: T) => unknown)): T[]`
 
-Returns a new array with duplicates removed, deduplicated by `selector`. When multiple items produce the same key, the **first** occurrence wins.
+Returns a new array with duplicates removed, deduplicated by `selector`. When multiple items produce the same key, the **first** occurrence wins. The selector function can return any value — including computed or composed keys, not just a property of the element.
+
+Keys are compared with `Map` equality (`===`): primitives by value, objects by reference. Returning a freshly-allocated object per element therefore treats every element as unique and yields no deduplication — pre-stringify or pre-compose a primitive key in that case.
 
 ```typescript
-[{ id: 1, n: 'a' }, { id: 2, n: 'b' }, { id: 1, n: 'c' }].unique('id');
+[{ id: 1, n: 'a' }, { id: 2, n: 'b' }, { id: 1, n: 'c' }].uniqueBy('id');
 // => [{ id: 1, n: 'a' }, { id: 2, n: 'b' }]
 
-[{ tag: 'x' }, { tag: 'y' }, { tag: 'x' }].unique(t => t.tag);
+[{ tag: 'x' }, { tag: 'y' }, { tag: 'x' }].uniqueBy(t => t.tag);
 // => [{ tag: 'x' }, { tag: 'y' }]
+
+[{ email: 'A@x.com' }, { email: 'a@x.com' }].uniqueBy(t => t.email.toLowerCase());
+// => [{ email: 'A@x.com' }]   (computed key)
 ```
 
 ### String extensions

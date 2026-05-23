@@ -1,3 +1,4 @@
+import { installStringMethod } from './internal/install.js';
 import { hasValue, isNullOrUndefinedOrWhitespace } from './string.predicates.js';
 
 declare global {
@@ -41,21 +42,15 @@ declare global {
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const define = (name: PropertyKey, value: (...args: any[]) => unknown): void => {
-  if (Object.prototype.hasOwnProperty.call(String.prototype, name)) return;
-  Object.defineProperty(String.prototype, name, { value, enumerable: false, writable: true, configurable: true });
-};
-
-define('hasValue', function (this: string): boolean {
+installStringMethod('hasValue', function (this: string): boolean {
   return hasValue(this);
 });
 
-define('isNullOrUndefinedOrWhitespace', function (this: string): boolean {
+installStringMethod('isNullOrUndefinedOrWhitespace', function (this: string): boolean {
   return isNullOrUndefinedOrWhitespace(this);
 });
 
-define('mask', function (this: string, unmaskedStart: number = 2, unmaskedEnd: number = 2, character: string = '*'): string {
+installStringMethod('mask', function (this: string, unmaskedStart: number = 2, unmaskedEnd: number = 2, character: string = '*'): string {
   const start = Math.max(unmaskedStart, 0);
   const end = Math.max(unmaskedEnd, 0);
   const minLength = this.length - start - end;
@@ -64,7 +59,7 @@ define('mask', function (this: string, unmaskedStart: number = 2, unmaskedEnd: n
   return minLength > 0 ? this.slice(0, start) + character.repeat(repeat) + this.slice(this.length - end) : this.toString();
 });
 
-define('maskEmail', function (this: string, trim: boolean = true, character: string = '*'): string {
+installStringMethod('maskEmail', function (this: string, trim: boolean = true, character: string = '*'): string {
   const at = this.indexOf('@');
   let dot = this.lastIndexOf('.');
   const idx = at >= 0 ? this.length - at : 0;
@@ -78,6 +73,6 @@ define('maskEmail', function (this: string, trim: boolean = true, character: str
   return masked;
 });
 
-define('maskExceptLastFour', function (this: string, character: string = '*'): string {
+installStringMethod('maskExceptLastFour', function (this: string, character: string = '*'): string {
   return this.mask(0, 4, character);
 });

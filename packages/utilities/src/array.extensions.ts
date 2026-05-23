@@ -1,4 +1,5 @@
 import { binarySearch } from './binarysearch.js';
+import { installArrayMethod } from './internal/install.js';
 
 type Comparer<T> = (value: T, value2: T) => boolean;
 
@@ -13,19 +14,21 @@ declare global {
     binarySearch(value: T): boolean;
 
     /**
+     * Returns true if `other` has the same length and every element matches at the same index.
+     * Without a comparer, elements are compared with strict equality (`===`) — no deep compare.
+     * With a comparer, defers element equality to the supplied function.
+     * Named to avoid colliding with a future `Array.prototype.compare` (which would conventionally
+     * return a sort-style number, not a boolean).
+     * @param other The array to compare against.
+     * @param comparer Optional equality function. When omitted, uses `===`.
+     */
+    arrayEquals(other: Array<T>, comparer?: Comparer<T>): boolean;
+
+    /**
      * Type-casts the array to a narrower element type `U extends T` without copying.
      * The cast is unchecked — the caller is responsible for the invariant.
      */
     cast<U extends T>(): Array<U>;
-
-    /**
-     * Returns true if `other` has the same length and every element matches at the same index.
-     * Without a comparer, elements are compared with strict equality (`===`) — no deep compare.
-     * With a comparer, defers element equality to the supplied function.
-     * @param other The array to compare against.
-     * @param comparer Optional equality function. When omitted, uses `===`.
-     */
-    compare(other: Array<T>, comparer?: Comparer<T>): boolean;
 
     /**
      * Returns a new array of shallow copies with the named properties removed from each element.
@@ -63,34 +66,31 @@ declare global {
     ): Array<TDest>;
 
     /**
-     * Returns an array of unique items, deduplicated by the selector. When multiple items
-     * produce the same key, the first occurrence is kept.
-     * @param selector A property key of `T` or a function `(t: T) => T[K]` used to compute the dedup key.
+     * Returns an array of unique items, deduplicated by the value the selector produces. When
+     * multiple items produce the same key, the first occurrence is kept. Keys are compared with
+     * `Map` equality (`===`) — primitives by value, objects by reference. Returning a fresh
+     * object per element therefore treats every element as unique and produces no deduplication.
+     * @param selector A property key of `T` or a function `(t: T) => U` that derives the dedup key.
      */
-    unique<K extends keyof T>(selector: K | ((t: T) => T[K])): Array<T>;
+    uniqueBy<K extends keyof T>(selector: K): Array<T>;
+    uniqueBy<U>(selector: (t: T) => U): Array<T>;
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const define = (name: PropertyKey, value: (...args: any[]) => unknown): void => {
-  if (Object.prototype.hasOwnProperty.call(Array.prototype, name)) return;
-  Object.defineProperty(Array.prototype, name, { value, enumerable: false, writable: true, configurable: true });
-};
-
-define('binarySearch', function <T>(this: Array<T>, value: T): boolean {
+installArrayMethod('binarySearch', function <T>(this: Array<T>, value: T): boolean {
   return binarySearch(this, value);
 });
 
-define('cast', function <T, U extends T>(this: T[]): Array<U> {
-  return this as Array<U>;
-});
-
-define('compare', function <T>(this: Array<T>, other: Array<T>, comparer?: Comparer<T>): boolean {
+installArrayMethod('arrayEquals', function <T>(this: Array<T>, other: Array<T>, comparer?: Comparer<T>): boolean {
   if (this.length !== other.length) return false;
   return comparer ? this.every((item, idx) => comparer(item, other[idx] as T)) : this.every((item, idx) => item === other[idx]);
 });
 
-define('deleteProperties', function <T, K extends keyof T>(this: T[], ...properties: K[]): Array<Omit<T, K>> {
+installArrayMethod('cast', function <T, U extends T>(this: T[]): Array<U> {
+  return this as Array<U>;
+});
+
+installArrayMethod('deleteProperties', function <T, K extends keyof T>(this: T[], ...properties: K[]): Array<Omit<T, K>> {
   return this.map(element => {
     const copy = { ...element };
     properties.forEach(prop => delete copy[prop]);
@@ -98,7 +98,7 @@ define('deleteProperties', function <T, K extends keyof T>(this: T[], ...propert
   });
 });
 
-define('intersect', function <T>(this: Array<T>, other: Array<T>, comparer?: Comparer<T>): Array<T> {
+installArrayMethod('intersect', function <T>(this: Array<T>, other: Array<T>, comparer?: Comparer<T>): Array<T> {
   if (comparer === undefined) {
     const setB = new Set(other);
     return this.filter(value => setB.has(value));
@@ -111,7 +111,7 @@ define('intersect', function <T>(this: Array<T>, other: Array<T>, comparer?: Com
   return intersection;
 });
 
-define('takeWhile', function <T>(this: Array<T>, predicate: (value: T, index: number, array: Array<T>) => boolean): Array<T> {
+installArrayMethod('takeWhile', function <T>(this: Array<T>, predicate: (value: T, index: number, array: Array<T>) => boolean): Array<T> {
   const result: T[] = [];
 
   for (let i = 0; i < this.length; i++) {
@@ -127,7 +127,7 @@ define('takeWhile', function <T>(this: Array<T>, predicate: (value: T, index: nu
 });
 
 // Adapted from a C# Enumerable extension derived from a Reactive Extensions operator.
-define('takeWhileAggregate', function <T, TAccumulate, TDest>(
+installArrayMethod('takeWhileAggregate', function <T, TAccumulate, TDest>(
   this: Array<T>,
   seed: TAccumulate,
   step: (accumulator: TAccumulate, element: T) => TakeWhileAggregateFunRetVal<TAccumulate, TDest>,
@@ -147,10 +147,9 @@ define('takeWhileAggregate', function <T, TAccumulate, TDest>(
   return result;
 });
 
-define('unique', function <T, K extends keyof T>(this: T[], selector: K | ((t: T) => T[K])): Array<T> {
-  const map = new Map<T[K], T>();
-
-  const _selector = typeof selector !== 'function' ? (t: T) => t[selector] : selector;
+installArrayMethod('uniqueBy', function <T>(this: T[], selector: keyof T | ((t: T) => unknown)): Array<T> {
+  const map = new Map<unknown, T>();
+  const _selector: (t: T) => unknown = typeof selector === 'function' ? selector : (t: T) => t[selector];
 
   this.forEach(a => {
     const key = _selector(a);
