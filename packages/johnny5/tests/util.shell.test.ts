@@ -46,7 +46,10 @@ describe('createShell', () => {
         try {
             const logFile = resolve(dir, 'out.log');
             const shell = createShell(process.cwd(), createMockLogger());
-            const handle = shell.runDetached('node', ['-e', 'console.log("hello"); setTimeout(()=>process.exit(0), 50)'], { logFile });
+            const handle = shell.runDetached('node', ['-e', 'console.log("hello"); setTimeout(()=>process.exit(0), 50)'], {
+                logFile,
+                env: { ...process.env, NODE_OPTIONS: '' },
+            });
             expect(typeof handle.pid).toBe('number');
             expect(handle.logFile).toBe(logFile);
             // Give the child a moment to flush stdout to the log file.

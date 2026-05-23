@@ -11,7 +11,22 @@ pnpm add @maroonedsoftware/utilities
 ## Usage
 
 ```typescript
-import { isUuid, isEmail, isEmailDomain, isPhoneE164, base32Encode, base32Decode, unique, binarySearch, bigIntReplacer, bigIntReviver, nullToUndefined } from '@maroonedsoftware/utilities';
+import {
+  isUuid,
+  isEmail,
+  isEmailDomain,
+  isPhoneE164,
+  base32Encode,
+  base32Decode,
+  unique,
+  binarySearch,
+  bigIntReplacer,
+  bigIntReviver,
+  nullToUndefined,
+  joinNonEmpty,
+} from '@maroonedsoftware/utilities';
+
+// The import also installs Array/String prototype extensions (e.g. `.unique`, `.mask`).
 ```
 
 ## API Reference
@@ -156,6 +171,176 @@ Performs a shallow replacement of all `null` values in an object with `undefined
 ```typescript
 nullToUndefined({ a: null, b: 1, c: null });
 // { a: undefined, b: 1, c: undefined }
+```
+
+#### `joinNonEmpty(separator: string | undefined, ...values: string[]): string`
+
+Joins `values` with `separator`, dropping any entry that is an empty string, `undefined`, or `null` before joining. Passing `undefined` as the separator falls back to `Array.prototype.join`'s default (`','`).
+
+```typescript
+joinNonEmpty(', ', 'a', '', 'b');               // 'a, b'
+joinNonEmpty(' ', 'first', undefined, 'last');  // 'first last'
+joinNonEmpty('-', 'only');                      // 'only'
+```
+
+## Prototype Extensions
+
+Importing `@maroonedsoftware/utilities` (or any submodule from it) augments the global `Array` and `String` prototypes with the methods documented below. Each method is installed conditionally (`if (!Array.prototype.<name>) { ... }`), so the module is safe to import multiple times and will not overwrite a method that already exists on the prototype.
+
+The type augmentations live in the same modules, so the methods are visible to TypeScript as soon as the package is imported anywhere in your project. If you want to opt in explicitly, you can import the side-effect modules directly:
+
+```typescript
+import '@maroonedsoftware/utilities/dist/array.extensions.js';
+import '@maroonedsoftware/utilities/dist/string.extensions.js';
+```
+
+### Array extensions
+
+#### `Array<T>.binarySearch(value: T): boolean`
+
+Binary search over a **sorted** array. Returns `true` when `value` is found. Uses `<` / `>` comparison, so `T` must be a type those operators are defined on (numbers, strings, etc.). Passing an unsorted array produces undefined results.
+
+```typescript
+[1, 3, 5, 7, 9].binarySearch(5); // true
+[1, 3, 5, 7, 9].binarySearch(4); // false
+```
+
+#### `Array<T>.cast<U extends T>(): U[]`
+
+Unchecked narrowing cast — returns the same array reference retyped to `U[]`. No copy, no runtime check. Use only when you know the invariant holds (e.g. after a `filter` that TypeScript can't express).
+
+```typescript
+const mixed: Array<number | string> = [1, 2, 3];
+const nums = mixed.cast<number>(); // typed as number[], same reference
+```
+
+#### `Array<T>.compare(other: T[], comparer?: (a: T, b: T) => boolean): boolean`
+
+Returns true when both arrays have the same length and every index matches.
+
+- **Without** a comparer: elements are compared with strict equality (`===`). Shallow — nested objects are compared by reference.
+- **With** a comparer: defers element equality to the supplied function. Length is still checked first and short-circuits before the comparer runs.
+
+```typescript
+[1, 2, 3].compare([1, 2, 3]);   // true
+[1, 2, 3].compare([1, 2]);      // false
+[{ a: 1 }].compare([{ a: 1 }]); // false (different references)
+
+[{ id: 1 }, { id: 2 }].compare([{ id: 1 }, { id: 2 }], (x, y) => x.id === y.id);
+// => true
+```
+
+#### `Array<T>.deleteProperties<K extends keyof T>(...properties: K[]): Array<Omit<T, K>>`
+
+Mutates each element in place by `delete`-ing the named properties, then returns the same array with the narrower element type.
+
+```typescript
+const rows = [{ id: 1, secret: 'a' }, { id: 2, secret: 'b' }];
+rows.deleteProperties('secret');
+// => [{ id: 1 }, { id: 2 }]  (same array, mutated)
+```
+
+#### `Array<T>.intersect(other: T[], comparer?: (a: T, b: T) => boolean): T[]`
+
+Returns the intersection with `other`.
+
+- **Without** a comparer: uses `Set` membership — reference equality for objects, value equality for primitives.
+- **With** a comparer: runs a quadratic `find` per element and pushes the matching value from `other` (not from `this`).
+
+```typescript
+[1, 2, 3].intersect([2, 3, 4]);
+// => [2, 3]
+
+[{ id: 1 }, { id: 2 }].intersect([{ id: 2 }, { id: 3 }], (a, b) => a.id === b.id);
+// => [{ id: 2 }]   (the object from `other`)
+```
+
+#### `Array<T>.takeWhile(predicate: (value: T, index: number, array: T[]) => boolean): T[]`
+
+Returns the leading prefix of elements for which `predicate` returns true, stopping at (and excluding) the first element that returns false. Unlike `filter`, it does not continue past a failure.
+
+```typescript
+[2, 4, 6, 7, 8, 10].takeWhile(n => n % 2 === 0);
+// => [2, 4, 6]
+```
+
+#### `Array<T>.takeWhileAggregate<TAccumulate, TDest>(seed: TAccumulate, step: (accumulator: TAccumulate, element: T) => { newAccumulator: TAccumulate; output: TDest; proceed: boolean }): TDest[]`
+
+A blend of `map` and `reduce` with an early-exit. Walks the array, threading `accumulator` through `step` and collecting each `output`. Stops as soon as `step` returns `proceed: false` — the element that triggered the stop **is** included in the result. Throws if `this` or `step` is null/undefined.
+
+```typescript
+// Running totals while the total stays below 10:
+[1, 2, 3, 4, 5, 6].takeWhileAggregate(0, (acc, n) => {
+  const next = acc + n;
+  return { newAccumulator: next, output: next, proceed: next < 10 };
+});
+// => [1, 3, 6, 10]
+```
+
+#### `Array<T>.unique<K extends keyof T>(selector: K | ((t: T) => T[K])): T[]`
+
+Returns a new array with duplicates removed, deduplicated by `selector`. When multiple items produce the same key, the **first** occurrence wins.
+
+```typescript
+[{ id: 1, n: 'a' }, { id: 2, n: 'b' }, { id: 1, n: 'c' }].unique('id');
+// => [{ id: 1, n: 'a' }, { id: 2, n: 'b' }]
+
+[{ tag: 'x' }, { tag: 'y' }, { tag: 'x' }].unique(t => t.tag);
+// => [{ tag: 'x' }, { tag: 'y' }]
+```
+
+### String extensions
+
+#### `String.hasValue(): boolean`
+
+Inverse of `isNullOrUndefinedOrWhitespace` — returns true when the trimmed string has at least one non-whitespace character.
+
+```typescript
+''.hasValue();      // false
+'  '.hasValue();    // false
+'  hi '.hasValue(); // true
+```
+
+#### `String.isNullOrUndefinedOrWhitespace(): boolean`
+
+Returns true when the string is empty or contains only whitespace. Named for parity with .NET's `String.IsNullOrWhiteSpace`.
+
+```typescript
+''.isNullOrUndefinedOrWhitespace();      // true
+'   '.isNullOrUndefinedOrWhitespace();   // true
+'\t\n'.isNullOrUndefinedOrWhitespace();  // true
+'hi'.isNullOrUndefinedOrWhitespace();    // false
+```
+
+#### `String.mask(unmaskedStart?: number, unmaskedEnd?: number, character?: string): string`
+
+Returns a copy with the middle replaced by `character`, keeping `unmaskedStart` leading and `unmaskedEnd` trailing characters visible. Defaults to `2, 2, '*'`. Negative window sizes are clamped to `0`. When the windows already cover the whole length, the original string is returned unchanged.
+
+```typescript
+'password123'.mask();           // 'pa*******23'
+'1234567890'.mask(4, 2);        // '1234****90'
+'abcdef'.mask(1, 1, '#');       // 'a####f'
+'abcd'.mask();                  // 'abcd'  (windows cover the whole string)
+```
+
+#### `String.maskEmail(trim?: boolean, character?: string): string`
+
+Masks an email address while preserving enough structure to remain recognisable: keeps the first two characters of the local part, the `@`, the first two characters of the domain, the last character of the domain before the dot, and the TLD. When `trim` is true (the default), collapses runs of two or more mask characters down to a single one.
+
+```typescript
+'user@example.com'.maskEmail();          // 'us*@ex*e.com'
+'user@example.com'.maskEmail(false);     // 'us**@ex****e.com'
+'user@example.com'.maskEmail(true, '#'); // 'us#@ex#e.com'
+```
+
+#### `String.maskExceptLastFour(character?: string): string`
+
+Convenience alias for `mask(0, 4, character)` — masks everything except the trailing four characters. Useful for card numbers, account IDs, and similar identifiers.
+
+```typescript
+'4111111111111234'.maskExceptLastFour();    // '************1234'
+'4111111111111234'.maskExceptLastFour('#'); // '############1234'
+'1234'.maskExceptLastFour();                // '1234'  (already ≤ 4 chars)
 ```
 
 ## License
