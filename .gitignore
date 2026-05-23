@@ -13,6 +13,7 @@ node_modules
 
 # Testing
 coverage
+codecov
 codecov.SHA256SUM*
 
 # Turbo
