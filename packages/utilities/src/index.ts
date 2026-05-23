@@ -6,5 +6,5 @@ export * from './unique.js';
 export * from './bigint.js';
 export * from './null.to.undefined.js';
 export * from './binarysearch.js';
-export * from './array.extensions.js';
-export * from './string.extensions.js';
+export * from './join.non.empty.js';
+export * from './string.predicates.js';

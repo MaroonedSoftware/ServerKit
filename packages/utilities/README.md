@@ -24,9 +24,13 @@ import {
   bigIntReviver,
   nullToUndefined,
   joinNonEmpty,
+  hasValue,
+  isNullOrUndefinedOrWhitespace,
 } from '@maroonedsoftware/utilities';
 
-// The import also installs Array/String prototype extensions (e.g. `.unique`, `.mask`).
+// Importing the main entry does NOT touch global prototypes. To install the
+// Array/String prototype extensions (`.unique`, `.mask`, etc.), opt in once:
+import '@maroonedsoftware/utilities/extensions';
 ```
 
 ## API Reference
@@ -183,15 +187,45 @@ joinNonEmpty(' ', 'first', undefined, 'last');  // 'first last'
 joinNonEmpty('-', 'only');                      // 'only'
 ```
 
-## Prototype Extensions
+### String Predicates
 
-Importing `@maroonedsoftware/utilities` (or any submodule from it) augments the global `Array` and `String` prototypes with the methods documented below. Each method is installed conditionally (`if (!Array.prototype.<name>) { ... }`), so the module is safe to import multiple times and will not overwrite a method that already exists on the prototype.
+#### `hasValue(value: string | null | undefined): boolean`
 
-The type augmentations live in the same modules, so the methods are visible to TypeScript as soon as the package is imported anywhere in your project. If you want to opt in explicitly, you can import the side-effect modules directly:
+Returns true when `value` has at least one non-whitespace character. Safe to call on `null` / `undefined` — prefer this over the `String.prototype.hasValue` method when the input might not be a string.
 
 ```typescript
-import '@maroonedsoftware/utilities/dist/array.extensions.js';
-import '@maroonedsoftware/utilities/dist/string.extensions.js';
+hasValue(null);       // false
+hasValue(undefined);  // false
+hasValue('   ');      // false
+hasValue('hi');       // true
+```
+
+#### `isNullOrUndefinedOrWhitespace(value: string | null | undefined): boolean`
+
+Inverse of `hasValue`. Returns true when `value` is `null`, `undefined`, empty, or whitespace-only.
+
+```typescript
+isNullOrUndefinedOrWhitespace(null);   // true
+isNullOrUndefinedOrWhitespace('   ');  // true
+isNullOrUndefinedOrWhitespace('hi');   // false
+```
+
+## Prototype Extensions
+
+The package ships an opt-in side-effect module that augments the global `Array` and `String` prototypes with the methods documented below. The main entry (`@maroonedsoftware/utilities`) does **not** touch global prototypes — you have to import the extensions module explicitly:
+
+```typescript
+import '@maroonedsoftware/utilities/extensions';
+```
+
+Methods are installed with `Object.defineProperty` as non-enumerable, writable, configurable descriptors, so they will not show up in `for…in` loops or `Object.keys`. Each install is guarded with `Object.prototype.hasOwnProperty.call(prototype, name)`, so the module is safe to import multiple times and will not overwrite a method that already exists on the prototype.
+
+Free-function alternatives for the string predicates are exported from the main entry — use them when you need to operate on `string | null | undefined` without throwing:
+
+```typescript
+import { hasValue, isNullOrUndefinedOrWhitespace } from '@maroonedsoftware/utilities';
+
+hasValue(maybeUndefined); // safe on null/undefined
 ```
 
 ### Array extensions
@@ -232,24 +266,28 @@ Returns true when both arrays have the same length and every index matches.
 
 #### `Array<T>.deleteProperties<K extends keyof T>(...properties: K[]): Array<Omit<T, K>>`
 
-Mutates each element in place by `delete`-ing the named properties, then returns the same array with the narrower element type.
+Returns a new array of shallow copies of the elements with the named properties removed. The original array and its elements are left untouched.
 
 ```typescript
 const rows = [{ id: 1, secret: 'a' }, { id: 2, secret: 'b' }];
-rows.deleteProperties('secret');
-// => [{ id: 1 }, { id: 2 }]  (same array, mutated)
+const safe = rows.deleteProperties('secret');
+// safe => [{ id: 1 }, { id: 2 }]  (new array of new objects)
+// rows still has the secret fields
 ```
 
 #### `Array<T>.intersect(other: T[], comparer?: (a: T, b: T) => boolean): T[]`
 
-Returns the intersection with `other`.
+Returns the intersection with `other`, preserving the order and duplicates of the receiver (`this`).
 
-- **Without** a comparer: uses `Set` membership — reference equality for objects, value equality for primitives.
-- **With** a comparer: runs a quadratic `find` per element and pushes the matching value from `other` (not from `this`).
+- **Without** a comparer: keeps every element of `this` whose value is also in `other`, using `Set` membership of `other` (reference equality for objects, value equality for primitives). Duplicates in `this` are preserved.
+- **With** a comparer: runs a quadratic `find` per element and pushes the matching value from `other` (not from `this`). Falsy matches (`0`, `''`, `false`, `null`) are preserved.
 
 ```typescript
 [1, 2, 3].intersect([2, 3, 4]);
 // => [2, 3]
+
+[1, 1, 2, 3].intersect([1, 3]);
+// => [1, 1, 3]   (duplicates from `this` kept)
 
 [{ id: 1 }, { id: 2 }].intersect([{ id: 2 }, { id: 3 }], (a, b) => a.id === b.id);
 // => [{ id: 2 }]   (the object from `other`)
@@ -266,7 +304,7 @@ Returns the leading prefix of elements for which `predicate` returns true, stopp
 
 #### `Array<T>.takeWhileAggregate<TAccumulate, TDest>(seed: TAccumulate, step: (accumulator: TAccumulate, element: T) => { newAccumulator: TAccumulate; output: TDest; proceed: boolean }): TDest[]`
 
-A blend of `map` and `reduce` with an early-exit. Walks the array, threading `accumulator` through `step` and collecting each `output`. Stops as soon as `step` returns `proceed: false` — the element that triggered the stop **is** included in the result. Throws if `this` or `step` is null/undefined.
+A blend of `map` and `reduce` with an early-exit. Walks the array, threading `accumulator` through `step` and collecting each `output`. Stops as soon as `step` returns `proceed: false` — the element that triggered the stop **is** included in the result.
 
 ```typescript
 // Running totals while the total stays below 10:

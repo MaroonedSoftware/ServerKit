@@ -1,3 +1,5 @@
+import { hasValue, isNullOrUndefinedOrWhitespace } from './string.predicates.js';
+
 declare global {
   interface String {
     /**
@@ -7,8 +9,9 @@ declare global {
     hasValue(): boolean;
 
     /**
-     * Returns true if the string is `undefined`, `null`, or contains only whitespace.
-     * Provided for parity with `String.IsNullOrWhiteSpace` in .NET.
+     * Returns true if the string contains only whitespace (or is empty). Provided for parity with
+     * `String.IsNullOrWhiteSpace` in .NET. Calling on `null`/`undefined` throws — use the free
+     * function `isNullOrUndefinedOrWhitespace` for nullable values.
      */
     isNullOrUndefinedOrWhitespace(): boolean;
 
@@ -38,47 +41,43 @@ declare global {
   }
 }
 
-if (!String.prototype.hasValue) {
-  String.prototype.hasValue = function (this: string): boolean {
-    return this !== undefined && this !== null && this.trim().length > 0;
-  };
-}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const define = (name: PropertyKey, value: (...args: any[]) => unknown): void => {
+  if (Object.prototype.hasOwnProperty.call(String.prototype, name)) return;
+  Object.defineProperty(String.prototype, name, { value, enumerable: false, writable: true, configurable: true });
+};
 
-if (!String.prototype.isNullOrUndefinedOrWhitespace) {
-  String.prototype.isNullOrUndefinedOrWhitespace = function (this: string): boolean {
-    return this === undefined || this === null || this.trim().length === 0;
-  };
-}
+define('hasValue', function (this: string): boolean {
+  return hasValue(this);
+});
 
-if (!String.prototype.mask) {
-  String.prototype.mask = function (this: string, unmaskedStart: number = 2, unmaskedEnd: number = 2, character: string = '*') {
-    unmaskedStart = Math.max(unmaskedStart, 0);
-    unmaskedEnd = Math.max(unmaskedEnd, 0);
-    const minLength = this.length - unmaskedStart - unmaskedEnd;
-    const repeat = Math.max(minLength, 0);
+define('isNullOrUndefinedOrWhitespace', function (this: string): boolean {
+  return isNullOrUndefinedOrWhitespace(this);
+});
 
-    return minLength > 0 ? this.slice(0, unmaskedStart) + character.repeat(repeat) + this.slice(this.length - unmaskedEnd) : this;
-  };
-}
+define('mask', function (this: string, unmaskedStart: number = 2, unmaskedEnd: number = 2, character: string = '*'): string {
+  const start = Math.max(unmaskedStart, 0);
+  const end = Math.max(unmaskedEnd, 0);
+  const minLength = this.length - start - end;
+  const repeat = Math.max(minLength, 0);
 
-if (!String.prototype.maskEmail) {
-  String.prototype.maskEmail = function (this: string, trim: boolean = true, character: string = '*') {
-    const at = this.indexOf('@');
-    let dot = this.lastIndexOf('.');
-    const idx = at >= 0 ? this.length - at : 0;
-    dot = dot >= 0 ? this.length - dot + 1 : 0;
-    let masked = this.mask(2, idx, character);
-    if (dot > 0) masked = masked.mask(at + 3, dot, character);
+  return minLength > 0 ? this.slice(0, start) + character.repeat(repeat) + this.slice(this.length - end) : this.toString();
+});
 
-    if (trim) {
-      return masked.replaceAll(new RegExp(`(\\${character}){2,}`, 'g'), character);
-    }
-    return masked;
-  };
-}
+define('maskEmail', function (this: string, trim: boolean = true, character: string = '*'): string {
+  const at = this.indexOf('@');
+  let dot = this.lastIndexOf('.');
+  const idx = at >= 0 ? this.length - at : 0;
+  dot = dot >= 0 ? this.length - dot + 1 : 0;
+  let masked = this.mask(2, idx, character);
+  if (dot > 0) masked = masked.mask(at + 3, dot, character);
 
-if (!String.prototype.maskExceptLastFour) {
-  String.prototype.maskExceptLastFour = function (this: string, character: string = '*') {
-    return this.mask(0, 4, character);
-  };
-}
+  if (trim) {
+    return masked.replaceAll(new RegExp(`(\\${character}){2,}`, 'g'), character);
+  }
+  return masked;
+});
+
+define('maskExceptLastFour', function (this: string, character: string = '*'): string {
+  return this.mask(0, 4, character);
+});

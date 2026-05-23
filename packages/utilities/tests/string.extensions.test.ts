@@ -80,3 +80,12 @@ describe('String.prototype.maskEmail', () => {
     expect('user@example.com'.maskEmail(true, '#')).toBe('us#@ex#e.com');
   });
 });
+
+describe('prototype installs', () => {
+  it('marks extension methods as non-enumerable', () => {
+    for (const name of ['hasValue', 'isNullOrUndefinedOrWhitespace', 'mask', 'maskEmail', 'maskExceptLastFour']) {
+      const descriptor = Object.getOwnPropertyDescriptor(String.prototype, name);
+      expect(descriptor?.enumerable, `${name} should be non-enumerable`).toBe(false);
+    }
+  });
+});

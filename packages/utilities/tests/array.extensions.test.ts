@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { joinNonEmpty } from '../src/array.extensions.js';
+import '../src/array.extensions.js';
 
 describe('Array.prototype.unique', () => {
   it('deduplicates by property key, keeping the first occurrence', () => {
@@ -34,7 +34,7 @@ describe('Array.prototype.cast', () => {
 });
 
 describe('Array.prototype.deleteProperties', () => {
-  it('removes named properties from every element', () => {
+  it('returns a new array of shallow copies with the named properties removed', () => {
     const items = [
       { a: 1, b: 2 },
       { a: 3, b: 4 },
@@ -43,10 +43,16 @@ describe('Array.prototype.deleteProperties', () => {
     expect(result).toEqual([{ a: 1 }, { a: 3 }]);
   });
 
-  it('mutates the original array elements in place', () => {
+  it('does not mutate the original elements', () => {
     const items = [{ a: 1, b: 2 }];
     items.deleteProperties('b');
-    expect(items[0]).toEqual({ a: 1 });
+    expect(items[0]).toEqual({ a: 1, b: 2 });
+  });
+
+  it('does not return the same references', () => {
+    const items = [{ a: 1, b: 2 }];
+    const result = items.deleteProperties('b');
+    expect(result[0]).not.toBe(items[0]);
   });
 
   it('handles multiple property names', () => {
@@ -56,8 +62,17 @@ describe('Array.prototype.deleteProperties', () => {
 });
 
 describe('Array.prototype.intersect', () => {
-  it('returns the set intersection of primitives without a comparer', () => {
+  it('returns the intersection of primitives without a comparer', () => {
     expect([1, 2, 3, 4].intersect([2, 4, 5])).toEqual([2, 4]);
+  });
+
+  it('preserves duplicates from the receiver when no comparer is provided', () => {
+    expect([1, 1, 2, 3, 1].intersect([1, 3])).toEqual([1, 1, 3, 1]);
+  });
+
+  it('keeps falsy matches when a comparer is provided', () => {
+    expect([0, 1, 2].intersect([0, 1, 2], (a, b) => a === b)).toEqual([0, 1, 2]);
+    expect(['', 'x'].intersect(['', 'x'], (a, b) => a === b)).toEqual(['', 'x']);
   });
 
   it('uses the comparer when provided', () => {
@@ -168,32 +183,20 @@ describe('Array.prototype.takeWhileAggregate', () => {
     }));
     expect(result).toEqual([]);
   });
-
-  it('throws when func is null/undefined', () => {
-    expect(() => [1, 2].takeWhileAggregate(0, undefined as unknown as () => { newAccumulator: number; output: number; proceed: boolean })).toThrow(
-      'Function is null or undefined',
-    );
-  });
 });
 
-describe('joinNonEmpty', () => {
-  it('joins non-empty strings with the separator', () => {
-    expect(joinNonEmpty(', ', 'a', 'b', 'c')).toBe('a, b, c');
+describe('prototype installs', () => {
+  it('marks extension methods as non-enumerable', () => {
+    for (const name of ['unique', 'cast', 'deleteProperties', 'intersect', 'compare', 'binarySearch', 'takeWhile', 'takeWhileAggregate']) {
+      const descriptor = Object.getOwnPropertyDescriptor(Array.prototype, name);
+      expect(descriptor?.enumerable, `${name} should be non-enumerable`).toBe(false);
+    }
   });
 
-  it('drops empty strings before joining', () => {
-    expect(joinNonEmpty('-', 'a', '', 'b', '', 'c')).toBe('a-b-c');
-  });
-
-  it('returns an empty string when all values are empty', () => {
-    expect(joinNonEmpty(', ', '', '')).toBe('');
-  });
-
-  it('returns a single value with no separator applied', () => {
-    expect(joinNonEmpty(', ', 'only')).toBe('only');
-  });
-
-  it('uses the default join separator when undefined is passed', () => {
-    expect(joinNonEmpty(undefined, 'a', 'b')).toBe('a,b');
+  it('does not leak extension keys into for-in over an array', () => {
+    const arr = [1, 2, 3];
+    const keys: string[] = [];
+    for (const key in arr) keys.push(key);
+    expect(keys.sort()).toEqual(['0', '1', '2']);
   });
 });

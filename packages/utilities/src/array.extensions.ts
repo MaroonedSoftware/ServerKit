@@ -28,16 +28,17 @@ declare global {
     compare(other: Array<T>, comparer?: Comparer<T>): boolean;
 
     /**
-     * Mutates each element by deleting the named properties in place, and returns the same
-     * array with the `Omit<T, K>` element type.
-     * @param properties Property keys to remove from every element.
+     * Returns a new array of shallow copies with the named properties removed from each element.
+     * The original array and its elements are left untouched.
+     * @param properties Property keys to remove from every element of the copy.
      */
     deleteProperties<K extends keyof T>(...properties: K[]): Array<Omit<T, K>>;
 
     /**
-     * Returns the intersection with `other`. Without a comparer, uses `Set` membership
-     * (reference equality for objects, value equality for primitives). With a comparer,
-     * runs a quadratic find for each element and pushes the matching value from `other`.
+     * Returns the intersection of `this` and `other`, preserving the order and duplicates of `this`.
+     * Without a comparer, uses `Set` membership of `other` (reference equality for objects, value
+     * equality for primitives). With a comparer, runs a quadratic find for each element of `this`
+     * and pushes the matching value from `other`.
      * @param other The array to intersect with.
      * @param comparer Optional equality function.
      */
@@ -55,7 +56,6 @@ declare global {
      * `step` returns `proceed: false` (the final element's output is still included).
      * @param seed Initial accumulator value.
      * @param step Step function returning the next accumulator, the output to collect, and whether to continue.
-     * @throws Error if the array or `step` is null/undefined.
      */
     takeWhileAggregate<TAccumulate, TDest>(
       seed: TAccumulate,
@@ -71,120 +71,91 @@ declare global {
   }
 }
 
-if (!Array.prototype.binarySearch) {
-  Array.prototype.binarySearch = function <T>(this: Array<T>, value: T): boolean {
-    return binarySearch(this, value);
-  };
-}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const define = (name: PropertyKey, value: (...args: any[]) => unknown): void => {
+  if (Object.prototype.hasOwnProperty.call(Array.prototype, name)) return;
+  Object.defineProperty(Array.prototype, name, { value, enumerable: false, writable: true, configurable: true });
+};
 
-if (!Array.prototype.cast) {
-  Array.prototype.cast = function <T, U extends T>(this: T[]): Array<U> {
-    return this as Array<U>;
-  };
-}
+define('binarySearch', function <T>(this: Array<T>, value: T): boolean {
+  return binarySearch(this, value);
+});
 
-if (!Array.prototype.compare) {
-  Array.prototype.compare = function <T>(this: Array<T>, other: Array<T>, comparer?: Comparer<T>): boolean {
-    if (this.length !== other.length) return false;
-    return comparer ? this.every((item, idx) => comparer(item, other[idx] as T)) : this.every((item, idx) => item === other[idx]);
-  };
-}
+define('cast', function <T, U extends T>(this: T[]): Array<U> {
+  return this as Array<U>;
+});
 
-if (!Array.prototype.deleteProperties) {
-  Array.prototype.deleteProperties = function <T, K extends keyof T>(this: T[], ...properties: K[]): Array<Omit<T, K>> {
-    this.forEach(x => {
-      properties.forEach(prop => delete x[prop]);
-    });
+define('compare', function <T>(this: Array<T>, other: Array<T>, comparer?: Comparer<T>): boolean {
+  if (this.length !== other.length) return false;
+  return comparer ? this.every((item, idx) => comparer(item, other[idx] as T)) : this.every((item, idx) => item === other[idx]);
+});
 
-    return this as Array<Omit<T, K>>;
-  };
-}
+define('deleteProperties', function <T, K extends keyof T>(this: T[], ...properties: K[]): Array<Omit<T, K>> {
+  return this.map(element => {
+    const copy = { ...element };
+    properties.forEach(prop => delete copy[prop]);
+    return copy as Omit<T, K>;
+  });
+});
 
-if (!Array.prototype.intersect) {
-  Array.prototype.intersect = function <T>(this: Array<T>, other: Array<T>, comparer?: Comparer<T>): Array<T> {
-    if (comparer === undefined) {
-      const setA = new Set(this);
-      const setB = new Set(other);
-      return [...setA].filter(value => setB.has(value));
+define('intersect', function <T>(this: Array<T>, other: Array<T>, comparer?: Comparer<T>): Array<T> {
+  if (comparer === undefined) {
+    const setB = new Set(other);
+    return this.filter(value => setB.has(value));
+  }
+  const intersection: T[] = [];
+  this.forEach(value => {
+    const idx = other.findIndex(value2 => comparer(value, value2));
+    if (idx >= 0) intersection.push(other[idx] as T);
+  });
+  return intersection;
+});
+
+define('takeWhile', function <T>(this: Array<T>, predicate: (value: T, index: number, array: Array<T>) => boolean): Array<T> {
+  const result: T[] = [];
+
+  for (let i = 0; i < this.length; i++) {
+    const element = this[i] as T;
+    if (predicate(element, i, this)) {
+      result.push(element);
+    } else {
+      break;
     }
-    const interesection: T[] = [];
-    this.forEach(value => {
-      const found = other.find(value2 => comparer(value, value2));
-      if (found) interesection.push(found);
-    });
-    return interesection;
-  };
-}
+  }
 
-if (!Array.prototype.takeWhile) {
-  Array.prototype.takeWhile = function <T>(this: Array<T>, predicate: (value: T, index: number, array: Array<T>) => boolean): Array<T> {
-    const result: T[] = [];
-
-    for (let i = 0; i < this.length; i++) {
-      const element = this[i] as T;
-      if (predicate(element, i, this)) {
-        result.push(element);
-      } else {
-        break;
-      }
-    }
-
-    return result;
-  };
-}
+  return result;
+});
 
 // Adapted from a C# Enumerable extension derived from a Reactive Extensions operator.
-if (!Array.prototype.takeWhileAggregate) {
-  Array.prototype.takeWhileAggregate = function <T, TAccumulate, TDest>(
-    this: Array<T>,
-    seed: TAccumulate,
-    step: (accumulator: TAccumulate, element: T) => TakeWhileAggregateFunRetVal<TAccumulate, TDest>,
-  ): Array<TDest> {
-    if (!this) {
-      throw new Error('Source array is null or undefined');
-    }
-    if (!step) {
-      throw new Error('Function is null or undefined');
-    }
+define('takeWhileAggregate', function <T, TAccumulate, TDest>(
+  this: Array<T>,
+  seed: TAccumulate,
+  step: (accumulator: TAccumulate, element: T) => TakeWhileAggregateFunRetVal<TAccumulate, TDest>,
+): Array<TDest> {
+  const result: TDest[] = [];
+  let accumulator = seed;
 
-    const result: TDest[] = [];
-    let accumulator = seed;
+  for (let i = 0; i < this.length; i++) {
+    const element = this[i] as T;
+    const { newAccumulator, output, proceed } = step(accumulator, element);
 
-    for (let i = 0; i < this.length; i++) {
-      const element = this[i] as T;
-      const { newAccumulator, output, proceed } = step(accumulator, element);
+    accumulator = newAccumulator;
+    result.push(output);
+    if (!proceed) break;
+  }
 
-      accumulator = newAccumulator;
-      result.push(output);
-      if (!proceed) break;
-    }
+  return result;
+});
 
-    return result;
-  };
-}
+define('unique', function <T, K extends keyof T>(this: T[], selector: K | ((t: T) => T[K])): Array<T> {
+  const map = new Map<T[K], T>();
 
-if (!Array.prototype.unique) {
-  Array.prototype.unique = function <T, K extends keyof T>(this: T[], selector: K | ((t: T) => T[K])): Array<T> {
-    const map = new Map<T[K], T>();
+  const _selector = typeof selector !== 'function' ? (t: T) => t[selector] : selector;
 
-    const _selector = typeof selector !== 'function' ? (t: T) => t[selector] : selector;
+  this.forEach(a => {
+    const key = _selector(a);
+    if (!map.has(key)) map.set(key, a);
+  });
 
-    this.forEach(a => {
-      const key = _selector(a);
-      if (!map.has(key)) map.set(key, a);
-    });
-
-    return Array.from(map.values());
-  };
-}
-
-/**
- * Joins the truthy strings in `values` with `separator`, filtering out empty strings,
- * `undefined`, and `null` first.
- * @param separator String inserted between non-empty values. Passing `undefined` yields the
- * native `Array.join` default (`','`).
- * @param values Strings to join. Falsy entries are dropped.
- */
-export const joinNonEmpty = (separator: string | undefined, ...values: string[]): string => {
-  return values.filter(Boolean).join(separator);
-};
+  return Array.from(map.values());
+});
