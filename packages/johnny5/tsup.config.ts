@@ -11,6 +11,7 @@ export default defineConfig({
         'integrations/filesystem/index': 'src/integrations/filesystem/index.ts',
         'integrations/kysely/index': 'src/integrations/kysely/index.ts',
         'integrations/permissions/index': 'src/integrations/permissions/index.ts',
+        'integrations/keyring/index': 'src/integrations/keyring/index.ts',
     },
     format: ['esm'],
     target: 'node22',

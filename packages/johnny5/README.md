@@ -320,11 +320,86 @@ const create = defineCommand({
 
 `interactive` only runs when both stdin and stdout are TTYs, so the same command works unchanged in CI.
 
+## Wizard flows
+
+Multi-step interactive flows pile up `clack.isCancel` / `clack.outro('aborted')` boilerplate at every prompt. `wizard` collapses that into a single try/catch: prompt methods on the session throw `PromptCancelledError` on cancellation, and the wrapper catches it, prints a uniform outro, and returns an exit code.
+
+```ts
+import { wizard } from '@maroonedsoftware/johnny5';
+
+const setup = defineCommand({
+    description: 'first-run wizard',
+    run: async (_opts, ctx) =>
+        wizard(ctx, { title: 'my-cli — local dev bootstrap' }, async w => {
+            if (await w.confirm({ message: 'Start docker compose services?', initialValue: true })) {
+                const exit = await ctx.shell.runStreaming('docker', ['compose', 'up', '-d'], { cwd: ctx.paths.repoRoot });
+                if (exit !== 0) {
+                    w.log.error(`docker compose up exited ${exit}`);
+                    return exit;
+                }
+            }
+            const email = await w.text({ message: 'Test user email' });
+            const password = await w.password({ message: 'Test user password' });
+            await ctx.shell.runStreaming('pnpm', ['seed', `--email=${email}`, `--password=${password}`]);
+        }),
+});
+```
+
+- The body is linear — no `isCancel` checks anywhere. Cancelling any prompt aborts the whole flow with the configured outro and exit code (defaults: `'aborted'` and `1`).
+- Return a number from the body to override the success exit code; return `void` for `0`.
+- `w.cancel()` aborts from inside the body the same as a user cancel. Non-cancel errors propagate unchanged.
+- `w.outro('all set — run pnpm doctor')` lets the body customize the success outro dynamically. Static overrides go on `WizardOptions` (`successOutro` / `cancelOutro` / `cancelExitCode`).
+- `w.log` and `w.spinner` are pass-throughs to the matching `clack` helpers, so existing logging stays consistent inside the wizard.
+
+`wizard` only assumes interactivity to the extent that `clack` does. Gate the call with `if (!ctx.isInteractive()) return 1` (or surface a clearer error) when running non-interactively makes no sense for the command.
+
+## Optional: system keyring
+
+`@maroonedsoftware/johnny5/keyring` wraps the OS keyring (Keychain on macOS, Credential Manager on Windows, libsecret on Linux) via [@napi-rs/keyring](https://github.com/napi-rs/node-keyring). The native module is an **optional peer dependency** — install it only in CLIs that need credential storage:
+
+```bash
+pnpm add @napi-rs/keyring
+```
+
+`keyringEntry` builds a single safe slot. Every operation returns `null` / `false` instead of throwing — failures (missing peer dep, locked keychain, OS denial) are surfaced through `ctx.logger.warn` exactly once.
+
+```ts
+import { keyringEntry, resolveSecret } from '@maroonedsoftware/johnny5/keyring';
+
+const apiKeyEntry = keyringEntry(ctx, { service: 'my-cli', account: 'anthropic.api.key' });
+
+await apiKeyEntry.write('sk-…');             // true on success, false otherwise
+const stored = await apiKeyEntry.read();     // string | null
+await apiKeyEntry.delete();                  // true if a value was removed
+```
+
+`resolveSecret` codifies the override → env → keyring → prompt chain that most CLIs end up writing by hand:
+
+```ts
+const apiKey = await resolveSecret(ctx, {
+    override: opts.apiKey,                                    // wins over everything; never persisted
+    envKeys: ['ANTHROPIC_API_KEY'],                           // first non-empty wins
+    keyring: apiKeyEntry,
+    prompt: async () => unwrap(await prompts.password({ message: 'Paste your API key' })),
+    promptStore: 'ask',                                       // 'ask' (default) | 'always' | 'never'
+    label: 'API key',
+});
+
+if (!apiKey) {
+    ctx.logger.error('No credentials found. Set ANTHROPIC_API_KEY or run `my-cli login`.');
+    return 1;
+}
+```
+
+- The resolution chain is fixed: `override` first, then `envKeys` in order (both `ctx.env` and `process.env` are checked), then `keyring.read()`, then `prompt(ctx)`.
+- A freshly-prompted value is written back to `keyring` according to `promptStore`. `'ask'` runs a `clack.confirm` (defaulting to yes); `'always'` and `'never'` skip the question. The `label` shows up in the confirm message.
+- `resolveSecret` returns `null` when every source yields nothing and never calls `process.exit` — callers decide whether missing credentials are a hard error.
+
 ## Exports
 
 | Path | Provides |
 | --- | --- |
-| `@maroonedsoftware/johnny5` | `createCliApp`, `defineCommand`, `registerCommands`, `runChecks`, `buildContext`, `buildDefaultAppConfig`, `loadWorkspacePlugins`, `createShell`, `createDaemons`, `johnnyPaths`, `projectSlug`, `createDefaultLogger`, `prompts`, `unwrap`, `isInteractive`, plus the `Check` / `CommandModule` / `CliContext` / `Daemons` types. |
+| `@maroonedsoftware/johnny5` | `createCliApp`, `defineCommand`, `registerCommands`, `runChecks`, `buildContext`, `buildDefaultAppConfig`, `loadWorkspacePlugins`, `createShell`, `createDaemons`, `johnnyPaths`, `projectSlug`, `createDefaultLogger`, `prompts`, `unwrap`, `wizard`, `isInteractive`, plus the `Check` / `CommandModule` / `CliContext` / `Daemons` / `WizardSession` types. |
 | `/serverkit` | `bootstrapForCli`, `configureServerKitModules`, `getOrBootstrapContainer`, `requireContainer`. |
 | `/versions` | `nodeVersion`, `pnpmVersion`. |
 | `/filesystem` | `envFile`, `portsFree`. |
@@ -333,6 +408,7 @@ const create = defineCommand({
 | `/docker` | `dockerServicesUp`. |
 | `/kysely` | `kyselyTableExists` (lazy-loads `kysely`). |
 | `/permissions` | `permissionsSchemaCompiled`, `permissionsFixturesPass`, `permissionsModelLoads` (lazy-load `@maroonedsoftware/permissions[-dsl]`). |
+| `/keyring` | `keyringEntry`, `resolveSecret` (lazy-load `@napi-rs/keyring`). |
 
 ## License
 

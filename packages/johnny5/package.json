@@ -64,6 +64,10 @@
     "./permissions": {
       "types": "./dist/integrations/permissions/index.d.ts",
       "import": "./dist/integrations/permissions/index.js"
+    },
+    "./keyring": {
+      "types": "./dist/integrations/keyring/index.d.ts",
+      "import": "./dist/integrations/keyring/index.js"
     }
   },
   "license": "MIT",
@@ -91,6 +95,7 @@
     "@maroonedsoftware/koa": "workspace:*",
     "@maroonedsoftware/permissions": "workspace:*",
     "@maroonedsoftware/permissions-dsl": "workspace:*",
+    "@napi-rs/keyring": "^1.1.6",
     "ioredis": "^5.10.0",
     "kysely": "^0.28.0",
     "pg": "^8.20.0"
@@ -103,6 +108,9 @@
       "optional": true
     },
     "@maroonedsoftware/permissions-dsl": {
+      "optional": true
+    },
+    "@napi-rs/keyring": {
       "optional": true
     },
     "ioredis": {
@@ -119,6 +127,7 @@
     "@maroonedsoftware/koa": "workspace:*",
     "@maroonedsoftware/permissions": "workspace:*",
     "@maroonedsoftware/permissions-dsl": "workspace:*",
+    "@napi-rs/keyring": "^1.1.6",
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
     "@types/pg": "^8.20.0",

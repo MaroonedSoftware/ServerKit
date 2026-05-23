@@ -9,6 +9,7 @@ export { createDaemons, type Daemons, type DaemonStartOptions, type DaemonStatus
 export { johnnyPaths, projectSlug, type JohnnyPaths } from './util/paths.js';
 export { isInteractive } from './util/tty.js';
 export { prompts, unwrap, PromptCancelledError } from './util/prompts.js';
+export { wizard, type WizardOptions, type WizardSession } from './util/wizard.js';
 export type {
     ArgSpec,
     Check,
