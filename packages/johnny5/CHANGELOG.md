@@ -1,5 +1,11 @@
 # @maroonedsoftware/johnny5
 
+## 1.1.2
+
+### Patch Changes
+
+- @maroonedsoftware/koa@2.2.6
+
 ## 1.1.1
 
 ### Patch Changes
