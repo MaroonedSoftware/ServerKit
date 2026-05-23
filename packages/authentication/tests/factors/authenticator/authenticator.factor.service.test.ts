@@ -47,7 +47,7 @@ const makeAuthenticatorFactor = (overrides: Partial<AuthenticatorFactor> = {}): 
   active: true,
   secretHash: 'encrypted-secret',
   type: 'totp',
-  algorithm: 'SHA1',
+  algorithm: 'sha1',
   counter: 0,
   periodSeconds: 30,
   tokenLength: 6,
@@ -58,7 +58,7 @@ const makeOptions = () => ({
   issuer: 'TestApp',
   registrationExpiration: Duration.fromObject({ minutes: 30 }),
   factorExpiration: Duration.fromObject({ hours: 4 }),
-  defaults: { type: 'totp' as const, algorithm: 'SHA1', counter: 0, periodSeconds: 30, tokenLength: 6 },
+  defaults: { type: 'totp' as const, algorithm: 'sha1' as const, counter: 0, periodSeconds: 30, tokenLength: 6 },
 });
 
 const makeRegistrationPayload = (overrides = {}) => ({
@@ -67,7 +67,7 @@ const makeRegistrationPayload = (overrides = {}) => ({
   secretHash: 'encrypted-secret',
   expiresAt: Math.floor(Date.now() / 1000) + 1800,
   issuedAt: Math.floor(Date.now() / 1000),
-  otpOptions: { type: 'totp' as const, algorithm: 'SHA1', counter: 0, periodSeconds: 30, tokenLength: 6 },
+  otpOptions: { type: 'totp' as const, algorithm: 'sha1' as const, counter: 0, periodSeconds: 30, tokenLength: 6 },
   uri: 'otpauth://totp/Example:actor-1?secret=TESTSECRET',
   qrCode: 'data:image/png;base64,MOCKQR',
   ...overrides,
@@ -157,10 +157,10 @@ describe('AuthenticatorFactorService', () => {
     });
 
     it('applies custom OTP options over defaults', async () => {
-      await service.registerAuthenticatorFactor('actor-1', undefined, { type: 'totp', algorithm: 'SHA256', periodSeconds: 60, tokenLength: 8, counter: 0 });
+      await service.registerAuthenticatorFactor('actor-1', undefined, { type: 'totp', algorithm: 'sha256', periodSeconds: 60, tokenLength: 8, counter: 0 });
       expect(otpProvider.generateURI).toHaveBeenCalledWith(
         'TESTSECRET',
-        expect.objectContaining({ algorithm: 'SHA256', periodSeconds: 60, tokenLength: 8 }),
+        expect.objectContaining({ algorithm: 'sha256', periodSeconds: 60, tokenLength: 8 }),
         { issuer: 'TestApp' },
       );
     });

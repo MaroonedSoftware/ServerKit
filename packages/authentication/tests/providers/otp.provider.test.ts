@@ -161,7 +161,7 @@ describe('OtpProvider', () => {
   describe('generateURI', () => {
     it('generates a valid TOTP otpauth URI', () => {
       const secret = 'JBSWY3DPEHPK3PXP';
-      const uri = provider.generateURI(secret, { type: 'totp', periodSeconds: 30, algorithm: 'SHA1', tokenLength: 6 }, { issuer: 'Example' });
+      const uri = provider.generateURI(secret, { type: 'totp', periodSeconds: 30, algorithm: 'sha1', tokenLength: 6 }, { issuer: 'Example' });
       expect(uri).toContain('otpauth://totp/');
       expect(uri).toContain('secret=JBSWY3DPEHPK3PXP');
       expect(uri).toContain('issuer=Example');
@@ -170,9 +170,15 @@ describe('OtpProvider', () => {
       expect(uri).toContain('digits=6');
     });
 
+    it('upper-cases the algorithm in the URI even though the input is lowercase', () => {
+      const secret = 'JBSWY3DPEHPK3PXP';
+      const uri = provider.generateURI(secret, { type: 'totp', periodSeconds: 30, algorithm: 'sha256', tokenLength: 6 }, { issuer: 'Example' });
+      expect(uri).toContain('algorithm=SHA256');
+    });
+
     it('generates a valid HOTP otpauth URI with counter', () => {
       const secret = 'JBSWY3DPEHPK3PXP';
-      const uri = provider.generateURI(secret, { type: 'hotp', counter: 7, algorithm: 'SHA1', tokenLength: 6 }, { issuer: 'Example' });
+      const uri = provider.generateURI(secret, { type: 'hotp', counter: 7, algorithm: 'sha1', tokenLength: 6 }, { issuer: 'Example' });
       expect(uri).toContain('otpauth://hotp/');
       expect(uri).toContain('counter=7');
     });
@@ -181,7 +187,7 @@ describe('OtpProvider', () => {
       const secret = 'JBSWY3DPEHPK3PXP';
       const uri = provider.generateURI(
         secret,
-        { type: 'totp', periodSeconds: 30, algorithm: 'SHA1', tokenLength: 6 },
+        { type: 'totp', periodSeconds: 30, algorithm: 'sha1', tokenLength: 6 },
         { issuer: 'Example', label: 'user@test.com' },
       );
       expect(uri).toContain('user%40test.com');
@@ -189,7 +195,7 @@ describe('OtpProvider', () => {
 
     it('omits the label separator when no label is provided', () => {
       const secret = 'JBSWY3DPEHPK3PXP';
-      const uri = provider.generateURI(secret, { type: 'totp', periodSeconds: 30, algorithm: 'SHA1', tokenLength: 6 }, { issuer: 'Example' });
+      const uri = provider.generateURI(secret, { type: 'totp', periodSeconds: 30, algorithm: 'sha1', tokenLength: 6 }, { issuer: 'Example' });
       expect(new URL(uri).pathname).not.toContain(':');
     });
   });

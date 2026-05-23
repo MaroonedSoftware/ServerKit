@@ -23,7 +23,7 @@ export class AuthenticatorFactorServiceOptions {
     /** Default OTP algorithm options applied when none are supplied per-call. */
     public readonly defaults: OtpOptions = {
       type: 'totp',
-      algorithm: 'SHA1',
+      algorithm: 'sha1',
       counter: 0,
       periodSeconds: 30,
       tokenLength: 6,

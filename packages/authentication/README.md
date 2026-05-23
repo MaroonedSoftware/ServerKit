@@ -228,7 +228,7 @@ const otp = container.get(OtpProvider);
 const secret = otp.createSecret();
 
 // Produce a QR-code URI
-const uri = otp.generateURI(secret, { type: 'totp', algorithm: 'SHA1', periodSeconds: 30, tokenLength: 6, counter: 0 }, { issuer: 'MyApp', label: user.email });
+const uri = otp.generateURI(secret, { type: 'totp', algorithm: 'sha1', periodSeconds: 30, tokenLength: 6, counter: 0 }, { issuer: 'MyApp', label: user.email });
 
 // Validate a code submitted by the user
 const valid = otp.validate(submittedCode, secret, { type: 'totp', periodSeconds: 30 });
@@ -421,7 +421,7 @@ You can override OTP algorithm defaults per registration:
 ```typescript
 await authenticatorFactors.registerAuthenticatorFactor(user.id, undefined, {
   type: 'totp',
-  algorithm: 'SHA256',
+  algorithm: 'sha256',
   periodSeconds: 60,
   tokenLength: 8,
   counter: 0,
@@ -1311,7 +1311,7 @@ Manages TOTP/HOTP authenticator app factors. Requires an `AuthenticatorFactorSer
 | `issuer`                 | `string`   | —          | Issuer name shown in the authenticator app               |
 | `registrationExpiration` | `Duration` | 30 minutes | How long a pending registration stays valid              |
 | `factorExpiration`       | `Duration` | 4 hours    | How long a validated factor session remains cached       |
-| `defaults`               | `OtpOptions` | TOTP SHA1 30s 6-digit | Default OTP options used when none are supplied per-call |
+| `defaults`               | `OtpOptions` | TOTP sha1 30s 6-digit | Default OTP options used when none are supplied per-call |
 
 ### `AuthenticatorFactorRepository`
 

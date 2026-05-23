@@ -9,10 +9,7 @@ import { isPolicyResultDenied, PolicyService } from '@maroonedsoftware/policies'
 import { RateLimiterCompatibleAbstract } from 'rate-limiter-flexible';
 import { OtpProvider, type TotpOptions } from '../providers/otp.provider.js';
 import { TargetActor } from '../mfa/types.js';
-import {
-  SupportVerificationSecret,
-  SupportVerificationSecretRepository,
-} from './support.verification.secret.repository.js';
+import { SupportVerificationSecret, SupportVerificationSecretRepository } from './support.verification.secret.repository.js';
 import { SupportVerificationIssueResult, SupportVerificationVerifyResult } from './types.js';
 
 /**
@@ -24,7 +21,7 @@ export class SupportVerificationCodeServiceOptions {
     /** Default TOTP algorithm options applied when generating a new actor secret. */
     public readonly defaults: TotpOptions = {
       type: 'totp',
-      algorithm: 'SHA1',
+      algorithm: 'sha1',
       periodSeconds: 30,
       tokenLength: 6,
     },

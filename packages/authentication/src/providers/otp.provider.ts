@@ -3,37 +3,49 @@ import { Injectable } from 'injectkit';
 import { DateTime } from 'luxon';
 import { base32Decode, base32Encode } from '@maroonedsoftware/utilities';
 
+/** Discriminator for which OTP scheme to use: counter-based (HOTP, RFC 4226) or time-based (TOTP, RFC 6238). */
 export type OtpType = 'hotp' | 'totp';
 
+/** Shared options for HOTP/TOTP generation and validation; specialised by {@link HotpOptions} and {@link TotpOptions}. */
 export type OtpOptions = {
   type: OtpType;
-  algorithm: string;
+  /**
+   * HMAC algorithm used to derive the code. Must be lowercase (`'sha1'`, `'sha256'`, or `'sha512'`);
+   * {@link OtpProvider.generateURI} upper-cases it when serialising to the `otpauth://` URI per the
+   * Key Uri Format spec (RFC 4226 / RFC 6238).
+   */
+  algorithm: 'sha1' | 'sha256' | 'sha512';
   counter?: number;
   periodSeconds?: number;
   tokenLength: number;
 };
 
+/** HOTP-specific options: `type` narrowed to `'hotp'` and `counter` required. */
 export type HotpOptions = OtpOptions & {
   type: 'hotp';
   counter: number;
 };
 
+/** TOTP-specific options: `type` narrowed to `'totp'`, `periodSeconds` required, with an optional explicit `timestamp`. */
 export type TotpOptions = OtpOptions & {
   type: 'totp';
   periodSeconds: number;
   timestamp?: DateTime;
 };
 
+/** Default OTP options used as the base when merging caller-supplied partial options: TOTP / SHA-1 / 30s / 6 digits. */
 export const defaultOtpOptions: Required<OtpOptions> = {
   type: 'totp',
-  algorithm: 'SHA1',
+  algorithm: 'sha1',
   counter: 0,
   periodSeconds: 30,
   tokenLength: 6,
 } as const;
 
+/** Metadata used when building an `otpauth://` provisioning URI: required `issuer` and optional account `label`. */
 export type OtpUrlOptions = { label?: string; issuer: string };
 
+/** Options controlling OTP validation, currently the counter/period drift `window`. */
 export type OtpValidationOptions = {
   window: number;
 };
