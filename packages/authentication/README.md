@@ -604,6 +604,8 @@ switch (result.kind) {
 
 **Refresh tokens.** Set `persistRefreshToken: true` on the provider config to envelope-encrypt and persist the refresh token (via `@maroonedsoftware/encryption`). Call `oidc.refreshAccessToken(actorId, factorId)` later for a fresh access token; rotated refresh tokens are re-encrypted automatically. Refresh tokens are dropped for public clients regardless of the flag, since safe handling requires DPoP or a backend proxy that this package doesn't implement.
 
+**Local development against an http IdP.** Set `allowInsecureIssuer: true` on the provider config to permit an `http://` issuer URL (e.g. a docker-compose Keycloak on `http://localhost`). This wires `openid-client`'s `allowInsecureRequests` execute hook into discovery. A warning is logged whenever the flag is enabled — including on `https://` issuers where it has no effect — so it doesn't get left on by accident. **Never enable in production.**
+
 ---
 
 ### OAuth 2.0 factors (non-OIDC)

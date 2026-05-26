@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('openid-client', () => ({
   None: vi.fn(),
   discovery: vi.fn(),
+  allowInsecureRequests: vi.fn(),
   randomState: vi.fn(() => 'state-token'),
   randomNonce: vi.fn(() => 'nonce-token'),
   randomPKCECodeVerifier: vi.fn(() => 'code-verifier'),
@@ -94,8 +95,8 @@ const PROVIDER: OidcProviderConfig = {
   redirectUri: new URL('https://app.example.com/auth/callback'),
 };
 
-const makeRegistry = (overrides: Partial<OidcProviderConfig> = {}) =>
-  new OidcProviderRegistry(new OidcProviderRegistryConfig([{ ...PROVIDER, ...overrides }]));
+const makeRegistry = (overrides: Partial<OidcProviderConfig> = {}, logger: Logger = makeLogger()) =>
+  new OidcProviderRegistry(new OidcProviderRegistryConfig([{ ...PROVIDER, ...overrides }]), logger);
 
 const makeService = (
   registry: OidcProviderRegistry,
@@ -177,9 +178,10 @@ describe('OidcFactorService', () => {
     });
 
     it('passes through provider authorizeParams (e.g. Google offline access)', async () => {
-      registry = new OidcProviderRegistry(new OidcProviderRegistryConfig([
-        { ...PROVIDER, authorizeParams: { access_type: 'offline', prompt: 'consent' } },
-      ]));
+      registry = new OidcProviderRegistry(
+        new OidcProviderRegistryConfig([{ ...PROVIDER, authorizeParams: { access_type: 'offline', prompt: 'consent' } }]),
+        makeLogger(),
+      );
       ({ service } = makeService(registry, repo, emailLookup, cache));
 
       await service.beginAuthorization({ provider: 'google', intent: 'sign-in' });
@@ -191,7 +193,7 @@ describe('OidcFactorService', () => {
     });
 
     it('defaults to openid+profile+email when scopes is empty', async () => {
-      registry = new OidcProviderRegistry(new OidcProviderRegistryConfig([{ ...PROVIDER, scopes: [] }]));
+      registry = new OidcProviderRegistry(new OidcProviderRegistryConfig([{ ...PROVIDER, scopes: [] }]), makeLogger());
       ({ service } = makeService(registry, repo, emailLookup, cache));
 
       await service.beginAuthorization({ provider: 'google', intent: 'sign-in' });
@@ -290,7 +292,7 @@ describe('OidcFactorService', () => {
     });
 
     it('persists a rotated refresh token on signed-in when persistRefreshToken=true', async () => {
-      registry = new OidcProviderRegistry(new OidcProviderRegistryConfig([{ ...PROVIDER, persistRefreshToken: true }]));
+      registry = new OidcProviderRegistry(new OidcProviderRegistryConfig([{ ...PROVIDER, persistRefreshToken: true }]), makeLogger());
       ({ service, encryption } = makeService(registry, repo, emailLookup, cache));
       vi.mocked(openidClient.discovery).mockResolvedValue(makeConfiguration());
       vi.mocked(openidClient.buildAuthorizationUrl).mockReturnValue(TEST_AUTHORIZE_URL);
@@ -578,9 +580,7 @@ describe('OidcProviderRegistry', () => {
   });
 
   it('reports public clients when clientSecret is omitted', () => {
-    const registry = new OidcProviderRegistry(
-      new OidcProviderRegistryConfig([{ ...PROVIDER, clientSecret: undefined }]),
-    );
+    const registry = new OidcProviderRegistry(new OidcProviderRegistryConfig([{ ...PROVIDER, clientSecret: undefined }]), makeLogger());
     expect(registry.isPublicClient('google')).toBe(true);
   });
 
@@ -588,9 +588,7 @@ describe('OidcProviderRegistry', () => {
     const noneStub = vi.fn();
     vi.mocked(openidClient.None).mockImplementation(noneStub as never);
     vi.mocked(openidClient.discovery).mockResolvedValue(makeConfiguration());
-    const registry = new OidcProviderRegistry(
-      new OidcProviderRegistryConfig([{ ...PROVIDER, clientSecret: undefined }]),
-    );
+    const registry = new OidcProviderRegistry(new OidcProviderRegistryConfig([{ ...PROVIDER, clientSecret: undefined }]), makeLogger());
 
     await registry.getConfiguration('google');
 
@@ -600,5 +598,75 @@ describe('OidcProviderRegistry', () => {
   it('throws 404 for an unknown provider', () => {
     const registry = makeRegistry();
     expect(() => registry.getConfig('unknown')).toThrowError(expect.objectContaining({ statusCode: 404 }));
+  });
+
+  describe('allowInsecureIssuer', () => {
+    it('passes the allowInsecureRequests execute hook to discovery when the issuer is http and the flag is set', async () => {
+      vi.mocked(openidClient.discovery).mockResolvedValue(makeConfiguration());
+      const registry = new OidcProviderRegistry(
+        new OidcProviderRegistryConfig([{ ...PROVIDER, issuer: new URL('http://localhost:8080'), allowInsecureIssuer: true }]),
+        makeLogger(),
+      );
+
+      await registry.getConfiguration('google');
+
+      const lastCall = vi.mocked(openidClient.discovery).mock.calls.at(-1)!;
+      // Confidential client path: (issuer, clientId, clientSecret, undefined, options)
+      const options = lastCall[4] as { execute?: unknown[] } | undefined;
+      expect(options?.execute).toEqual([openidClient.allowInsecureRequests]);
+    });
+
+    it('omits the execute hook on https issuers even when the flag is set', async () => {
+      vi.mocked(openidClient.discovery).mockResolvedValue(makeConfiguration());
+      const registry = new OidcProviderRegistry(
+        new OidcProviderRegistryConfig([{ ...PROVIDER, allowInsecureIssuer: true }]),
+        makeLogger(),
+      );
+
+      await registry.getConfiguration('google');
+
+      const lastCall = vi.mocked(openidClient.discovery).mock.calls.at(-1)!;
+      expect(lastCall[4]).toBeUndefined();
+    });
+
+    it('warns whenever allowInsecureIssuer is set (even on https) so it is not left enabled by accident', async () => {
+      vi.mocked(openidClient.discovery).mockResolvedValue(makeConfiguration());
+      const logger = makeLogger();
+      const registry = new OidcProviderRegistry(
+        new OidcProviderRegistryConfig([{ ...PROVIDER, allowInsecureIssuer: true }]),
+        logger,
+      );
+
+      await registry.getConfiguration('google');
+
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('allowInsecureIssuer=true'));
+    });
+
+    it('does not warn when allowInsecureIssuer is unset', async () => {
+      vi.mocked(openidClient.discovery).mockResolvedValue(makeConfiguration());
+      const logger = makeLogger();
+      const registry = new OidcProviderRegistry(new OidcProviderRegistryConfig([{ ...PROVIDER }]), logger);
+
+      await registry.getConfiguration('google');
+
+      expect(logger.warn).not.toHaveBeenCalled();
+    });
+
+    it('forwards options on the public-client path too', async () => {
+      vi.mocked(openidClient.discovery).mockResolvedValue(makeConfiguration());
+      const registry = new OidcProviderRegistry(
+        new OidcProviderRegistryConfig([
+          { ...PROVIDER, clientSecret: undefined, issuer: new URL('http://localhost:8080'), allowInsecureIssuer: true },
+        ]),
+        makeLogger(),
+      );
+
+      await registry.getConfiguration('google');
+
+      const lastCall = vi.mocked(openidClient.discovery).mock.calls.at(-1)!;
+      // Public-client path: (issuer, clientId, undefined, None(), options)
+      const options = lastCall[4] as { execute?: unknown[] } | undefined;
+      expect(options?.execute).toEqual([openidClient.allowInsecureRequests]);
+    });
   });
 });

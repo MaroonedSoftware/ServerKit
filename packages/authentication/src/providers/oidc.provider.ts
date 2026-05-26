@@ -1,6 +1,7 @@
 import { Injectable } from 'injectkit';
 import * as openidClient from 'openid-client';
 import { httpError } from '@maroonedsoftware/errors';
+import { Logger } from '@maroonedsoftware/logger';
 
 /**
  * Static configuration for a single OpenID Connect provider (Google, LinkedIn, Microsoft, etc.).
@@ -37,6 +38,15 @@ export type OidcProviderConfig = {
    * this package does not implement, so they are dropped on the floor.
    */
   persistRefreshToken?: boolean;
+  /**
+   * Permit an `http://` issuer URL by passing `openid-client`'s
+   * `allowInsecureRequests` execute hook to discovery. Intended for local
+   * development against a stub IdP (e.g. a docker-compose Keycloak on
+   * `http://localhost`). When the issuer is `https://`, this flag has no
+   * effect on transport but still emits a warning so it isn't left enabled
+   * by accident. **Never set in production.**
+   */
+  allowInsecureIssuer?: boolean;
 };
 
 /** Injection token holding the user-supplied list of OIDC providers. */
@@ -53,14 +63,20 @@ export class OidcProviderRegistryConfig {
  *
  * Thread-safety: in-flight discoveries are deduped via a promise cache so concurrent
  * lookups for the same provider share a single network request.
+ *
+ * Dependencies: an {@link OidcProviderRegistryConfig} (the static provider list)
+ * and a {@link Logger} (used to warn when a provider sets `allowInsecureIssuer`).
  */
 @Injectable()
 export class OidcProviderRegistry {
   private readonly configs: Map<string, OidcProviderConfig>;
   private readonly resolved = new Map<string, Promise<openidClient.Configuration>>();
 
-  constructor(registry: OidcProviderRegistryConfig) {
-    this.configs = new Map(registry.providers.map((p) => [p.name, p]));
+  constructor(
+    registry: OidcProviderRegistryConfig,
+    private readonly logger: Logger,
+  ) {
+    this.configs = new Map(registry.providers.map(p => [p.name, p]));
   }
 
   /**
@@ -89,7 +105,7 @@ export class OidcProviderRegistry {
     if (cached) return cached;
 
     const config = this.getConfig(name);
-    const promise = this.discover(config).catch((error) => {
+    const promise = this.discover(config).catch(error => {
       // Drop the rejected promise so a transient failure doesn't poison the cache.
       this.resolved.delete(name);
       throw error;
@@ -104,9 +120,19 @@ export class OidcProviderRegistry {
   }
 
   private async discover(config: OidcProviderConfig): Promise<openidClient.Configuration> {
-    if (config.clientSecret === undefined) {
-      return openidClient.discovery(config.issuer, config.clientId, undefined, openidClient.None());
+    const allowInsecureIssuer = config.issuer.protocol === 'http:' && config.allowInsecureIssuer;
+
+    if (config.allowInsecureIssuer) {
+      this.logger.warn(`OIDC provider "${config.name}" has allowInsecureIssuer=true — http issuer URLs are permitted. Do NOT enable in production.`);
     }
-    return openidClient.discovery(config.issuer, config.clientId, config.clientSecret);
+
+    const options = allowInsecureIssuer ? { execute: [openidClient.allowInsecureRequests] } : undefined;
+
+    if (config.clientSecret === undefined) {
+      return openidClient.discovery(config.issuer, config.clientId, undefined, openidClient.None(), options);
+    }
+    // Match upstream's shorthand: pass clientSecret as the `metadata` arg (3rd) so
+    // openid-client wires up its default client authentication.
+    return openidClient.discovery(config.issuer, config.clientId, config.clientSecret, undefined, options);
   }
 }
