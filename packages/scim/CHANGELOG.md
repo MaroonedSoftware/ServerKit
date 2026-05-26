@@ -1,5 +1,13 @@
 # @maroonedsoftware/scim
 
+## 0.1.17
+
+### Patch Changes
+
+- Updated dependencies [09f3f3b]
+  - @maroonedsoftware/authentication@4.22.2
+  - @maroonedsoftware/koa@2.2.8
+
 ## 0.1.16
 
 ### Patch Changes
