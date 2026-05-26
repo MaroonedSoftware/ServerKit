@@ -57,18 +57,16 @@ describe('DefaultMfaRequiredPolicy', () => {
     });
   });
 
-  it('allows email and oidc as second factors when the primary is a different method', async () => {
+  it('allows email as a second factor when the primary is a different method', async () => {
     const email = factor('email', 'possession');
-    const oidc = factor('oidc', 'possession');
     const result = await evaluate({
       actor,
       primaryFactor: makePrimary('password'),
-      availableFactors: [email, oidc],
+      availableFactors: [email],
     });
     expect(result.allowed).toBe(false);
     expect((result as { details: { eligibleFactors: AuthMfaRequiredPolicyFactor[] } }).details.eligibleFactors).toEqual([
       { method: 'email', methodId: email.methodId },
-      { method: 'oidc', methodId: oidc.methodId },
     ]);
   });
 
@@ -81,11 +79,28 @@ describe('DefaultMfaRequiredPolicy', () => {
     expect(result).toEqual({ allowed: true });
   });
 
-  it('excludes oidc from eligible factors when the primary was oidc', async () => {
+  it.each<AuthenticationFactorMethod>(['password', 'email', 'phone', 'fido', 'authenticator', 'oidc'])(
+    'always excludes oidc from eligible factors regardless of primary method (%s)',
+    async primaryMethod => {
+      const phone = factor('phone', 'possession');
+      const result = await evaluate({
+        actor,
+        primaryFactor: makePrimary(primaryMethod, primaryMethod === 'password' ? 'knowledge' : 'possession'),
+        availableFactors: [factor('oidc', 'possession', 'oidc-other'), phone],
+      });
+      expect(result.allowed).toBe(false);
+      // Only phone survives — oidc is always filtered.
+      expect((result as { details: { eligibleFactors: AuthMfaRequiredPolicyFactor[] } }).details.eligibleFactors).toEqual([
+        { method: 'phone', methodId: phone.methodId },
+      ]);
+    },
+  );
+
+  it('allows when oidc is the only available factor (since oidc is never eligible as MFA)', async () => {
     const result = await evaluate({
       actor,
-      primaryFactor: makePrimary('oidc', 'possession'),
-      availableFactors: [factor('oidc', 'possession', 'oidc-other')],
+      primaryFactor: makePrimary('password'),
+      availableFactors: [factor('oidc', 'possession')],
     });
     expect(result).toEqual({ allowed: true });
   });

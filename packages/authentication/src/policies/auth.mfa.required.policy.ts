@@ -37,11 +37,14 @@ export interface AuthMfaRequiredPolicyContext {
  *   password) doesn't add MFA value.
  * - `methodId === primaryFactor.methodId` — the exact same factor instance
  *   was just used; you can't reuse it as a second factor.
- * - `method === primaryFactor.method` AND `method` is `'email'` or `'oidc'` —
- *   a different inbox or a different IdP isn't treated as a meaningfully
- *   separate authenticator by default. (The user typically controls both
- *   email accounts or both IdP accounts, so compromise of one often implies
- *   compromise of the other.)
+ * - `method === 'oidc'` — federated sign-in is never treated as a second
+ *   factor by default. The IdP's own MFA (if any) is opaque to us, and a
+ *   second IdP account is typically controlled by the same user, so it
+ *   doesn't add meaningfully independent assurance.
+ * - `method === primaryFactor.method` AND `method === 'email'` — a different
+ *   inbox isn't a meaningfully separate authenticator from the one just used
+ *   (the user typically controls both mailboxes, so compromise of one often
+ *   implies compromise of the other).
  *
  * Possession factors backed by physical devices — `fido`, `phone`,
  * `authenticator` — *do* qualify when the primary used the same method but a
@@ -67,7 +70,8 @@ export class DefaultMfaRequiredPolicy extends Policy<AuthMfaRequiredPolicyContex
       .filter(factor => {
         if (factor.kind === 'knowledge') return false;
         if (factor.methodId === primaryFactor.methodId) return false;
-        if (factor.method === primaryFactor.method && (factor.method === 'email' || factor.method === 'oidc')) return false;
+        if (factor.method === 'oidc') return false;
+        if (factor.method === primaryFactor.method && factor.method === 'email') return false;
         return true;
       })
       .map(({ method, methodId, label }) => ({ method, methodId, ...(label != null ? { label } : {}) }));
