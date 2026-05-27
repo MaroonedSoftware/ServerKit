@@ -1448,15 +1448,20 @@ Holds the configured OIDC providers and lazily resolves an `openid-client` `Conf
 | `createFactorFromAuthorization(actorId, authorizationId)` | `Promise<OidcFactor>`                                          | Complete the `new-user` branch by attaching the cached profile to a freshly created actor                         |
 | `refreshAccessToken(actorId, factorId)`                 | `Promise<{ accessToken; expiresAt: DateTime \| null; scope?; idToken? }>` | Rotate the access token using the persisted refresh token; re-encrypts a rotated refresh token automatically      |
 | `hasPendingAuthorization(authorizationId)`              | `Promise<boolean>`                                               | Check whether a `new-user` pending authorization is still cached and unconsumed                                   |
+| `stashAuthenticatedExchange({ actorId, factorId, isNewUser? })` | `Promise<string>`                                       | Stash a completed authorization under a one-time `exchangeId` so a follow-up route (e.g. an MFA gate) can pick the flow back up |
+| `redeemAuthenticatedExchange(exchangeId)`               | `Promise<OidcAuthenticatedExchange \| null>`                     | Single-use redeem of a stash from `stashAuthenticatedExchange`. Returns `null` if expired or already consumed     |
 
 `OidcAuthorizationResult` is a discriminated union with `kind` ∈ `'signed-in' | 'linked' | 'new-user'`. The `'new-user'` branch carries `authorizationId` and an optional `emailConflict: { actorId; reason: 'unverified-email' }` when the IdP-claimed email matches an existing actor but is unverified.
 
+`OidcAuthenticatedExchange`: `{ actorId; factorId; isNewUser? }`. Carries the bare facts needed to mint a session after the gate clears — `isNewUser` is true when the actor was created during this exchange (typically forwarded from a `new-user` completion).
+
 `OidcFactorServiceOptions`:
 
-| Option                            | Type       | Default    | Description                                                                                          |
-| --------------------------------- | ---------- | ---------- | ---------------------------------------------------------------------------------------------------- |
-| `stateExpiration`                 | `Duration` | 10 minutes | How long a state record (the round-trip between authorize and callback) lives                        |
-| `pendingAuthorizationExpiration`  | `Duration` | 30 minutes | How long a `new-user` pending authorization survives before the caller must complete it              |
+| Option                              | Type       | Default    | Description                                                                                          |
+| ----------------------------------- | ---------- | ---------- | ---------------------------------------------------------------------------------------------------- |
+| `stateExpiration`                   | `Duration` | 10 minutes | How long a state record (the round-trip between authorize and callback) lives                        |
+| `pendingAuthorizationExpiration`    | `Duration` | 30 minutes | How long a `new-user` pending authorization survives before the caller must complete it              |
+| `authenticatedExchangeExpiration`   | `Duration` | 2 minutes  | How long a `stashAuthenticatedExchange` entry lives before the caller must redeem it                 |
 
 ### `OidcActorEmailLookup`
 

@@ -33,7 +33,7 @@ const primaryFactor: AuthenticationSessionFactor = {
   authenticatedAt: DateTime.fromISO('2026-01-15T10:00:30Z', { zone: 'utc' }),
 };
 
-const eligibleFactors = [{ method: 'phone' as const, methodId: 'phone-1' }];
+const eligibleFactors = [{ method: 'phone' as const, methodId: 'phone-1', kind: 'possession' as const }];
 
 const actor = { kind: 'user', actorId: 'user-42' };
 
@@ -115,14 +115,40 @@ describe('MfaChallengeService', () => {
     expect(await service.redeem('does-not-exist')).toBeNull();
   });
 
+  it("defaults kind to 'possession' for in-flight challenges deserialized without it (backward-compat)", async () => {
+    const { cache, store } = makeCache();
+    const service = new MfaChallengeService(new MfaChallengeServiceOptions(), cache);
+
+    const challengeId = 'legacy-id';
+    const legacyShape = {
+      challengeId,
+      actor,
+      primaryFactor: {
+        method: primaryFactor.method,
+        methodId: primaryFactor.methodId,
+        kind: primaryFactor.kind,
+        issuedAt: primaryFactor.issuedAt.toUnixInteger(),
+        authenticatedAt: primaryFactor.authenticatedAt.toUnixInteger(),
+      },
+      // No `kind` here — simulates a challenge cached before the field was added.
+      eligibleFactors: [{ method: 'phone', methodId: 'phone-1' }],
+      issuedAt: DateTime.utc().toUnixInteger(),
+      expiresAt: DateTime.utc().plus({ minutes: 5 }).toUnixInteger(),
+    };
+    store.set(`mfa_challenge_${challengeId}`, JSON.stringify(legacyShape));
+
+    const peeked = (await service.peek(challengeId))!;
+    expect(peeked.eligibleFactors).toEqual([{ method: 'phone', methodId: 'phone-1', kind: 'possession' }]);
+  });
+
   it('round-trips labels on eligible factors through JSON', async () => {
     const { cache } = makeCache();
     const service = new MfaChallengeService(new MfaChallengeServiceOptions(), cache);
 
     const labeledFactors = [
-      { method: 'phone' as const, methodId: 'phone-1', label: '+1·····1234' },
-      { method: 'authenticator' as const, methodId: 'auth-1', label: 'iPhone 15 Pro' },
-      { method: 'fido' as const, methodId: 'fido-1' },
+      { method: 'phone' as const, methodId: 'phone-1', kind: 'possession' as const, label: '+1·····1234' },
+      { method: 'authenticator' as const, methodId: 'auth-1', kind: 'possession' as const, label: 'iPhone 15 Pro' },
+      { method: 'fido' as const, methodId: 'fido-1', kind: 'possession' as const },
     ];
 
     const issued = await service.issue({ actor, primaryFactor, eligibleFactors: labeledFactors });

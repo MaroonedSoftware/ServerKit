@@ -115,8 +115,38 @@ export class OidcFactorServiceOptions {
     public readonly stateExpiration: Duration = Duration.fromDurationLike({ minutes: 10 }),
     /** How long a pending `new-user` authorization survives before the caller must complete it. */
     public readonly pendingAuthorizationExpiration: Duration = Duration.fromDurationLike({ minutes: 30 }),
+    /**
+     * How long a stashed post-completion exchange (see
+     * {@link OidcFactorService.stashAuthenticatedExchange}) survives before the
+     * caller must redeem it. Short by design — it is consumed within the same
+     * browser round-trip that issued it.
+     */
+    public readonly authenticatedExchangeExpiration: Duration = Duration.fromDurationLike({ minutes: 2 }),
   ) {}
 }
+
+/**
+ * Result of {@link OidcFactorService.stashAuthenticatedExchange} /
+ * {@link OidcFactorService.redeemAuthenticatedExchange}.
+ *
+ * Carries the bare facts a caller needs to mint a session after an OIDC
+ * completion: which actor and factor were resolved, and whether the actor
+ * was just created during this flow. Intentionally minimal so consumers do
+ * not have to re-derive these from the cache.
+ */
+export interface OidcAuthenticatedExchange {
+  /** The actor the completed authorization resolved to. */
+  actorId: string;
+  /** The OIDC factor satisfied by the completed authorization. */
+  factorId: string;
+  /** `true` when the actor was created as part of this exchange (typical for `kind: 'new-user'`). */
+  isNewUser?: boolean;
+}
+
+type StoredAuthenticatedExchange = OidcAuthenticatedExchange & {
+  exchangeId: string;
+  expiresAt: number;
+};
 
 /**
  * Orchestrates OIDC sign-in and account linking flows.
@@ -155,6 +185,10 @@ export class OidcFactorService {
 
   private getAuthorizationKey(authorizationId: string) {
     return `oidc_authorization_${authorizationId}`;
+  }
+
+  private getAuthenticatedExchangeKey(exchangeId: string) {
+    return `oidc_exchange_${exchangeId}`;
   }
 
   /**
@@ -438,6 +472,54 @@ export class OidcFactorService {
    */
   async hasPendingAuthorization(authorizationId: string): Promise<boolean> {
     return (await this.lookupPendingAuthorization(authorizationId)) !== undefined;
+  }
+
+  /**
+   * Stash the post-completion result of an OIDC sign-in so the caller can hand
+   * the user a one-time id and pick the flow back up from a follow-up route —
+   * typically to gate session minting behind an MFA challenge or a similar
+   * step-up. Mirrors {@link MfaChallengeService.redeem} semantics: single-use,
+   * short TTL.
+   *
+   * The expected shape is the bare minimum a caller needs to mint a session
+   * downstream — `actorId` and `factorId`, plus an `isNewUser` flag carried
+   * over from {@link completeAuthorization}'s `kind` for branch decisions on
+   * first sign-in.
+   *
+   * @returns A one-time `exchangeId` (opaque, 32-byte base64url). Pass it to
+   *   {@link redeemAuthenticatedExchange} to consume it.
+   */
+  async stashAuthenticatedExchange(input: OidcAuthenticatedExchange): Promise<string> {
+    const exchangeId = crypto.randomBytes(32).toString('base64url');
+    const expiresAt = DateTime.utc().plus(this.options.authenticatedExchangeExpiration).toUnixInteger();
+    const stored: StoredAuthenticatedExchange = {
+      exchangeId,
+      actorId: input.actorId,
+      factorId: input.factorId,
+      ...(input.isNewUser !== undefined ? { isNewUser: input.isNewUser } : {}),
+      expiresAt,
+    };
+    await this.cache.set(this.getAuthenticatedExchangeKey(exchangeId), JSON.stringify(stored), this.options.authenticatedExchangeExpiration);
+    return exchangeId;
+  }
+
+  /**
+   * Redeem a stash created by {@link stashAuthenticatedExchange}. Single-use:
+   * the cache entry is deleted on a successful read. Returns `null` when the
+   * `exchangeId` has expired or does not exist.
+   */
+  async redeemAuthenticatedExchange(exchangeId: string): Promise<OidcAuthenticatedExchange | null> {
+    const raw = await this.cache.get(this.getAuthenticatedExchangeKey(exchangeId));
+    if (!raw) {
+      return null;
+    }
+    await this.cache.delete(this.getAuthenticatedExchangeKey(exchangeId));
+    const stored = JSON.parse(raw) as StoredAuthenticatedExchange;
+    return {
+      actorId: stored.actorId,
+      factorId: stored.factorId,
+      ...(stored.isNewUser !== undefined ? { isNewUser: stored.isNewUser } : {}),
+    };
   }
 
   private async createFactor(

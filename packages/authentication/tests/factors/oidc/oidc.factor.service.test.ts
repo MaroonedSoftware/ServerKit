@@ -549,6 +549,67 @@ describe('OidcFactorService', () => {
       await expect(service.hasPendingAuthorization('missing')).resolves.toBe(false);
     });
   });
+
+  describe('stashAuthenticatedExchange / redeemAuthenticatedExchange', () => {
+    it('round-trips actorId, factorId, and isNewUser', async () => {
+      const exchangeId = await service.stashAuthenticatedExchange({ actorId: 'actor-1', factorId: 'factor-1', isNewUser: true });
+      expect(exchangeId).toBeTruthy();
+
+      const redeemed = await service.redeemAuthenticatedExchange(exchangeId);
+      expect(redeemed).toEqual({ actorId: 'actor-1', factorId: 'factor-1', isNewUser: true });
+    });
+
+    it('omits isNewUser when it was not supplied', async () => {
+      const exchangeId = await service.stashAuthenticatedExchange({ actorId: 'actor-1', factorId: 'factor-1' });
+      const redeemed = await service.redeemAuthenticatedExchange(exchangeId);
+
+      expect(redeemed).toEqual({ actorId: 'actor-1', factorId: 'factor-1' });
+      expect(redeemed && 'isNewUser' in redeemed).toBe(false);
+    });
+
+    it('is single-use: a second redeem returns null', async () => {
+      const exchangeId = await service.stashAuthenticatedExchange({ actorId: 'actor-1', factorId: 'factor-1' });
+
+      await expect(service.redeemAuthenticatedExchange(exchangeId)).resolves.not.toBeNull();
+      await expect(service.redeemAuthenticatedExchange(exchangeId)).resolves.toBeNull();
+    });
+
+    it('returns null for an unknown exchange id', async () => {
+      await expect(service.redeemAuthenticatedExchange('does-not-exist')).resolves.toBeNull();
+    });
+
+    it('writes the cache entry under a stable prefix with the configured TTL', async () => {
+      const exchangeId = await service.stashAuthenticatedExchange({ actorId: 'actor-1', factorId: 'factor-1' });
+
+      const setCalls = (cache.set as ReturnType<typeof vi.fn>).mock.calls;
+      const exchangeCall = setCalls.find(([key]) => (key as string).startsWith('oidc_exchange_'));
+      expect(exchangeCall).toBeDefined();
+      const [key, _value, ttl] = exchangeCall!;
+      expect(key).toBe(`oidc_exchange_${exchangeId}`);
+      expect((ttl as Duration).as('minutes')).toBeCloseTo(2, 5);
+    });
+
+    it('honors a custom TTL via OidcFactorServiceOptions', async () => {
+      const customCache = makeCache();
+      const customOptions = new OidcFactorServiceOptions(undefined, undefined, Duration.fromObject({ minutes: 7 }));
+      const customService = new OidcFactorService(
+        customOptions,
+        registry,
+        repo,
+        emailLookup,
+        customCache,
+        encryption,
+        makeLogger(),
+        makePolicyService(),
+      );
+
+      await customService.stashAuthenticatedExchange({ actorId: 'actor-1', factorId: 'factor-1' });
+
+      const setCalls = (customCache.set as ReturnType<typeof vi.fn>).mock.calls;
+      const [, , ttl] = setCalls.find(([key]) => (key as string).startsWith('oidc_exchange_'))!;
+      expect((ttl as Duration).as('minutes')).toBeCloseTo(7, 5);
+    });
+  });
 });
 
 describe('OidcProviderRegistry', () => {

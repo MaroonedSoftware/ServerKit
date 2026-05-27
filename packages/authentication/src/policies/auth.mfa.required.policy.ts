@@ -1,17 +1,14 @@
 import { Injectable } from 'injectkit';
 import { Policy, PolicyEnvelope, PolicyResult } from '@maroonedsoftware/policies';
-import { AuthenticationFactorKind, AuthenticationSessionFactor } from '../types.js';
+import { AuthenticationSessionFactor } from '../types.js';
 import { MfaEligibleFactor, TargetActor } from '../mfa/types.js';
 
 /**
- * An {@link MfaEligibleFactor} annotated with its factor `kind`, so the
- * policy can apply kind-based filtering without needing a callback into the
- * factor services.
+ * Alias retained for clarity at the policy boundary. The `kind` field now
+ * lives on {@link MfaEligibleFactor} directly, so this is structurally
+ * identical to it.
  */
-export interface AuthMfaRequiredPolicyFactor extends MfaEligibleFactor {
-  /** The MFA category for this factor (`'knowledge'`, `'possession'`, …). */
-  kind: AuthenticationFactorKind;
-}
+export type AuthMfaRequiredPolicyFactor = MfaEligibleFactor;
 
 /**
  * Context for {@link DefaultMfaRequiredPolicy}: the actor that just satisfied
@@ -74,7 +71,7 @@ export class DefaultMfaRequiredPolicy extends Policy<AuthMfaRequiredPolicyContex
         if (factor.method === primaryFactor.method && factor.method === 'email') return false;
         return true;
       })
-      .map(({ method, methodId, label }) => ({ method, methodId, ...(label != null ? { label } : {}) }));
+      .map(({ method, methodId, kind, label }) => ({ method, methodId, kind, ...(label != null ? { label } : {}) }));
 
     if (eligibleFactors.length === 0) {
       return this.allow();

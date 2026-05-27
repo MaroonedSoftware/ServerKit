@@ -1,5 +1,5 @@
 import { DateTime } from 'luxon';
-import { AuthenticationFactorMethod, AuthenticationSessionFactor } from '../types.js';
+import { AuthenticationFactorKind, AuthenticationFactorMethod, AuthenticationSessionFactor } from '../types.js';
 
 /**
  * A factor that may be used to satisfy a secondary MFA challenge for a given
@@ -11,6 +11,12 @@ export interface MfaEligibleFactor {
   method: AuthenticationFactorMethod;
   /** Stable identifier for the underlying factor record (e.g. a DB row id). */
   methodId: string;
+  /**
+   * MFA category this factor belongs to. Lets step-up flows filter against
+   * `acceptableKinds` / `excludeKinds` hints without having to re-join against
+   * the underlying enrolled-factor records.
+   */
+  kind: AuthenticationFactorKind;
   /** Optional human-readable label (e.g. authenticator nickname, phone last-4) for UI factor pickers. */
   label?: string;
 }

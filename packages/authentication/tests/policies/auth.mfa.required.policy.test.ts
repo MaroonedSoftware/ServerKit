@@ -52,7 +52,7 @@ describe('DefaultMfaRequiredPolicy', () => {
     expect(result).toMatchObject({
       allowed: false,
       reason: 'mfa_required',
-      details: { eligibleFactors: [{ method: 'phone', methodId: phone.methodId }] },
+      details: { eligibleFactors: [{ method: 'phone', methodId: phone.methodId, kind: 'possession' }] },
       headers: { 'WWW-Authenticate': 'Bearer error="mfa_required"' },
     });
   });
@@ -66,7 +66,7 @@ describe('DefaultMfaRequiredPolicy', () => {
     });
     expect(result.allowed).toBe(false);
     expect((result as { details: { eligibleFactors: AuthMfaRequiredPolicyFactor[] } }).details.eligibleFactors).toEqual([
-      { method: 'email', methodId: email.methodId },
+      { method: 'email', methodId: email.methodId, kind: 'possession' },
     ]);
   });
 
@@ -91,7 +91,7 @@ describe('DefaultMfaRequiredPolicy', () => {
       expect(result.allowed).toBe(false);
       // Only phone survives — oidc is always filtered.
       expect((result as { details: { eligibleFactors: AuthMfaRequiredPolicyFactor[] } }).details.eligibleFactors).toEqual([
-        { method: 'phone', methodId: phone.methodId },
+        { method: 'phone', methodId: phone.methodId, kind: 'possession' },
       ]);
     },
   );
@@ -122,9 +122,9 @@ describe('DefaultMfaRequiredPolicy', () => {
     expect(result.allowed).toBe(false);
     // password (knowledge) is filtered; email, phone, fido all survive because primary is password.
     expect((result as { details: { eligibleFactors: AuthMfaRequiredPolicyFactor[] } }).details.eligibleFactors).toEqual([
-      { method: 'email', methodId: email.methodId },
-      { method: 'phone', methodId: phone.methodId },
-      { method: 'fido', methodId: fido.methodId },
+      { method: 'email', methodId: email.methodId, kind: 'possession' },
+      { method: 'phone', methodId: phone.methodId, kind: 'possession' },
+      { method: 'fido', methodId: fido.methodId, kind: 'possession' },
     ]);
   });
 
@@ -152,8 +152,8 @@ describe('DefaultMfaRequiredPolicy', () => {
     });
     expect(result.allowed).toBe(false);
     expect((result as { details: { eligibleFactors: AuthMfaRequiredPolicyFactor[] } }).details.eligibleFactors).toEqual([
-      { method: 'phone', methodId: phone.methodId, label: '+1·····1234' },
-      { method: 'fido', methodId: fido.methodId, label: 'YubiKey 5C' },
+      { method: 'phone', methodId: phone.methodId, kind: 'possession', label: '+1·····1234' },
+      { method: 'fido', methodId: fido.methodId, kind: 'possession', label: 'YubiKey 5C' },
     ]);
   });
 
@@ -161,7 +161,7 @@ describe('DefaultMfaRequiredPolicy', () => {
     const phone = factor('phone', 'possession');
     const result = await evaluate({ actor, primaryFactor: makePrimary('password'), availableFactors: [phone] });
     const eligible = (result as { details: { eligibleFactors: AuthMfaRequiredPolicyFactor[] } }).details.eligibleFactors[0]!;
-    expect(eligible).toEqual({ method: 'phone', methodId: phone.methodId });
+    expect(eligible).toEqual({ method: 'phone', methodId: phone.methodId, kind: 'possession' });
     expect('label' in eligible).toBe(false);
   });
 
@@ -169,7 +169,7 @@ describe('DefaultMfaRequiredPolicy', () => {
     const phone = factor('phone', 'possession', 'phone-1', null);
     const result = await evaluate({ actor, primaryFactor: makePrimary('password'), availableFactors: [phone] });
     const eligible = (result as { details: { eligibleFactors: AuthMfaRequiredPolicyFactor[] } }).details.eligibleFactors[0]!;
-    expect(eligible).toEqual({ method: 'phone', methodId: phone.methodId });
+    expect(eligible).toEqual({ method: 'phone', methodId: phone.methodId, kind: 'possession' });
     expect('label' in eligible).toBe(false);
   });
 
@@ -199,7 +199,7 @@ describe('DefaultMfaRequiredPolicy', () => {
       });
       expect(result.allowed).toBe(false);
       expect((result as { details: { eligibleFactors: AuthMfaRequiredPolicyFactor[] } }).details.eligibleFactors).toEqual([
-        { method, methodId: second.methodId },
+        { method, methodId: second.methodId, kind: 'possession' },
       ]);
     },
   );

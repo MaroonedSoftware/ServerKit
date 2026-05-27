@@ -121,7 +121,7 @@ describe('MfaOrchestrator', () => {
         policy: {
           allowed: false,
           reason: 'mfa_required',
-          details: { eligibleFactors: phoneEligible.map(({ method, methodId }) => ({ method, methodId })) },
+          details: { eligibleFactors: phoneEligible.map(({ method, methodId, kind }) => ({ method, methodId, kind })) },
         },
       });
 
@@ -130,7 +130,7 @@ describe('MfaOrchestrator', () => {
       expect(result.kind).toBe('challenge');
       if (result.kind === 'challenge') {
         expect(result.challenge.challengeId).toBeTruthy();
-        expect(result.challenge.eligibleFactors).toEqual([{ method: 'phone', methodId: 'phone-1' }]);
+        expect(result.challenge.eligibleFactors).toEqual([{ method: 'phone', methodId: 'phone-1', kind: 'possession' }]);
         expect(result.challenge.actor).toEqual(actor);
         expect(result.challenge.primaryFactor).toEqual(primaryFactor);
         expect(result.challenge.issuedAt).toBeInstanceOf(DateTime);
@@ -139,12 +139,12 @@ describe('MfaOrchestrator', () => {
     });
 
     it('surfaces labels from the policy result onto the challenge payload', async () => {
-      const labeled = [{ method: 'phone' as const, methodId: 'phone-1', label: '+1·····1234' }];
+      const labeled = [{ method: 'phone' as const, methodId: 'phone-1', kind: 'possession' as const, label: '+1·····1234' }];
       const { orchestrator } = makeOrchestrator({
         policy: { allowed: false, reason: 'mfa_required', details: { eligibleFactors: labeled } },
       });
 
-      const result = await orchestrator.issueOrChallenge(actor, primaryFactor, [{ ...labeled[0]!, kind: 'possession' }]);
+      const result = await orchestrator.issueOrChallenge(actor, primaryFactor, [...labeled]);
 
       expect(result.kind).toBe('challenge');
       if (result.kind === 'challenge') {
@@ -167,7 +167,7 @@ describe('MfaOrchestrator', () => {
       const challenge = await challengeService.issue({
         actor,
         primaryFactor,
-        eligibleFactors: [{ method: 'phone', methodId: 'phone-1' }],
+        eligibleFactors: [{ method: 'phone', methodId: 'phone-1', kind: 'possession' }],
       });
 
       await expect(orchestrator.issueFactorChallenge(challenge.challengeId, { method: 'fido', methodId: 'fido-99' })).rejects.toMatchObject({
@@ -180,7 +180,7 @@ describe('MfaOrchestrator', () => {
       const challenge = await challengeService.issue({
         actor,
         primaryFactor,
-        eligibleFactors: [{ method: 'phone', methodId: 'phone-1' }],
+        eligibleFactors: [{ method: 'phone', methodId: 'phone-1', kind: 'possession' }],
       });
 
       const response = await orchestrator.issueFactorChallenge(challenge.challengeId, { method: 'phone', methodId: 'phone-1', transport: 'whatsapp' });
@@ -209,7 +209,7 @@ describe('MfaOrchestrator', () => {
       const challenge = await challengeService.issue({
         actor,
         primaryFactor,
-        eligibleFactors: [{ method: 'phone', methodId: 'phone-1' }],
+        eligibleFactors: [{ method: 'phone', methodId: 'phone-1', kind: 'possession' }],
       });
 
       const response = await orchestrator.issueFactorChallenge(challenge.challengeId, { method: 'phone', methodId: 'phone-1' });
@@ -227,7 +227,7 @@ describe('MfaOrchestrator', () => {
       const challenge = await challengeService.issue({
         actor,
         primaryFactor,
-        eligibleFactors: [{ method: 'phone', methodId: 'phone-1' }],
+        eligibleFactors: [{ method: 'phone', methodId: 'phone-1', kind: 'possession' }],
       });
 
       const result = await orchestrator.completeMfa(challenge.challengeId, { method: 'phone', challengeId: 'phone-chal-1', code: '123456' });
@@ -258,7 +258,7 @@ describe('MfaOrchestrator', () => {
       const challenge = await challengeService.issue({
         actor,
         primaryFactor,
-        eligibleFactors: [{ method: 'phone', methodId: 'phone-1' }],
+        eligibleFactors: [{ method: 'phone', methodId: 'phone-1', kind: 'possession' }],
       });
 
       const result = await orchestrator.completeMfa(challenge.challengeId, { method: 'phone', challengeId: 'phone-chal-1', code: '123456' });
@@ -282,7 +282,7 @@ describe('MfaOrchestrator', () => {
       const challenge = await challengeService.issue({
         actor,
         primaryFactor,
-        eligibleFactors: [{ method: 'phone', methodId: 'phone-1' }],
+        eligibleFactors: [{ method: 'phone', methodId: 'phone-1', kind: 'possession' }],
       });
 
       await expect(

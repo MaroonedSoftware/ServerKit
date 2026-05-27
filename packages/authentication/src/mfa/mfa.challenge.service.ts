@@ -3,7 +3,7 @@ import { Injectable } from 'injectkit';
 import { DateTime, Duration } from 'luxon';
 import { CacheProvider } from '@maroonedsoftware/cache';
 import { MfaChallengePayload, MfaEligibleFactor, TargetActor } from './types.js';
-import { AuthenticationSessionFactor } from '../types.js';
+import { AuthenticationFactorKind, AuthenticationSessionFactor } from '../types.js';
 
 /**
  * Configuration options for {@link MfaChallengeService}.
@@ -24,14 +24,29 @@ interface SerializedFactor {
   authenticatedAt: number;
 }
 
+interface SerializedEligibleFactor {
+  method: MfaEligibleFactor['method'];
+  methodId: string;
+  /** Optional on the wire so in-flight challenges issued before this field was added still deserialize. */
+  kind?: AuthenticationFactorKind;
+  label?: string;
+}
+
 interface MfaChallengePayloadShape {
   challengeId: string;
   actor: TargetActor;
   primaryFactor: SerializedFactor;
-  eligibleFactors: MfaEligibleFactor[];
+  eligibleFactors: SerializedEligibleFactor[];
   issuedAt: number;
   expiresAt: number;
 }
+
+/**
+ * Default applied when deserializing an eligible factor whose `kind` was not
+ * persisted. The default policy filters knowledge factors out of the eligible
+ * list, so any in-flight challenge is overwhelmingly likely to be `possession`.
+ */
+const DEFAULT_ELIGIBLE_FACTOR_KIND: AuthenticationFactorKind = 'possession';
 
 /**
  * Stash and redeem short-lived MFA challenges in cache.
@@ -67,7 +82,12 @@ export class MfaChallengeService {
         issuedAt: payload.primaryFactor.issuedAt.toUnixInteger(),
         authenticatedAt: payload.primaryFactor.authenticatedAt.toUnixInteger(),
       },
-      eligibleFactors: payload.eligibleFactors,
+      eligibleFactors: payload.eligibleFactors.map(({ method, methodId, kind, label }) => ({
+        method,
+        methodId,
+        kind,
+        ...(label != null ? { label } : {}),
+      })),
       issuedAt: payload.issuedAt.toUnixInteger(),
       expiresAt: payload.expiresAt.toUnixInteger(),
     };
@@ -86,7 +106,12 @@ export class MfaChallengeService {
         issuedAt: DateTime.fromSeconds(shape.primaryFactor.issuedAt),
         authenticatedAt: DateTime.fromSeconds(shape.primaryFactor.authenticatedAt),
       },
-      eligibleFactors: shape.eligibleFactors,
+      eligibleFactors: shape.eligibleFactors.map(({ method, methodId, kind, label }) => ({
+        method,
+        methodId,
+        kind: kind ?? DEFAULT_ELIGIBLE_FACTOR_KIND,
+        ...(label != null ? { label } : {}),
+      })),
       issuedAt: DateTime.fromSeconds(shape.issuedAt),
       expiresAt: DateTime.fromSeconds(shape.expiresAt),
     };
