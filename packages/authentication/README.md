@@ -375,13 +375,29 @@ const verifiedFactor = await emailFactors.verifyEmailChallenge(challengeId, subm
 - `EmailFactorRepository.isDomainInviteOnly(domain)` returns `true` (HTTP 403 — implement this to gate registration to allow-listed domains, e.g. workspaces that require an invite),
 - an active factor already exists for the email (HTTP 409).
 
-For the magic link flow, after the server has verified the link, return the page produced by `getRedirectHtml(redirectUrl)` instead of an HTTP redirect. The inline script defers navigation until `window.onload`, which sidesteps mail-client URL pre-fetchers that would otherwise burn the one-time token before the user clicks. The returned `nonce` must be echoed in a `Content-Security-Policy: script-src 'nonce-<nonce>'` header on the same response.
+For the magic link flow, after the server has verified the link, return the page produced by `HtmlRedirectProvider.getRedirectHtml(redirectUrl)` instead of an HTTP redirect. The inline script defers navigation until `window.onload`, which sidesteps mail-client URL pre-fetchers (Outlook Safe Links, Gmail/Apple Mail link scanners, corporate proxies) that would otherwise burn the one-time token before the user clicks. The returned `nonce` must be echoed in a `Content-Security-Policy: script-src 'nonce-<nonce>'` header on the same response.
 
 ```typescript
-const { html, nonce } = emailFactors.getRedirectHtml(new URL('https://app.example.com/welcome'));
+import { HtmlRedirectProvider } from '@maroonedsoftware/authentication';
+registry.register(HtmlRedirectProvider).useClass(HtmlRedirectProvider).asSingleton();
+
+const htmlRedirect = container.get(HtmlRedirectProvider);
+const { html, nonce } = htmlRedirect.getRedirectHtml(new URL('https://app.example.com/welcome'));
 ctx.set('Content-Security-Policy', `script-src 'nonce-${nonce}'`);
 ctx.body = html;
 ```
+
+`HtmlRedirectProvider` is independent of the email factor service. The other intended use is the **OIDC `completeAuthorization` redirect**: once the IdP callback handler has exchanged the code for tokens and resolved `result.kind`, render the post-sign-in landing page (or the `redirectAfter` URL persisted in the authorization state) via `getRedirectHtml` rather than a `Location` redirect. That keeps the destination off any link-prefetching crawler that might follow the IdP's callback URL, and ensures the browser actually executes your app page's load handlers instead of receiving a body-less 302.
+
+```typescript
+// OIDC callback handler — after completeAuthorization has issued the session
+const landing = new URL(result.redirectAfter ?? '/welcome', 'https://app.example.com');
+const { html, nonce } = htmlRedirect.getRedirectHtml(landing);
+ctx.set('Content-Security-Policy', `script-src 'nonce-${nonce}'`);
+ctx.body = html;
+```
+
+Any other "redirect after a non-idempotent side effect" flow is fair game too — the provider takes nothing besides the destination URL.
 
 ---
 
@@ -1266,7 +1282,6 @@ Abstract base class. Extends `FactorRepository<PasswordFactor, PasswordValue>` f
 | `issueEmailChallenge(actorId, factorId, issueMethod)`               | `Promise<{ email, challengeId, code, expiresAt: DateTime, issuedAt: DateTime, alreadyIssued: boolean }>` | Initiate a sign-in challenge (idempotent — `alreadyIssued` is `true` on a cache hit) |
 | `verifyEmailChallenge(challengeId, code)`                           | `Promise<EmailFactor>`                                      | Complete a sign-in challenge; re-checks the factor is active and returns it (HTTP 401 if it has been deleted or deactivated since the challenge was issued) |
 | `hasPendingChallenge(challengeId)`                                  | `Promise<boolean>`                                          | Check whether a challenge is still cached and unexpired    |
-| `getRedirectHtml(redirectUrl: URL)`                                 | `{ html, nonce }`                                           | Build a magic-link landing page that redirects to `redirectUrl` via a CSP-nonce-gated inline script (rejects non-`http(s):` URLs with HTTP 400) |
 
 `EmailFactorServiceOptions`:
 

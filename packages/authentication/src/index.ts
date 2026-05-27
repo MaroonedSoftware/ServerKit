@@ -32,6 +32,7 @@ export * from './providers/argon2id.password.hash.provider.js';
 export * from './providers/pkce.provider.js';
 export * from './providers/oidc.provider.js';
 export * from './providers/oauth2.provider.js';
+export * from './providers/html.redirect.provider.js';
 export * from './policies/email.allowed.policy.js';
 export * from './policies/phone.allowed.policy.js';
 export * from './policies/password.allowed.policy.js';
