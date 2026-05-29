@@ -235,6 +235,60 @@ Five styles are available, each with its own typed options:
 - **`gradient`** — a seeded two-stop gradient with soft swirl overlays.
 - **`smiley`** — a minimal smiley face (lighter weight than `face`).
 
+#### Examples
+
+Each row is the same six seeds (`'Ada Lovelace'`, `'Grace Hopper'`, `'Alan Turing'`, `'Katherine Johnson'`, `'Linus Torvalds'`, `'Margaret Hamilton'`) rendered in one style, so you can see how the look varies seed-to-seed while staying deterministic.
+
+<table>
+  <tr>
+    <th align="left"><code>face</code></th>
+    <td><img src="assets/avatars/face-0.png" width="72" height="72" alt="face avatar" /></td>
+    <td><img src="assets/avatars/face-1.png" width="72" height="72" alt="face avatar" /></td>
+    <td><img src="assets/avatars/face-2.png" width="72" height="72" alt="face avatar" /></td>
+    <td><img src="assets/avatars/face-3.png" width="72" height="72" alt="face avatar" /></td>
+    <td><img src="assets/avatars/face-4.png" width="72" height="72" alt="face avatar" /></td>
+    <td><img src="assets/avatars/face-5.png" width="72" height="72" alt="face avatar" /></td>
+  </tr>
+  <tr>
+    <th align="left"><code>smiley</code></th>
+    <td><img src="assets/avatars/smiley-0.png" width="72" height="72" alt="smiley avatar" /></td>
+    <td><img src="assets/avatars/smiley-1.png" width="72" height="72" alt="smiley avatar" /></td>
+    <td><img src="assets/avatars/smiley-2.png" width="72" height="72" alt="smiley avatar" /></td>
+    <td><img src="assets/avatars/smiley-3.png" width="72" height="72" alt="smiley avatar" /></td>
+    <td><img src="assets/avatars/smiley-4.png" width="72" height="72" alt="smiley avatar" /></td>
+    <td><img src="assets/avatars/smiley-5.png" width="72" height="72" alt="smiley avatar" /></td>
+  </tr>
+  <tr>
+    <th align="left"><code>identicon</code></th>
+    <td><img src="assets/avatars/identicon-0.png" width="72" height="72" alt="identicon avatar" /></td>
+    <td><img src="assets/avatars/identicon-1.png" width="72" height="72" alt="identicon avatar" /></td>
+    <td><img src="assets/avatars/identicon-2.png" width="72" height="72" alt="identicon avatar" /></td>
+    <td><img src="assets/avatars/identicon-3.png" width="72" height="72" alt="identicon avatar" /></td>
+    <td><img src="assets/avatars/identicon-4.png" width="72" height="72" alt="identicon avatar" /></td>
+    <td><img src="assets/avatars/identicon-5.png" width="72" height="72" alt="identicon avatar" /></td>
+  </tr>
+  <tr>
+    <th align="left"><code>geometric</code></th>
+    <td><img src="assets/avatars/geometric-0.png" width="72" height="72" alt="geometric avatar" /></td>
+    <td><img src="assets/avatars/geometric-1.png" width="72" height="72" alt="geometric avatar" /></td>
+    <td><img src="assets/avatars/geometric-2.png" width="72" height="72" alt="geometric avatar" /></td>
+    <td><img src="assets/avatars/geometric-3.png" width="72" height="72" alt="geometric avatar" /></td>
+    <td><img src="assets/avatars/geometric-4.png" width="72" height="72" alt="geometric avatar" /></td>
+    <td><img src="assets/avatars/geometric-5.png" width="72" height="72" alt="geometric avatar" /></td>
+  </tr>
+  <tr>
+    <th align="left"><code>gradient</code></th>
+    <td><img src="assets/avatars/gradient-0.png" width="72" height="72" alt="gradient avatar" /></td>
+    <td><img src="assets/avatars/gradient-1.png" width="72" height="72" alt="gradient avatar" /></td>
+    <td><img src="assets/avatars/gradient-2.png" width="72" height="72" alt="gradient avatar" /></td>
+    <td><img src="assets/avatars/gradient-3.png" width="72" height="72" alt="gradient avatar" /></td>
+    <td><img src="assets/avatars/gradient-4.png" width="72" height="72" alt="gradient avatar" /></td>
+    <td><img src="assets/avatars/gradient-5.png" width="72" height="72" alt="gradient avatar" /></td>
+  </tr>
+</table>
+
+> The `gradient` row alternates `gradientType: 'linear'` and `'radial'`. The generators emit SVG; the PNGs above are rasterized from that output only because some markdown renderers won't display SVG referenced via `<img>`. Regenerate them with [`generate.mjs`](assets/avatars/generate.mjs) after changing a generator's default look.
+
 #### `generateAvatar(seed: string, spec?: AvatarSpec): string`
 
 Unified dispatcher. `spec.style` selects the style (default `'face'`); the remaining fields are that style's options. Returns a standalone `<svg>` string.
