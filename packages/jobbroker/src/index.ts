@@ -4,3 +4,4 @@ export * from './job.runner.js';
 export * from './pgboss/pgboss.job.broker.js';
 export * from './pgboss/pgboss.job.runner.js';
 export * from './pgboss/pgboss.job.registration.js';
+export * from './pgboss/pgboss.connection.provider.js';

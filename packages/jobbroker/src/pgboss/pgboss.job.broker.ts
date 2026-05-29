@@ -2,6 +2,7 @@ import { PgBoss } from 'pg-boss';
 import { Injectable } from 'injectkit';
 import { JobBroker } from '../job.broker.js';
 import { PgBossJobRegistryMap } from './pgboss.job.registration.js';
+import { PgBossConnectionProvider } from './pgboss.connection.provider.js';
 
 /**
  * PgBoss implementation of the {@link JobBroker} interface.
@@ -10,6 +11,12 @@ import { PgBossJobRegistryMap } from './pgboss.job.registration.js';
  * processing. It provides reliable, transactional job queuing with support
  * for scheduled jobs using cron expressions.
  *
+ * Each enqueue and schedule call sources its pg-boss `db` executor from the
+ * injected {@link PgBossConnectionProvider}. The default provider returns
+ * `undefined` (pg-boss uses its own pool), but a request-scoped override can
+ * supply a transaction-bound executor so jobs are enqueued atomically with the
+ * surrounding database transaction.
+ *
  * @example
  * ```typescript
  * // Setup with dependency injection
@@ -17,7 +24,7 @@ import { PgBossJobRegistryMap } from './pgboss.job.registration.js';
  * const registry = new PgBossJobRegistryMap();
  * registry.set('send-email', SendEmailJob);
  *
- * const broker = new PgBossJobBroker(registry, pgboss);
+ * const broker = new PgBossJobBroker(registry, pgboss, new PgBossConnectionProvider());
  *
  * // Send a job
  * await broker.send('send-email', {
@@ -33,16 +40,24 @@ export class PgBossJobBroker extends JobBroker {
    *
    * @param registrations - The registry map containing all registered jobs.
    * @param pgboss - The pg-boss instance to use for queue operations.
+   * @param connectionProvider - Supplies the pg-boss `db` executor for each
+   *        enqueue/schedule; the default returns `undefined` (pg-boss's own
+   *        pool), while a request-scoped override enables transactional enqueue.
    */
   constructor(
     private readonly registrations: PgBossJobRegistryMap,
     private readonly pgboss: PgBoss,
+    private readonly connectionProvider: PgBossConnectionProvider,
   ) {
     super();
   }
 
   /**
    * Sends a job to the PgBoss queue for immediate processing.
+   *
+   * The job-insert SQL runs against the executor returned by the injected
+   * {@link PgBossConnectionProvider}; when that executor is bound to an active
+   * transaction, the job is enqueued atomically with that transaction.
    *
    * @typeParam Payload - The type of the job payload.
    * @param name - The name of the registered job to execute.
@@ -55,7 +70,7 @@ export class PgBossJobBroker extends JobBroker {
       throw new Error(`Job ${name} is not registered`);
     }
 
-    await this.pgboss.send(name, payload);
+    await this.pgboss.send(name, payload, { db: this.connectionProvider.executor() });
   }
 
   /**
@@ -64,6 +79,10 @@ export class PgBossJobBroker extends JobBroker {
    * The job will be automatically enqueued by pg-boss according to the
    * specified cron schedule. If a schedule already exists for this job,
    * it will be updated with the new cron expression and payload.
+   *
+   * The schedule-insert SQL runs against the executor returned by the injected
+   * {@link PgBossConnectionProvider}; the default executor uses pg-boss's own
+   * pool, which is the expected behavior for bootstrap-time scheduling.
    *
    * @typeParam Payload - The type of the job payload.
    * @param name - The name of the registered job to schedule.
@@ -77,7 +96,7 @@ export class PgBossJobBroker extends JobBroker {
       throw new Error(`Job ${name} is not registered`);
     }
 
-    await this.pgboss.schedule(name, cron, payload);
+    await this.pgboss.schedule(name, cron, payload, { db: this.connectionProvider.executor() });
   }
 
   /**

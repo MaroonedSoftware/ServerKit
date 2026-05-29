@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { PgBoss } from 'pg-boss';
+import { Db, PgBoss } from 'pg-boss';
 import { PgBossJobBroker } from '../../src/pgboss/pgboss.job.broker.js';
 import { PgBossJobRegistryMap } from '../../src/pgboss/pgboss.job.registration.js';
+import { PgBossConnectionProvider } from '../../src/pgboss/pgboss.connection.provider.js';
 import { Job } from '../../src/job.js';
 
 class TestJob extends Job<{ message: string }> {
@@ -13,6 +14,7 @@ class TestJob extends Job<{ message: string }> {
 describe('PgBossJobBroker', () => {
   let mockPgBoss: PgBoss;
   let registrations: PgBossJobRegistryMap;
+  let connectionProvider: PgBossConnectionProvider;
   let broker: PgBossJobBroker;
 
   beforeEach(() => {
@@ -25,7 +27,9 @@ describe('PgBossJobBroker', () => {
     registrations = new PgBossJobRegistryMap();
     registrations.set('test-job', TestJob);
 
-    broker = new PgBossJobBroker(registrations, mockPgBoss);
+    connectionProvider = new PgBossConnectionProvider();
+
+    broker = new PgBossJobBroker(registrations, mockPgBoss, connectionProvider);
   });
 
   afterEach(() => {
@@ -39,7 +43,7 @@ describe('PgBossJobBroker', () => {
       await broker.send('test-job', payload);
 
       expect(mockPgBoss.send).toHaveBeenCalledOnce();
-      expect(mockPgBoss.send).toHaveBeenCalledWith('test-job', payload);
+      expect(mockPgBoss.send).toHaveBeenCalledWith('test-job', payload, { db: undefined });
     });
 
     it('should throw an error when job is not registered', async () => {
@@ -54,7 +58,7 @@ describe('PgBossJobBroker', () => {
 
       await broker.send('test-job', payload);
 
-      expect(mockPgBoss.send).toHaveBeenCalledWith('test-job', payload);
+      expect(mockPgBoss.send).toHaveBeenCalledWith('test-job', payload, { db: undefined });
     });
 
     it('should handle complex payload objects', async () => {
@@ -67,7 +71,16 @@ describe('PgBossJobBroker', () => {
 
       await broker.send('test-job', payload);
 
-      expect(mockPgBoss.send).toHaveBeenCalledWith('test-job', payload);
+      expect(mockPgBoss.send).toHaveBeenCalledWith('test-job', payload, { db: undefined });
+    });
+
+    it('should enqueue on the executor supplied by the connection provider', async () => {
+      const transactionalDb = { executeSql: vi.fn() } as unknown as Db;
+      vi.spyOn(connectionProvider, 'executor').mockReturnValue(transactionalDb);
+
+      await broker.send('test-job', { message: 'tx' });
+
+      expect(mockPgBoss.send).toHaveBeenCalledWith('test-job', { message: 'tx' }, { db: transactionalDb });
     });
   });
 
@@ -79,7 +92,7 @@ describe('PgBossJobBroker', () => {
       await broker.schedule('test-job', cron, payload);
 
       expect(mockPgBoss.schedule).toHaveBeenCalledOnce();
-      expect(mockPgBoss.schedule).toHaveBeenCalledWith('test-job', cron, payload);
+      expect(mockPgBoss.schedule).toHaveBeenCalledWith('test-job', cron, payload, { db: undefined });
     });
 
     it('should schedule a job without payload', async () => {
@@ -87,7 +100,7 @@ describe('PgBossJobBroker', () => {
 
       await broker.schedule('test-job', cron);
 
-      expect(mockPgBoss.schedule).toHaveBeenCalledWith('test-job', cron, undefined);
+      expect(mockPgBoss.schedule).toHaveBeenCalledWith('test-job', cron, undefined, { db: undefined });
     });
 
     it('should throw an error when job is not registered', async () => {
@@ -111,6 +124,15 @@ describe('PgBossJobBroker', () => {
       }
 
       expect(mockPgBoss.schedule).toHaveBeenCalledTimes(cronExpressions.length);
+    });
+
+    it('should schedule on the executor supplied by the connection provider', async () => {
+      const transactionalDb = { executeSql: vi.fn() } as unknown as Db;
+      vi.spyOn(connectionProvider, 'executor').mockReturnValue(transactionalDb);
+
+      await broker.schedule('test-job', '0 0 * * *');
+
+      expect(mockPgBoss.schedule).toHaveBeenCalledWith('test-job', '0 0 * * *', undefined, { db: transactionalDb });
     });
   });
 
@@ -160,15 +182,13 @@ describe('PgBossJobBroker', () => {
     it('should recognize cron-configured job registrations for send', async () => {
       await broker.send('cron-job', { message: 'cron payload' });
 
-      expect(mockPgBoss.send).toHaveBeenCalledWith('cron-job', {
-        message: 'cron payload',
-      });
+      expect(mockPgBoss.send).toHaveBeenCalledWith('cron-job', { message: 'cron payload' }, { db: undefined });
     });
 
     it('should recognize cron-configured job registrations for schedule', async () => {
       await broker.schedule('cron-job', '*/10 * * * *');
 
-      expect(mockPgBoss.schedule).toHaveBeenCalledWith('cron-job', '*/10 * * * *', undefined);
+      expect(mockPgBoss.schedule).toHaveBeenCalledWith('cron-job', '*/10 * * * *', undefined, { db: undefined });
     });
 
     it('should recognize cron-configured job registrations for unschedule', async () => {

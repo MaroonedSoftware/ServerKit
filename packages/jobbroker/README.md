@@ -72,7 +72,7 @@ import 'reflect-metadata';
 import { PgBoss } from 'pg-boss';
 import { InjectKitRegistry } from 'injectkit';
 import { ConsoleLogger, Logger } from '@maroonedsoftware/logger';
-import { PgBossJobBroker, PgBossJobRunner, PgBossJobRegistryMap, JobBroker, JobRunner } from '@maroonedsoftware/jobbroker';
+import { PgBossJobBroker, PgBossJobRunner, PgBossJobRegistryMap, PgBossConnectionProvider, JobBroker, JobRunner } from '@maroonedsoftware/jobbroker';
 
 // Initialize pg-boss
 const pgboss = new PgBoss('postgres://user:pass@localhost/mydb');
@@ -83,6 +83,7 @@ const diRegistry = new InjectKitRegistry();
 diRegistry.register(PgBossJobRegistryMap).useInstance(registry);
 diRegistry.register(PgBoss).useInstance(pgboss);
 diRegistry.register(Logger).useClass(ConsoleLogger).asSingleton();
+diRegistry.register(PgBossConnectionProvider).useClass(PgBossConnectionProvider).asSingleton();
 diRegistry.register(JobBroker).useClass(PgBossJobBroker).asSingleton();
 diRegistry.register(JobRunner).useClass(PgBossJobRunner).asSingleton();
 
@@ -164,7 +165,45 @@ Configuration object for a scheduled job.
 
 ### `PgBossJobBroker`
 
-Concrete `JobBroker` implementation backed by pg-boss. Constructor signature: `new PgBossJobBroker(registrations: PgBossJobRegistryMap, pgboss: PgBoss)`. Typically resolved through the DI container rather than instantiated directly.
+Concrete `JobBroker` implementation backed by pg-boss. Constructor signature: `new PgBossJobBroker(registrations: PgBossJobRegistryMap, pgboss: PgBoss, connectionProvider: PgBossConnectionProvider)`. Each `send`/`schedule` call sources its pg-boss `db` executor from the injected `PgBossConnectionProvider`. Typically resolved through the DI container rather than instantiated directly.
+
+### `PgBossConnectionProvider`
+
+Supplies the pg-boss `db` executor used when enqueuing or scheduling jobs.
+
+| Method                          | Description                                                                          |
+| ------------------------------- | ------------------------------------------------------------------------------------ |
+| `executor(): Db \| undefined`   | The executor to run job-insert SQL against; `undefined` uses pg-boss's own pool.     |
+
+The default implementation returns `undefined`, so pg-boss uses its own connection pool (standard, non-transactional behavior). Override it on a request-scoped DI container to return a transaction-bound executor and enqueue jobs atomically with the surrounding database transaction — see [Transactional enqueue](#transactional-enqueue).
+
+## Transactional enqueue
+
+By default a job row is inserted on pg-boss's own connection, so it commits independently of any database work happening in the same request. To make an enqueue commit (or roll back) together with your business writes, override `PgBossConnectionProvider` in the request scope so its `executor()` returns the active transaction's connection. pg-boss ships adapters for the common query builders (`fromKysely`, `fromKnex`, `fromDrizzle`, `fromPrisma`) that wrap a transaction into the executor shape pg-boss expects:
+
+```typescript
+import { fromKysely } from 'pg-boss';
+import { PgBossConnectionProvider } from '@maroonedsoftware/jobbroker';
+
+class TransactionalConnectionProvider extends PgBossConnectionProvider {
+  constructor(private readonly trx: Transaction<DB>) {
+    super();
+  }
+
+  override executor() {
+    return fromKysely(this.trx);
+  }
+}
+
+// Inside a transaction, bind the provider on the scoped container before resolving the broker:
+await repository.withTransaction(async trx => {
+  scopedContainer.override(PgBossConnectionProvider, new TransactionalConnectionProvider(trx));
+
+  await doBusinessWrites(trx);
+  await scopedContainer.get(JobBroker).send('send-email', { to: 'user@example.com' });
+  // The job row and the business writes commit together.
+});
+```
 
 ### `PgBossJobRunner`
 
