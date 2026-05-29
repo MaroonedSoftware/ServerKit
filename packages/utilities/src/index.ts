@@ -1,3 +1,4 @@
+export * from './avatar/index.js';
 export * from './checks/uuid.js';
 export * from './checks/email.js';
 export * from './checks/phone.js';
