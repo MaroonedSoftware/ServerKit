@@ -271,12 +271,11 @@ export class OidcFactorService {
     const { params } = args;
 
     if (params.error) {
-      throw httpError(400)
-        .withDetails({
-          error: params.error,
-          ...(params.error_description ? { error_description: params.error_description } : {}),
-          ...(params.error_uri ? { error_uri: params.error_uri } : {}),
-        });
+      throw httpError(400).withDetails({
+        error: params.error,
+        ...(params.error_description ? { error_description: params.error_description } : {}),
+        ...(params.error_uri ? { error_uri: params.error_uri } : {}),
+      });
     }
 
     if (!params.state) {
@@ -353,7 +352,7 @@ export class OidcFactorService {
         await this.repo.updateEmail(existing.id, profile.email);
       }
       if (profile.picture && profile.picture !== existing.picture) {
-        await this.repo.updatePicture?.(existing.id, profile.picture);
+        await this.repo.updatePicture(existing.id, profile.picture);
       }
       return {
         kind: 'signed-in',

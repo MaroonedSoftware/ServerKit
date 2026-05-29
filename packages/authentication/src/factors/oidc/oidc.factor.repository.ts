@@ -79,8 +79,8 @@ export interface OidcFactorRepository extends FactorRepository<OidcFactor, OidcF
   /** Update the last-seen email on an existing factor. */
   updateEmail(factorId: string, email: string): Promise<void>;
 
-  /** Update the last-seen avatar URL on an existing factor. Optional — repos opt in by adding a `picture` column. */
-  updatePicture?(factorId: string, picture: string): Promise<void>;
+  /** Update the last-seen avatar URL on an existing factor. */
+  updatePicture(factorId: string, picture: string): Promise<void>;
 }
 
 @Injectable()

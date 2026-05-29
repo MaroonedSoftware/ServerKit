@@ -1487,7 +1487,7 @@ Extends `FactorRepository<OidcFactor, OidcFactorValue, OidcFactorLookup>` from t
 | `listFactors(actorId, active?)`                     | `Promise<OidcFactor[]>`                | List factors for an actor (account-settings UI)                                                   |
 | `updateRefreshToken(factorId, { encryptedRefreshToken, encryptedRefreshTokenDek, refreshTokenExpiresAt? })` | `Promise<void>`         | Update the persisted refresh token after rotation                                                 |
 | `updateEmail(factorId, email)`                      | `Promise<void>`                        | Update the last-seen email                                                                        |
-| `updatePicture?(factorId, picture)`                 | `Promise<void>`                        | Optional — update the last-seen avatar URL (opt in by adding a `picture` column)                  |
+| `updatePicture(factorId, picture)`                  | `Promise<void>`                        | Update the last-seen avatar URL (requires a `picture` column)                                     |
 | `deleteFactor(actorId, factorId)`                   | `Promise<void>`                        | Remove a factor                                                                                   |
 
 `OidcFactor`: `Factor & OidcFactorValue` — `{ id; actorId; active; provider; subject; email?; picture?; encryptedRefreshToken?; encryptedRefreshTokenDek?; refreshTokenExpiresAt?: Date | null }`.
