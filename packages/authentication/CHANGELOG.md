@@ -1,5 +1,11 @@
 # @maroonedsoftware/authentication
 
+## 4.27.0
+
+### Minor Changes
+
+- de017e6: `OidcFactorRepository.updatePicture` is now a required method. It was previously optional (`updatePicture?`), so repositories could opt out by omitting it. Implementations that do not define `updatePicture` will no longer type-check — add the method (and a backing `picture` column) to your `OidcFactorRepository` implementation.
+
 ## 4.26.0
 
 ### Minor Changes
