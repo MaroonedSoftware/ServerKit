@@ -21,6 +21,8 @@ export type OidcFactorValue = {
   subject: string;
   /** Last-seen email for this factor. Optional — not all providers return one. */
   email?: string;
+  /** Last-seen avatar URL for this factor. Optional — not all providers return one. */
+  picture?: string;
   /** Envelope-encrypted refresh token; present only when the provider persists refresh tokens. */
   encryptedRefreshToken?: string;
   /** Encrypted DEK for the refresh token. Present iff `encryptedRefreshToken` is. */
@@ -76,6 +78,9 @@ export interface OidcFactorRepository extends FactorRepository<OidcFactor, OidcF
 
   /** Update the last-seen email on an existing factor. */
   updateEmail(factorId: string, email: string): Promise<void>;
+
+  /** Update the last-seen avatar URL on an existing factor. Optional — repos opt in by adding a `picture` column. */
+  updatePicture?(factorId: string, picture: string): Promise<void>;
 }
 
 @Injectable()

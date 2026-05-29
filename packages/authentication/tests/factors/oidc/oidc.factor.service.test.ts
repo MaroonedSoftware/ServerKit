@@ -60,6 +60,7 @@ const makeRepo = () =>
     listFactors: vi.fn(async () => []),
     updateRefreshToken: vi.fn(async () => undefined),
     updateEmail: vi.fn(async () => undefined),
+    updatePicture: vi.fn(async () => undefined),
     deleteFactor: vi.fn(async () => undefined),
   }) as unknown as OidcFactorRepository;
 
@@ -220,7 +221,12 @@ describe('OidcFactorService', () => {
         scope: 'openid profile email',
         claims: () => claims,
       } as unknown as Awaited<ReturnType<typeof openidClient.authorizationCodeGrant>>);
-      vi.mocked(openidClient.fetchUserInfo).mockResolvedValue({ sub: 'subject-1', name: 'User One', ...userinfoOverrides } as openidClient.UserInfoResponse);
+      vi.mocked(openidClient.fetchUserInfo).mockResolvedValue({
+        sub: 'subject-1',
+        name: 'User One',
+        picture: 'https://cdn.example/avatar.png',
+        ...userinfoOverrides,
+      } as openidClient.UserInfoResponse);
     };
 
     it('throws 400 when the callback params have no state', async () => {
@@ -333,6 +339,42 @@ describe('OidcFactorService', () => {
       expect(repo.updateEmail).toHaveBeenCalledWith('factor-1', 'new@example.com');
     });
 
+    it('updates the stored picture when the IdP reports a different one', async () => {
+      await seedState();
+      seedTokens({}, { picture: 'https://cdn.example/avatar-new.png' });
+      const existing: OidcFactor = {
+        id: 'factor-1',
+        actorId: 'actor-1',
+        active: true,
+        provider: 'google',
+        subject: 'subject-1',
+        picture: 'https://cdn.example/avatar-old.png',
+      };
+      vi.mocked(repo.findFactor).mockResolvedValue(existing);
+
+      await service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } });
+
+      expect(repo.updatePicture).toHaveBeenCalledWith('factor-1', 'https://cdn.example/avatar-new.png');
+    });
+
+    it('does not update the stored picture when it is unchanged', async () => {
+      await seedState();
+      seedTokens();
+      const existing: OidcFactor = {
+        id: 'factor-1',
+        actorId: 'actor-1',
+        active: true,
+        provider: 'google',
+        subject: 'subject-1',
+        picture: 'https://cdn.example/avatar.png',
+      };
+      vi.mocked(repo.findFactor).mockResolvedValue(existing);
+
+      await service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } });
+
+      expect(repo.updatePicture).not.toHaveBeenCalled();
+    });
+
     it('returns linked and creates a factor when intent=link', async () => {
       await seedState({ intent: 'link', actorId: 'actor-existing' });
       seedTokens();
@@ -344,7 +386,7 @@ describe('OidcFactorService', () => {
       expect(result.actorId).toBe('actor-existing');
       expect(repo.createFactor).toHaveBeenCalledWith(
         'actor-existing',
-        expect.objectContaining({ provider: 'google', subject: 'subject-1', email: 'user@example.com' }),
+        expect.objectContaining({ provider: 'google', subject: 'subject-1', email: 'user@example.com', picture: 'https://cdn.example/avatar.png' }),
       );
     });
 

@@ -232,6 +232,9 @@ export class OAuth2FactorService {
       if (profile.email && profile.email !== existing.email) {
         await this.repo.updateEmail(existing.id, profile.email);
       }
+      if (profile.picture && profile.picture !== existing.picture) {
+        await this.repo.updatePicture?.(existing.id, profile.picture);
+      }
       return {
         kind: 'signed-in',
         actorId: existing.actorId,
@@ -363,6 +366,7 @@ export class OAuth2FactorService {
       provider: profile.provider,
       subject: profile.subject,
       email: profile.email,
+      picture: profile.picture,
       encryptedRefreshToken,
       encryptedRefreshTokenDek,
       refreshTokenExpiresAt,

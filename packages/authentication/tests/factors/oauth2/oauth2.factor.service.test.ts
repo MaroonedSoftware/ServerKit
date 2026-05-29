@@ -58,6 +58,7 @@ const makeRepo = () =>
     listFactors: vi.fn(async () => []),
     updateRefreshToken: vi.fn(async () => undefined),
     updateEmail: vi.fn(async () => undefined),
+    updatePicture: vi.fn(async () => undefined),
     deleteFactor: vi.fn(async () => undefined),
   }) as unknown as OAuth2FactorRepository;
 
@@ -101,6 +102,7 @@ const makeProviderConfig = (overrides: Partial<OAuth2ProviderConfig> = {}): OAut
       email: 'octocat@example.com',
       emailVerified: true,
       name: 'The Octocat',
+      picture: 'https://cdn.example/octocat.png',
       rawProfile: { id: 12345, login: 'octocat' },
     }),
   ),
@@ -265,6 +267,42 @@ describe('OAuth2FactorService', () => {
       expect(encryption.decryptWithDek(args.encryptedRefreshToken, args.encryptedRefreshTokenDek)).toBe('refresh-token');
     });
 
+    it('updates the stored picture on signed-in when the provider reports a different one', async () => {
+      providerConfig = makeProviderConfig({
+        fetchProfile: vi.fn(async () => ({ subject: 'gh-12345', picture: 'https://cdn.example/octocat-new.png', rawProfile: {} })),
+      });
+      ({ service } = makeService(providerConfig, repo, emailLookup, cache));
+      const { state } = await service.beginAuthorization({ provider: 'github', intent: 'sign-in' });
+      vi.mocked(repo.findFactor).mockResolvedValue({
+        id: 'factor-1',
+        actorId: 'actor-1',
+        active: true,
+        provider: 'github',
+        subject: 'gh-12345',
+        picture: 'https://cdn.example/octocat-old.png',
+      });
+
+      await service.completeAuthorization({ params: { code: 'abc', state } });
+
+      expect(repo.updatePicture).toHaveBeenCalledWith('factor-1', 'https://cdn.example/octocat-new.png');
+    });
+
+    it('does not update the stored picture on signed-in when it is unchanged', async () => {
+      const state = await seed();
+      vi.mocked(repo.findFactor).mockResolvedValue({
+        id: 'factor-1',
+        actorId: 'actor-1',
+        active: true,
+        provider: 'github',
+        subject: 'gh-12345',
+        picture: 'https://cdn.example/octocat.png',
+      });
+
+      await service.completeAuthorization({ params: { code: 'abc', state } });
+
+      expect(repo.updatePicture).not.toHaveBeenCalled();
+    });
+
     it('returns linked when intent=link', async () => {
       const { state } = await service.beginAuthorization({ provider: 'github', intent: 'link', actorId: 'actor-existing' });
 
@@ -273,6 +311,10 @@ describe('OAuth2FactorService', () => {
       expect(result.kind).toBe('linked');
       if (result.kind !== 'linked') throw new Error('unreachable');
       expect(result.actorId).toBe('actor-existing');
+      expect(repo.createFactor).toHaveBeenCalledWith(
+        'actor-existing',
+        expect.objectContaining({ provider: 'github', subject: 'gh-12345', picture: 'https://cdn.example/octocat.png' }),
+      );
     });
 
     it('auto-links on verified email match', async () => {

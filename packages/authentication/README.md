@@ -1487,11 +1487,12 @@ Extends `FactorRepository<OidcFactor, OidcFactorValue, OidcFactorLookup>` from t
 | `listFactors(actorId, active?)`                     | `Promise<OidcFactor[]>`                | List factors for an actor (account-settings UI)                                                   |
 | `updateRefreshToken(factorId, { encryptedRefreshToken, encryptedRefreshTokenDek, refreshTokenExpiresAt? })` | `Promise<void>`         | Update the persisted refresh token after rotation                                                 |
 | `updateEmail(factorId, email)`                      | `Promise<void>`                        | Update the last-seen email                                                                        |
+| `updatePicture?(factorId, picture)`                 | `Promise<void>`                        | Optional — update the last-seen avatar URL (opt in by adding a `picture` column)                  |
 | `deleteFactor(actorId, factorId)`                   | `Promise<void>`                        | Remove a factor                                                                                   |
 
-`OidcFactor`: `Factor & OidcFactorValue` — `{ id; actorId; active; provider; subject; email?; encryptedRefreshToken?; encryptedRefreshTokenDek?; refreshTokenExpiresAt?: Date | null }`.
+`OidcFactor`: `Factor & OidcFactorValue` — `{ id; actorId; active; provider; subject; email?; picture?; encryptedRefreshToken?; encryptedRefreshTokenDek?; refreshTokenExpiresAt?: Date | null }`.
 
-`OidcFactorValue`: `{ provider; subject; email?; encryptedRefreshToken?; encryptedRefreshTokenDek?; refreshTokenExpiresAt?: Date | null }` — payload accepted by `createFactor`.
+`OidcFactorValue`: `{ provider; subject; email?; picture?; encryptedRefreshToken?; encryptedRefreshTokenDek?; refreshTokenExpiresAt?: Date | null }` — payload accepted by `createFactor`.
 
 `OidcFactorLookup`: `{ provider; subject }` — argument accepted by `lookupFactor`.
 
