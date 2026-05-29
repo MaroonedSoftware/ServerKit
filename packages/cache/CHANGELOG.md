@@ -1,5 +1,12 @@
 # @maroonedsoftware/cache
 
+## 0.1.8
+
+### Patch Changes
+
+- Updated dependencies [7503069]
+  - @maroonedsoftware/utilities@1.9.0
+
 ## 0.1.7
 
 ### Patch Changes

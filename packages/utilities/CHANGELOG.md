@@ -1,5 +1,11 @@
 # @maroonedsoftware/utilities
 
+## 1.9.0
+
+### Minor Changes
+
+- 7503069: Add deterministic, dependency-free SVG avatar generators. New `generateAvatar(seed, { style })` dispatcher plus individual `generateFaceAvatarSvg`, `generateIdenticonSvg`, `generateGeometricSvg`, `generateGradientSwirlSvg`, and `generateSmileyAvatarSvg` exports, and a `toDataUri` helper. Every color, palette, size, and geometry constant is an optional override; omitting options reproduces the default look.
+
 ## 1.8.0
 
 ### Minor Changes
