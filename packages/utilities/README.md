@@ -26,6 +26,13 @@ import {
   joinNonEmpty,
   hasValue,
   isNullOrUndefinedOrWhitespace,
+  generateAvatar,
+  generateFaceAvatarSvg,
+  generateIdenticonSvg,
+  generateGeometricSvg,
+  generateGradientSwirlSvg,
+  generateSmileyAvatarSvg,
+  toDataUri,
 } from '@maroonedsoftware/utilities';
 
 // Importing the main entry does NOT touch global prototypes. To install the
@@ -71,7 +78,7 @@ Validates whether a string is a valid phone number in [E.164 format](https://en.
 ```typescript
 isPhoneE164('+12025550123'); // true
 isPhoneE164('+447911123456'); // true
-isPhoneE164('12025550123');  // false (missing +)
+isPhoneE164('12025550123'); // false (missing +)
 isPhoneE164('+1 202 555 0123'); // false (spaces not allowed)
 ```
 
@@ -115,7 +122,13 @@ Returns an array of unique items, deduplicated by the selector. When multiple it
 
 ```typescript
 // By property key
-unique([{ id: 1, n: 'a' }, { id: 1, n: 'b' }], 'id');
+unique(
+  [
+    { id: 1, n: 'a' },
+    { id: 1, n: 'b' },
+  ],
+  'id',
+);
 // => [{ id: 1, n: 'a' }]
 
 // By function
@@ -182,9 +195,9 @@ nullToUndefined({ a: null, b: 1, c: null });
 Joins `values` with `separator`, dropping any entry that is an empty string, `undefined`, or `null` before joining. Passing `undefined` as the separator falls back to `Array.prototype.join`'s default (`','`).
 
 ```typescript
-joinNonEmpty(', ', 'a', '', 'b');               // 'a, b'
-joinNonEmpty(' ', 'first', undefined, 'last');  // 'first last'
-joinNonEmpty('-', 'only');                      // 'only'
+joinNonEmpty(', ', 'a', '', 'b'); // 'a, b'
+joinNonEmpty(' ', 'first', undefined, 'last'); // 'first last'
+joinNonEmpty('-', 'only'); // 'only'
 ```
 
 ### String Predicates
@@ -194,10 +207,10 @@ joinNonEmpty('-', 'only');                      // 'only'
 Returns true when `value` has at least one non-whitespace character. Safe to call on `null` / `undefined` — prefer this over the `String.prototype.hasValue` method when the input might not be a string.
 
 ```typescript
-hasValue(null);       // false
-hasValue(undefined);  // false
-hasValue('   ');      // false
-hasValue('hi');       // true
+hasValue(null); // false
+hasValue(undefined); // false
+hasValue('   '); // false
+hasValue('hi'); // true
 ```
 
 #### `isNullOrUndefinedOrWhitespace(value: string | null | undefined): boolean`
@@ -205,9 +218,51 @@ hasValue('hi');       // true
 Inverse of `hasValue`. Returns true when `value` is `null`, `undefined`, empty, or whitespace-only.
 
 ```typescript
-isNullOrUndefinedOrWhitespace(null);   // true
-isNullOrUndefinedOrWhitespace('   ');  // true
-isNullOrUndefinedOrWhitespace('hi');   // false
+isNullOrUndefinedOrWhitespace(null); // true
+isNullOrUndefinedOrWhitespace('   '); // true
+isNullOrUndefinedOrWhitespace('hi'); // false
+```
+
+### Avatar Generation
+
+Deterministic, dependency-free SVG avatars seeded off the SHA-256 of a string — the same seed always yields the same SVG. Every generator draws on a fixed `0 0 100 100` viewBox, so `size` only changes the rendered `width`/`height` (the image scales). Every hardcoded color, palette, dimension, and geometry constant is exposed as an optional override; omitting all options reproduces the default look.
+
+Five styles are available, each with its own typed options:
+
+- **`face`** — a raceless cartoon "blob" face (abstract head color, never a skin tone). Good for people.
+- **`identicon`** — a horizontally-mirrored geometric glyph. Good for organizations.
+- **`geometric`** — abstract translucent triangles/squares/circles over a tinted background.
+- **`gradient`** — a seeded two-stop gradient with soft swirl overlays.
+- **`smiley`** — a minimal smiley face (lighter weight than `face`).
+
+#### `generateAvatar(seed: string, spec?: AvatarSpec): string`
+
+Unified dispatcher. `spec.style` selects the style (default `'face'`); the remaining fields are that style's options. Returns a standalone `<svg>` string.
+
+```typescript
+generateAvatar('user-123'); // face (default)
+generateAvatar('acme-inc', { style: 'identicon', grid: 7 }); // 7×7 identicon
+generateAvatar('proj-42', { style: 'gradient', gradientType: 'radial', hue: 280 });
+generateAvatar('team-7', { style: 'geometric', shapeCount: 6, palette: ['#1d4ed8', '#9333ea'] });
+```
+
+Each generator is also exported individually:
+
+- `generateFaceAvatarSvg(seed, options?: FaceAvatarOptions)` — `lineColor`, `mouthColor`, `tongueColor`, `topperColors`, plus size/palette options.
+- `generateIdenticonSvg(seed, options?: IdenticonOptions)` — `margin`, `cell`, `grid`, `hue`, foreground/background saturation & lightness.
+- `generateGeometricSvg(seed, options?: GeometricAvatarOptions)` — `hue`, `hueSpread`, `saturation`, `lightness`, `backgroundLightness`, `shapeCount`, `palette`.
+- `generateGradientSwirlSvg(seed, options?: GradientSwirlOptions)` — `hue`, `hueSpread`, `saturation`, `lightness`, `gradientType`.
+- `generateSmileyAvatarSvg(seed, options?: SmileyAvatarOptions)` — `lineColor`, plus size/palette options.
+
+All styles share `AvatarSizeOptions` (`size`, `cornerRadius`); the face-based styles also accept `AvatarPaletteOptions` (`hue`, plus saturation/lightness/accent knobs). The defaults `DEFAULT_LINE_COLOR`, `DEFAULT_MOUTH_COLOR`, `DEFAULT_TONGUE_COLOR`, and `DEFAULT_TOPPER_COLORS` are exported so you can extend rather than replace them.
+
+#### `toDataUri(svg: string): string`
+
+Encodes an SVG string as a `data:image/svg+xml;base64,…` URI, suitable for inlining directly into an `src`/`href` attribute.
+
+```typescript
+const uri = toDataUri(generateAvatar('user-123'));
+// <img src={uri} />
 ```
 
 ## Prototype Extensions
@@ -258,8 +313,8 @@ Returns true when both arrays have the same length and every index matches. Name
 - **With** a comparer: defers element equality to the supplied function. Length is still checked first and short-circuits before the comparer runs.
 
 ```typescript
-[1, 2, 3].arrayEquals([1, 2, 3]);   // true
-[1, 2, 3].arrayEquals([1, 2]);      // false
+[1, 2, 3].arrayEquals([1, 2, 3]); // true
+[1, 2, 3].arrayEquals([1, 2]); // false
 [{ a: 1 }].arrayEquals([{ a: 1 }]); // false (different references)
 
 [{ id: 1 }, { id: 2 }].arrayEquals([{ id: 1 }, { id: 2 }], (x, y) => x.id === y.id);
@@ -271,7 +326,10 @@ Returns true when both arrays have the same length and every index matches. Name
 Returns a new array of shallow copies of the elements with the named properties removed. The original array and its elements are left untouched.
 
 ```typescript
-const rows = [{ id: 1, secret: 'a' }, { id: 2, secret: 'b' }];
+const rows = [
+  { id: 1, secret: 'a' },
+  { id: 2, secret: 'b' },
+];
 const safe = rows.deleteProperties('secret');
 // safe => [{ id: 1 }, { id: 2 }]  (new array of new objects)
 // rows still has the secret fields
@@ -324,7 +382,11 @@ Returns a new array with duplicates removed, deduplicated by `selector`. When mu
 Keys are compared with `Map` equality (`===`): primitives by value, objects by reference. Returning a freshly-allocated object per element therefore treats every element as unique and yields no deduplication — pre-stringify or pre-compose a primitive key in that case.
 
 ```typescript
-[{ id: 1, n: 'a' }, { id: 2, n: 'b' }, { id: 1, n: 'c' }].uniqueBy('id');
+[
+  { id: 1, n: 'a' },
+  { id: 2, n: 'b' },
+  { id: 1, n: 'c' },
+].uniqueBy('id');
 // => [{ id: 1, n: 'a' }, { id: 2, n: 'b' }]
 
 [{ tag: 'x' }, { tag: 'y' }, { tag: 'x' }].uniqueBy(t => t.tag);
@@ -341,8 +403,8 @@ Keys are compared with `Map` equality (`===`): primitives by value, objects by r
 Inverse of `isNullOrUndefinedOrWhitespace` — returns true when the trimmed string has at least one non-whitespace character.
 
 ```typescript
-''.hasValue();      // false
-'  '.hasValue();    // false
+''.hasValue(); // false
+'  '.hasValue(); // false
 '  hi '.hasValue(); // true
 ```
 
@@ -351,10 +413,10 @@ Inverse of `isNullOrUndefinedOrWhitespace` — returns true when the trimmed str
 Returns true when the string is empty or contains only whitespace. Named for parity with .NET's `String.IsNullOrWhiteSpace`.
 
 ```typescript
-''.isNullOrUndefinedOrWhitespace();      // true
-'   '.isNullOrUndefinedOrWhitespace();   // true
-'\t\n'.isNullOrUndefinedOrWhitespace();  // true
-'hi'.isNullOrUndefinedOrWhitespace();    // false
+''.isNullOrUndefinedOrWhitespace(); // true
+'   '.isNullOrUndefinedOrWhitespace(); // true
+'\t\n'.isNullOrUndefinedOrWhitespace(); // true
+'hi'.isNullOrUndefinedOrWhitespace(); // false
 ```
 
 #### `String.mask(unmaskedStart?: number, unmaskedEnd?: number, character?: string): string`
@@ -362,10 +424,10 @@ Returns true when the string is empty or contains only whitespace. Named for par
 Returns a copy with the middle replaced by `character`, keeping `unmaskedStart` leading and `unmaskedEnd` trailing characters visible. Defaults to `2, 2, '*'`. Negative window sizes are clamped to `0`. When the windows already cover the whole length, the original string is returned unchanged.
 
 ```typescript
-'password123'.mask();           // 'pa*******23'
-'1234567890'.mask(4, 2);        // '1234****90'
-'abcdef'.mask(1, 1, '#');       // 'a####f'
-'abcd'.mask();                  // 'abcd'  (windows cover the whole string)
+'password123'.mask(); // 'pa*******23'
+'1234567890'.mask(4, 2); // '1234****90'
+'abcdef'.mask(1, 1, '#'); // 'a####f'
+'abcd'.mask(); // 'abcd'  (windows cover the whole string)
 ```
 
 #### `String.maskEmail(trim?: boolean, character?: string): string`
@@ -373,8 +435,8 @@ Returns a copy with the middle replaced by `character`, keeping `unmaskedStart` 
 Masks an email address while preserving enough structure to remain recognisable: keeps the first two characters of the local part, the `@`, the first two characters of the domain, the last character of the domain before the dot, and the TLD. When `trim` is true (the default), collapses runs of two or more mask characters down to a single one.
 
 ```typescript
-'user@example.com'.maskEmail();          // 'us*@ex*e.com'
-'user@example.com'.maskEmail(false);     // 'us**@ex****e.com'
+'user@example.com'.maskEmail(); // 'us*@ex*e.com'
+'user@example.com'.maskEmail(false); // 'us**@ex****e.com'
 'user@example.com'.maskEmail(true, '#'); // 'us#@ex#e.com'
 ```
 
@@ -383,9 +445,9 @@ Masks an email address while preserving enough structure to remain recognisable:
 Convenience alias for `mask(0, 4, character)` — masks everything except the trailing four characters. Useful for card numbers, account IDs, and similar identifiers.
 
 ```typescript
-'4111111111111234'.maskExceptLastFour();    // '************1234'
+'4111111111111234'.maskExceptLastFour(); // '************1234'
 '4111111111111234'.maskExceptLastFour('#'); // '############1234'
-'1234'.maskExceptLastFour();                // '1234'  (already ≤ 4 chars)
+'1234'.maskExceptLastFour(); // '1234'  (already ≤ 4 chars)
 ```
 
 ## License

@@ -203,6 +203,7 @@ Common utility functions for everyday server development.
 
 - UUID and email validation
 - Base32 encoding/decoding
+- Deterministic SVG avatar and identicon generation
 - Lightweight and dependency-free
 
 [View documentation →](./packages/utilities/README.md)
