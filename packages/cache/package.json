@@ -33,7 +33,7 @@
     "@maroonedsoftware/errors": "workspace:*",
     "@maroonedsoftware/logger": "workspace:*",
     "@maroonedsoftware/utilities": "workspace:*",
-    "injectkit": "^1.4.1",
+    "injectkit": "^1.4.2",
     "luxon": "^3.7.2",
     "rate-limiter-flexible": "^11.1.0"
   },
@@ -41,7 +41,7 @@
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
     "@types/luxon": "^3.7.1",
-    "ioredis": "^5.10.1"
+    "ioredis": "^5.11.0"
   },
   "peerDependencies": {
     "ioredis": "^5.10.1"

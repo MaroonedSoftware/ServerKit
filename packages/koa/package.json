@@ -48,7 +48,7 @@
     "@maroonedsoftware/utilities": "workspace:*",
     "co-body": "^6.2.0",
     "inflation": "^2.1.0",
-    "injectkit": "^1.4.1",
+    "injectkit": "^1.4.2",
     "qs": "^6.15.2",
     "rate-limiter-flexible": "^11.1.0",
     "raw-body": "^3.0.2"
@@ -68,6 +68,6 @@
     "@types/koa": "^3.0.3",
     "@types/koa__cors": "^5.0.1",
     "@types/qs": "^6.15.1",
-    "koa": "^3.2.0"
+    "koa": "^3.2.1"
   }
 }

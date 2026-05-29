@@ -41,7 +41,7 @@
     "@maroonedsoftware/errors": "workspace:*",
     "@maroonedsoftware/logger": "workspace:*",
     "@slack/web-api": "^7.16.0",
-    "injectkit": "^1.4.1"
+    "injectkit": "^1.4.2"
   },
   "devDependencies": {
     "@repo/config-eslint": "workspace:*",

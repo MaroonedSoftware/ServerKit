@@ -46,7 +46,7 @@
     "@maroonedsoftware/koa": "workspace:*",
     "@maroonedsoftware/logger": "workspace:*",
     "@maroonedsoftware/utilities": "workspace:*",
-    "injectkit": "^1.4.1",
+    "injectkit": "^1.4.2",
     "luxon": "^3.7.2"
   },
   "peerDependencies": {
@@ -60,7 +60,7 @@
     "@types/koa": "^3.0.3",
     "@types/luxon": "^3.7.1",
     "@types/supertest": "^7.2.0",
-    "koa": "^3.2.0",
+    "koa": "^3.2.1",
     "supertest": "^7.2.2"
   }
 }

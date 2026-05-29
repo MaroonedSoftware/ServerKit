@@ -44,7 +44,7 @@
     "arctic": "^3.7.0",
     "deepmerge-ts": "^7.1.5",
     "fido2-lib": "^3.5.9",
-    "injectkit": "^1.4.1",
+    "injectkit": "^1.4.2",
     "jsonwebtoken": "^9.0.3",
     "luxon": "^3.7.2",
     "openid-client": "^6.8.4",

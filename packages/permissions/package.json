@@ -42,7 +42,7 @@
     "test:ci": "vitest run --coverage"
   },
   "dependencies": {
-    "injectkit": "^1.4.1",
+    "injectkit": "^1.4.2",
     "zod": "^4.4.3"
   },
   "devDependencies": {
