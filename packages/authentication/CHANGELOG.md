@@ -1,5 +1,13 @@
 # @maroonedsoftware/authentication
 
+## 4.27.2
+
+### Patch Changes
+
+- Updated dependencies [d5ccf3c]
+  - @maroonedsoftware/utilities@1.10.0
+  - @maroonedsoftware/cache@0.1.9
+
 ## 4.27.1
 
 ### Patch Changes
