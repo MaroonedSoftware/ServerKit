@@ -6,7 +6,7 @@ A flexible, type-safe configuration management library with support for multiple
 
 - **Type-safe access** - Full TypeScript support with generics
 - **Multiple sources** - Load configuration from JSON files, YAML files, `.env` files, and more
-- **Value transformation** - Resolve environment variables and GCP secrets in configuration values
+- **Value transformation** - Resolve environment variables, GCP secrets, and AWS secrets in configuration values
 - **Deep merging** - Combine configurations from multiple sources with predictable override behavior
 - **Flat key grouping** - Collapse `KEY__sub=val` dotenv entries into nested objects automatically
 - **Extensible** - Create custom sources and providers for your specific needs
@@ -126,6 +126,39 @@ const config = await new AppConfigBuilder()
 ```
 
 > **Note:** The GCP secrets provider requires valid GCP credentials. It uses Application Default Credentials (ADC), so ensure you have authenticated via `gcloud auth application-default login` or have set up a service account.
+
+### AWS Secrets Manager Integration
+
+Use `${aws:SECRET_ID}` syntax to resolve secrets from AWS Secrets Manager. The secret id may be a secret name or a full ARN:
+
+**config.json:**
+
+```json
+{
+  "database": {
+    "password": "${aws:DB_PASSWORD}",
+    "connectionString": "${aws:DATABASE_CONNECTION_STRING}"
+  },
+  "api": {
+    "key": "${aws:API_SECRET_KEY}"
+  }
+}
+```
+
+**app.ts:**
+
+```typescript
+import { AppConfigBuilder, AppConfigSourceJson, AppConfigProviderAwsSecrets } from '@maroonedsoftware/appconfig';
+
+const config = await new AppConfigBuilder()
+  .addSource(new AppConfigSourceJson('./config.json'))
+  .addProvider(new AppConfigProviderAwsSecrets('us-east-1'))
+  .build();
+
+// Secrets are fetched from AWS Secrets Manager (latest version)
+```
+
+> **Note:** The AWS secrets provider requires valid AWS credentials. Credentials and the region are resolved from the standard AWS provider chain (environment variables such as `AWS_ACCESS_KEY_ID`/`AWS_REGION`, shared config/credentials files, or instance/task IAM roles). The `region` argument is optional and overrides the chain when provided.
 
 ## API
 
@@ -320,6 +353,34 @@ The provider:
 - Fetches secrets from GCP Secret Manager using the latest version
 - Automatically attempts to parse secret values as JSON
 - Requires valid GCP credentials (uses Application Default Credentials)
+- Is decorated with `@Injectable()` for dependency injection support
+
+#### AppConfigProviderAwsSecrets
+
+Resolves AWS Secrets Manager references in configuration values.
+
+```typescript
+// Default pattern: ${aws:SECRET_ID}, region from the AWS provider chain
+const provider = new AppConfigProviderAwsSecrets();
+
+// Explicit region
+const provider = new AppConfigProviderAwsSecrets('us-east-1');
+
+// Custom regex pattern
+const provider = new AppConfigProviderAwsSecrets('us-east-1', /\$\{secret:([^}]+)\}/g);
+```
+
+| Parameter | Type               | Description                                                                                       |
+| --------- | ------------------ | ------------------------------------------------------------------------------------------------ |
+| `region`  | `string`           | Optional AWS region. Resolved from the AWS provider chain when omitted                            |
+| `prefix`  | `string \| RegExp` | Optional pattern to match secret references. Default: `/\$\{aws:(.+)\}/g` (matches `${aws:ID}`)   |
+
+The provider:
+
+- Fetches secrets from AWS Secrets Manager using the latest version (`AWSCURRENT`)
+- Supports both `SecretString` and `SecretBinary` (binary is decoded as UTF-8)
+- Automatically attempts to parse secret values as JSON
+- Requires valid AWS credentials (uses the standard AWS provider chain)
 - Is decorated with `@Injectable()` for dependency injection support
 
 ## Utilities

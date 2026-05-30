@@ -8,4 +8,5 @@ export { AppConfigSourceJson } from './sources/app.config.source.json.js';
 export { AppConfigSourceYaml } from './sources/app.config.source.yaml.js';
 export { AppConfigProviderDotenv } from './providers/app.config.provider.dotenv.js';
 export { AppConfigProviderGcpSecrets } from './providers/app.config.provider.gcp.secrets.js';
+export { AppConfigProviderAwsSecrets } from './providers/app.config.provider.aws.secrets.js';
 export { nestKeys } from './helpers.js';
