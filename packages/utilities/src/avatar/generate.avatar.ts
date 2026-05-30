@@ -1,6 +1,7 @@
 // Unified dispatcher over the avatar styles. Each style keeps its own typed
 // options via a discriminated union on `style`; the default style is `face`.
 
+import { CityscapeAvatarOptions, generateCityscapeSvg } from './cityscape.js';
 import { FaceAvatarOptions, generateFaceAvatarSvg } from './face.js';
 import { GeometricAvatarOptions, generateGeometricSvg } from './geometric.js';
 import { GradientSwirlOptions, generateGradientSwirlSvg } from './gradient.js';
@@ -8,7 +9,7 @@ import { IdenticonOptions, generateIdenticonSvg } from './identicon.js';
 import { SmileyAvatarOptions, generateSmileyAvatarSvg } from './smiley.js';
 
 /** Supported avatar styles. */
-export type AvatarStyle = 'face' | 'identicon' | 'geometric' | 'gradient' | 'smiley';
+export type AvatarStyle = 'face' | 'identicon' | 'geometric' | 'gradient' | 'smiley' | 'cityscape';
 
 /** Style selector plus the options for the selected style. Defaults to `face`. */
 export type AvatarSpec =
@@ -16,7 +17,8 @@ export type AvatarSpec =
   | ({ style: 'identicon' } & IdenticonOptions)
   | ({ style: 'geometric' } & GeometricAvatarOptions)
   | ({ style: 'gradient' } & GradientSwirlOptions)
-  | ({ style: 'smiley' } & SmileyAvatarOptions);
+  | ({ style: 'smiley' } & SmileyAvatarOptions)
+  | ({ style: 'cityscape' } & CityscapeAvatarOptions);
 
 /**
  * Generate a deterministic avatar SVG for `seed` in the requested style. The
@@ -32,6 +34,7 @@ export type AvatarSpec =
  * generateAvatar('user-123');
  * generateAvatar('acme-inc', { style: 'identicon', grid: 7 });
  * generateAvatar('proj-42', { style: 'gradient', gradientType: 'radial' });
+ * generateAvatar('acme-inc', { style: 'cityscape', timeOfDay: 'night', buildingStyle: 'gothic' });
  * ```
  */
 export const generateAvatar = (seed: string, spec: AvatarSpec = {}): string => {
@@ -44,6 +47,8 @@ export const generateAvatar = (seed: string, spec: AvatarSpec = {}): string => {
       return generateGradientSwirlSvg(seed, spec);
     case 'smiley':
       return generateSmileyAvatarSvg(seed, spec);
+    case 'cityscape':
+      return generateCityscapeSvg(seed, spec);
     case 'face':
     default:
       return generateFaceAvatarSvg(seed, spec);

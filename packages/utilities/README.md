@@ -227,13 +227,14 @@ isNullOrUndefinedOrWhitespace('hi'); // false
 
 Deterministic, dependency-free SVG avatars seeded off the SHA-256 of a string — the same seed always yields the same SVG. Every generator draws on a fixed `0 0 100 100` viewBox, so `size` only changes the rendered `width`/`height` (the image scales). Every hardcoded color, palette, dimension, and geometry constant is exposed as an optional override; omitting all options reproduces the default look.
 
-Five styles are available, each with its own typed options:
+Six styles are available, each with its own typed options:
 
 - **`face`** — a raceless cartoon "blob" face (abstract head color, never a skin tone). Good for people.
 - **`identicon`** — a horizontally-mirrored geometric glyph. Good for organizations.
 - **`geometric`** — abstract translucent triangles/squares/circles over a tinted background.
 - **`gradient`** — a seeded two-stop gradient with soft swirl overlays.
 - **`smiley`** — a minimal smiley face (lighter weight than `face`).
+- **`cityscape`** — a seeded city skyline (day/dusk/night sky, sun or phased moon, clouds, stars, and buildings drawn as famous-landmark silhouettes). Flat or two-point-perspective layout.
 
 #### Examples
 
@@ -285,9 +286,18 @@ Each row is the same six seeds (`'Ada Lovelace'`, `'Grace Hopper'`, `'Alan Turin
     <td><img src="assets/avatars/gradient-4.png" width="72" height="72" alt="gradient avatar" /></td>
     <td><img src="assets/avatars/gradient-5.png" width="72" height="72" alt="gradient avatar" /></td>
   </tr>
+  <tr>
+    <th align="left"><code>cityscape</code></th>
+    <td><img src="assets/avatars/cityscape-0.png" width="72" height="72" alt="cityscape avatar" /></td>
+    <td><img src="assets/avatars/cityscape-1.png" width="72" height="72" alt="cityscape avatar" /></td>
+    <td><img src="assets/avatars/cityscape-2.png" width="72" height="72" alt="cityscape avatar" /></td>
+    <td><img src="assets/avatars/cityscape-3.png" width="72" height="72" alt="cityscape avatar" /></td>
+    <td><img src="assets/avatars/cityscape-4.png" width="72" height="72" alt="cityscape avatar" /></td>
+    <td><img src="assets/avatars/cityscape-5.png" width="72" height="72" alt="cityscape avatar" /></td>
+  </tr>
 </table>
 
-> The `gradient` row alternates `gradientType: 'linear'` and `'radial'`. The generators emit SVG; the PNGs above are rasterized from that output only because some markdown renderers won't display SVG referenced via `<img>`. Regenerate them with [`generate.mjs`](assets/avatars/generate.mjs) after changing a generator's default look.
+> The `gradient` row alternates `gradientType: 'linear'` and `'radial'`; the `cityscape` row cycles `timeOfDay` through `'day'`, `'dusk'`, and `'night'`. The generators emit SVG; the PNGs above are rasterized from that output only because some markdown renderers won't display SVG referenced via `<img>`. Regenerate them with [`generate.mjs`](assets/avatars/generate.mjs) after changing a generator's default look.
 
 #### `generateAvatar(seed: string, spec?: AvatarSpec): string`
 
@@ -298,6 +308,7 @@ generateAvatar('user-123'); // face (default)
 generateAvatar('acme-inc', { style: 'identicon', grid: 7 }); // 7×7 identicon
 generateAvatar('proj-42', { style: 'gradient', gradientType: 'radial', hue: 280 });
 generateAvatar('team-7', { style: 'geometric', shapeCount: 6, palette: ['#1d4ed8', '#9333ea'] });
+generateAvatar('acme-inc', { style: 'cityscape', view: 'perspective', timeOfDay: 'dusk' });
 ```
 
 Each generator is also exported individually:
@@ -307,6 +318,7 @@ Each generator is also exported individually:
 - `generateGeometricSvg(seed, options?: GeometricAvatarOptions)` — `hue`, `hueSpread`, `saturation`, `lightness`, `backgroundLightness`, `shapeCount`, `palette`.
 - `generateGradientSwirlSvg(seed, options?: GradientSwirlOptions)` — `hue`, `hueSpread`, `saturation`, `lightness`, `gradientType`.
 - `generateSmileyAvatarSvg(seed, options?: SmileyAvatarOptions)` — `lineColor`, plus size/palette options.
+- `generateCityscapeSvg(seed, options?: CityscapeAvatarOptions)` — `timeOfDay` (`'day' | 'dusk' | 'night'`), `view` (`'flat' | 'perspective'`), `buildingStyle` (`'mixed' | 'setback' | 'artdeco' | 'flatiron' | 'modern' | 'gothic' | 'plain'`), `buildingCount`, `hue`, `celestialBody`, `celestialGlow` (`'sharp' | 'soft' | 'hazy'`), `clouds`, `stars`, `moonPhase`. In `mixed` (the default) each landmark appears at most once per skyline, with `plain` boxes filling the rest.
 
 All styles share `AvatarSizeOptions` (`size`, `cornerRadius`); the face-based styles also accept `AvatarPaletteOptions` (`hue`, plus saturation/lightness/accent knobs). The defaults `DEFAULT_LINE_COLOR`, `DEFAULT_MOUTH_COLOR`, `DEFAULT_TONGUE_COLOR`, and `DEFAULT_TOPPER_COLORS` are exported so you can extend rather than replace them.
 

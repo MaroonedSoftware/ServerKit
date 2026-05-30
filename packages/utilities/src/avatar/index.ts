@@ -10,6 +10,7 @@ export {
   type AvatarPaletteOptions,
   type AvatarSizeOptions,
 } from './shared.js';
+export * from './cityscape.js';
 export * from './face.js';
 export * from './identicon.js';
 export * from './geometric.js';

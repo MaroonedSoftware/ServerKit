@@ -22,7 +22,7 @@ import { writeFileSync } from 'node:fs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dist = resolve(here, '../../dist/index.js');
-const { generateFaceAvatarSvg, generateIdenticonSvg, generateGeometricSvg, generateGradientSwirlSvg, generateSmileyAvatarSvg } = await import(dist);
+const { generateFaceAvatarSvg, generateIdenticonSvg, generateGeometricSvg, generateGradientSwirlSvg, generateSmileyAvatarSvg, generateCityscapeSvg } = await import(dist);
 
 const seeds = ['Ada Lovelace', 'Grace Hopper', 'Alan Turing', 'Katherine Johnson', 'Linus Torvalds', 'Margaret Hamilton'];
 
@@ -33,6 +33,7 @@ seeds.forEach((s, i) => (svgs[`smiley-${i}`] = generateSmileyAvatarSvg(s, { size
 seeds.forEach((s, i) => (svgs[`identicon-${i}`] = generateIdenticonSvg(s, { size: 96 })));
 seeds.forEach((s, i) => (svgs[`geometric-${i}`] = generateGeometricSvg(s, { size: 96 })));
 seeds.forEach((s, i) => (svgs[`gradient-${i}`] = generateGradientSwirlSvg(s, { size: 96, gradientType: i % 2 ? 'radial' : 'linear' })));
+seeds.forEach((s, i) => (svgs[`cityscape-${i}`] = generateCityscapeSvg(s, { size: 96, timeOfDay: ['day', 'dusk', 'night'][i % 3] })));
 
 // Rasterize each in-memory SVG to PNG at 2x (192px) for retina crispness; the
 // README displays them at 72px.
