@@ -20,6 +20,26 @@ pnpm add @maroonedsoftware/kysely reflect-metadata
 - **`KyselyDefaultPlugins`** — Pre-configured plugin set (camelCase + null→undefined)
 - **`KyselyPgTypeOverrides`** — PostgreSQL type parsers for timestamps and bigints
 - **`NullToUndefinedPlugin`** — Converts `null` result values to `undefined`
+- **`EmptyUpdateRewriteDialect`** — Turns an empty `UPDATE` into a no-op `SELECT` of the current row instead of a `42601` syntax error
+
+## Empty updates
+
+PostgreSQL rejects `UPDATE ... SET WHERE ...` with no columns to set (error `42601`). Kysely silently drops `undefined`-valued keys from `.set()`, so a PATCH-style update whose fields all arrived `undefined` — or an explicit `.set({})` — hits exactly this. `EmptyUpdateRewriteDialect` rewrites such empty updates so they compile to a `SELECT` of the current row: the call resolves to the unchanged row (preserving `.returningAll().executeTakeFirstOrThrow()`), no row is written, and no `UPDATE` trigger fires.
+
+```typescript
+import { Kysely } from 'kysely';
+import { EmptyUpdateRewriteDialect, KyselyDefaultPlugins } from '@maroonedsoftware/kysely';
+
+const db = new Kysely<Database>({
+  dialect: new EmptyUpdateRewriteDialect({ pool }, logger),
+  plugins: KyselyDefaultPlugins,
+});
+
+// Resolves to the unchanged row instead of throwing:
+await db.updateTable('persons').set({}).where('id', '=', id).returningAll().executeTakeFirstOrThrow();
+```
+
+A custom `KyselyPlugin` can't do this — `transformQuery` must return a node of the same kind it was given, so it can't turn an `UpdateQueryNode` into a `SelectQueryNode`. The dialect's compiler can, while keeping the node an update (so `.execute()` still resolves an update result with `numUpdatedRows` of `0n`). Multi-table `UPDATE ... FROM` updates with an empty set are deliberately left to fail.
 
 ## Code Generation
 
