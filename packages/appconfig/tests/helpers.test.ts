@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { tryParseJson, nestKeys } from '../src/helpers.js';
+import { tryParseJson, nestKeys, structurallyEqual } from '../src/helpers.js';
 
 describe('tryParseJson', () => {
   describe('valid JSON parsing', () => {
@@ -247,5 +247,47 @@ describe('nestKeys', () => {
       const result = nestKeys({ A: 'scalar', A__key: 'val' }, '__');
       expect(result).toEqual({ A: { key: 'val' } });
     });
+  });
+});
+
+describe('structurallyEqual', () => {
+  it('treats identical primitives as equal', () => {
+    expect(structurallyEqual(1, 1)).toBe(true);
+    expect(structurallyEqual('a', 'a')).toBe(true);
+    expect(structurallyEqual(true, true)).toBe(true);
+    expect(structurallyEqual(null, null)).toBe(true);
+    expect(structurallyEqual(undefined, undefined)).toBe(true);
+  });
+
+  it('treats differing primitives as unequal', () => {
+    expect(structurallyEqual(1, 2)).toBe(false);
+    expect(structurallyEqual('a', 'b')).toBe(false);
+    expect(structurallyEqual(1, '1')).toBe(false);
+    expect(structurallyEqual(null, undefined)).toBe(false);
+    // NaN follows === semantics and compares as unequal
+    expect(structurallyEqual(NaN, NaN)).toBe(false);
+  });
+
+  it('compares nested objects by value, ignoring key order', () => {
+    expect(structurallyEqual({ a: 1, b: { c: 2 } }, { b: { c: 2 }, a: 1 })).toBe(true);
+    expect(structurallyEqual({ a: 1, b: { c: 2 } }, { a: 1, b: { c: 3 } })).toBe(false);
+  });
+
+  it('detects differing key sets', () => {
+    expect(structurallyEqual({ a: 1 }, { a: 1, b: 2 })).toBe(false);
+    expect(structurallyEqual({ a: 1, b: 2 }, { a: 1 })).toBe(false);
+    expect(structurallyEqual({ a: 1 }, { b: 1 })).toBe(false);
+  });
+
+  it('compares arrays element-wise and order-sensitively', () => {
+    expect(structurallyEqual([1, 2, 3], [1, 2, 3])).toBe(true);
+    expect(structurallyEqual([1, 2, 3], [1, 2])).toBe(false);
+    expect(structurallyEqual([1, 2, 3], [3, 2, 1])).toBe(false);
+    expect(structurallyEqual([{ a: 1 }], [{ a: 1 }])).toBe(true);
+  });
+
+  it('distinguishes arrays from objects', () => {
+    expect(structurallyEqual([], {})).toBe(false);
+    expect(structurallyEqual({ 0: 'a', length: 1 }, ['a'])).toBe(false);
   });
 });
