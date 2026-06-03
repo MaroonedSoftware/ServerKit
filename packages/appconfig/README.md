@@ -9,6 +9,7 @@ A flexible, type-safe configuration management library with support for multiple
 - **Value transformation** - Resolve environment variables, GCP secrets, and AWS secrets in configuration values
 - **Deep merging** - Combine configurations from multiple sources with predictable override behavior
 - **Flat key grouping** - Collapse `KEY__sub=val` dotenv entries into nested objects automatically
+- **Live reload** - Rebuild config on demand (e.g. when a secret rotates) and push the latest values into singletons via an `IOptions`-style accessor trio
 - **Extensible** - Create custom sources and providers for your specific needs
 
 ## Installation
@@ -382,6 +383,92 @@ The provider:
 - Automatically attempts to parse secret values as JSON
 - Requires valid AWS credentials (uses the standard AWS provider chain)
 - Is decorated with `@Injectable()` for dependency injection support
+
+## Live configuration
+
+`AppConfigBuilder.build()` resolves everything once and returns an immutable `AppConfig`. When a
+value can change at runtime — most often a secret rotated in GCP/AWS Secret Manager — you can rebuild
+the config and have running singletons observe the new value, mirroring C#'s `IOptions` /
+`IOptionsSnapshot` / `IOptionsMonitor`.
+
+### AppConfigStore
+
+Holds the current `AppConfig` and rebuilds it on demand. `reload()` re-runs the full builder pipeline
+(re-reading sources and re-resolving providers); it swaps in the new config **only on success**, so a
+failed rebuild leaves the process on its last-good values and rethrows for the caller to log.
+
+```typescript
+const builder = new AppConfigBuilder().addSource(jsonSource).addProvider(awsSecrets);
+const store = new AppConfigStore(builder, await builder.build<RootConfig>());
+
+// Driven by your own trigger — a timer, a GCP Pub-Sub message, an AWS EventBridge event, etc.
+await store.reload().catch(err => logger.error('config reload failed', err));
+```
+
+The store delivers the `reload()` primitive only; deciding _when_ to reload is left to the application.
+
+### The options trio
+
+| Accessor                      | Lifetime  | Value                      | Use it for                                          |
+| ----------------------------- | --------- | -------------------------- | --------------------------------------------------- |
+| `AppConfigOptions<T>`         | singleton | `.value` (boot snapshot)   | values that never change at runtime                 |
+| `AppConfigOptionsSnapshot<T>` | scoped    | `.value` (stable per request) | request-stable values that may differ between requests |
+| `AppConfigOptionsMonitor<T>`  | singleton | `.current` + `onChange`    | live values; react to changes (rebuild a pool, etc.) |
+
+Each is an abstract `@Injectable()` class, so a configuration section mints its own DI token by
+subclassing — the same one-class-per-section shape used by `SlackConfig` and `Logger`:
+
+```typescript
+@Injectable() export abstract class SlackOptionsMonitor extends AppConfigOptionsMonitor<SlackConfig> {}
+@Injectable() export abstract class SlackOptionsSnapshot extends AppConfigOptionsSnapshot<SlackConfig> {}
+```
+
+### Wiring with AppConfigOptionsManager
+
+`AppConfigOptionsManager` owns the live monitors and keeps them in sync with the store. At bootstrap,
+register the tiers a section needs with `registerAppConfigOptions`:
+
+```typescript
+const store = new AppConfigStore(builder, await builder.build<RootConfig>());
+const manager = new AppConfigOptionsManager(store, logger); // logger: @maroonedsoftware/logger
+
+registerAppConfigOptions(registry, store, manager, 'slack', {
+  monitor: SlackOptionsMonitor,
+  snapshot: SlackOptionsSnapshot,
+});
+```
+
+Consumers inject the token like any other service:
+
+```typescript
+@Injectable()
+class SlackClient {
+  constructor(private readonly options: SlackOptionsMonitor) {}
+
+  send() {
+    // Read at use-time — never cache `current` in a field, or you lose live updates.
+    postWebhook(this.options.current.incomingWebhookUrl);
+  }
+}
+
+@Injectable()
+class DbPool {
+  private pool = createPool(this.options.current);
+
+  constructor(private readonly options: DbOptionsMonitor) {
+    // Rebuild the pool when a credential rotates.
+    this.options.onChange(async cfg => {
+      const previous = this.pool;
+      this.pool = createPool(cfg);
+      await previous.end();
+    });
+  }
+}
+```
+
+`onChange` fires only when a reload produces a structurally different value (a re-fetched but identical
+secret is ignored), the listener may be async, and a throwing/rejecting listener is reported via the
+manager's logger without affecting the swap or other listeners. The returned function unsubscribes.
 
 ## Utilities
 

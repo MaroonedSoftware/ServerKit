@@ -11,8 +11,9 @@ A modular collection of TypeScript packages for building Node.js server applicat
 Flexible, type-safe configuration management with support for multiple sources and value transformation.
 
 - Load from JSON, YAML, and `.env` files
-- Transform values using environment variables and GCP secrets
+- Transform values using environment variables and GCP/AWS secrets
 - Merge configurations from multiple sources
+- Reload config at runtime and inject the latest values via an `IOptions`-style accessor trio
 
 [View documentation →](./packages/appconfig/README.md)
 

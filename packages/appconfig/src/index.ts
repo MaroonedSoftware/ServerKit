@@ -10,3 +10,9 @@ export { AppConfigProviderDotenv } from './providers/app.config.provider.dotenv.
 export { AppConfigProviderGcpSecrets } from './providers/app.config.provider.gcp.secrets.js';
 export { AppConfigProviderAwsSecrets } from './providers/app.config.provider.aws.secrets.js';
 export { nestKeys } from './helpers.js';
+export { AppConfigOptions, AppConfigOptionsSnapshot, AppConfigOptionsMonitor } from './options/app.config.options.js';
+export { AppConfigStore } from './options/app.config.store.js';
+export type { AppConfigStoreListener } from './options/app.config.store.js';
+export { AppConfigOptionsManager } from './options/app.config.options.manager.js';
+export { registerAppConfigOptions } from './options/app.config.options.registration.js';
+export type { AppConfigOptionsTokens } from './options/app.config.options.registration.js';

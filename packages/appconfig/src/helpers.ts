@@ -13,6 +13,47 @@ export function tryParseJson(text: string): unknown {
 }
 
 /**
+ * Recursively compares two values for structural equality.
+ *
+ * Used to suppress no-op config-reload notifications: a secret re-fetched from a
+ * secret manager often produces a value that is structurally identical to the
+ * one already held, and reloading it should not bounce live consumers (e.g. a DB
+ * pool listening via `onChange`).
+ *
+ * Handles primitives, arrays, and plain objects by value. Two `NaN`s compare as
+ * unequal (matching `===` semantics); functions and other exotic values compare
+ * by reference. Key order is ignored for objects.
+ *
+ * @param a - The first value to compare.
+ * @param b - The second value to compare.
+ * @returns `true` if the values are structurally equal, `false` otherwise.
+ */
+export function structurallyEqual(a: unknown, b: unknown): boolean {
+  if (a === b) {
+    return true;
+  }
+  if (typeof a !== typeof b || a === null || b === null || typeof a !== 'object') {
+    return false;
+  }
+
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
+      return false;
+    }
+    return a.every((item, index) => structurallyEqual(item, b[index]));
+  }
+
+  const aRecord = a as Record<string, unknown>;
+  const bRecord = b as Record<string, unknown>;
+  const aKeys = Object.keys(aRecord);
+  const bKeys = Object.keys(bRecord);
+  if (aKeys.length !== bKeys.length) {
+    return false;
+  }
+  return aKeys.every(key => Object.prototype.hasOwnProperty.call(bRecord, key) && structurallyEqual(aRecord[key], bRecord[key]));
+}
+
+/**
  * Transforms a flat key/value record into a nested object by splitting keys on a
  * separator string.
  *

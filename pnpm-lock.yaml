@@ -81,6 +81,9 @@ importers:
       '@maroonedsoftware/errors':
         specifier: workspace:*
         version: link:../errors
+      '@maroonedsoftware/logger':
+        specifier: workspace:*
+        version: link:../logger
       deepmerge-ts:
         specifier: ^7.1.5
         version: 7.1.5
