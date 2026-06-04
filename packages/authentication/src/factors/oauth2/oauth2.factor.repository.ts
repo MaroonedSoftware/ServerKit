@@ -1,4 +1,5 @@
 import { Injectable } from 'injectkit';
+import { DateTime } from 'luxon';
 import { Factor, FactorRepository } from '../factor.repository.js';
 
 /**
@@ -27,8 +28,8 @@ export type OAuth2FactorValue = {
   encryptedRefreshToken?: string;
   /** Encrypted DEK for the refresh token. Present iff `encryptedRefreshToken` is. */
   encryptedRefreshTokenDek?: string;
-  /** When the persisted refresh token expires. `null`/`undefined` for non-expiring refresh tokens. */
-  refreshTokenExpiresAt?: Date | null;
+  /** When the persisted refresh token expires. Omit (`undefined`) for non-expiring refresh tokens. */
+  refreshTokenExpiresAt?: DateTime;
 };
 
 /**
@@ -61,10 +62,10 @@ export interface OAuth2FactorRepository extends FactorRepository<OAuth2Factor, O
   /** Look up factors by last-seen email — used by the auto-link flow when the provider returns a verified email. */
   lookupFactorsByEmail(email: string): Promise<OAuth2Factor[]>;
 
-  /** Update the persisted refresh token for an existing factor (e.g. after rotation). Pass `null` for `refreshTokenExpiresAt` to mean "no expiry". */
+  /** Update the persisted refresh token for an existing factor (e.g. after rotation). Omit `refreshTokenExpiresAt` to mean "no expiry". */
   updateRefreshToken(
     factorId: string,
-    args: { encryptedRefreshToken: string; encryptedRefreshTokenDek: string; refreshTokenExpiresAt?: Date | null },
+    args: { encryptedRefreshToken: string; encryptedRefreshTokenDek: string; refreshTokenExpiresAt?: DateTime },
   ): Promise<void>;
 
   /** Update the last-seen email on an existing factor. */

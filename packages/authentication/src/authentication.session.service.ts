@@ -611,7 +611,7 @@ export class AuthenticationSessionService {
       throw unauthorizedError('Bearer error="invalid_token"');
     }
 
-    const consumedTtlSeconds = Math.max(decoded.exp ? decoded.exp - Math.floor(Date.now() / 1000) : 0, MIN_CONSUMED_TTL_SECONDS);
+    const consumedTtlSeconds = Math.max(decoded.exp ? decoded.exp - Math.floor(DateTime.now().toSeconds()) : 0, MIN_CONSUMED_TTL_SECONDS);
     await this.cache.set(consumedKey, '1', Duration.fromObject({ seconds: consumedTtlSeconds }));
 
     const tokens = await this.issueTokensForLoadedSession(session);

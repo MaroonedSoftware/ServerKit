@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { DateTime } from 'luxon';
 import { SlackError } from './slack.error.js';
 
 /** Default replay-protection window in seconds (5 minutes — matches Slack's recommendation). */
@@ -36,7 +37,7 @@ export type VerifySlackSignatureInput = {
   maxAgeSeconds?: number;
   /**
    * Override for the current Unix time in seconds. Mostly useful for tests;
-   * defaults to `Math.floor(Date.now() / 1000)`.
+   * defaults to `Math.floor(DateTime.now().toSeconds())`.
    */
   now?: number;
 };
@@ -79,7 +80,7 @@ export const verifySlackSignature = (input: VerifySlackSignatureInput): void => 
     timestamp,
     signature,
     maxAgeSeconds = SLACK_SIGNATURE_DEFAULT_MAX_AGE_SECONDS,
-    now = Math.floor(Date.now() / 1000),
+    now = Math.floor(DateTime.now().toSeconds()),
   } = input;
 
   if (!timestamp) {

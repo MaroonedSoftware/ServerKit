@@ -81,7 +81,7 @@ type StoredPendingAuthorization = {
   provider: string;
   profile: OidcProfile;
   refreshToken?: string;
-  refreshTokenExpiresAt?: number | null;
+  refreshTokenExpiresAt?: number;
   redirectAfter?: string;
   expiresAt: number;
 };
@@ -392,8 +392,7 @@ export class OidcFactorService {
       provider: stored.provider,
       profile,
       refreshToken,
-      refreshTokenExpiresAt:
-        refreshTokenExpiresAt instanceof Date ? Math.floor(refreshTokenExpiresAt.getTime() / 1000) : (refreshTokenExpiresAt ?? null),
+      refreshTokenExpiresAt: refreshTokenExpiresAt ? refreshTokenExpiresAt.toUnixInteger() : undefined,
       redirectAfter: stored.redirectAfter,
     });
 
@@ -413,12 +412,7 @@ export class OidcFactorService {
     }
     await this.cache.delete(this.getAuthorizationKey(authorizationId));
 
-    const refreshTokenExpiresAt =
-      pending.refreshTokenExpiresAt === null
-        ? null
-        : pending.refreshTokenExpiresAt !== undefined
-          ? new Date(pending.refreshTokenExpiresAt * 1000)
-          : undefined;
+    const refreshTokenExpiresAt = pending.refreshTokenExpiresAt !== undefined ? DateTime.fromSeconds(pending.refreshTokenExpiresAt) : undefined;
 
     return this.createFactor(actorId, pending.profile, pending.refreshToken, refreshTokenExpiresAt);
   }
@@ -524,12 +518,7 @@ export class OidcFactorService {
     };
   }
 
-  private async createFactor(
-    actorId: string,
-    profile: OidcProfile,
-    refreshToken: string | undefined,
-    refreshTokenExpiresAt: Date | null | undefined,
-  ): Promise<OidcFactor> {
+  private async createFactor(actorId: string, profile: OidcProfile, refreshToken?: string, refreshTokenExpiresAt?: DateTime): Promise<OidcFactor> {
     let encryptedRefreshToken: string | undefined;
     let encryptedRefreshTokenDek: string | undefined;
     if (refreshToken) {
@@ -577,12 +566,12 @@ export class OidcFactorService {
     return { provider, subject, email, emailVerified, name, picture, rawClaims: merged };
   }
 
-  private computeRefreshTokenExpiry(tokens: openidClient.TokenEndpointResponse): Date | null | undefined {
+  private computeRefreshTokenExpiry(tokens: openidClient.TokenEndpointResponse): DateTime | undefined {
     const expiresIn = (tokens as unknown as { refresh_token_expires_in?: number }).refresh_token_expires_in;
     if (typeof expiresIn === 'number') {
-      return new Date(Date.now() + expiresIn * 1000);
+      return DateTime.utc().plus({ seconds: expiresIn });
     }
-    return null;
+    return undefined;
   }
 
   /** Retrieve an OIDC factor by id, scoped to the owning actor. */

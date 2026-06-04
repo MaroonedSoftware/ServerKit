@@ -1,4 +1,5 @@
 import { vi } from 'vitest';
+import { DateTime } from 'luxon';
 import { AppConfig } from '@maroonedsoftware/appconfig';
 import type { CliContext, CliLogger, Daemons, DaemonStatus, Shell } from '../src/index.js';
 
@@ -45,7 +46,7 @@ const noStatus: DaemonStatus = {
     command: '',
     args: [],
     cwd: '/tmp',
-    startedAt: new Date(0),
+    startedAt: DateTime.fromMillis(0),
 };
 
 export const createMockDaemons = (overrides: Partial<Daemons> = {}): Daemons => ({

@@ -25,6 +25,7 @@ pnpm add @maroonedsoftware/slack
 | `SlackInteractionHandlerMap`    | `Map<routingKey, SlackInteractionHandler>` — keys are `${type}:${identifier}`; see [interaction routing](#interaction-routing). |
 | `SlackError`                    | `ServerkitError` subclass for non-HTTP domain failures (signature mismatch, webhook POST failed, …).          |
 | `verifySlackSignature(input)`   | Pure helper that validates Slack's v0 HMAC scheme + replay window. No request/context coupling.               |
+| `SlackSignaturePolicy`          | `@maroonedsoftware/policies` form of `verifySlackSignature` (registered under `SLACK_SIGNATURE_POLICY`). Delegates to the helper but answers as a `PolicyResult`, so it slots into ServerKit's policy pipeline. |
 | `interactionRouteKey(payload)`  | Helper that produces the `SlackInteractionHandlerMap` key for a given payload.                                |
 
 ## Configuration
@@ -270,6 +271,29 @@ What the helper enforces:
 On any failure the helper throws `SlackError` with `internalDetails.reason` set to a `SlackSignatureFailureReason` code. Map to HTTP 401 at the route boundary.
 
 For deterministic tests, pass `now` (Unix seconds) to override the clock.
+
+### As a policy
+
+`SlackSignaturePolicy` is the same rule wrapped as a `@maroonedsoftware/policies` policy, so signature verification slots into ServerKit's policy pipeline alongside session/MFA policies. It delegates to `verifySlackSignature` (one source of truth) but returns a `PolicyResult` instead of throwing — denying with the same `SlackSignatureFailureReason` as the denial `reason`, and anchoring the replay window to the evaluation's `envelope.now`.
+
+Register it in your `PolicyRegistryMap` and evaluate it via `PolicyService`:
+
+```ts
+import { SlackSignaturePolicy, SLACK_SIGNATURE_POLICY, SlackConfig } from '@maroonedsoftware/slack';
+
+// wiring
+registry.set(SLACK_SIGNATURE_POLICY, SlackSignaturePolicy);
+
+// in a route handler (ctx is a ServerKit Koa context)
+const result = await ctx.container.get(PolicyService).check(SLACK_SIGNATURE_POLICY, {
+  rawBody: ctx.rawBody,
+  getHeader: name => ctx.get(name),
+  options: ctx.container.get(SlackConfig),
+});
+if (isPolicyResultDenied(result)) throw httpError(401).withInternalDetails(result.internalDetails ?? {});
+```
+
+The context (`rawBody` + a case-insensitive `getHeader` + `options`) is structurally compatible with `@maroonedsoftware/koa`'s `SignaturePolicyContext<SlackSignatureOptions>`, so the koa `requireSignature` middleware can drive this policy when it's registered under the signature policy name — no koa dependency in this package.
 
 ## Limitations
 

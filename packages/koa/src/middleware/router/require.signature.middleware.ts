@@ -1,7 +1,8 @@
-import { createHmac, timingSafeEqual, BinaryToTextEncoding } from 'node:crypto';
+import { BinaryToTextEncoding } from 'node:crypto';
 import { ServerKitRouterMiddleware } from '../../serverkit.middleware.js';
-import { httpError } from '@maroonedsoftware/errors';
 import { AppConfig } from '@maroonedsoftware/appconfig';
+import { PolicyService } from '@maroonedsoftware/policies';
+import { REQUIRE_SIGNATURE_POLICY, SignaturePolicyContext } from '../../policies/request.signature.valid.policy.js';
 
 /**
  * Configuration for {@link requireSignature}.
@@ -23,17 +24,40 @@ export type SignatureOptions = {
 /**
  * Router middleware that verifies a request signature against an HMAC of `ctx.rawBody`.
  *
- * Reads {@link SignatureOptions} from `AppConfig` using `optionsKey`, then:
+ * Reads {@link SignatureOptions} from `AppConfig` using `optionsKey`, then
+ * hands the raw body, a header accessor, and the resolved options to the
+ * {@link import('../../policies/request.signature.valid.policy.js').REQUIRE_SIGNATURE_POLICY}
+ * policy (default {@link import('../../policies/request.signature.valid.policy.js').DefaultSignaturePolicy})
+ * resolved from `ctx.container` via {@link PolicyService}:
+ *
  * - Computes `HMAC(algorithm, secret).update(ctx.rawBody).digest(digest)`
- * - Reads the expected signature from the request header named `options.header`
- * - Compares the digests with `crypto.timingSafeEqual` (constant-time)
- * - Throws HTTP 401 (with internal diagnostics) if the signatures do not match
- * - Calls `next()` otherwise
+ *   and compares it to the supplied signature with `crypto.timingSafeEqual`
+ *   (constant-time).
+ * - Asserts the policy via {@link PolicyService.assert} with status `401`, so a
+ *   denial throws an HTTP 401 carrying the policy's `reason`, `details`,
+ *   `headers`, and `internalDetails`.
+ * - Calls `next()` otherwise.
+ *
+ * Because the rule lives in a registered policy, applications can subclass
+ * `DefaultSignaturePolicy` and re-register it under the same name to change the
+ * verification behaviour without touching this middleware. The policy must be
+ * registered in your `PolicyRegistryMap` (e.g.
+ * `{ [REQUIRE_SIGNATURE_POLICY]: DefaultSignaturePolicy }`) for this middleware
+ * to resolve it.
  *
  * Requires `ctx.rawBody` to be populated before this middleware runs — use
  * {@link bodyParserMiddleware} upstream to ensure the raw bytes are captured.
  *
- * @param optionsKey - Key used to retrieve {@link SignatureOptions} from `AppConfig` via `getAs`.
+ * @typeParam TOptions - Shape of the config resolved from `AppConfig`, passed to
+ *   the policy as `SignaturePolicyContext.options`. Defaults to
+ *   {@link SignatureOptions} for the bundled HMAC rule; a custom policy can
+ *   declare a richer shape (e.g. a Slack signing secret plus a replay window).
+ * @param optionsKey - Key used to retrieve the options (`TOptions`) from `AppConfig` via `getAs`.
+ * @param policy - Optional. Name of the policy to evaluate; defaults to
+ *   {@link REQUIRE_SIGNATURE_POLICY} (the bundled HMAC rule). Point it at any
+ *   registered policy whose context is `SignaturePolicyContext` to verify a
+ *   different scheme through the same middleware — e.g. `SLACK_SIGNATURE_POLICY`
+ *   from `@maroonedsoftware/slack`, paired with a matching `TOptions`.
  * @returns A {@link ServerKitRouterMiddleware} that guards the route.
  *
  * @example
@@ -42,30 +66,32 @@ export type SignatureOptions = {
  * // { "webhook": { "header": "X-Hub-Signature-256", "secret": "${env:WEBHOOK_SECRET}", "algorithm": "sha256", "digest": "hex" } }
  *
  * router.post('/webhooks/github', requireSignature('webhook'), handler);
+ *
+ * // Slack's v0 scheme via SlackSignaturePolicy registered under SLACK_SIGNATURE_POLICY:
+ * router.post(
+ *   '/slack/events',
+ *   requireSignature<SlackSignatureOptions>('slack', SLACK_SIGNATURE_POLICY),
+ *   handler,
+ * );
  * ```
  */
-export const requireSignature = (optionsKey: string): ServerKitRouterMiddleware => {
+export const requireSignature = <TOptions = SignatureOptions>(
+  optionsKey: string,
+  policy: string = REQUIRE_SIGNATURE_POLICY,
+): ServerKitRouterMiddleware => {
   return async (ctx, next) => {
-    const options = ctx.container.get(AppConfig).getAs<SignatureOptions>(optionsKey);
+    const options = ctx.container.get(AppConfig).getAs<TOptions>(optionsKey);
 
-    const { header, secret, algorithm, digest } = options;
-
-    const hmac = createHmac(algorithm, secret).update(ctx.rawBody);
-
-    const signature = ctx.get(header);
-    const computedSignature = hmac.digest(digest);
-    const expected = Buffer.from(computedSignature);
-    const provided = Buffer.from(signature ?? '');
-    if (expected.length !== provided.length || !timingSafeEqual(expected, provided)) {
-      throw httpError(401).withInternalDetails({
-        message: 'Invalid signature',
-        header,
-        computedSignature,
-        signature,
-        algorithm,
-        digest,
-      });
-    }
+    const policyService = ctx.container.get(PolicyService);
+    await policyService.assert(
+      policy,
+      {
+        rawBody: ctx.rawBody,
+        getHeader: (name: string) => ctx.get(name),
+        options,
+      } satisfies SignaturePolicyContext<TOptions>,
+      401,
+    );
 
     await next();
   };

@@ -648,7 +648,8 @@ const githubClient: OAuth2ProviderClient = {
     return {
       accessToken: tokens.accessToken(),
       refreshToken: tokens.hasRefreshToken() ? tokens.refreshToken() : undefined,
-      expiresAt: tokens.hasRefreshToken() ? tokens.accessTokenExpiresAt() : undefined,
+      // arctic returns a native Date — convert to Luxon at the adapter boundary
+      expiresAt: tokens.hasRefreshToken() ? DateTime.fromJSDate(tokens.accessTokenExpiresAt()) : undefined,
     } satisfies OAuth2Tokens;
   },
 };
@@ -1490,9 +1491,9 @@ Extends `FactorRepository<OidcFactor, OidcFactorValue, OidcFactorLookup>` from t
 | `updatePicture(factorId, picture)`                  | `Promise<void>`                        | Update the last-seen avatar URL (requires a `picture` column)                                     |
 | `deleteFactor(actorId, factorId)`                   | `Promise<void>`                        | Remove a factor                                                                                   |
 
-`OidcFactor`: `Factor & OidcFactorValue` — `{ id; actorId; active; provider; subject; email?; picture?; encryptedRefreshToken?; encryptedRefreshTokenDek?; refreshTokenExpiresAt?: Date | null }`.
+`OidcFactor`: `Factor & OidcFactorValue` — `{ id; actorId; active; provider; subject; email?; picture?; encryptedRefreshToken?; encryptedRefreshTokenDek?; refreshTokenExpiresAt?: DateTime }`.
 
-`OidcFactorValue`: `{ provider; subject; email?; picture?; encryptedRefreshToken?; encryptedRefreshTokenDek?; refreshTokenExpiresAt?: Date | null }` — payload accepted by `createFactor`.
+`OidcFactorValue`: `{ provider; subject; email?; picture?; encryptedRefreshToken?; encryptedRefreshTokenDek?; refreshTokenExpiresAt?: DateTime }` — payload accepted by `createFactor`.
 
 `OidcFactorLookup`: `{ provider; subject }` — argument accepted by `lookupFactor`.
 
@@ -1518,7 +1519,7 @@ Mirrors `OidcFactorService`'s public surface. Same method names, same result sha
 | `beginAuthorization({ provider, intent, actorId?, redirectAfter? })` | `Promise<{ url: URL; state; expiresAt: DateTime }>`                | Build the provider authorize URL and cache the round-trip state record                                            |
 | `completeAuthorization({ callbackUrl })`                | `Promise<OAuth2AuthorizationResult>`                             | Exchange the auth code, fetch the provider profile, and resolve to a factor                                       |
 | `createFactorFromAuthorization(actorId, authorizationId)` | `Promise<OAuth2Factor>`                                        | Complete the `new-user` branch                                                                                    |
-| `refreshAccessToken(actorId, factorId)`                 | `Promise<{ accessToken; expiresAt: Date \| null; scopes?; idToken? }>` | Rotate the access token via the adapter's `refreshAccessToken`; throws HTTP 400 when the adapter doesn't implement it |
+| `refreshAccessToken(actorId, factorId)`                 | `Promise<{ accessToken; expiresAt?: DateTime; scopes?; idToken? }>` | Rotate the access token via the adapter's `refreshAccessToken`; throws HTTP 400 when the adapter doesn't implement it |
 | `hasPendingAuthorization(authorizationId)`              | `Promise<boolean>`                                               | Check whether a pending authorization is still cached                                                             |
 
 `OAuth2FactorServiceOptions`: same shape as `OidcFactorServiceOptions` (`stateExpiration` 10 min, `pendingAuthorizationExpiration` 30 min by default).

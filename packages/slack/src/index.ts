@@ -1,6 +1,7 @@
 export * from './slack.config.js';
 export * from './slack.error.js';
 export * from './slack.signature.js';
+export * from './slack.signature.policy.js';
 export * from './slack.event.handler.js';
 export * from './slack.command.handler.js';
 export * from './slack.interaction.handler.js';

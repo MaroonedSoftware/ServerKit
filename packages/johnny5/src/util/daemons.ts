@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { DateTime } from 'luxon';
 import type { CliLogger } from './logger.js';
 import { johnnyPaths, projectSlug, type JohnnyPaths } from './paths.js';
 import type { Shell } from './shell.js';
@@ -37,7 +38,7 @@ export interface DaemonStatus {
     args: string[];
     cwd: string;
     /** Wall-clock time the daemon was registered. */
-    startedAt: Date;
+    startedAt: DateTime;
 }
 
 /** Project-scoped manager for long-running detached processes. */
@@ -97,7 +98,7 @@ const toStatus = (name: string, record: PidRecord, pidFile: string, logFile: str
     command: record.command,
     args: record.args,
     cwd: record.cwd,
-    startedAt: new Date(record.startedAt),
+    startedAt: DateTime.fromISO(record.startedAt),
 });
 
 /**
@@ -177,7 +178,7 @@ export const createDaemons = (projectRoot: string, shell: Shell, logger: CliLogg
             command: options.command,
             args: options.args,
             cwd: options.cwd ?? projectRoot,
-            startedAt: new Date().toISOString(),
+            startedAt: DateTime.utc().toISO(),
         };
         writeFileSync(path, JSON.stringify(record, null, 2));
         logger.debug(`daemon '${options.name}' started (pid ${handle.pid}, log ${log})`);

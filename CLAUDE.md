@@ -208,7 +208,12 @@ Index/barrel files are `index.ts`. Do not introduce hyphenated filenames; match 
 
 ## Conventions
 
-- **Dates and times**: use Luxon's `DateTime`, `Duration`, and `Interval` instead of the native JS `Date`, and instead of ad-hoc duration math on milliseconds. Convert at boundaries only (`DateTime.fromJSDate` / `.toJSDate()`, `.toISO()`); keep everything in between as Luxon types.
+- **Dates and times**: use Luxon's `DateTime`, `Duration`, and `Interval` instead of the native JS `Date`, and instead of ad-hoc duration math on milliseconds. Never use `Date.now()`, `new Date()`, or `Date.parse()` for time logic:
+  - Current time: `DateTime.now()` (or `DateTime.utc()`).
+  - Unix seconds: `Math.floor(DateTime.now().toSeconds())`, not `Math.floor(Date.now() / 1000)`.
+  - Adding/subtracting time: `DateTime.now().plus({ seconds })`, not `new Date(Date.now() + ms)`.
+  - ISO string: `DateTime.now().toISO()`, not `new Date().toISOString()`.
+  - Convert at boundaries only (`DateTime.fromJSDate` / `.toJSDate()`, `.toISO()` / `DateTime.fromISO()`); keep everything in between as Luxon types. The native `Date` is allowed solely at interop boundaries — type annotations for external libraries (e.g. OAuth/OIDC tokens), `instanceof Date` checks, and reconstituting a `Date` from a stored timestamp.
 - **Formatting**: 2-space indent, single quotes, semicolons, print width 150 (see `.prettierrc`).
 - **TypeScript**: strict mode with `noUncheckedIndexedAccess`. Decorators enabled for DI.
 - **No hyphens — anywhere.** This applies to:

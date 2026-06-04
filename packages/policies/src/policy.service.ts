@@ -1,6 +1,6 @@
 import { Container, Identifier, Injectable } from 'injectkit';
 import { isPolicyResultDenied, Policy, PolicyContext, PolicyEnvelope, PolicyResult } from './policy.js';
-import { httpError } from '@maroonedsoftware/errors';
+import { httpError, HttpStatusCodes } from '@maroonedsoftware/errors';
 
 /**
  * Mapping from policy name to the context shape that policy expects. Pass this
@@ -38,13 +38,14 @@ export abstract class PolicyService {
   abstract check(policyName: string, context: PolicyContext): Promise<PolicyResult>;
 
   /**
-   * Evaluate the policy registered under `policyName` and throw HTTP 403 when
-   * denied (with `result.details` surfaced under `HttpError.details`,
-   * `result.internalDetails` plus framework context under `HttpError.internalDetails`,
-   * and `result.headers` forwarded to `HttpError.withHeaders`); return
-   * normally on allow.
+   * Evaluate the policy registered under `policyName` and throw an HTTP error
+   * when denied — `403` by default, or `statusCode` when supplied (e.g. `401`
+   * for an unauthenticated request signature). `result.details` is surfaced
+   * under `HttpError.details`, `result.internalDetails` plus framework context
+   * under `HttpError.internalDetails`, and `result.headers` is forwarded to
+   * `HttpError.withHeaders`; returns normally on allow.
    */
-  abstract assert(policyName: string, context: PolicyContext): Promise<void>;
+  abstract assert(policyName: string, context: PolicyContext, statusCode?: HttpStatusCodes): Promise<void>;
 }
 
 /**
@@ -113,11 +114,11 @@ export abstract class BasePolicyService<
    * @throws HTTP 403 when the policy denies the request.
    * @throws Error when no policy is registered under `policyName`.
    */
-  async assert<K extends keyof TPolicies & string>(policyName: K, context: TPolicies[K]): Promise<void> {
+  async assert<K extends keyof TPolicies & string>(policyName: K, context: TPolicies[K], statusCode: HttpStatusCodes = 403): Promise<void> {
     const result = await this.check(policyName, context);
     if (!isPolicyResultDenied(result)) return;
 
-    const error = httpError(403).withInternalDetails({
+    const error = httpError(statusCode).withInternalDetails({
       message: `policy violation [${policyName}]: ${result.reason}`,
       policyName,
       reason: result.reason,

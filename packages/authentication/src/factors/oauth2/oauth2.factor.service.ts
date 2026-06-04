@@ -58,7 +58,7 @@ type StoredPendingAuthorization = {
   provider: string;
   profile: OAuth2Profile;
   refreshToken?: string;
-  refreshTokenExpiresAt?: number | null;
+  refreshTokenExpiresAt?: number;
   redirectAfter?: string;
   expiresAt: number;
 };
@@ -172,12 +172,11 @@ export class OAuth2FactorService {
     const { params } = args;
 
     if (params.error) {
-      throw httpError(400)
-        .withDetails({
-          error: params.error,
-          ...(params.error_description ? { error_description: params.error_description } : {}),
-          ...(params.error_uri ? { error_uri: params.error_uri } : {}),
-        });
+      throw httpError(400).withDetails({
+        error: params.error,
+        ...(params.error_description ? { error_description: params.error_description } : {}),
+        ...(params.error_uri ? { error_uri: params.error_uri } : {}),
+      });
     }
 
     if (!params.state) {
@@ -216,7 +215,7 @@ export class OAuth2FactorService {
     }
 
     const refreshToken = config.persistRefreshToken && config.client.refreshAccessToken ? tokens.refreshToken : undefined;
-    const refreshTokenExpiresAt = tokens.expiresAt ?? null;
+    const refreshTokenExpiresAt = tokens.expiresAt;
 
     // 1. Existing factor for (provider, subject) → signed-in
     const existing = await this.repo.findFactor({ provider: stored.provider, subject: profile.subject });
@@ -273,7 +272,7 @@ export class OAuth2FactorService {
       provider: stored.provider,
       profile,
       refreshToken,
-      refreshTokenExpiresAt: refreshTokenExpiresAt instanceof Date ? Math.floor(refreshTokenExpiresAt.getTime() / 1000) : null,
+      refreshTokenExpiresAt: refreshTokenExpiresAt ? refreshTokenExpiresAt.toUnixInteger() : undefined,
       redirectAfter: stored.redirectAfter,
     });
 
@@ -291,12 +290,7 @@ export class OAuth2FactorService {
     }
     await this.cache.delete(this.getAuthorizationKey(authorizationId));
 
-    const refreshTokenExpiresAt =
-      pending.refreshTokenExpiresAt === null
-        ? null
-        : pending.refreshTokenExpiresAt !== undefined
-          ? new Date(pending.refreshTokenExpiresAt * 1000)
-          : undefined;
+    const refreshTokenExpiresAt = pending.refreshTokenExpiresAt !== undefined ? DateTime.fromSeconds(pending.refreshTokenExpiresAt) : undefined;
 
     return this.createFactor(actorId, pending.profile, pending.refreshToken, refreshTokenExpiresAt);
   }
@@ -311,7 +305,7 @@ export class OAuth2FactorService {
     factorId: string,
   ): Promise<{
     accessToken: string;
-    expiresAt: Date | null;
+    expiresAt?: DateTime;
     scopes?: string[];
     idToken?: string;
   }> {
@@ -333,13 +327,13 @@ export class OAuth2FactorService {
       await this.repo.updateRefreshToken(factor.id, {
         encryptedRefreshToken: encryptedValue,
         encryptedRefreshTokenDek: encryptedDek,
-        refreshTokenExpiresAt: tokens.expiresAt ?? null,
+        refreshTokenExpiresAt: tokens.expiresAt,
       });
     }
 
     return {
       accessToken: tokens.accessToken,
-      expiresAt: tokens.expiresAt ?? null,
+      expiresAt: tokens.expiresAt,
       scopes: tokens.scopes,
       idToken: tokens.idToken,
     };
@@ -352,8 +346,8 @@ export class OAuth2FactorService {
   private async createFactor(
     actorId: string,
     profile: OAuth2Profile,
-    refreshToken: string | undefined,
-    refreshTokenExpiresAt: Date | null | undefined,
+    refreshToken?: string,
+    refreshTokenExpiresAt?: DateTime,
   ): Promise<OAuth2Factor> {
     let encryptedRefreshToken: string | undefined;
     let encryptedRefreshTokenDek: string | undefined;

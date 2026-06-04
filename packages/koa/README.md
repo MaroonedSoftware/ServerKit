@@ -196,6 +196,17 @@ router.post('/api/json', bodyParserMiddleware(['application/json']), async ctx =
 
 `requireSignature` validates that an incoming request was signed with a shared secret. It computes an HMAC over `ctx.rawBody` and compares it to a header value. Use it for webhook endpoints from GitHub, Stripe, and similar services.
 
+The verification rule lives in the `request.signature.valid` policy (`DefaultSignaturePolicy`), which `requireSignature` resolves through `PolicyService` — mirroring how `requirePolicy` is backed by `DefaultMfaSatisfiedPolicy`. Register it in your `PolicyRegistryMap` so the middleware can resolve it:
+
+```typescript
+import { REQUIRE_SIGNATURE_POLICY, DefaultSignaturePolicy } from '@maroonedsoftware/koa';
+
+// when building your PolicyRegistryMap
+registry.set(REQUIRE_SIGNATURE_POLICY, DefaultSignaturePolicy);
+```
+
+To change the rule (e.g. accept a rotated secret during a key rollover), subclass `DefaultSignaturePolicy` and register your subclass under the same name — no middleware changes needed.
+
 Store the options under a key in `AppConfig` and reference that key when adding the middleware:
 
 **config.json:**
@@ -222,6 +233,25 @@ router.post(
   async ctx => {
     ctx.status = 204;
   },
+);
+```
+
+#### Driving a different scheme
+
+`requireSignature` is generic over the resolved options type and takes an optional second argument — the policy name — to evaluate a different registered policy, so any scheme expressed as a `SignaturePolicyContext` policy runs through the same middleware. For example, Slack's v0 scheme via `SlackSignaturePolicy` from `@maroonedsoftware/slack`:
+
+```typescript
+import { requireSignature } from '@maroonedsoftware/koa';
+import { SLACK_SIGNATURE_POLICY, SlackSignaturePolicy, type SlackSignatureOptions, SlackConfig } from '@maroonedsoftware/slack';
+
+// register once: registry.set(SLACK_SIGNATURE_POLICY, SlackSignaturePolicy);
+// store the Slack config (signingSecret, optional signatureMaxAgeSeconds) under the 'slack' AppConfig key
+
+router.post(
+  '/slack/events',
+  bodyParserMiddleware(['application/json']),
+  requireSignature<SlackSignatureOptions>('slack', SLACK_SIGNATURE_POLICY),
+  handler,
 );
 ```
 

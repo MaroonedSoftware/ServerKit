@@ -9,6 +9,7 @@ export * from './middleware/server/authentication.middleware.js';
 export * from './middleware/router/body.parser.middleware.js';
 export * from './middleware/router/require.policy.middleware.js';
 export * from './middleware/router/require.signature.middleware.js';
+export * from './policies/request.signature.valid.policy.js';
 export * from './parsers/serverkit.parser.js';
 export * from './serverkit.bodyparser.js';
 export * from './parsers/json.parser.js';

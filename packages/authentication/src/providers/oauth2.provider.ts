@@ -1,4 +1,5 @@
 import { Injectable } from 'injectkit';
+import { DateTime } from 'luxon';
 import { httpError } from '@maroonedsoftware/errors';
 
 /**
@@ -10,7 +11,7 @@ import { httpError } from '@maroonedsoftware/errors';
 export type OAuth2Tokens = {
   accessToken: string;
   refreshToken?: string;
-  expiresAt?: Date;
+  expiresAt?: DateTime;
   /** Some non-OIDC providers (notably Google when `openid` scope is requested) still issue an id_token. */
   idToken?: string;
   scopes?: string[];

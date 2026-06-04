@@ -1,4 +1,5 @@
 import { RateLimiterAbstract, RateLimiterRes } from 'rate-limiter-flexible';
+import { DateTime } from 'luxon';
 import { ServerKitMiddleware } from '../../serverkit.middleware.js';
 import { httpError } from '@maroonedsoftware/errors';
 
@@ -25,7 +26,7 @@ export const rateLimiterMiddleware = (rateLimiter: RateLimiterAbstract): ServerK
           'retry-after': (error.msBeforeNext / 1000).toString(),
           'x-ratelimit-limit': rateLimiter.points.toString(),
           'x-ratelimit-remaining': error.remainingPoints.toString(),
-          'x-ratelimit-reset': Math.ceil((Date.now() + error.msBeforeNext) / 1000).toString(),
+          'x-ratelimit-reset': Math.ceil(DateTime.now().plus({ milliseconds: error.msBeforeNext }).toSeconds()).toString(),
         };
       }
 

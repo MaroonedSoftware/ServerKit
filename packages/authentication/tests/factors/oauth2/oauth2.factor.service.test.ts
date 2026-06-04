@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import crypto from 'node:crypto';
+import { DateTime } from 'luxon';
 import {
   OAuth2FactorService,
   OAuth2FactorServiceOptions,
@@ -81,12 +82,12 @@ const makeClient = (overrides: Partial<OAuth2ProviderClient> = {}): OAuth2Provid
   validateAuthorizationCode: vi.fn(async (): Promise<OAuth2Tokens> => ({
     accessToken: 'access-token',
     refreshToken: 'refresh-token',
-    expiresAt: new Date(Date.now() + 3600_000),
+    expiresAt: DateTime.utc().plus({ hours: 1 }),
   })),
   refreshAccessToken: vi.fn(async (): Promise<OAuth2Tokens> => ({
     accessToken: 'new-access',
     refreshToken: 'rotated-refresh',
-    expiresAt: new Date(Date.now() + 3600_000),
+    expiresAt: DateTime.utc().plus({ hours: 1 }),
   })),
   ...overrides,
 });
@@ -453,7 +454,7 @@ describe('OAuth2FactorService', () => {
     it('does not re-persist when the refresh token is unchanged', async () => {
       providerConfig = makeProviderConfig({
         client: makeClient({
-          refreshAccessToken: vi.fn(async () => ({ accessToken: 'a', refreshToken: 'refresh-original', expiresAt: new Date(Date.now() + 1000) })),
+          refreshAccessToken: vi.fn(async () => ({ accessToken: 'a', refreshToken: 'refresh-original', expiresAt: DateTime.utc().plus({ seconds: 1 }) })),
         }),
       });
       ({ service, encryption } = makeService(providerConfig, repo, emailLookup, cache));

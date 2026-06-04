@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { randomBytes } from 'crypto';
+import { DateTime } from 'luxon';
 import { InMemoryKmsKeyMaterial, InMemoryKmsProvider } from '../../src/kms/in.memory.kms.provider.js';
 import { asNormalizedValue } from '../../src/kms/kms.provider.js';
 import { KeyNotFoundError, KeyRetiredError, KmsError } from '../../src/kms/kms.errors.js';
@@ -85,7 +86,7 @@ describe('InMemoryKmsProvider', () => {
         purpose: 'reveal-ssn',
         context: { a: '1' },
       });
-      expect(provider.decryptAudit[0]!.at).toBeInstanceOf(Date);
+      expect(DateTime.isDateTime(provider.decryptAudit[0]!.at)).toBe(true);
     });
 
     it('does not audit failed decrypts', async () => {

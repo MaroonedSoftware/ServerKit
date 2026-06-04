@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, createHmac, randomBytes, randomUUID } from 'crypto';
+import { DateTime } from 'luxon';
 import { Injectable } from 'injectkit';
 import { KeyNotFoundError, KeyRetiredError, KmsError } from './kms.errors.js';
 import { EncryptionContext, EncryptResult, KmsProvider, NormalizedValue } from './kms.provider.js';
@@ -30,7 +31,7 @@ type DecryptAuditEntry = {
   keyId: string;
   purpose: string;
   context: EncryptionContext;
-  at: Date;
+  at: DateTime;
 };
 
 /**
@@ -107,7 +108,7 @@ export class InMemoryKmsProvider extends KmsProvider {
     const dek = this.unwrapDek(row.wrappedDek);
     const plaintext = this.decryptWithDek(dek, ciphertext, context);
 
-    this.decryptAudit.push({ id, keyId, purpose, context, at: new Date() });
+    this.decryptAudit.push({ id, keyId, purpose, context, at: DateTime.utc() });
 
     return plaintext;
   }

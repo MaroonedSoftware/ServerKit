@@ -272,6 +272,9 @@ importers:
       injectkit:
         specifier: ^1.4.2
         version: 1.4.2
+      luxon:
+        specifier: ^3.7.2
+        version: 3.7.2
     devDependencies:
       '@repo/config-eslint':
         specifier: workspace:*
@@ -279,6 +282,9 @@ importers:
       '@repo/config-typescript':
         specifier: workspace:*
         version: link:../config-typescript
+      '@types/luxon':
+        specifier: ^3.7.1
+        version: 3.7.1
 
   packages/errors:
     devDependencies:
@@ -341,6 +347,9 @@ importers:
       injectkit:
         specifier: ^1.4.2
         version: 1.4.2
+      luxon:
+        specifier: ^3.7.2
+        version: 3.7.2
     devDependencies:
       '@maroonedsoftware/koa':
         specifier: workspace:*
@@ -360,6 +369,9 @@ importers:
       '@repo/config-typescript':
         specifier: workspace:*
         version: link:../config-typescript
+      '@types/luxon':
+        specifier: ^3.7.1
+        version: 3.7.1
       '@types/pg':
         specifier: ^8.20.0
         version: 8.20.0
@@ -414,6 +426,9 @@ importers:
       injectkit:
         specifier: ^1.4.2
         version: 1.4.2
+      luxon:
+        specifier: ^3.7.2
+        version: 3.7.2
       qs:
         specifier: ^6.15.2
         version: 6.15.2
@@ -448,6 +463,9 @@ importers:
       '@types/koa__cors':
         specifier: ^5.0.1
         version: 5.0.1
+      '@types/luxon':
+        specifier: ^3.7.1
+        version: 3.7.1
       '@types/qs':
         specifier: ^6.15.1
         version: 6.15.1
@@ -638,6 +656,9 @@ importers:
       '@maroonedsoftware/logger':
         specifier: workspace:*
         version: link:../logger
+      '@maroonedsoftware/policies':
+        specifier: workspace:*
+        version: link:../policies
       '@slack/web-api':
         specifier: ^7.16.0
         version: 7.16.0
@@ -651,6 +672,12 @@ importers:
       '@repo/config-typescript':
         specifier: workspace:*
         version: link:../config-typescript
+      '@types/luxon':
+        specifier: ^3.7.1
+        version: 3.7.1
+      luxon:
+        specifier: ^3.7.2
+        version: 3.7.2
 
   packages/utilities:
     devDependencies:

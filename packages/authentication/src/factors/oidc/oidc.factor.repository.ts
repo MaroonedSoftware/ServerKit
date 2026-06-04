@@ -1,4 +1,5 @@
 import { Injectable } from 'injectkit';
+import { DateTime } from 'luxon';
 import { Factor, FactorRepository } from '../factor.repository.js';
 
 /**
@@ -27,8 +28,8 @@ export type OidcFactorValue = {
   encryptedRefreshToken?: string;
   /** Encrypted DEK for the refresh token. Present iff `encryptedRefreshToken` is. */
   encryptedRefreshTokenDek?: string;
-  /** When the persisted refresh token expires. `null`/`undefined` for non-expiring refresh tokens. */
-  refreshTokenExpiresAt?: Date | null;
+  /** When the persisted refresh token expires. Omit (`undefined`) for non-expiring refresh tokens. */
+  refreshTokenExpiresAt?: DateTime;
 };
 
 /**
@@ -69,11 +70,11 @@ export interface OidcFactorRepository extends FactorRepository<OidcFactor, OidcF
 
   /**
    * Update the persisted refresh token for an existing factor (e.g. after rotation
-   * during a token grant). Pass `null` for `refreshTokenExpiresAt` to mean "no expiry".
+   * during a token grant). Omit `refreshTokenExpiresAt` to mean "no expiry".
    */
   updateRefreshToken(
     factorId: string,
-    args: { encryptedRefreshToken: string; encryptedRefreshTokenDek: string; refreshTokenExpiresAt?: Date | null },
+    args: { encryptedRefreshToken: string; encryptedRefreshTokenDek: string; refreshTokenExpiresAt?: DateTime },
   ): Promise<void>;
 
   /** Update the last-seen email on an existing factor. */

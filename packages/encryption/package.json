@@ -40,10 +40,12 @@
   "dependencies": {
     "@maroonedsoftware/errors": "workspace:*",
     "@node-rs/argon2": "^2.0.2",
-    "injectkit": "^1.4.2"
+    "injectkit": "^1.4.2",
+    "luxon": "^3.7.2"
   },
   "devDependencies": {
     "@repo/config-eslint": "workspace:*",
-    "@repo/config-typescript": "workspace:*"
+    "@repo/config-typescript": "workspace:*",
+    "@types/luxon": "^3.7.1"
   }
 }
