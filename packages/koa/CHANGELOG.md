@@ -1,5 +1,35 @@
 # @maroonedsoftware/koa
 
+## 2.3.0
+
+### Minor Changes
+
+- 3422e87: `requireSignature` now verifies the request HMAC through the new `request.signature.valid` policy (`DefaultSignaturePolicy`) resolved via `PolicyService`, instead of computing the comparison inline — mirroring how `requirePolicy` is backed by `DefaultMfaSatisfiedPolicy`. The middleware, its `requireSignature(optionsKey)` signature, `SignatureOptions`, and the 401-on-mismatch behaviour are unchanged.
+
+  The verification rule is now swappable: subclass `DefaultSignaturePolicy` and re-register it under `REQUIRE_SIGNATURE_POLICY` to change the behaviour (e.g. accept a rotated secret during a key rollover) without touching the middleware. The policy receives `SignaturePolicyContext<TOptions>` — the raw body, a case-insensitive `getHeader` accessor, and the resolved options — so a custom rule can read whichever header(s) its scheme needs rather than a single pre-extracted signature. The context (and `requireSignature<TOptions>(optionsKey)`) are generic over the options shape, defaulting to `SignatureOptions`; a custom policy can declare a richer config (e.g. a Slack signing secret plus a replay window) and be driven through the same middleware.
+
+  `requireSignature(optionsKey, policy?)` now takes an optional policy name (defaulting to `REQUIRE_SIGNATURE_POLICY`), so a different registered policy can verify a different scheme through the same middleware — e.g. `SLACK_SIGNATURE_POLICY` from `@maroonedsoftware/slack`.
+
+  **Action required:** register the policy in your `PolicyRegistryMap` (`registry.set(REQUIRE_SIGNATURE_POLICY, DefaultSignaturePolicy)`). Routes using `requireSignature` will otherwise fail to resolve the policy at request time.
+
+### Patch Changes
+
+- 3422e87: Replace native JS `Date` with Luxon `DateTime` throughout, per the repo's date/time convention. Native `Date` now appears only at true interop boundaries (e.g. converting a third-party adapter's `Date` with `DateTime.fromJSDate`).
+
+  **Breaking — `@maroonedsoftware/authentication`:** OAuth 2.0 / OIDC token and factor types now use `DateTime` instead of `Date`:
+  - `OAuth2Tokens.expiresAt` is now `DateTime | undefined`. Adapters implementing `OAuth2ProviderClient` must convert at the boundary — e.g. `DateTime.fromJSDate(arcticTokens.accessTokenExpiresAt())`.
+  - `OAuth2FactorValue.refreshTokenExpiresAt`, `OidcFactorValue.refreshTokenExpiresAt`, and the `updateRefreshToken(...)` `refreshTokenExpiresAt` argument are now `DateTime` (optional; omit for a non-expiring refresh token, where the type was previously `Date | null`). Repository implementations that persist to a `timestamptz` column should call `.toJSDate()` on write and `DateTime.fromJSDate(...)` on read.
+  - `OAuth2FactorService.refreshAccessToken(...)` now resolves `expiresAt?: DateTime` (was `Date | null`).
+
+  **Breaking — `@maroonedsoftware/johnny5`:** `DaemonStatus.startedAt` is now a `DateTime` (was `Date`). The on-disk pid record is unchanged (still an ISO string).
+
+  `@maroonedsoftware/encryption`, `@maroonedsoftware/koa`, and `@maroonedsoftware/slack` change only internal time computations (KMS decrypt-audit timestamp, rate-limit reset header, Slack signature default `now`); no public API change. `luxon` is added as a runtime dependency to `encryption`, `johnny5`, and `koa`.
+
+- Updated dependencies [3422e87]
+- Updated dependencies [3422e87]
+  - @maroonedsoftware/authentication@4.28.0
+  - @maroonedsoftware/policies@0.5.0
+
 ## 2.2.16
 
 ### Patch Changes
