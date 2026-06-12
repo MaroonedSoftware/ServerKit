@@ -1,6 +1,6 @@
 {
   "$schema": "https://turborepo.com/schema.json",
-  "globalPassThroughEnv": ["CI", "JOHNNY5_NON_INTERACTIVE"],
+  "globalPassThroughEnv": ["CI", "JOHNNY5_NON_INTERACTIVE", "SWC_NODE_PROJECT"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

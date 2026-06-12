@@ -47,6 +47,25 @@ process.exit(await app.run(process.argv));
 - `my-cli doctor` is auto-registered because `checks` is non-empty; `my-cli doctor --fix` runs `autoFix` hooks where available.
 - `-v` / `--verbose` is wired up globally and flips `logger.debug` on.
 
+## TypeScript bin shim
+
+To ship a `bin` that runs your TypeScript entry point directly (no build step), point `package.json`'s `bin` at a plain `.js` shim and let johnny5 wire up the [`@swc-node/register`](https://github.com/swc-project/swc-node) ESM loader:
+
+```js
+#!/usr/bin/env node
+// bin/my-cli.js
+import { runTypescriptBin } from '@maroonedsoftware/johnny5/bin';
+await runTypescriptBin(import.meta.url); // registers swc, then imports ../src/index.ts
+```
+
+`runTypescriptBin(import.meta.url, { tsconfig?, entry? })` defaults to `../tsconfig.json` and `../src/index.ts` relative to the bin file. Compared to `node --import @swc-node/register/esm-register`, the shim fixes three sharp edges:
+
+- The stock `esm-register` shim resolves the loader hook from `process.cwd()`, which breaks when the bin is invoked from outside its own package (e.g. a workspace-root launcher or a globally linked bin). johnny5 anchors the hook to the bin file instead.
+- swc-node discovers its tsconfig from cwd; the shim sets `SWC_NODE_PROJECT` to the package tsconfig (unless you've already set it).
+- Node 26 deprecates `module.register()` (DEP0205); the shim suppresses that warning narrowly, just around the register call, without disabling deprecation warnings globally.
+
+`registerTypescriptLoader(import.meta.url, { tsconfig? })` is also exported if you want the loader without the entry-point import. `@swc-node/register` is resolved from the package that owns the bin file, so install it there (it's declared as an optional peer).
+
 ## Defining commands
 
 `defineCommand` is an identity helper that lets TypeScript infer the option object from the literal:
@@ -145,8 +164,8 @@ const checks = [
     pnpmVersion({ expected: '10.24.0' }),
     envFile({ path: '.env', required: ['DATABASE_URL', 'REDIS_HOST'] }),
     portsFree({ ports: [{ port: 3000, label: 'api' }, 5432, 6379] }),
-    postgresReachable(),                       // reads DATABASE_URL from AppConfig / env
-    redisReachable({ hostConfigKey: 'REDIS_HOST', portConfigKey: 'REDIS_PORT' }),
+    postgresReachable(),                       // reads DATABASE_URL from AppConfig, falling back to process.env
+    redisReachable(),                          // REDIS_HOST/REDIS_PORT from AppConfig / env, defaulting to localhost:6379
     dockerServicesUp({ autoStart: true }),     // adds an autoFix that runs `docker compose up -d`
     kyselyTableExists({ db, table: 'relation_tuples' }),    // verify a migration-managed table
     permissionsSchemaCompiled(),                             // .perm files in sync with generated TS
@@ -400,6 +419,7 @@ if (!apiKey) {
 | Path | Provides |
 | --- | --- |
 | `@maroonedsoftware/johnny5` | `createCliApp`, `defineCommand`, `registerCommands`, `runChecks`, `buildContext`, `buildDefaultAppConfig`, `loadWorkspacePlugins`, `createShell`, `createDaemons`, `johnnyPaths`, `projectSlug`, `createDefaultLogger`, `prompts`, `unwrap`, `wizard`, `isInteractive`, plus the `Check` / `CommandModule` / `CliContext` / `Daemons` / `WizardSession` types. |
+| `/bin` | `runTypescriptBin`, `registerTypescriptLoader` — TypeScript bin shim (resolves `@swc-node/register` from the consumer). |
 | `/serverkit` | `bootstrapForCli`, `configureServerKitModules`, `getOrBootstrapContainer`, `requireContainer`. |
 | `/versions` | `nodeVersion`, `pnpmVersion`. |
 | `/filesystem` | `envFile`, `portsFree`. |

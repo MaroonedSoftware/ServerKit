@@ -1,9 +1,10 @@
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AppConfig } from '@maroonedsoftware/appconfig';
 import { buildContext, buildDefaultAppConfig } from '../src/context.js';
+import { createMockLogger } from './helpers.js';
 
 describe('buildDefaultAppConfig', () => {
     it('builds an AppConfig instance', async () => {
@@ -64,6 +65,21 @@ describe('buildContext', () => {
 
     it('silently skips env files that do not exist', async () => {
         await expect(buildContext({ repoRoot: dir, envFiles: ['nope.env'] })).resolves.toBeDefined();
+    });
+
+    it('warns and continues when an env file exists but cannot be read', async () => {
+        // chmod-based denial doesn't apply to root, so the assertion would be
+        // meaningless there (e.g. some CI containers).
+        if (process.getuid?.() === 0) return;
+        const envPath = path.join(dir, '.env');
+        await writeFile(envPath, 'JOHNNY5_TEST_UNREADABLE=x\n');
+        await chmod(envPath, 0o000);
+        const logger = createMockLogger();
+        await expect(buildContext({ repoRoot: dir, envFiles: ['.env'], logger })).resolves.toBeDefined();
+        expect(logger.warn).toHaveBeenCalledTimes(1);
+        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining(envPath));
+        expect(process.env['JOHNNY5_TEST_UNREADABLE']).toBeUndefined();
+        await chmod(envPath, 0o600); // so afterEach rm can clean up
     });
 
     it('resolves absolute paths in envFiles directly', async () => {

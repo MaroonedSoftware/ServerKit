@@ -1,10 +1,12 @@
+import { readConfigString } from '../config.values.js';
 import type { Check } from '../../types.js';
 
 /** Options for `postgresReachable`. */
 export interface PostgresReachableOptions {
     /**
      * The AppConfig key whose string value holds the connection string.
-     * Defaults to `'DATABASE_URL'`.
+     * Defaults to `'DATABASE_URL'`. When the key is absent from the config
+     * (or the getter throws), falls back to `process.env[configKey]`.
      */
     configKey?: string;
     /** Direct override — takes precedence over `configKey`. */
@@ -15,8 +17,12 @@ export interface PostgresReachableOptions {
 
 /**
  * Check that Postgres accepts a connection and responds to `select version()`.
- * Lazily loads `pg` so consumers who don't need the check don't pay the import
- * cost. Returns a failing result with a clear message when `pg` isn't installed.
+ *
+ * The connection string is resolved when the check runs (not when it is
+ * constructed): an explicit `connectionString` wins, then the config value for
+ * `configKey`, then `process.env[configKey]`. Lazily loads `pg` so consumers
+ * who don't need the check don't pay the import cost. Returns a failing result
+ * with a clear message when `pg` isn't installed.
  */
 export const postgresReachable = (options: PostgresReachableOptions = {}): Check => ({
     name: 'postgres reachable',
@@ -28,15 +34,10 @@ export const postgresReachable = (options: PostgresReachableOptions = {}): Check
             return { ok: false, message: '`pg` is not installed; add it as a dependency to use this check' };
         }
 
+        // Resolved here, at check run time, so env files loaded during CLI
+        // startup (and the default sourceless AppConfig) are handled.
         const configKey = options.configKey ?? 'DATABASE_URL';
-        let url: string | undefined = options.connectionString;
-        if (!url) {
-            try {
-                url = ctx.config.getString(configKey);
-            } catch {
-                url = process.env[configKey];
-            }
-        }
+        const url = options.connectionString ?? readConfigString(ctx, configKey) ?? process.env[configKey];
         if (!url) {
             return {
                 ok: false,

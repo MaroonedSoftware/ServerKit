@@ -3,6 +3,7 @@ import { defineConfig } from 'tsup';
 export default defineConfig({
     entry: {
         index: 'src/index.ts',
+        'bin.shim': 'src/bin.shim.ts',
         'integrations/serverkit/index': 'src/integrations/serverkit/index.ts',
         'integrations/postgres/index': 'src/integrations/postgres/index.ts',
         'integrations/redis/index': 'src/integrations/redis/index.ts',

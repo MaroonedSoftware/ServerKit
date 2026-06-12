@@ -33,6 +33,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./bin": {
+      "types": "./dist/bin.shim.d.ts",
+      "import": "./dist/bin.shim.js"
+    },
     "./serverkit": {
       "types": "./dist/integrations/serverkit/index.d.ts",
       "import": "./dist/integrations/serverkit/index.js"
@@ -97,6 +101,7 @@
     "@maroonedsoftware/permissions": "workspace:*",
     "@maroonedsoftware/permissions-dsl": "workspace:*",
     "@napi-rs/keyring": "^1.1.6",
+    "@swc-node/register": "^1.11.1",
     "ioredis": "^5.10.0",
     "kysely": "^0.28.0",
     "pg": "^8.20.0"
@@ -112,6 +117,9 @@
       "optional": true
     },
     "@napi-rs/keyring": {
+      "optional": true
+    },
+    "@swc-node/register": {
       "optional": true
     },
     "ioredis": {
