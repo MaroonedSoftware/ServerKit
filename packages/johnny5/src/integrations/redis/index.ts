@@ -1,3 +1,4 @@
+import { envNumber, readConfigNumber, readConfigString } from '../config.values.js';
 import type { Check } from '../../types.js';
 
 /** Options for `redisReachable`. */
@@ -9,7 +10,8 @@ export interface RedisReachableOptions {
     /**
      * Optional AppConfig keys to read host/port from when they aren't supplied
      * directly. Default: `'REDIS_HOST'`, `'REDIS_PORT'`. Falls back to the
-     * matching `process.env` entry when the config getter throws.
+     * matching `process.env` entry when the key is absent from the config (or
+     * the getter throws), and finally to `localhost:6379`.
      */
     hostConfigKey?: string;
     portConfigKey?: string;
@@ -17,27 +19,14 @@ export interface RedisReachableOptions {
     timeoutMs?: number;
 }
 
-const readConfigString = (ctx: { config: { getString: (key: string) => string } }, key: string): string | undefined => {
-    try {
-        return ctx.config.getString(key);
-    } catch {
-        return process.env[key];
-    }
-};
-
-const readConfigNumber = (ctx: { config: { getNumber: (key: string) => number } }, key: string): number | undefined => {
-    try {
-        return ctx.config.getNumber(key);
-    } catch {
-        const raw = process.env[key];
-        return raw ? Number(raw) : undefined;
-    }
-};
-
 /**
  * Check that Redis is reachable and answers `PING`. Lazily loads `ioredis` so
  * consumers who don't need the check don't pay the import cost. Returns a
  * failing result with a clear message when `ioredis` isn't installed.
+ *
+ * Host and port are resolved when the check runs — options, then AppConfig,
+ * then `process.env`, then `localhost:6379` — so env files loaded during CLI
+ * startup are honored.
  */
 export const redisReachable = (options: RedisReachableOptions = {}): Check => ({
     name: 'redis reachable',
@@ -50,8 +39,12 @@ export const redisReachable = (options: RedisReachableOptions = {}): Check => ({
             return { ok: false, message: '`ioredis` is not installed; add it as a dependency to use this check' };
         }
 
-        const host = options.host ?? readConfigString(ctx, options.hostConfigKey ?? 'REDIS_HOST') ?? 'localhost';
-        const port = options.port ?? readConfigNumber(ctx, options.portConfigKey ?? 'REDIS_PORT') ?? 6379;
+        // Resolved here, at check run time, so env files loaded during CLI
+        // startup (and the default sourceless AppConfig) are handled.
+        const hostKey = options.hostConfigKey ?? 'REDIS_HOST';
+        const portKey = options.portConfigKey ?? 'REDIS_PORT';
+        const host = options.host ?? readConfigString(ctx, hostKey) ?? (process.env[hostKey] || undefined) ?? 'localhost';
+        const port = options.port ?? readConfigNumber(ctx, portKey) ?? envNumber(process.env[portKey]) ?? 6379;
 
         const redis = new RedisCtor({
             host,

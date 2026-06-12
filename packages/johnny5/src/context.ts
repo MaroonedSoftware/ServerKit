@@ -17,7 +17,8 @@ export interface BuildContextOptions {
     /**
      * Paths to .env files (absolute, or relative to the resolved repoRoot) to
      * load into process.env before building AppConfig. Missing files are
-     * silently skipped. Existing process.env values are not overridden.
+     * silently skipped; files that exist but cannot be read are skipped with a
+     * logged warning. Existing process.env values are not overridden.
      * Defaults to ['.env', 'apps/api/.env'].
      */
     envFiles?: string[];
@@ -43,9 +44,18 @@ const expandValue = (value: string): string =>
         return process.env[key] ?? '';
     });
 
-const loadEnvFile = (path: string): void => {
+const loadEnvFile = (path: string, logger: CliLogger): void => {
     if (!existsSync(path)) return;
-    for (const line of readFileSync(path, 'utf-8').split('\n')) {
+    let contents: string;
+    try {
+        contents = readFileSync(path, 'utf-8');
+    } catch (err) {
+        // An existing-but-unreadable file (EPERM/EACCES from permissions or a
+        // sandbox) must not take the whole CLI down before any command runs.
+        logger.warn(`skipping env file ${path}: ${(err as Error).message}`);
+        return;
+    }
+    for (const line of contents.split('\n')) {
         const trimmed = line.trim();
         if (!trimmed || trimmed.startsWith('#')) continue;
         const eqIdx = trimmed.indexOf('=');
@@ -74,9 +84,11 @@ export const buildDefaultAppConfig = async (): Promise<AppConfig> =>
     new AppConfigBuilder().addProvider(new AppConfigProviderDotenv()).build();
 
 /**
- * Build the `CliContext` handed to every command, check, and plugin hook. Loads
- * `.env` files into `process.env`, resolves the workspace `repoRoot`, and wires
- * up shell, logger, and config.
+ * Build the `CliContext` handed to every command, check, and plugin hook.
+ *
+ * Resolves the workspace `repoRoot`, creates the logger, then loads `.env`
+ * files into `process.env` (warning via that logger about files that exist
+ * but cannot be read), and finally wires up shell, daemons, and config.
  */
 export const buildContext = async (options: BuildContextOptions = {}): Promise<CliContext> => {
     // Start from cwd so consumers linked from a sibling repo (or installed
@@ -86,12 +98,13 @@ export const buildContext = async (options: BuildContextOptions = {}): Promise<C
     const repoRoot = options.repoRoot ?? findRepoRoot(cwd);
     const paths: CliPaths = { cwd, repoRoot };
 
+    const logger = options.logger ?? createDefaultLogger({ verbose: options.verbose });
+
     for (const envFile of options.envFiles ?? ['.env', 'apps/api/.env']) {
         const absolute = envFile.startsWith('/') ? envFile : resolve(repoRoot, envFile);
-        loadEnvFile(absolute);
+        loadEnvFile(absolute, logger);
     }
 
-    const logger = options.logger ?? createDefaultLogger({ verbose: options.verbose });
     const shell = createShell(repoRoot, logger);
     const daemons = createDaemons(repoRoot, shell, logger);
     const config = options.config ?? (await buildDefaultAppConfig());

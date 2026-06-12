@@ -53,32 +53,69 @@ describe('postgresReachable', () => {
         expect(clientHistory[0]?.end).toHaveBeenCalled();
     });
 
+    const captureConnectionStrings = (): Array<string | undefined> => {
+        const seen: Array<string | undefined> = [];
+        nextClientFactory = config => {
+            seen.push(config.connectionString);
+            return {
+                connect: vi.fn(async () => undefined),
+                query: vi.fn(async () => ({ rows: [{ version: 'PostgreSQL 16.0' }] })),
+                end: vi.fn(async () => undefined),
+            };
+        };
+        return seen;
+    };
+
     it('uses the explicit connectionString in preference to config / env', async () => {
+        process.env['DATABASE_URL'] = 'postgres://fromenv';
+        const seen = captureConnectionStrings();
         await postgresReachable({ connectionString: 'postgres://explicit' }).run(
-            createMockContext({ config: new AppConfig({ DATABASE_URL: 'postgres://from-config' }) }),
+            createMockContext({ config: new AppConfig({ DATABASE_URL: 'postgres://fromconfig' }) }),
         );
-        expect(clientHistory[0]).toBeDefined();
-        // We can't read the connection string off the fake client directly, but the test
-        // documents the priority. The next test pins config-based fallback.
+        expect(seen[0]).toBe('postgres://explicit');
+    });
+
+    it('prefers the config value over process.env', async () => {
+        process.env['DATABASE_URL'] = 'postgres://fromenv';
+        const seen = captureConnectionStrings();
+        await postgresReachable().run(createMockContext({ config: new AppConfig({ DATABASE_URL: 'postgres://fromconfig' }) }));
+        expect(seen[0]).toBe('postgres://fromconfig');
     });
 
     it('falls back to process.env when the configKey is absent on AppConfig', async () => {
-        process.env['DATABASE_URL'] = 'postgres://from-env';
+        // Regression: AppConfig coerces a missing key to the literal string
+        // 'undefined' instead of throwing, which used to win over the env var
+        // and send the check to a bogus host.
+        process.env['DATABASE_URL'] = 'postgres://fromenv';
+        const seen = captureConnectionStrings();
         const result = await postgresReachable().run(createMockContext());
         expect(result.ok).toBe(true);
+        expect(seen[0]).toBe('postgres://fromenv');
+    });
+
+    it('falls back to process.env when the config getter throws', async () => {
+        process.env['DATABASE_URL'] = 'postgres://fromenv';
+        const seen = captureConnectionStrings();
+        const ctx = createMockContext();
+        ctx.config.getAs = ((key: string) => {
+            throw new Error(`no ${key}`);
+        }) as never;
+        const result = await postgresReachable().run(ctx);
+        expect(result.ok).toBe(true);
+        expect(seen[0]).toBe('postgres://fromenv');
     });
 
     it('fails with a clear message when neither config nor env have the key', async () => {
         delete process.env['DATABASE_URL'];
-        const ctx = createMockContext();
-        // AppConfig default getString returns 'undefined' string, which is truthy — but we want
-        // the test to lock in the "configKey is not set" branch by overriding getString to throw.
-        const originalGetString = ctx.config.getString.bind(ctx.config);
-        ctx.config.getString = ((key: string) => {
-            throw new Error(`no ${key}`);
-        }) as never;
-        const result = await postgresReachable({ configKey: 'NEVER_SET_PG_URL' }).run(ctx);
-        ctx.config.getString = originalGetString as never;
+        const result = await postgresReachable().run(createMockContext());
+        expect(result.ok).toBe(false);
+        expect(result.message).toBe('DATABASE_URL is not set');
+        expect(clientHistory).toHaveLength(0);
+    });
+
+    it('fails with a clear message for a custom configKey that is set nowhere', async () => {
+        delete process.env['NEVER_SET_PG_URL'];
+        const result = await postgresReachable({ configKey: 'NEVER_SET_PG_URL' }).run(createMockContext());
         expect(result.ok).toBe(false);
         expect(result.message).toBe('NEVER_SET_PG_URL is not set');
     });

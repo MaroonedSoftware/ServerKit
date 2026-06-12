@@ -55,16 +55,11 @@ describe('redisReachable', () => {
     });
 
     it('defaults to localhost:6379 when no host/port is supplied and config is empty', async () => {
+        // Regression: AppConfig coerces missing keys ('undefined' / NaN) instead
+        // of throwing, which used to send the check to undefined:NaN.
         delete process.env['REDIS_HOST'];
         delete process.env['REDIS_PORT'];
-        const ctx = createMockContext();
-        ctx.config.getString = ((key: string) => {
-            throw new Error(`no ${key}`);
-        }) as never;
-        ctx.config.getNumber = ((key: string) => {
-            throw new Error(`no ${key}`);
-        }) as never;
-        await redisReachable().run(ctx);
+        await redisReachable().run(createMockContext());
         expect(history[0]?.config).toMatchObject({ host: 'localhost', port: 6379 });
     });
 
@@ -73,18 +68,29 @@ describe('redisReachable', () => {
         expect(history[0]?.config).toMatchObject({ host: 'cache', port: 6400 });
     });
 
-    it('falls back to process.env when the config getters throw', async () => {
-        process.env['REDIS_HOST'] = 'env-host';
+    it('falls back to process.env when the keys are absent from config', async () => {
+        process.env['REDIS_HOST'] = 'envhost';
+        process.env['REDIS_PORT'] = '6500';
+        await redisReachable().run(createMockContext());
+        expect(history[0]?.config).toMatchObject({ host: 'envhost', port: 6500 });
+    });
+
+    it('falls back to process.env when the config getter throws', async () => {
+        process.env['REDIS_HOST'] = 'envhost';
         process.env['REDIS_PORT'] = '6500';
         const ctx = createMockContext();
-        ctx.config.getString = ((key: string) => {
-            throw new Error(`no ${key}`);
-        }) as never;
-        ctx.config.getNumber = ((key: string) => {
+        ctx.config.getAs = ((key: string) => {
             throw new Error(`no ${key}`);
         }) as never;
         await redisReachable().run(ctx);
-        expect(history[0]?.config).toMatchObject({ host: 'env-host', port: 6500 });
+        expect(history[0]?.config).toMatchObject({ host: 'envhost', port: 6500 });
+    });
+
+    it('ignores empty-string and non-numeric values instead of producing NaN', async () => {
+        process.env['REDIS_PORT'] = 'not-a-number';
+        delete process.env['REDIS_HOST'];
+        await redisReachable().run(createMockContext({ config: new AppConfig({ REDIS_HOST: '', REDIS_PORT: 'also-not-a-number' }) }));
+        expect(history[0]?.config).toMatchObject({ host: 'localhost', port: 6379 });
     });
 
     it('honours custom config keys', async () => {
