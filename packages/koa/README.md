@@ -238,7 +238,7 @@ router.post(
 
 #### Driving a different scheme
 
-`requireSignature` is generic over the resolved options type and takes an optional second argument — the policy name — to evaluate a different registered policy, so any scheme expressed as a `SignaturePolicyContext` policy runs through the same middleware. For example, Slack's v0 scheme via `SlackSignaturePolicy` from `@maroonedsoftware/slack`:
+`requireSignature` is generic over the resolved options type and takes an optional second argument — an options object whose `policy` names a different registered policy to evaluate, so any scheme expressed as a `SignaturePolicyContext` policy runs through the same middleware. For example, Slack's v0 scheme via `SlackSignaturePolicy` from `@maroonedsoftware/slack`:
 
 ```typescript
 import { requireSignature } from '@maroonedsoftware/koa';
@@ -250,7 +250,7 @@ import { SLACK_SIGNATURE_POLICY, SlackSignaturePolicy, type SlackSignatureOption
 router.post(
   '/slack/events',
   bodyParserMiddleware(['application/json']),
-  requireSignature<SlackSignatureOptions>('slack', SLACK_SIGNATURE_POLICY),
+  requireSignature<SlackSignatureOptions>('slack', { policy: SLACK_SIGNATURE_POLICY }),
   handler,
 );
 ```

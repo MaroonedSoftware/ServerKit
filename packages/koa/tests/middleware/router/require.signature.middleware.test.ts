@@ -174,7 +174,7 @@ describe('requireSignature', () => {
       const body = Buffer.from('hello world');
       const ctx = makeCtx(body, computeSignature(DEFAULT_OPTIONS, body));
 
-      await requireSignature(OPTIONS_KEY, 'slack.signature.valid')(ctx, mockNext);
+      await requireSignature(OPTIONS_KEY, { policy: 'slack.signature.valid' })(ctx, mockNext);
 
       const assert = ctx.container.get().assert;
       expect(assert).toHaveBeenCalledWith('slack.signature.valid', expect.objectContaining({ rawBody: body }), 401);

@@ -22,6 +22,19 @@ export type SignatureOptions = {
 };
 
 /**
+ * Options for {@link requireSignature}.
+ */
+export type RequireSignatureOptions = {
+  /**
+   * Name of the policy to evaluate. Defaults to {@link REQUIRE_SIGNATURE_POLICY}
+   * (the bundled HMAC rule). Point it at any registered policy whose context is
+   * `SignaturePolicyContext` to verify a different scheme through the same
+   * middleware — e.g. `SLACK_SIGNATURE_POLICY` from `@maroonedsoftware/slack`.
+   */
+  policy?: string;
+};
+
+/**
  * Router middleware that verifies a request signature against an HMAC of `ctx.rawBody`.
  *
  * Reads {@link SignatureOptions} from `AppConfig` using `optionsKey`, then
@@ -53,7 +66,8 @@ export type SignatureOptions = {
  *   {@link SignatureOptions} for the bundled HMAC rule; a custom policy can
  *   declare a richer shape (e.g. a Slack signing secret plus a replay window).
  * @param optionsKey - Key used to retrieve the options (`TOptions`) from `AppConfig` via `getAs`.
- * @param policy - Optional. Name of the policy to evaluate; defaults to
+ * @param opts - Optional. {@link RequireSignatureOptions} configuring the middleware.
+ * @param opts.policy - Name of the policy to evaluate; defaults to
  *   {@link REQUIRE_SIGNATURE_POLICY} (the bundled HMAC rule). Point it at any
  *   registered policy whose context is `SignaturePolicyContext` to verify a
  *   different scheme through the same middleware — e.g. `SLACK_SIGNATURE_POLICY`
@@ -70,14 +84,14 @@ export type SignatureOptions = {
  * // Slack's v0 scheme via SlackSignaturePolicy registered under SLACK_SIGNATURE_POLICY:
  * router.post(
  *   '/slack/events',
- *   requireSignature<SlackSignatureOptions>('slack', SLACK_SIGNATURE_POLICY),
+ *   requireSignature<SlackSignatureOptions>('slack', { policy: SLACK_SIGNATURE_POLICY }),
  *   handler,
  * );
  * ```
  */
 export const requireSignature = <TOptions = SignatureOptions>(
   optionsKey: string,
-  policy: string = REQUIRE_SIGNATURE_POLICY,
+  { policy = REQUIRE_SIGNATURE_POLICY }: RequireSignatureOptions = {},
 ): ServerKitRouterMiddleware => {
   return async (ctx, next) => {
     const options = ctx.container.get(AppConfig).getAs<TOptions>(optionsKey);
