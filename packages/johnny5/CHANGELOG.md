@@ -1,5 +1,12 @@
 # @maroonedsoftware/johnny5
 
+## 3.0.0
+
+### Patch Changes
+
+- Updated dependencies [950477d]
+  - @maroonedsoftware/koa@2.4.0
+
 ## 2.1.0
 
 ### Minor Changes

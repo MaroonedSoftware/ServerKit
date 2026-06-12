@@ -1,5 +1,11 @@
 # @maroonedsoftware/koa
 
+## 2.4.0
+
+### Minor Changes
+
+- 950477d: `requireSignature` now takes an optional options object as its second argument instead of a positional policy name: `requireSignature(optionsKey, { policy })`. Adds the `RequireSignatureOptions` type. Update call sites passing a policy name positionally — e.g. `requireSignature('slack', SLACK_SIGNATURE_POLICY)` becomes `requireSignature('slack', { policy: SLACK_SIGNATURE_POLICY })`.
+
 ## 2.3.0
 
 ### Minor Changes
