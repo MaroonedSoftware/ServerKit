@@ -1,5 +1,11 @@
 # @maroonedsoftware/appconfig
 
+## 1.8.0
+
+### Minor Changes
+
+- 54af043: Add `AppConfig.has(key)` to check whether a value is present (not `undefined` or `null`), and a `get(key, defaultValue)` overload that falls back only when the stored value is missing — not when it is merely falsy.
+
 ## 1.7.0
 
 ### Minor Changes
