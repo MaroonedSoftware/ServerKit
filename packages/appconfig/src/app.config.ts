@@ -22,20 +22,54 @@ export class AppConfig<T = Record<string, unknown>> {
   constructor(private readonly config: T) {}
 
   /**
+   * Checks whether a configuration value is present for a given key.
+   *
+   * Returns `false` when the value is `undefined` or `null`. Because keys are
+   * deep-merged from multiple sources, a statically-typed key may still be
+   * absent at runtime — use this to distinguish "missing" from "falsy".
+   *
+   * @param key - The configuration key to check.
+   * @returns `true` if the value is neither `undefined` nor `null`.
+   *
+   * @example
+   * ```typescript
+   * const config = new AppConfig({ port: 3000, host: undefined });
+   * config.has('port'); // true
+   * config.has('host'); // false
+   * ```
+   */
+  has(key: keyof T): boolean {
+    const value = this.config[key];
+    return value !== undefined && value !== null;
+  }
+
+  /**
    * Retrieves a configuration value by key.
+   *
+   * When a `defaultValue` is supplied, it is returned only when the stored
+   * value is missing (`undefined` or `null`) — not when it is merely falsy
+   * (e.g. `0`, `''`, `false`).
    *
    * @template K - The key type, must be a key of T.
    * @param key - The configuration key to retrieve.
-   * @returns The configuration value for the given key.
+   * @param defaultValue - Value to return when the stored value is missing.
+   * @returns The configuration value for the given key, or `defaultValue`.
    *
    * @example
    * ```typescript
    * const config = new AppConfig({ port: 3000, host: 'localhost' });
    * const port = config.get('port'); // Returns 3000, typed as number
+   * const retries = config.get('retries', 3); // Falls back to 3 when missing
    * ```
    */
-  get(key: keyof T): T[keyof T] {
-    return this.config[key];
+  get<K extends keyof T>(key: K): T[K];
+  get<K extends keyof T>(key: K, defaultValue: NonNullable<T[K]>): NonNullable<T[K]>;
+  get<K extends keyof T>(key: K, defaultValue?: NonNullable<T[K]>): T[K] {
+    const value = this.config[key];
+    if (arguments.length < 2) {
+      return value;
+    }
+    return value === undefined || value === null ? (defaultValue as T[K]) : value;
   }
 
   /**
@@ -69,7 +103,6 @@ export class AppConfig<T = Record<string, unknown>> {
    * The value is converted to a string using `String()`. This is useful when
    * you need to ensure a value is a string regardless of its original type.
    *
-   * @template K - The key type, must be a key of T.
    * @param key - The configuration key to retrieve.
    * @returns The configuration value converted to a string.
    *
@@ -91,7 +124,6 @@ export class AppConfig<T = Record<string, unknown>> {
    * you need to ensure a value is a number regardless of its original type.
    * Note: Invalid conversions will result in `NaN`.
    *
-   * @template K - The key type, must be a key of T.
    * @param key - The configuration key to retrieve.
    * @returns The configuration value converted to a number.
    *
@@ -113,7 +145,6 @@ export class AppConfig<T = Record<string, unknown>> {
    * you need to ensure a value is a boolean regardless of its original type.
    * Note: Only falsy values (false, 0, '', null, undefined, NaN) become false.
    *
-   * @template K - The key type, must be a key of T.
    * @param key - The configuration key to retrieve.
    * @returns The configuration value converted to a boolean.
    *
@@ -134,7 +165,6 @@ export class AppConfig<T = Record<string, unknown>> {
    * The value is cast to an object type. This is useful when you know a value
    * is an object and want to access it with object methods.
    *
-   * @template K - The key type, must be a key of T.
    * @param key - The configuration key to retrieve.
    * @returns The configuration value cast as an object.
    *
