@@ -53,20 +53,30 @@ packages/
 ├── appconfig/       # Configuration management with multiple sources
 ├── authentication/  # Scheme dispatch, sessions, JWT, OTP, password/email/phone/authenticator/FIDO factors
 ├── cache/           # CacheProvider abstraction with an ioredis implementation
-├── encryption/      # AES-GCM envelope encryption and per-id KMS provider
+├── encryption/      # AES-GCM envelope encryption, per-id KMS provider, PKCE helpers
 ├── errors/          # HTTP error handling and PostgreSQL error mapping
+├── eventbus/        # In-process event bus (subscribers + registration)
 ├── jobbroker/       # Background job processing (pg-boss wrapper)
+├── johnny5/         # CLI/tooling (commander, doctor, integrations keyring, plugin loader)
 ├── koa/             # Koa middleware and utilities
 ├── kysely/          # Kysely repository base, transaction helpers, PG type overrides
 ├── logger/          # Logger interface and console implementation
 ├── multipart/       # Multipart form-data parsing
 ├── permissions/     # Zanzibar-style relationship-based access control
+├── permissions-dsl/ # DSL for the permissions language (grammar, parser, compiler, codegen, CLI)
 ├── policies/        # Named, DI-friendly allow/deny policies with PolicyService
-├── utilities/       # Common utilities (UUID, email, base32)
+├── scim/            # SCIM user provisioning (filter parser, patch, router, schemas, services)
+├── slack/           # Slack dispatcher (command/event/interaction handlers, signature verification)
+├── utilities/       # Common utilities (UUID, email, base32, avatar generation)
 ├── zod/             # Zod-to-httpError validation helper
 ├── config-eslint/   # Shared ESLint configuration
 └── config-typescript/ # Shared TypeScript configuration
+
+apps/
+└── vscode-extension/ # Language client/server for the permissions DSL
 ```
+
+> Note: `permissions-dsl`, `config-eslint`, and `config-typescript` use hyphenated *directory* names predating the no-hyphens convention; their source files still follow the dot/camelCase rules.
 
 ## Architecture
 
@@ -74,8 +84,12 @@ packages/
 
 The monorepo uses workspace references (`workspace:*`). Key dependency relationships:
 
-- **koa** depends on: `appconfig`, `authentication`, `errors`, `logger`, `multipart`, `utilities`
+- **koa** depends on: `appconfig`, `authentication`, `errors`, `logger`, `multipart`, `policies`, `utilities`
+- **scim** depends on: `authentication`, `errors`, `koa`, `logger`, `utilities`
 - **authentication** depends on: `cache`, `encryption`, `errors`, `logger`, `policies`, `utilities`
+- **slack** depends on: `errors`, `logger`, `policies`
+- **johnny5** depends on: `appconfig`, `logger`
+- **permissions-dsl** depends on: `permissions`
 - **policies** depends on: `errors`
 - **cache** depends on: `errors`, `logger`, `utilities`
 - **encryption** depends on: `errors`
@@ -83,7 +97,7 @@ The monorepo uses workspace references (`workspace:*`). Key dependency relations
 - **kysely** depends on: `errors`, `utilities`
 - **multipart** depends on: `errors`
 - **zod** depends on: `errors`
-- **errors**, **appconfig**, **logger**, **utilities** are standalone (no internal deps)
+- **errors**, **appconfig**, **logger**, **utilities**, **permissions**, **eventbus** are standalone (no internal deps)
 - All packages use `config-eslint` and `config-typescript`
 
 ### Error Handling Pattern
