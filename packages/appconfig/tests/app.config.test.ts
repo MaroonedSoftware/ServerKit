@@ -70,6 +70,47 @@ describe('AppConfig', () => {
       expect(age).toBe(30);
       expect(active).toBe(true);
     });
+
+    it('should return the default value when the value is missing', () => {
+      const config: Record<string, unknown> = { present: 'value', nullValue: null, undefinedValue: undefined };
+      const appConfig = new AppConfig(config);
+      expect(appConfig.get('missing', 'fallback')).toBe('fallback');
+      expect(appConfig.get('nullValue', 'fallback')).toBe('fallback');
+      expect(appConfig.get('undefinedValue', 'fallback')).toBe('fallback');
+      expect(appConfig.get('present', 'fallback')).toBe('value');
+    });
+
+    it('should not apply the default value for falsy-but-present values', () => {
+      const config = { zero: 0, empty: '', disabled: false };
+      const appConfig = new AppConfig(config);
+      expect(appConfig.get('zero', 99)).toBe(0);
+      expect(appConfig.get('empty', 'fallback')).toBe('');
+      expect(appConfig.get('disabled', true)).toBe(false);
+    });
+  });
+
+  describe('has()', () => {
+    it('should return true for present values', () => {
+      const config = { name: 'John', count: 0, enabled: false, empty: '' };
+      const appConfig = new AppConfig(config);
+      expect(appConfig.has('name')).toBe(true);
+      expect(appConfig.has('count')).toBe(true);
+      expect(appConfig.has('enabled')).toBe(true);
+      expect(appConfig.has('empty')).toBe(true);
+    });
+
+    it('should return false for null and undefined values', () => {
+      const config: Record<string, unknown> = { nullValue: null, undefinedValue: undefined };
+      const appConfig = new AppConfig(config);
+      expect(appConfig.has('nullValue')).toBe(false);
+      expect(appConfig.has('undefinedValue')).toBe(false);
+    });
+
+    it('should return false for keys that are not present', () => {
+      const config: Record<string, unknown> = { key1: 'value1' };
+      const appConfig = new AppConfig(config);
+      expect(appConfig.has('nonexistent')).toBe(false);
+    });
   });
 
   describe('getAs()', () => {

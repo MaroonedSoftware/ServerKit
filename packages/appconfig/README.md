@@ -167,14 +167,16 @@ const config = await new AppConfigBuilder()
 
 The configuration container providing type-safe access to configuration values.
 
-| Method             | Description                                         |
-| ------------------ | --------------------------------------------------- |
-| `get(key)`         | Returns the value for the key with full type safety |
-| `getAs<U>(key)`    | Returns the value cast to the specified type `U`    |
-| `getString(key)`   | Returns the value converted to a string             |
-| `getNumber(key)`   | Returns the value converted to a number             |
-| `getBoolean(key)`  | Returns the value converted to a boolean            |
-| `getObject(key)`   | Returns the value cast as an object                 |
+| Method                   | Description                                                              |
+| ------------------------ | ------------------------------------------------------------------------ |
+| `has(key)`               | Returns `true` when the value is present (not `undefined` or `null`)     |
+| `get(key)`               | Returns the value for the key with full type safety                      |
+| `get(key, defaultValue)` | Returns `defaultValue` when the value is missing (`undefined`/`null`)    |
+| `getAs<U>(key)`          | Returns the value cast to the specified type `U`                         |
+| `getString(key)`         | Returns the value converted to a string                                  |
+| `getNumber(key)`         | Returns the value converted to a number                                  |
+| `getBoolean(key)`        | Returns the value converted to a boolean                                 |
+| `getObject(key)`         | Returns the value cast as an object                                      |
 
 ### AppConfigBuilder
 
