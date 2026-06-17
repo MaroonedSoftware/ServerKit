@@ -49,11 +49,14 @@
     "@google-cloud/secret-manager": "^6.1.2",
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
+    "@types/pg": "^8.20.0",
+    "pg": "^8.21.0",
     "yaml": "^2.9.0"
   },
   "peerDependencies": {
     "@aws-sdk/client-secrets-manager": "^3.1057.0",
     "@google-cloud/secret-manager": "^6.1.1",
+    "pg": "^8.21.0",
     "yaml": "^2.8.2"
   }
 }

@@ -6,6 +6,8 @@ export { AppConfigSourceDotenv } from './sources/app.config.source.dotenv.js';
 export type { AppConfigSourceDotenvOptions } from './sources/app.config.source.dotenv.js';
 export { AppConfigSourceJson } from './sources/app.config.source.json.js';
 export { AppConfigSourceYaml } from './sources/app.config.source.yaml.js';
+export { AppConfigPostgresSource, AppConfigPostgresSourceOptions } from './sources/app.config.postgres.source.js';
+export type { AppConfigPostgresConnection } from './sources/app.config.postgres.source.js';
 export { AppConfigProviderDotenv } from './providers/app.config.provider.dotenv.js';
 export { AppConfigProviderGcpSecrets } from './providers/app.config.provider.gcp.secrets.js';
 export { AppConfigProviderAwsSecrets } from './providers/app.config.provider.aws.secrets.js';

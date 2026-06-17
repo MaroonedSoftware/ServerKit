@@ -318,6 +318,47 @@ const nested = nestKeys(process.env as Record<string, unknown>, '__');
 | ---------------- | -------- | ------------------------------------------------------------------------------------------------------- |
 | `groupSeparator` | `string` | Optional. When set, keys containing this string are split into nested objects (e.g. `'__'`). |
 
+#### AppConfigPostgresSource
+
+Loads configuration from a key/value table in Postgres. Useful for settings that
+live in the database and can change without a redeploy (combine it with the
+[live reload](#live-configuration) store to pick up changes at runtime).
+
+```typescript
+import { AppConfigBuilder, AppConfigPostgresSource } from '@maroonedsoftware/appconfig';
+
+const source = new AppConfigPostgresSource(logger, {
+  connection: { host: 'db', port: 5432, user: 'app', password: 'secret', database: 'app' },
+  schema: 'config',      // optional, defaults to 'public'
+  table: 'app_settings', // optional, defaults to 'settings'
+  keyColumn: 'name',     // optional, defaults to 'key'
+  valueColumn: 'val',    // optional, defaults to 'value'
+});
+
+const config = await new AppConfigBuilder().addSource(source).build();
+```
+
+The source reads every row from `schema.table` and returns the `keyColumn`/`valueColumn`
+pair as a flat configuration record (rows with a null value are skipped). It is
+deliberately forgiving at boot: if the schema or table does not exist yet (e.g.
+before the first migration), it logs a warning and returns an empty object
+instead of throwing, so file and env defaults still apply.
+
+`AppConfigPostgresSourceOptions` is an `@Injectable()` class, so it can also be
+resolved from a DI container rather than constructed inline.
+
+##### AppConfigPostgresSourceOptions
+
+| Option        | Type                          | Description                                                                |
+| ------------- | ----------------------------- | ------------------------------------------------------------------------- |
+| `connection`  | `AppConfigPostgresConnection` | Postgres connection parameters (host, port, user, password, database). Required. |
+| `schema`      | `string`                      | Schema holding the settings table. Optional, defaults to `public`.        |
+| `table`       | `string`                      | Table holding the key/value rows. Optional, defaults to `settings`.       |
+| `keyColumn`   | `string`                      | Column read as the config key. Optional, defaults to `key`.               |
+| `valueColumn` | `string`                      | Column read as the config value. Optional, defaults to `value`.           |
+
+> **Note:** `pg` is a peer dependency — install it alongside this package (`pnpm add pg`) when using the Postgres source.
+
 ### Providers
 
 #### AppConfigProviderDotenv

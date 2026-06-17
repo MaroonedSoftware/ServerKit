@@ -106,6 +106,12 @@ importers:
       '@repo/config-typescript':
         specifier: workspace:*
         version: link:../config-typescript
+      '@types/pg':
+        specifier: ^8.20.0
+        version: 8.20.0
+      pg:
+        specifier: ^8.21.0
+        version: 8.21.0
       yaml:
         specifier: ^2.9.0
         version: 2.9.0
