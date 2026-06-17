@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, expectTypeOf } from 'vitest';
 import { AppConfig } from '../src/app.config.js';
 
 describe('AppConfig', () => {
@@ -86,6 +86,24 @@ describe('AppConfig', () => {
       expect(appConfig.get('zero', 99)).toBe(0);
       expect(appConfig.get('empty', 'fallback')).toBe('');
       expect(appConfig.get('disabled', true)).toBe(false);
+    });
+
+    it('should infer the default value type for loosely-typed configs', () => {
+      const config: Record<string, unknown> = { GOOGLE_OIDC_ISSUER: undefined };
+      const appConfig = new AppConfig(config);
+      const issuer = appConfig.get('GOOGLE_OIDC_ISSUER', 'https://accounts.google.com');
+      expectTypeOf(issuer).toEqualTypeOf<string>();
+      expect(issuer).toBe('https://accounts.google.com');
+    });
+
+    it('should preserve the precise value type for typed configs', () => {
+      interface TypedConfig {
+        port: number;
+        host?: string;
+      }
+      const appConfig = new AppConfig<TypedConfig>({ port: 3000 });
+      expectTypeOf(appConfig.get('port', 8080)).toEqualTypeOf<number>();
+      expectTypeOf(appConfig.get('host', 'localhost')).toEqualTypeOf<string>();
     });
   });
 

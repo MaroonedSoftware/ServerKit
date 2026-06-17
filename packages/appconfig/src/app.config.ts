@@ -50,7 +50,14 @@ export class AppConfig<T = Record<string, unknown>> {
    * value is missing (`undefined` or `null`) — not when it is merely falsy
    * (e.g. `0`, `''`, `false`).
    *
+   * The result is typed precisely: for a typed config the return is
+   * `NonNullable<T[K]> | D`, and for a loosely-typed config (where `T[K]` is
+   * `unknown`, e.g. the default `Record<string, unknown>`) the return is the
+   * default value's type `D` — so `get('KEY', 'fallback')` yields `string`
+   * rather than `{}`.
+   *
    * @template K - The key type, must be a key of T.
+   * @template D - The default value's type, inferred from `defaultValue`.
    * @param key - The configuration key to retrieve.
    * @param defaultValue - Value to return when the stored value is missing.
    * @returns The configuration value for the given key, or `defaultValue`.
@@ -60,16 +67,23 @@ export class AppConfig<T = Record<string, unknown>> {
    * const config = new AppConfig({ port: 3000, host: 'localhost' });
    * const port = config.get('port'); // Returns 3000, typed as number
    * const retries = config.get('retries', 3); // Falls back to 3 when missing
+   *
+   * // Loosely-typed config: the default value's type is preserved.
+   * const env = new AppConfig<Record<string, unknown>>({});
+   * const issuer = env.get('OIDC_ISSUER', 'https://accounts.google.com'); // typed as string
    * ```
    */
   get<K extends keyof T>(key: K): T[K];
-  get<K extends keyof T>(key: K, defaultValue: NonNullable<T[K]>): NonNullable<T[K]>;
-  get<K extends keyof T>(key: K, defaultValue?: NonNullable<T[K]>): T[K] {
+  get<K extends keyof T, D extends NonNullable<T[K]> = NonNullable<T[K]>>(
+    key: K,
+    defaultValue: D,
+  ): unknown extends T[K] ? D : NonNullable<T[K]> | D;
+  get<K extends keyof T>(key: K, defaultValue?: unknown): unknown {
     const value = this.config[key];
     if (arguments.length < 2) {
       return value;
     }
-    return value === undefined || value === null ? (defaultValue as T[K]) : value;
+    return value === undefined || value === null ? defaultValue : value;
   }
 
   /**
