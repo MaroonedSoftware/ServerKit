@@ -1,5 +1,13 @@
 # @maroonedsoftware/johnny5
 
+## 3.0.3
+
+### Patch Changes
+
+- Updated dependencies [c8f0fa4]
+  - @maroonedsoftware/appconfig@1.9.0
+  - @maroonedsoftware/koa@2.4.3
+
 ## 3.0.2
 
 ### Patch Changes

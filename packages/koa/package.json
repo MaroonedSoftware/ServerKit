@@ -1,6 +1,6 @@
 {
   "name": "@maroonedsoftware/koa",
-  "version": "2.4.2",
+  "version": "2.4.3",
   "description": "Koa middleware, body parsing, and utilities for ServerKit",
   "author": {
     "name": "Marooned Software",
