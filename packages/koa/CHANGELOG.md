@@ -1,5 +1,12 @@
 # @maroonedsoftware/koa
 
+## 2.4.2
+
+### Patch Changes
+
+- Updated dependencies [75e4ce2]
+  - @maroonedsoftware/appconfig@1.8.1
+
 ## 2.4.1
 
 ### Patch Changes
