@@ -1,5 +1,11 @@
 # @maroonedsoftware/appconfig
 
+## 1.8.1
+
+### Patch Changes
+
+- 75e4ce2: Fix `AppConfig.get(key, defaultValue)` returning `{}` instead of the default value's type on loosely-typed configs (e.g. `Record<string, unknown>`). The default value's type is now preserved, so `config.get('KEY', 'fallback')` is typed as `string`.
+
 ## 1.8.0
 
 ### Minor Changes
