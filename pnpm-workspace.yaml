@@ -1,6 +1,10 @@
 packages:
   - apps/*
   - packages/*
+# pnpm 11 reads this from pnpm-workspace.yaml, not .npmrc. "warn" surfaces a
+# stale-deps notice before `pnpm run` but never auto-installs/purges, so it is
+# TTY-safe (no ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY in sandboxed/CI runs).
+verifyDepsBeforeRun: warn
 allowBuilds:
   '@swc/core': true
   '@vscode/vsce-sign': true
