@@ -39,7 +39,7 @@
   },
   "dependencies": {
     "@maroonedsoftware/errors": "workspace:*",
-    "injectkit": "^1.4.2",
+    "injectkit": "^1.5.0",
     "luxon": "^3.7.2"
   },
   "devDependencies": {
