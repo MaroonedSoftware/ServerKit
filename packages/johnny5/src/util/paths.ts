@@ -60,7 +60,7 @@ export const johnnyPaths = (app: string): JohnnyPaths => {
  * two checkouts of the same repo at different locations get distinct slugs
  * while remaining easy to identify in `ls` output.
  *
- * Example: `/Users/me/code/homegrown_v2` → `homegrown_v2-a3f1c9b2`.
+ * Example: `/Users/me/code/my_app` → `my_app-a3f1c9b2`.
  */
 export const projectSlug = (projectRoot: string): string => {
     const absolute = resolve(projectRoot);

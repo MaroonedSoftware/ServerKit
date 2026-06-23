@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { AppConfigBuilder, AppConfigProviderDotenv, type AppConfig } from '@maroonedsoftware/appconfig';
+import { AppConfigBuilder, AppConfigResolverEnv, type AppConfig } from '@maroonedsoftware/appconfig';
 import type { CliContext, CliPaths } from './types.js';
 import { createDaemons } from './util/daemons.js';
 import type { CliLogger } from './util/logger.js';
@@ -76,12 +76,12 @@ const loadEnvFile = (path: string, logger: CliLogger): void => {
 };
 
 /**
- * Build an AppConfig with only the dotenv provider attached. Callers are
+ * Build an AppConfig with only the env resolver attached. Callers are
  * expected to have loaded .env files into `process.env` beforehand — see
  * `buildContext` for the default loading sequence.
  */
 export const buildDefaultAppConfig = async (): Promise<AppConfig> =>
-    new AppConfigBuilder().addProvider(new AppConfigProviderDotenv()).build();
+    new AppConfigBuilder().addResolver(new AppConfigResolverEnv()).buildSnapshot();
 
 /**
  * Build the `CliContext` handed to every command, check, and plugin hook.

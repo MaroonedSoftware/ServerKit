@@ -3,8 +3,8 @@ import { johnnyPaths, projectSlug } from '../src/util/paths.js';
 
 describe('projectSlug', () => {
     it('combines basename with an 8-char hex hash', () => {
-        const slug = projectSlug('/Users/me/projects/homegrown_v2');
-        expect(slug).toMatch(/^homegrown_v2-[a-f0-9]{8}$/);
+        const slug = projectSlug('/Users/me/projects/my_app');
+        expect(slug).toMatch(/^my_app-[a-f0-9]{8}$/);
     });
 
     it('produces the same slug for the same absolute path', () => {
