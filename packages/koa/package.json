@@ -51,7 +51,7 @@
     "injectkit": "^1.4.2",
     "luxon": "^3.7.2",
     "qs": "^6.15.2",
-    "rate-limiter-flexible": "^11.1.0",
+    "rate-limiter-flexible": "^11.2.0",
     "raw-body": "^3.0.2"
   },
   "peerDependencies": {
@@ -61,14 +61,14 @@
   },
   "devDependencies": {
     "@koa/cors": "^5.0.0",
-    "@koa/router": "^15.5.0",
+    "@koa/router": "^15.6.0",
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
     "@types/co-body": "^6.1.3",
     "@types/inflation": "^2.0.4",
     "@types/koa": "^3.0.3",
     "@types/koa__cors": "^5.0.1",
-    "@types/luxon": "^3.7.1",
+    "@types/luxon": "^3.7.2",
     "@types/qs": "^6.15.1",
     "koa": "^3.2.1"
   }

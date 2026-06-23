@@ -54,11 +54,11 @@
     "koa": "^3.1.1"
   },
   "devDependencies": {
-    "@koa/router": "^15.5.0",
+    "@koa/router": "^15.6.0",
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
     "@types/koa": "^3.0.3",
-    "@types/luxon": "^3.7.1",
+    "@types/luxon": "^3.7.2",
     "@types/supertest": "^7.2.0",
     "koa": "^3.2.1",
     "supertest": "^7.2.2"

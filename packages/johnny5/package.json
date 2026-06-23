@@ -88,10 +88,10 @@
     "test:ci": "vitest run --coverage"
   },
   "dependencies": {
-    "@clack/prompts": "^1.4.0",
+    "@clack/prompts": "^1.6.0",
     "@maroonedsoftware/appconfig": "workspace:*",
     "@maroonedsoftware/logger": "workspace:*",
-    "commander": "^14.0.3",
+    "commander": "^15.0.0",
     "execa": "^9.6.1",
     "injectkit": "^1.4.2",
     "luxon": "^3.7.2"
@@ -139,12 +139,12 @@
     "@napi-rs/keyring": "^1.3.0",
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
-    "@types/luxon": "^3.7.1",
+    "@types/luxon": "^3.7.2",
     "@types/pg": "^8.20.0",
-    "ioredis": "^5.11.0",
+    "ioredis": "^5.11.1",
     "kysely": "^0.29.2",
-    "pg": "^8.21.0",
+    "pg": "^8.22.0",
     "tsup": "^8.5.1",
-    "vitest": "^4.1.7"
+    "vitest": "^4.1.9"
   }
 }

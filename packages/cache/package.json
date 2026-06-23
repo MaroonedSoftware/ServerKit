@@ -35,13 +35,13 @@
     "@maroonedsoftware/utilities": "workspace:*",
     "injectkit": "^1.4.2",
     "luxon": "^3.7.2",
-    "rate-limiter-flexible": "^11.1.0"
+    "rate-limiter-flexible": "^11.2.0"
   },
   "devDependencies": {
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
-    "@types/luxon": "^3.7.1",
-    "ioredis": "^5.11.0"
+    "@types/luxon": "^3.7.2",
+    "ioredis": "^5.11.1"
   },
   "peerDependencies": {
     "ioredis": "^5.10.1"
