@@ -1,4 +1,4 @@
-import type { Range } from 'vscode-languageserver/node.js';
+import type { Range } from 'vscode-languageserver/node';
 import type { SourceSpan } from '@maroonedsoftware/permissions-dsl';
 import { offsetToPosition } from '@maroonedsoftware/permissions-dsl';
 
