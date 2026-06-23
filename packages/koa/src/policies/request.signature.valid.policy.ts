@@ -67,7 +67,9 @@ export class DefaultSignaturePolicy extends Policy<SignaturePolicyContext> {
     const { header, secret, algorithm, digest } = options;
 
     const signature = getHeader(header);
-    const computedSignature = createHmac(algorithm, secret).update(rawBody).digest(digest);
+    // `BinaryLike` permits a bare `ArrayBuffer`, which `Hmac.update` does not accept; wrap those in a Buffer.
+    const data = typeof rawBody === 'string' || ArrayBuffer.isView(rawBody) ? rawBody : Buffer.from(rawBody);
+    const computedSignature = createHmac(algorithm, secret).update(data).digest(digest);
     const expected = Buffer.from(computedSignature);
     const provided = Buffer.from(signature ?? '');
 

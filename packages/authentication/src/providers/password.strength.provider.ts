@@ -1,5 +1,5 @@
 import { Injectable } from 'injectkit';
-import { zxcvbnAsync, zxcvbnOptions } from '@zxcvbn-ts/core';
+import { ZxcvbnFactory } from '@zxcvbn-ts/core';
 import * as zxcvbnCommonPackage from '@zxcvbn-ts/language-common';
 import * as zxcvbnEnPackage from '@zxcvbn-ts/language-en';
 import { matcherPwnedFactory } from '@zxcvbn-ts/matcher-pwned';
@@ -14,19 +14,23 @@ import { httpError } from '@maroonedsoftware/errors';
  */
 @Injectable()
 export class PasswordStrengthProvider {
+  private readonly zxcvbnFactory: ZxcvbnFactory;
+
   constructor() {
-    const matcherPwned = matcherPwnedFactory(fetch, zxcvbnOptions);
-    zxcvbnOptions.setOptions({
-      translations: zxcvbnEnPackage.translations,
-      graphs: zxcvbnCommonPackage.adjacencyGraphs,
-      dictionary: {
-        ...zxcvbnCommonPackage.dictionary,
-        ...zxcvbnEnPackage.dictionary,
+    const matcherPwned = matcherPwnedFactory(fetch);
+    this.zxcvbnFactory = new ZxcvbnFactory(
+      {
+        translations: zxcvbnEnPackage.translations,
+        graphs: zxcvbnCommonPackage.adjacencyGraphs,
+        dictionary: {
+          ...zxcvbnCommonPackage.dictionary,
+          ...zxcvbnEnPackage.dictionary,
+        },
       },
-    });
-    if (!zxcvbnOptions.matchers['pwned']) {
-      zxcvbnOptions.addMatcher('pwned', matcherPwned);
-    }
+      {
+        pwned: matcherPwned,
+      },
+    );
   }
 
   /**
@@ -37,7 +41,7 @@ export class PasswordStrengthProvider {
    * @returns An object with `valid` (score ≥ 3), `score` (0–4), and zxcvbn `feedback`.
    */
   async checkStrength(password: string, ...userInputs: (string | number)[]) {
-    const result = await zxcvbnAsync(password, userInputs);
+    const result = await this.zxcvbnFactory.checkAsync(password, userInputs);
 
     return {
       valid: result.score >= 3,
