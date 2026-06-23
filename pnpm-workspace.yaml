@@ -13,3 +13,6 @@ allowBuilds:
   keytar: false
   protobufjs: true
   sharp: true
+
+minimumReleaseAgeExclude:
+  - injectkit
