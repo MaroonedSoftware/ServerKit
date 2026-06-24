@@ -42,7 +42,7 @@
     "@maroonedsoftware/logger": "workspace:*",
     "deepmerge-ts": "^7.1.5",
     "dotenv": "^17.4.2",
-    "injectkit": "^1.4.2"
+    "injectkit": "^1.5.0"
   },
   "devDependencies": {
     "@aws-sdk/client-secrets-manager": "^3.1073.0",
