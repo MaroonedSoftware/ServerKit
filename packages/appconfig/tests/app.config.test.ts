@@ -274,6 +274,45 @@ describe('AppConfig', () => {
     });
   });
 
+  describe('supplier-backed config', () => {
+    it('should re-evaluate every read against the supplier', () => {
+      let backing: Record<string, unknown> = { port: 3000, mode: 'a' };
+      const appConfig = new AppConfig(() => backing);
+
+      expect(appConfig.get('port')).toBe(3000);
+      expect(appConfig.getString('mode')).toBe('a');
+      expect(appConfig.has('extra')).toBe(false);
+
+      backing = { port: 4000, mode: 'b', extra: true };
+
+      expect(appConfig.getNumber('port')).toBe(4000);
+      expect(appConfig.getString('mode')).toBe('b');
+      expect(appConfig.has('extra')).toBe(true);
+      expect(appConfig.getBoolean('extra')).toBe(true);
+    });
+
+    it('should behave identically to a plain config for a constant supplier', () => {
+      const plain = new AppConfig({ a: 1 });
+      const supplied = new AppConfig(() => ({ a: 1 }));
+      expect(supplied.get('a')).toBe(plain.get('a'));
+    });
+  });
+
+  describe('toObject()', () => {
+    it('should return the backing config object', () => {
+      const config = { a: 1, b: 'two' };
+      expect(new AppConfig(config).toObject()).toEqual(config);
+    });
+
+    it('should return the current snapshot for a supplier-backed config', () => {
+      let backing = { a: 1 };
+      const appConfig = new AppConfig(() => backing);
+      expect(appConfig.toObject()).toEqual({ a: 1 });
+      backing = { a: 2 };
+      expect(appConfig.toObject()).toEqual({ a: 2 });
+    });
+  });
+
   describe('getObject()', () => {
     it('should return object as-is', () => {
       const config = {

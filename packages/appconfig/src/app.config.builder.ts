@@ -1,109 +1,110 @@
-import { deepmerge } from 'deepmerge-ts';
+import { Logger } from '@maroonedsoftware/logger';
 import { AppConfig } from './app.config.js';
-import { AppConfigProvider } from './app.config.provider.js';
+import { AppConfigResolver } from './app.config.resolver.js';
 import { AppConfigSource } from './app.config.source.js';
-import { objectVisitor, ObjectVisitorMeta } from './object.visitor.js';
+import { buildConfigObject } from './pipeline.js';
+import { AppConfigStore } from './options/app.config.store.js';
 
 /**
- * Builder for constructing AppConfig instances from multiple sources with value transformation.
+ * Builder for constructing AppConfig instances from multiple sources with reference resolution.
  *
- * The builder allows you to:
- * - Load configuration from multiple sources (files, environment variables, etc.)
+ * The builder lets you:
+ * - Load configuration from multiple sources (files, environment, secret managers, …)
  * - Merge configurations with later sources overriding earlier ones
- * - Transform string values using providers (e.g., resolving environment variable references)
+ * - Resolve `${…}` references through resolvers (env, GCP/AWS secrets)
+ * - Optionally resolve intra-config `${ref:…}` references
+ *
+ * Call {@link AppConfigBuilder.buildSnapshot} for a one-shot, immutable {@link AppConfig}, or
+ * {@link AppConfigBuilder.buildStore} for a hot-reloadable {@link AppConfigStore} that owns
+ * the sources, watches them for changes, and re-runs the pipeline on reload.
  *
  * @example
  * ```typescript
  * const config = await new AppConfigBuilder()
  *   .addSource(new AppConfigSourceJson('./config.json'))
  *   .addSource(new AppConfigSourceDotenv())
- *   .addProvider(new AppConfigProviderDotenv())
- *   .build();
+ *   .addResolver(new AppConfigResolverEnv())
+ *   .buildSnapshot();
  * ```
  */
 export class AppConfigBuilder {
   private readonly sources: AppConfigSource[] = [];
-  private readonly providers: AppConfigProvider[] = [];
+  private readonly resolvers: AppConfigResolver[] = [];
+  private referencesEnabled = false;
 
   /**
-   * Adds a configuration source to the builder.
+   * Adds a configuration source.
    *
-   * Sources are loaded in the order they are added, and later sources override earlier ones
-   * when merging configurations.
+   * Sources are loaded in the order they are added; later sources override earlier ones
+   * when merging.
    *
    * @param source - The configuration source to add.
    * @returns The builder instance for method chaining.
-   *
-   * @example
-   * ```typescript
-   * builder
-   *   .addSource(new AppConfigSourceJson('./default.json'))
-   *   .addSource(new AppConfigSourceJson('./local.json'));
-   * ```
    */
-  addSource(source: AppConfigSource) {
+  addSource(source: AppConfigSource): this {
     this.sources.push(source);
     return this;
   }
 
   /**
-   * Adds a provider to transform string values during configuration building.
+   * Adds a resolver to transform `${…}` reference tokens in string values.
    *
-   * Providers are applied to all string values found in the merged configuration.
-   * The first provider that can parse a value will be used to transform it.
+   * Resolvers are applied to every string value in the merged configuration; the first
+   * resolver whose `canResolve` matches a value transforms it.
    *
-   * @param provider - The provider to add.
+   * @param resolver - The resolver to add.
    * @returns The builder instance for method chaining.
-   *
-   * @example
-   * ```typescript
-   * builder.addProvider(new AppConfigProviderDotenv());
-   * ```
    */
-  addProvider(provider: AppConfigProvider) {
-    this.providers.push(provider);
+  addResolver(resolver: AppConfigResolver): this {
+    this.resolvers.push(resolver);
     return this;
   }
 
   /**
-   * Builds the AppConfig instance by loading all sources, merging them, and applying providers.
+   * Enables the intra-config `${ref:some.path}` resolution pass, run after resolvers over
+   * the merged, externally-resolved tree.
    *
-   * The build process:
-   * 1. Loads all sources in parallel
-   * 2. Merges configurations (later sources override earlier ones)
-   * 3. Traverses the merged configuration and applies providers to string values
-   * 4. Returns the final AppConfig instance
-   *
-   * @template T - The type of the configuration object. Defaults to `Record<string, unknown>`.
-   * @returns A promise that resolves to the built AppConfig instance.
-   *
-   * @example
-   * ```typescript
-   * const config = await builder.build<MyConfigType>();
-   * const value = config.get('someKey');
-   * ```
+   * @param enable - Whether to run the reference pass. Defaults to `true`.
+   * @returns The builder instance for method chaining.
    */
-  async build<T = Record<string, unknown>>(): Promise<AppConfig<T>> {
-    const sourceTasks = await Promise.all(this.sources.map(x => x.load()));
-    // `deepmerge` with zero arguments returns `undefined`, which would crash
-    // every downstream consumer with an opaque "cannot read property of
-    // undefined". A misconfigured builder should still yield a usable empty
-    // config object so the error surfaces at the missing-key call site.
-    const mergedConfig = (sourceTasks.length === 0 ? {} : deepmerge(...sourceTasks)) as T;
+  resolveReferences(enable = true): this {
+    this.referencesEnabled = enable;
+    return this;
+  }
 
-    const tasks: Promise<void>[] = [];
-    const parse = (value: unknown, meta: ObjectVisitorMeta) => {
-      if (typeof value === 'string') {
-        const provider = this.providers.find(x => x.canParse(value));
-        if (provider) {
-          tasks.push(provider.parse(value, meta));
-        }
-      }
-    };
+  /**
+   * Builds a one-shot, immutable {@link AppConfig}: loads every source once, merges, and
+   * resolves. Use this when you do not need hot reload (e.g. a CLI).
+   *
+   * @template T - The configuration object type. Defaults to `Record<string, unknown>`.
+   * @returns A promise resolving to the built {@link AppConfig}.
+   */
+  async buildSnapshot<T = Record<string, unknown>>(): Promise<AppConfig<T>> {
+    const snapshots = await Promise.all(this.sources.map(source => source.load()));
+    const merged = await buildConfigObject(snapshots, this.resolvers, this.referencesEnabled);
+    return new AppConfig<T>(merged as T);
+  }
 
-    objectVisitor(mergedConfig, parse);
-    await Promise.all(tasks);
-
-    return new AppConfig<T>(mergedConfig);
+  /**
+   * Builds a hot-reloadable {@link AppConfigStore}: loads every source once for the initial
+   * config, then hands the sources/resolvers to the store, which re-runs the pipeline on
+   * each reload and subscribes to any watchable sources.
+   *
+   * @template T - The root configuration object type.
+   * @param logger - Optional logger used to report failures from watch-triggered reloads.
+   * @returns A promise resolving to the {@link AppConfigStore}.
+   */
+  async buildStore<T = Record<string, unknown>>(logger?: Logger): Promise<AppConfigStore<T>> {
+    const loaded = await Promise.all(this.sources.map(source => source.load()));
+    const snapshots = new Map<AppConfigSource, Record<string, unknown>>(this.sources.map((source, i) => [source, loaded[i]!]));
+    const merged = await buildConfigObject(loaded, this.resolvers, this.referencesEnabled);
+    return new AppConfigStore<T>({
+      sources: this.sources,
+      resolvers: this.resolvers,
+      resolveRefs: this.referencesEnabled,
+      snapshots,
+      initial: new AppConfig<T>(merged as T),
+      logger,
+    });
   }
 }

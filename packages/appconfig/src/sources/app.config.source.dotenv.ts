@@ -1,11 +1,14 @@
-import { AppConfigSource } from '../app.config.source.js';
-import { nestKeys } from '../helpers.js';
 import dotenv from 'dotenv';
+import { AppConfigSourceFile, AppConfigSourceFileOptions } from './app.config.source.file.js';
+import { nestKeys } from '../helpers.js';
 
 /**
  * Options for {@link AppConfigSourceDotenv}.
+ *
+ * Extends the shared file options ({@link AppConfigSourceFileOptions}) with dotenv-specific
+ * grouping.
  */
-export interface AppConfigSourceDotenvOptions {
+export interface AppConfigSourceDotenvOptions extends AppConfigSourceFileOptions {
   /**
    * When set, keys containing this separator are split into nested objects.
    *
@@ -14,11 +17,7 @@ export interface AppConfigSourceDotenvOptions {
    *
    * @example
    * ```typescript
-   * // .env
-   * // WEBHOOK__secret=abc
-   * // WEBHOOK__header=X-Sig
-   * // DATABASE_URL=postgres://localhost/db
-   *
+   * // .env: WEBHOOK__secret=abc / WEBHOOK__header=X-Sig / DATABASE_URL=postgres://localhost/db
    * const source = new AppConfigSourceDotenv('./.env', { groupSeparator: '__' });
    * await source.load();
    * // → { WEBHOOK: { secret: 'abc', header: 'X-Sig' }, DATABASE_URL: 'postgres://localhost/db' }
@@ -30,63 +29,44 @@ export interface AppConfigSourceDotenvOptions {
 /**
  * Configuration source that loads environment variables from a `.env` file.
  *
- * This source uses the `dotenv` package to load environment variables from a `.env` file.
- * If no file path is provided, it will look for a `.env` file in the current working directory.
- * All values are strings as provided by the environment file.
+ * Reads the file and parses it with `dotenv.parse`, returning the variables as a
+ * configuration layer. Unlike a bare `dotenv.config()` call, this does **not** mutate
+ * `process.env` — the source is pure, contributing only to the merged config. Like the
+ * other file sources it ignores a missing file by default and is watchable (see
+ * {@link AppConfigSourceFile}); the default path is `.env` in the current working directory.
  *
- * When the `groupSeparator` option is set, keys that contain the separator are automatically
- * collapsed into nested objects. This is useful for grouping related env vars under a shared
- * prefix (e.g. `WEBHOOK__secret` and `WEBHOOK__header` → `{ WEBHOOK: { secret, header } }`).
+ * When `groupSeparator` is set, keys containing the separator are collapsed into nested
+ * objects (e.g. `WEBHOOK__secret` → `{ WEBHOOK: { secret } }`).
  *
  * @example
  * ```typescript
- * // Load from default .env file
- * const source1 = new AppConfigSourceDotenv();
- * const config1 = await source1.load();
- *
- * // Load from custom path
- * const source2 = new AppConfigSourceDotenv('./config/.env.local');
- * const config2 = await source2.load();
- *
- * // Group keys with __ separator into nested objects
+ * const source1 = new AppConfigSourceDotenv();                              // ./.env
+ * const source2 = new AppConfigSourceDotenv('./config/.env.local');         // custom path
  * const source3 = new AppConfigSourceDotenv('./.env', { groupSeparator: '__' });
- * const config3 = await source3.load();
  * ```
  */
-export class AppConfigSourceDotenv implements AppConfigSource {
+export class AppConfigSourceDotenv extends AppConfigSourceFile {
+  private readonly groupSeparator?: string;
+
   /**
    * Creates a new AppConfigSourceDotenv instance.
    *
-   * @param filePath - Optional path to the `.env` file. If not provided, `dotenv` will
-   *   look for a `.env` file in the current working directory.
-   * @param options  - Optional configuration options.
+   * @param filePath - Path to the `.env` file. Defaults to `.env` in the current working directory.
+   * @param options - Missing-file/encoding behavior plus the optional `groupSeparator`.
    */
-  constructor(
-    private readonly filePath?: string,
-    private readonly options?: AppConfigSourceDotenvOptions,
-  ) {}
+  constructor(filePath = '.env', options?: AppConfigSourceDotenvOptions) {
+    super(filePath, options);
+    this.groupSeparator = options?.groupSeparator;
+  }
 
   /**
-   * Loads environment variables from the `.env` file.
+   * Parses the file contents with `dotenv.parse`, optionally nesting keys on `groupSeparator`.
    *
-   * Uses `dotenv.config()` to parse the file and load variables into the returned object.
-   * If `options.groupSeparator` is set the flat keys are transformed into a nested object
-   * before being returned.
-   *
-   * @returns A promise that resolves to an object containing the parsed environment variables.
-   * @throws {Error} If there's an error reading or parsing the `.env` file.
+   * @param text - The file contents.
+   * @returns The parsed (and optionally nested) configuration object.
    */
-  async load(): Promise<Record<string, unknown>> {
-    const result = dotenv.config({ path: this.filePath, quiet: true });
-    if (result.error) {
-      throw result.error;
-    }
-    const parsed = result.parsed ?? {};
-
-    if (this.options?.groupSeparator) {
-      return nestKeys(parsed, this.options.groupSeparator);
-    }
-
-    return parsed;
+  protected parse(text: string): Record<string, unknown> {
+    const parsed = dotenv.parse(text);
+    return this.groupSeparator ? nestKeys(parsed, this.groupSeparator) : parsed;
   }
 }

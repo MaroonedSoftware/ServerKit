@@ -15,11 +15,41 @@
  */
 export class AppConfig<T = Record<string, unknown>> {
   /**
-   * Creates a new AppConfig instance with the provided configuration.
-   *
-   * @param config - The configuration object to wrap.
+   * Returns the backing config object. For a plain config this is a constant;
+   * for a supplier-backed config (see the constructor) it is re-evaluated on
+   * every read, so all accessors below transparently observe the latest value.
    */
-  constructor(private readonly config: T) {}
+  private readonly read: () => T;
+
+  /**
+   * Creates a new AppConfig instance.
+   *
+   * Pass a config object for the usual immutable container. Pass a *supplier*
+   * (`() => T`) to make every read resolve against whatever the supplier returns
+   * at call time — the basis for a live view over a reloadable
+   * {@link import('./options/app.config.store.js').AppConfigStore} (see
+   * `AppConfigStore.toLiveConfig`). Because every accessor funnels through the
+   * supplier, both current and future getters observe a reload with no extra
+   * wiring.
+   *
+   * @param config - The configuration object to wrap, or a supplier returning it.
+   */
+  constructor(config: T | (() => T)) {
+    this.read = typeof config === 'function' ? (config as () => T) : () => config;
+  }
+
+  /**
+   * Returns the backing configuration object.
+   *
+   * For a supplier-backed instance this is the current snapshot. Used to seed a
+   * fresh {@link AppConfig} from another's live value; mutating the returned
+   * object mutates the backing config, so treat it as read-only.
+   *
+   * @returns The configuration object currently in effect.
+   */
+  toObject(): T {
+    return this.read();
+  }
 
   /**
    * Checks whether a configuration value is present for a given key.
@@ -39,7 +69,7 @@ export class AppConfig<T = Record<string, unknown>> {
    * ```
    */
   has(key: keyof T): boolean {
-    const value = this.config[key];
+    const value = this.read()[key];
     return value !== undefined && value !== null;
   }
 
@@ -79,7 +109,7 @@ export class AppConfig<T = Record<string, unknown>> {
     defaultValue: D,
   ): unknown extends T[K] ? D : NonNullable<T[K]> | D;
   get<K extends keyof T>(key: K, defaultValue?: unknown): unknown {
-    const value = this.config[key];
+    const value = this.read()[key];
     if (arguments.length < 2) {
       return value;
     }
@@ -108,7 +138,7 @@ export class AppConfig<T = Record<string, unknown>> {
    * ```
    */
   getAs<U>(key: keyof T): U {
-    return this.config[key] as U;
+    return this.read()[key] as U;
   }
 
   /**
@@ -149,7 +179,7 @@ export class AppConfig<T = Record<string, unknown>> {
    * ```
    */
   getNumber(key: keyof T): number {
-    return Number(this.config[key]);
+    return Number(this.read()[key]);
   }
 
   /**
@@ -170,7 +200,7 @@ export class AppConfig<T = Record<string, unknown>> {
    * ```
    */
   getBoolean(key: keyof T): boolean {
-    return Boolean(this.config[key]);
+    return Boolean(this.read()[key]);
   }
 
   /**
@@ -191,6 +221,6 @@ export class AppConfig<T = Record<string, unknown>> {
    * ```
    */
   getObject(key: keyof T): object {
-    return this.config[key] as object;
+    return this.read()[key] as object;
   }
 }

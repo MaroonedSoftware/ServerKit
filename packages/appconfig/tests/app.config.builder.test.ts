@@ -1,10 +1,41 @@
 import { describe, it, expect, vi } from 'vitest';
 import { AppConfigBuilder } from '../src/app.config.builder.js';
 import { AppConfigSource } from '../src/app.config.source.js';
-import { AppConfigProvider } from '../src/app.config.provider.js';
+import { AppConfigResolver } from '../src/app.config.resolver.js';
 import { ObjectVisitorMeta } from '../src/object.visitor.js';
 
 describe('AppConfigBuilder', () => {
+  describe('resolveReferences()', () => {
+    it('resolves intra-config ${ref:…} references when enabled', async () => {
+      const config = await new AppConfigBuilder()
+        .addSource({ load: async () => ({ host: 'db', url: '${ref:host}/api' }) })
+        .resolveReferences()
+        .buildSnapshot();
+
+      expect(config.get('url')).toBe('db/api');
+    });
+
+    it('leaves ${ref:…} untouched when not enabled', async () => {
+      const config = await new AppConfigBuilder()
+        .addSource({ load: async () => ({ host: 'db', url: '${ref:host}/api' }) })
+        .buildSnapshot();
+
+      expect(config.get('url')).toBe('${ref:host}/api');
+    });
+  });
+
+  describe('buildStore()', () => {
+    it('builds a store serving the merged config', async () => {
+      const store = await new AppConfigBuilder()
+        .addSource({ load: async () => ({ a: 1 }), watch: () => () => {} })
+        .addSource({ load: async () => ({ b: 2 }), watch: () => () => {} })
+        .buildStore();
+
+      expect(store.current.get('a')).toBe(1);
+      expect(store.current.get('b')).toBe(2);
+    });
+  });
+
   describe('addSource()', () => {
     it('should add a source and return the builder for chaining', () => {
       const builder = new AppConfigBuilder();
@@ -28,39 +59,39 @@ describe('AppConfigBuilder', () => {
     });
   });
 
-  describe('addProvider()', () => {
+  describe('addResolver()', () => {
     it('should add a provider and return the builder for chaining', () => {
       const builder = new AppConfigBuilder();
-      const provider: AppConfigProvider = {
-        canParse: vi.fn().mockReturnValue(false),
-        parse: vi.fn().mockResolvedValue(undefined),
+      const provider: AppConfigResolver = {
+        canResolve: vi.fn().mockReturnValue(false),
+        resolve: vi.fn().mockResolvedValue(undefined),
       };
-      const result = builder.addProvider(provider);
+      const result = builder.addResolver(provider);
       expect(result).toBe(builder);
     });
 
     it('should allow chaining multiple providers', () => {
       const builder = new AppConfigBuilder();
-      const provider1: AppConfigProvider = {
-        canParse: vi.fn().mockReturnValue(false),
-        parse: vi.fn().mockResolvedValue(undefined),
+      const provider1: AppConfigResolver = {
+        canResolve: vi.fn().mockReturnValue(false),
+        resolve: vi.fn().mockResolvedValue(undefined),
       };
-      const provider2: AppConfigProvider = {
-        canParse: vi.fn().mockReturnValue(false),
-        parse: vi.fn().mockResolvedValue(undefined),
+      const provider2: AppConfigResolver = {
+        canResolve: vi.fn().mockReturnValue(false),
+        resolve: vi.fn().mockResolvedValue(undefined),
       };
-      builder.addProvider(provider1).addProvider(provider2);
+      builder.addResolver(provider1).addResolver(provider2);
       expect(builder).toBeInstanceOf(AppConfigBuilder);
     });
   });
 
-  describe('build()', () => {
+  describe('buildSnapshot()', () => {
     it('returns a usable empty config when no sources are registered', async () => {
       const builder = new AppConfigBuilder();
       // `deepmerge()` with zero arguments returns `undefined`, which would crash
       // every downstream consumer. The builder must hand back an empty object
       // so the missing-key error surfaces at the call site instead.
-      const config = await builder.build();
+      const config = await builder.buildSnapshot();
       expect(config.get('anything')).toBeUndefined();
     });
 
@@ -70,7 +101,7 @@ describe('AppConfigBuilder', () => {
         load: vi.fn().mockResolvedValue({ key: 'value' }),
       };
       builder.addSource(source);
-      const config = await builder.build();
+      const config = await builder.buildSnapshot();
       expect(config.get('key')).toBe('value');
     });
 
@@ -83,7 +114,7 @@ describe('AppConfigBuilder', () => {
         load: vi.fn().mockResolvedValue({ key2: 'value2', shared: 'source2' }),
       };
       builder.addSource(source1).addSource(source2);
-      const config = await builder.build();
+      const config = await builder.buildSnapshot();
       expect(config.get('key1')).toBe('value1');
       expect(config.get('key2')).toBe('value2');
       // Later sources should override earlier ones
@@ -109,7 +140,7 @@ describe('AppConfigBuilder', () => {
         }),
       };
       builder.addSource(source1).addSource(source2);
-      const config = await builder.build();
+      const config = await builder.buildSnapshot();
       const database = config.get('database') as Record<string, unknown>;
       expect(database.host).toBe('localhost');
       expect(database.port).toBe(3306);
@@ -123,18 +154,18 @@ describe('AppConfigBuilder', () => {
           value: 'env:TEST_KEY',
         }),
       };
-      const provider: AppConfigProvider = {
-        canParse: vi.fn((value: string) => value.startsWith('env:')),
-        parse: vi.fn(async (value: string, meta: ObjectVisitorMeta) => {
+      const provider: AppConfigResolver = {
+        canResolve: vi.fn((value: string) => value.startsWith('env:')),
+        resolve: vi.fn(async (value: string, meta: ObjectVisitorMeta) => {
           const key = value.slice(4);
           (meta.owner as Record<string, unknown>)[meta.propertyPath] = `resolved_${key}`;
         }),
       };
-      builder.addSource(source).addProvider(provider);
-      const config = await builder.build();
+      builder.addSource(source).addResolver(provider);
+      const config = await builder.buildSnapshot();
       expect(config.get('value')).toBe('resolved_TEST_KEY');
-      expect(provider.canParse).toHaveBeenCalledWith('env:TEST_KEY');
-      expect(provider.parse).toHaveBeenCalled();
+      expect(provider.canResolve).toHaveBeenCalledWith('env:TEST_KEY');
+      expect(provider.resolve).toHaveBeenCalled();
     });
 
     it('should apply providers to nested string values', async () => {
@@ -147,15 +178,15 @@ describe('AppConfigBuilder', () => {
           },
         }),
       };
-      const provider: AppConfigProvider = {
-        canParse: vi.fn((value: string) => value.startsWith('env:')),
-        parse: vi.fn(async (value: string, meta: ObjectVisitorMeta) => {
+      const provider: AppConfigResolver = {
+        canResolve: vi.fn((value: string) => value.startsWith('env:')),
+        resolve: vi.fn(async (value: string, meta: ObjectVisitorMeta) => {
           const key = value.slice(4);
           (meta.owner as Record<string, unknown>)[meta.propertyPath] = `resolved_${key}`;
         }),
       };
-      builder.addSource(source).addProvider(provider);
-      const config = await builder.build();
+      builder.addSource(source).addResolver(provider);
+      const config = await builder.buildSnapshot();
       const database = config.get('database') as Record<string, unknown>;
       expect(database.host).toBe('resolved_DB_HOST');
       expect(database.port).toBe(5432);
@@ -168,9 +199,9 @@ describe('AppConfigBuilder', () => {
           items: ['env:ITEM1', 'env:ITEM2', 'static'],
         }),
       };
-      const provider: AppConfigProvider = {
-        canParse: vi.fn((value: string) => value.startsWith('env:')),
-        parse: vi.fn(async (value: string, meta: ObjectVisitorMeta) => {
+      const provider: AppConfigResolver = {
+        canResolve: vi.fn((value: string) => value.startsWith('env:')),
+        resolve: vi.fn(async (value: string, meta: ObjectVisitorMeta) => {
           const key = value.slice(4);
           // For arrays, we need to extract the index from propertyPath
           // propertyPath will be like 'items[0]', so we need to parse it
@@ -182,8 +213,8 @@ describe('AppConfigBuilder', () => {
           }
         }),
       };
-      builder.addSource(source).addProvider(provider);
-      const config = await builder.build();
+      builder.addSource(source).addResolver(provider);
+      const config = await builder.buildSnapshot();
       const items = config.get('items') as string[];
       expect(items[0]).toBe('resolved_ITEM1');
       expect(items[1]).toBe('resolved_ITEM2');
@@ -197,23 +228,23 @@ describe('AppConfigBuilder', () => {
           value: 'env:TEST',
         }),
       };
-      const provider1: AppConfigProvider = {
-        canParse: vi.fn((value: string) => value.startsWith('env:')),
-        parse: vi.fn(async (value: string, meta: ObjectVisitorMeta) => {
+      const provider1: AppConfigResolver = {
+        canResolve: vi.fn((value: string) => value.startsWith('env:')),
+        resolve: vi.fn(async (value: string, meta: ObjectVisitorMeta) => {
           (meta.owner as Record<string, unknown>)[meta.propertyPath] = 'provider1';
         }),
       };
-      const provider2: AppConfigProvider = {
-        canParse: vi.fn((value: string) => value.startsWith('env:')),
-        parse: vi.fn(async (value: string, meta: ObjectVisitorMeta) => {
+      const provider2: AppConfigResolver = {
+        canResolve: vi.fn((value: string) => value.startsWith('env:')),
+        resolve: vi.fn(async (value: string, meta: ObjectVisitorMeta) => {
           (meta.owner as Record<string, unknown>)[meta.propertyPath] = 'provider2';
         }),
       };
-      builder.addSource(source).addProvider(provider1).addProvider(provider2);
-      const config = await builder.build();
+      builder.addSource(source).addResolver(provider1).addResolver(provider2);
+      const config = await builder.buildSnapshot();
       expect(config.get('value')).toBe('provider1');
-      expect(provider1.parse).toHaveBeenCalled();
-      expect(provider2.parse).not.toHaveBeenCalled();
+      expect(provider1.resolve).toHaveBeenCalled();
+      expect(provider2.resolve).not.toHaveBeenCalled();
     });
 
     it('should not apply providers to non-string values', async () => {
@@ -225,15 +256,15 @@ describe('AppConfigBuilder', () => {
           nullValue: null,
         }),
       };
-      const provider: AppConfigProvider = {
-        canParse: vi.fn().mockReturnValue(true),
-        parse: vi.fn().mockResolvedValue(undefined),
+      const provider: AppConfigResolver = {
+        canResolve: vi.fn().mockReturnValue(true),
+        resolve: vi.fn().mockResolvedValue(undefined),
       };
-      builder.addSource(source).addProvider(provider);
-      const config = await builder.build();
+      builder.addSource(source).addResolver(provider);
+      const config = await builder.buildSnapshot();
       expect(config.get('number')).toBe(42);
       expect(config.get('boolean')).toBe(true);
-      expect(provider.parse).not.toHaveBeenCalled();
+      expect(provider.resolve).not.toHaveBeenCalled();
     });
 
     it('should handle empty sources', async () => {
@@ -242,13 +273,13 @@ describe('AppConfigBuilder', () => {
         load: vi.fn().mockResolvedValue({}),
       };
       builder.addSource(source);
-      const config = await builder.build();
+      const config = await builder.buildSnapshot();
       expect(config).toBeInstanceOf(Object);
     });
 
     it('should handle no sources', async () => {
       const builder = new AppConfigBuilder();
-      const config = await builder.build();
+      const config = await builder.buildSnapshot();
       expect(config).toBeInstanceOf(Object);
     });
 
@@ -262,7 +293,7 @@ describe('AppConfigBuilder', () => {
         }),
       };
       builder.addSource(source);
-      const config = await builder.build();
+      const config = await builder.buildSnapshot();
       expect(config.get('key')).toBe('value');
     });
 
@@ -273,15 +304,15 @@ describe('AppConfigBuilder', () => {
           value: 'env:TEST',
         }),
       };
-      const provider: AppConfigProvider = {
-        canParse: vi.fn().mockReturnValue(true),
-        parse: vi.fn().mockImplementation(async (value: string, meta: ObjectVisitorMeta) => {
+      const provider: AppConfigResolver = {
+        canResolve: vi.fn().mockReturnValue(true),
+        resolve: vi.fn().mockImplementation(async (value: string, meta: ObjectVisitorMeta) => {
           await new Promise(resolve => setTimeout(resolve, 10));
           (meta.owner as Record<string, unknown>)[meta.propertyPath] = 'resolved';
         }),
       };
-      builder.addSource(source).addProvider(provider);
-      const config = await builder.build();
+      builder.addSource(source).addResolver(provider);
+      const config = await builder.buildSnapshot();
       expect(config.get('value')).toBe('resolved');
     });
   });

@@ -167,4 +167,43 @@ describe('AppConfigSourceJson', () => {
       expect(result).toBeInstanceOf(Promise);
     });
   });
+
+  describe('get()', () => {
+    it('projects a dot-separated path into the document', async () => {
+      writeFileSync(testFile, JSON.stringify({ database: { host: 'db', port: 5432 }, servers: [{ host: 'one' }] }), 'utf8');
+      const source = new AppConfigSourceJson(testFile);
+
+      expect(await source.get('database.host')).toBe('db');
+      expect(await source.get('database.port')).toBe(5432);
+      expect(await source.get('servers.0.host')).toBe('one');
+      expect(await source.get('database')).toEqual({ host: 'db', port: 5432 });
+    });
+
+    it('returns undefined for an absent path', async () => {
+      writeFileSync(testFile, JSON.stringify({ a: 1 }), 'utf8');
+      const source = new AppConfigSourceJson(testFile);
+
+      expect(await source.get('a.b.c')).toBeUndefined();
+      expect(await source.get('missing')).toBeUndefined();
+    });
+
+    it('projects from the load() snapshot once loaded', async () => {
+      writeFileSync(testFile, JSON.stringify({ a: 1 }), 'utf8');
+      const source = new AppConfigSourceJson(testFile);
+      await source.load();
+
+      // Change the file after load; get() reads the cached snapshot, not disk.
+      writeFileSync(testFile, JSON.stringify({ a: 2 }), 'utf8');
+      expect(await source.get('a')).toBe(1);
+    });
+
+    it('reads fresh when never loaded', async () => {
+      writeFileSync(testFile, JSON.stringify({ a: 1 }), 'utf8');
+      const source = new AppConfigSourceJson(testFile);
+
+      expect(await source.get('a')).toBe(1);
+      writeFileSync(testFile, JSON.stringify({ a: 2 }), 'utf8');
+      expect(await source.get('a')).toBe(2); // no cache → fresh read each call
+    });
+  });
 });

@@ -99,23 +99,29 @@ describe('AppConfigSourceDotenv', () => {
       expect(config.MULTILINE).toContain('line1');
     });
 
-    it('should throw error for non-existent file when path is provided', async () => {
-      const source = new AppConfigSourceDotenv('./nonexistent.env');
+    it('should return an empty object for a non-existent file (ignoreMissingFile defaults true)', async () => {
+      const source = new AppConfigSourceDotenv(join(testDir, 'nonexistent.env'));
+      await expect(source.load()).resolves.toEqual({});
+    });
+
+    it('should throw for a non-existent file when ignoreMissingFile is false', async () => {
+      const source = new AppConfigSourceDotenv(join(testDir, 'nonexistent.env'), { ignoreMissingFile: false });
       await expect(source.load()).rejects.toThrow();
     });
 
-    it('should throw error when file does not exist and no path provided', async () => {
-      // When no path is provided, dotenv looks for .env in cwd
-      // If it doesn't exist, dotenv.config() returns an error which we throw
-      const source = new AppConfigSourceDotenv();
-      await expect(source.load()).rejects.toThrow();
+    it('should not mutate process.env (pure source)', async () => {
+      writeFileSync(testFile, 'SHOULD_NOT_LEAK=1\n', 'utf8');
+      const source = new AppConfigSourceDotenv(testFile);
+      await source.load();
+      expect(process.env.SHOULD_NOT_LEAK).toBeUndefined();
     });
 
-    it('should return a promise', () => {
+    it('should return a promise', async () => {
       writeFileSync(testFile, 'KEY=value\n', 'utf8');
       const source = new AppConfigSourceDotenv(testFile);
       const result = source.load();
       expect(result).toBeInstanceOf(Promise);
+      await result; // drain before afterEach removes the dir, else the pending readFile rejects with ENOENT
     });
   });
 
@@ -124,10 +130,10 @@ describe('AppConfigSourceDotenv', () => {
       writeFileSync(
         testFile,
         [
-          'MODERN_TREASURY_WEBHOOK__secret=blah',
-          'MODERN_TREASURY_WEBHOOK__header=X-Signature',
-          'MODERN_TREASURY_WEBHOOK__algorithm=sha256',
-          'MODERN_TREASURY_WEBHOOK__digest=hex',
+          'PAYMENT_PROVIDER_WEBHOOK__secret=blah',
+          'PAYMENT_PROVIDER_WEBHOOK__header=X-Signature',
+          'PAYMENT_PROVIDER_WEBHOOK__algorithm=sha256',
+          'PAYMENT_PROVIDER_WEBHOOK__digest=hex',
         ].join('\n'),
         'utf8',
       );
@@ -136,7 +142,7 @@ describe('AppConfigSourceDotenv', () => {
       const config = await source.load();
 
       expect(config).toEqual({
-        MODERN_TREASURY_WEBHOOK: {
+        PAYMENT_PROVIDER_WEBHOOK: {
           secret: 'blah',
           header: 'X-Signature',
           algorithm: 'sha256',

@@ -1,5 +1,8 @@
+import { Logger } from '@maroonedsoftware/logger';
 import { AppConfig } from '../app.config.js';
-import { AppConfigBuilder } from '../app.config.builder.js';
+import { AppConfigResolver } from '../app.config.resolver.js';
+import { AppConfigSource } from '../app.config.source.js';
+import { buildConfigObject } from '../pipeline.js';
 
 /**
  * A subscriber notified whenever the store swaps in a freshly built config.
@@ -9,46 +12,79 @@ import { AppConfigBuilder } from '../app.config.builder.js';
 export type AppConfigStoreListener<TRoot> = (config: AppConfig<TRoot>) => void;
 
 /**
- * Holds the current {@link AppConfig} and can rebuild it on demand, broadcasting
- * the swap to subscribers.
+ * Constructor parameters for {@link AppConfigStore}. Produced by
+ * {@link import('../app.config.builder.js').AppConfigBuilder.buildStore}; not assembled by
+ * hand.
  *
- * `AppConfig` itself is immutable; this store is the single mutable source of
- * truth for "which config is current". A reload re-runs the full
- * {@link AppConfigBuilder} pipeline — re-reading every source and re-resolving
- * every provider (including GCP/AWS Secret Manager references) — so a rotated
- * secret is picked up without restarting the process.
+ * @template TRoot - The root configuration type.
+ */
+export interface AppConfigStoreParams<TRoot> {
+  /** The sources, in priority order, re-loaded on reload and watched for changes. */
+  sources: AppConfigSource[];
+  /** The resolvers applied to the merged tree. */
+  resolvers: AppConfigResolver[];
+  /** Whether to run the `${ref:…}` reference pass. */
+  resolveRefs: boolean;
+  /** The per-source snapshots captured for the initial config (source order preserved). */
+  snapshots: Map<AppConfigSource, Record<string, unknown>>;
+  /** The config built from `snapshots`, served until the first reload. */
+  initial: AppConfig<TRoot>;
+  /** Optional logger for reporting failures from watch-triggered reloads. */
+  logger?: Logger;
+}
+
+/**
+ * Holds the current {@link AppConfig}, owns the runtime config pipeline, and rebuilds on
+ * demand — broadcasting each swap to subscribers.
  *
- * The store delivers only the `reload()` primitive and its notification fan-out;
- * the trigger that decides *when* to reload (a timer, a GCP Pub-Sub message, an
- * AWS EventBridge event) lives in the consuming application.
+ * `AppConfig` itself is immutable; this store is the single mutable source of truth for
+ * "which config is current". It keeps a per-source snapshot and re-runs the merge +
+ * resolution pipeline ({@link buildConfigObject}) on reload, so:
  *
- * @template TRoot - The root configuration type produced by the builder.
+ * - {@link AppConfigStore.reload} re-loads **every** source — the path for picking up a
+ *   rotated secret (no source changed, but `${aws:…}`/`${gcp:…}` re-resolve). Drive it from
+ *   the app (a timer, a Pub/Sub or EventBridge message).
+ * - A source that signals a change through its {@link AppConfigSource.watch} triggers a
+ *   reload of **just that source**, then a rebuild. Wired automatically. A source that never
+ *   fires (a no-op `watch`) simply never triggers this path.
  *
- * @example
- * ```typescript
- * const builder = new AppConfigBuilder().addSource(...).addProvider(...);
- * const store = new AppConfigStore(builder, await builder.build<RootConfig>());
+ * A failed rebuild leaves the current config and snapshots untouched and rethrows, so a
+ * running process stays on its last-good values. Call {@link AppConfigStore.dispose} to
+ * tear down source watchers.
  *
- * // later, from a watch trigger:
- * await store.reload().catch(err => logger.error('config reload failed', err));
- * ```
+ * @template TRoot - The root configuration type produced by the pipeline.
  */
 export class AppConfigStore<TRoot = Record<string, unknown>> {
   private config: AppConfig<TRoot>;
+  private snapshots: Map<AppConfigSource, Record<string, unknown>>;
+  private readonly sources: AppConfigSource[];
+  private readonly resolvers: AppConfigResolver[];
+  private readonly resolveRefs: boolean;
+  private readonly logger?: Logger;
   private readonly listeners = new Set<AppConfigStoreListener<TRoot>>();
+  private readonly watchDisposers: (() => void)[] = [];
 
   /**
-   * Creates a store seeded with an already-built config.
+   * Creates a store. Prefer {@link import('../app.config.builder.js').AppConfigBuilder.buildStore}
+   * over calling this directly.
    *
-   * @param builder - The builder used to rebuild the config on each `reload()`.
-   *   Pass the same builder instance that produced `initial`.
-   * @param initial - The config to serve until the first successful reload.
+   * @param params - The sources, resolvers, snapshots, and seed config — see {@link AppConfigStoreParams}.
    */
-  constructor(
-    private readonly builder: AppConfigBuilder,
-    initial: AppConfig<TRoot>,
-  ) {
-    this.config = initial;
+  constructor(params: AppConfigStoreParams<TRoot>) {
+    this.sources = params.sources;
+    this.resolvers = params.resolvers;
+    this.resolveRefs = params.resolveRefs;
+    this.snapshots = params.snapshots;
+    this.config = params.initial;
+    this.logger = params.logger;
+
+    for (const source of this.sources) {
+      this.watchDisposers.push(
+        source.watch(() => {
+          void this.reloadSource(source).catch(err => this.logger?.error('AppConfigStore: watch-triggered reload failed', err));
+        }),
+      );
+    }
   }
 
   /**
@@ -59,20 +95,58 @@ export class AppConfigStore<TRoot = Record<string, unknown>> {
   }
 
   /**
-   * Rebuilds the config and, on success, swaps it in and notifies subscribers.
+   * Returns a single, stable {@link AppConfig} whose every read delegates to
+   * {@link current} at call time — so it always reflects the latest reload without callers
+   * re-resolving anything. The whole-config analog of a typed
+   * {@link import('./app.config.section.js').AppConfigSection}.
    *
-   * The new config is built fully before anything is swapped, so a failed
-   * rebuild (e.g. a secret that is momentarily unresolvable) leaves the current
-   * config untouched and the error is rethrown for the caller to log. This keeps
-   * a running process on its last-good values rather than crashing it — unlike
-   * boot, where a build failure is meant to stop startup.
+   * @returns A live {@link AppConfig} view backed by this store.
+   */
+  toLiveConfig(): AppConfig<TRoot> {
+    return new AppConfig<TRoot>(() => this.current.toObject());
+  }
+
+  /**
+   * Rebuilds the config from **all** sources (re-loading each) and, on success, swaps it in
+   * and notifies subscribers. The path for picking up rotated secrets.
+   *
+   * The new config is built fully before anything is swapped, so a failed rebuild leaves the
+   * current config and snapshots untouched and the error is rethrown for the caller to log.
    *
    * @returns A promise that resolves once the swap and notifications complete.
-   * @throws Propagates any error thrown while building the new config; the
-   *   current config is left in place.
+   * @throws Propagates any error thrown while building the new config.
    */
   async reload(): Promise<void> {
-    const next = await this.builder.build<TRoot>();
+    const loaded = await Promise.all(this.sources.map(source => source.load()));
+    const candidate = new Map<AppConfigSource, Record<string, unknown>>(this.sources.map((source, i) => [source, loaded[i]!]));
+    await this.rebuild(candidate);
+  }
+
+  /**
+   * Re-loads a single source and rebuilds. Invoked by a watchable source's change signal.
+   *
+   * @param source - The source whose snapshot to refresh.
+   * @returns A promise that resolves once the swap and notifications complete.
+   * @throws Propagates any error thrown while building the new config.
+   */
+  private async reloadSource(source: AppConfigSource): Promise<void> {
+    const fresh = await source.load();
+    const candidate = new Map(this.snapshots);
+    candidate.set(source, fresh);
+    await this.rebuild(candidate);
+  }
+
+  /**
+   * Runs the pipeline over candidate snapshots and, on success, commits both the snapshots
+   * and the new config, then notifies subscribers.
+   *
+   * @param candidate - The snapshots to build from (source order preserved).
+   * @internal
+   */
+  private async rebuild(candidate: Map<AppConfigSource, Record<string, unknown>>): Promise<void> {
+    const merged = await buildConfigObject(Array.from(candidate.values()), this.resolvers, this.resolveRefs);
+    const next = new AppConfig<TRoot>(merged as TRoot);
+    this.snapshots = candidate;
     this.config = next;
     for (const listener of this.listeners) {
       listener(next);
@@ -90,5 +164,16 @@ export class AppConfigStore<TRoot = Record<string, unknown>> {
     return () => {
       this.listeners.delete(listener);
     };
+  }
+
+  /**
+   * Tears down every source watcher and clears subscribers. Call when shutting down.
+   */
+  dispose(): void {
+    for (const dispose of this.watchDisposers) {
+      dispose();
+    }
+    this.watchDisposers.length = 0;
+    this.listeners.clear();
   }
 }

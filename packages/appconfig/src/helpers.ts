@@ -13,6 +13,26 @@ export function tryParseJson(text: string): unknown {
 }
 
 /**
+ * Reads a value from a nested object by a dot-separated path. Numeric segments index into
+ * arrays (`servers.0.host`). Returns `undefined` if any segment is missing or traverses a
+ * non-object — the keyed-`get` projection used by the file sources.
+ *
+ * @param root - The object to read from.
+ * @param path - A dot-separated path (e.g. `database.host`).
+ * @returns The value at the path, or `undefined`.
+ */
+export function getByPath(root: unknown, path: string): unknown {
+  let current: unknown = root;
+  for (const segment of path.split('.')) {
+    if (current === null || typeof current !== 'object') {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return current;
+}
+
+/**
  * Recursively compares two values for structural equality.
  *
  * Used to suppress no-op config-reload notifications: a secret re-fetched from a
