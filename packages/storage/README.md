@@ -18,6 +18,16 @@ pnpm add @aws-sdk/client-s3 @aws-sdk/lib-storage @aws-sdk/s3-request-presigner
 pnpm add @google-cloud/storage
 ```
 
+### Entry points
+
+The cloud backends live behind subpath exports so importing the core never loads an SDK you didn't install:
+
+| Import | Contents | Pulls in |
+|--------|----------|----------|
+| `@maroonedsoftware/storage` | `StorageProvider`, the errors, `DiskStorageProvider` | nothing extra |
+| `@maroonedsoftware/storage/s3` | `S3StorageProvider`, `S3StorageProviderOptions` | `@aws-sdk/*` |
+| `@maroonedsoftware/storage/gcs` | `GcsStorageProvider`, `GcsStorageProviderOptions` | `@google-cloud/storage` |
+
 ## Usage
 
 ### 1. Bind a provider in your DI container
@@ -33,7 +43,8 @@ container.bind(StorageProvider).toConstantValue(new DiskStorageProvider(new Disk
 
 ```typescript
 import { S3Client } from '@aws-sdk/client-s3';
-import { StorageProvider, S3StorageProvider, S3StorageProviderOptions } from '@maroonedsoftware/storage';
+import { StorageProvider } from '@maroonedsoftware/storage';
+import { S3StorageProvider, S3StorageProviderOptions } from '@maroonedsoftware/storage/s3';
 
 // AWS S3 — both the client and the options are injectable tokens
 container.bind(S3Client).toConstantValue(new S3Client({ region: 'us-east-1' }));
@@ -43,7 +54,8 @@ container.bind(StorageProvider).to(S3StorageProvider);
 
 ```typescript
 import { Storage } from '@google-cloud/storage';
-import { StorageProvider, GcsStorageProvider, GcsStorageProviderOptions } from '@maroonedsoftware/storage';
+import { StorageProvider } from '@maroonedsoftware/storage';
+import { GcsStorageProvider, GcsStorageProviderOptions } from '@maroonedsoftware/storage/gcs';
 
 // Google Cloud Storage
 container.bind(Storage).toConstantValue(new Storage());
@@ -168,5 +180,7 @@ export class InMemoryStorageProvider extends StorageProvider {
 The provider options are plain injectable classes, so the package stays decoupled from `@maroonedsoftware/appconfig`. To drive a bucket name from typed config, bridge it at bootstrap rather than importing AppConfig into the provider:
 
 ```typescript
+import { S3StorageProviderOptions } from '@maroonedsoftware/storage/s3';
+
 registry.register(S3StorageProviderOptions).useFactory(c => new S3StorageProviderOptions({ bucket: c.get(StorageOptions).value.bucket }));
 ```
