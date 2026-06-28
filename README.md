@@ -198,6 +198,19 @@ SCIM 2.0 (RFC 7643/7644) server toolkit — schemas, filter parser, PATCH applie
 
 ---
 
+### Storage
+
+Object storage abstraction with pluggable backends.
+
+- DI-friendly `StorageProvider` interface (write/read/stat/exists/delete/copy/move/list, byte-range reads, signed URLs)
+- Local filesystem, AWS S3, and Google Cloud Storage backends
+- Cloud SDKs are optional peer dependencies — install only what you use
+- Typed errors for not-found, access-denied, and unsupported operations
+
+[View documentation →](./packages/storage/README.md)
+
+---
+
 ### Utilities
 
 Common utility functions for everyday server development.
