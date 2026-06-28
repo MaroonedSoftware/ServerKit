@@ -1,7 +1,6 @@
+// Core entry — the backend-agnostic job abstractions. The pg-boss backend lives
+// in its own entry point (`@maroonedsoftware/jobbroker/pgboss`) so importing the
+// core never statically loads the optional `pg-boss` peer dependency.
 export * from './job.broker.js';
 export * from './job.js';
 export * from './job.runner.js';
-export * from './pgboss/pgboss.job.broker.js';
-export * from './pgboss/pgboss.job.runner.js';
-export * from './pgboss/pgboss.job.registration.js';
-export * from './pgboss/pgboss.connection.provider.js';
