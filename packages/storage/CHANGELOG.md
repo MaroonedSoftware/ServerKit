@@ -1,5 +1,11 @@
 # @maroonedsoftware/storage
 
+## 0.2.0
+
+### Minor Changes
+
+- 55ff178: version bump
+
 ## 0.1.0
 
 ### Minor Changes
