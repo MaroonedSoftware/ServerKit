@@ -8,13 +8,23 @@ Cache abstraction for ServerKit. Provides a DI-friendly `CacheProvider` interfac
 pnpm add @maroonedsoftware/cache ioredis
 ```
 
+`ioredis` is an optional peer dependency — install it only if you use the bundled
+backend. The `ioredis` backend lives behind a subpath export so importing the core
+(`@maroonedsoftware/cache`) never loads it:
+
+| Import | Contents | Pulls in |
+|--------|----------|----------|
+| `@maroonedsoftware/cache` | `CacheProvider` | nothing extra |
+| `@maroonedsoftware/cache/ioredis` | `IoRedisCacheProvider` | `ioredis` |
+
 ## Usage
 
 ### 1. Bind the provider in your DI container
 
 ```typescript
 import { Redis } from 'ioredis';
-import { CacheProvider, IoRedisCacheProvider } from '@maroonedsoftware/cache';
+import { CacheProvider } from '@maroonedsoftware/cache';
+import { IoRedisCacheProvider } from '@maroonedsoftware/cache/ioredis';
 
 container.bind(Redis).toConstantValue(new Redis(process.env.REDIS_URL));
 container.bind(CacheProvider).to(IoRedisCacheProvider);
