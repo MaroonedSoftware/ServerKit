@@ -1,5 +1,12 @@
 # @maroonedsoftware/scim
 
+## 0.1.32
+
+### Patch Changes
+
+- @maroonedsoftware/koa@2.4.5
+- @maroonedsoftware/authentication@4.28.1
+
 ## 0.1.31
 
 ### Patch Changes

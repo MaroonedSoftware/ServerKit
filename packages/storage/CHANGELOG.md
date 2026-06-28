@@ -1,5 +1,17 @@
 # @maroonedsoftware/storage
 
+## 0.3.0
+
+### Minor Changes
+
+- 49cbebf: Move the S3 and GCS backends behind subpath exports so the core entry no longer statically imports the optional cloud SDKs. Previously importing anything from `@maroonedsoftware/storage` eagerly loaded `@aws-sdk/*`, breaking disk-only consumers that hadn't installed it.
+
+  Breaking: import the cloud providers from their subpaths — `@maroonedsoftware/storage/s3` (`S3StorageProvider`, `S3StorageProviderOptions`) and `@maroonedsoftware/storage/gcs` (`GcsStorageProvider`, `GcsStorageProviderOptions`). The core entry (`StorageProvider`, the error types, `DiskStorageProvider`) is unchanged and pulls in no SDK.
+
+### Patch Changes
+
+- 58eb5b1: Value-import the injected SDK clients (`S3Client`, `Storage`) in the S3 and GCS providers so InjectKit's `design:paramtypes` metadata records the real token. Previously they were type-only imports, leaving the metadata as `Object`, so `container.bind(StorageProvider).to(S3StorageProvider)` could not resolve the client.
+
 ## 0.2.0
 
 ### Minor Changes
