@@ -29,12 +29,23 @@
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./pgboss": {
+      "types": "./dist/pgboss.d.ts",
+      "import": "./dist/pgboss.js"
+    },
+    "./package.json": "./package.json"
+  },
   "license": "MIT",
   "files": [
     "dist/**"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm --sourcemap && tsc --emitDeclarationOnly --declaration",
+    "build": "tsup src/index.ts src/pgboss.ts --format esm --sourcemap && tsc --emitDeclarationOnly --declaration",
     "build:ci": "eslint --max-warnings=0 && pnpm run build",
     "lint": "eslint --fix",
     "format": "prettier --write .",
@@ -52,5 +63,10 @@
   },
   "peerDependencies": {
     "pg-boss": "^12.5.4"
+  },
+  "peerDependenciesMeta": {
+    "pg-boss": {
+      "optional": true
+    }
   }
 }

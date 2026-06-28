@@ -34,6 +34,18 @@ A flexible, type-safe configuration management library with support for multiple
 pnpm add @maroonedsoftware/appconfig
 ```
 
+The Postgres, YAML, and cloud secret-manager backends each need an optional peer
+dependency, and live behind subpath exports so importing the core never loads a
+backend SDK you aren't using. Install the peer for the backend(s) you use:
+
+| Import | Backend | Optional peer |
+|--------|---------|---------------|
+| `@maroonedsoftware/appconfig` | core (file/JSON/dotenv/fetch sources, env resolver, live config) | — |
+| `@maroonedsoftware/appconfig/postgres` | `AppConfigSourcePostgres`, `AppConfigResolverPostgres` | `pg` |
+| `@maroonedsoftware/appconfig/yaml` | `AppConfigSourceYaml` | `yaml` |
+| `@maroonedsoftware/appconfig/aws` | `AppConfigSourceAwsSecrets`, `AppConfigResolverAwsSecrets` | `@aws-sdk/client-secrets-manager` |
+| `@maroonedsoftware/appconfig/gcp` | `AppConfigSourceGcpSecrets`, `AppConfigResolverGcpSecrets` | `@google-cloud/secret-manager` |
+
 ## Usage
 
 ### Basic Usage
@@ -57,13 +69,8 @@ const db = config.getAs<{ host: string }>('database');  // Cast to interface
 The `AppConfigBuilder` allows you to load configuration from multiple sources and apply transformations:
 
 ```typescript
-import {
-  AppConfigBuilder,
-  AppConfigSourceJson,
-  AppConfigSourceYaml,
-  AppConfigSourceDotenv,
-  AppConfigResolverEnv,
-} from '@maroonedsoftware/appconfig';
+import { AppConfigBuilder, AppConfigSourceJson, AppConfigSourceDotenv, AppConfigResolverEnv } from '@maroonedsoftware/appconfig';
+import { AppConfigSourceYaml } from '@maroonedsoftware/appconfig/yaml';
 
 const config = await new AppConfigBuilder()
   .addSource(new AppConfigSourceJson('./config.json'))
@@ -269,7 +276,8 @@ live in the database and can change without a redeploy (combine it with the
 [live reload](#live-configuration) store to pick up changes at runtime).
 
 ```typescript
-import { AppConfigBuilder, AppConfigSourcePostgres } from '@maroonedsoftware/appconfig';
+import { AppConfigBuilder } from '@maroonedsoftware/appconfig';
+import { AppConfigSourcePostgres } from '@maroonedsoftware/appconfig/postgres';
 
 const source = new AppConfigSourcePostgres(logger, {
   connection: { host: 'db', port: 5432, user: 'app', password: 'secret', database: 'app' },
@@ -298,7 +306,8 @@ held in a secret manager) before connecting. The connection is re-resolved on
 every `load()`, so a rotated secret is picked up on the next [reload](#live-configuration).
 
 ```typescript
-import { AppConfigSourcePostgres, AppConfigResolverAwsSecrets } from '@maroonedsoftware/appconfig';
+import { AppConfigSourcePostgres } from '@maroonedsoftware/appconfig/postgres';
+import { AppConfigResolverAwsSecrets } from '@maroonedsoftware/appconfig/aws';
 
 const source = new AppConfigSourcePostgres(logger, {
   connection: {
@@ -352,7 +361,8 @@ The listener is best-effort — a dropped connection is logged, not auto-reconne
 Loads a set of AWS Secrets Manager secrets and assembles them into one config layer — the bulk-load counterpart to [`AppConfigResolverAwsSecrets`](#appconfigresolverawssecrets) (which resolves individual `${aws:…}` references). Each secret keys into the result under its name (less an optional `stripPrefix`), values are JSON-parsed, and `nameSeparator` nests dotted/slashed names into a tree.
 
 ```typescript
-import { AppConfigBuilder, AppConfigSourceJson, AppConfigSourceAwsSecrets } from '@maroonedsoftware/appconfig';
+import { AppConfigBuilder, AppConfigSourceJson } from '@maroonedsoftware/appconfig';
+import { AppConfigSourceAwsSecrets } from '@maroonedsoftware/appconfig/aws';
 
 // Explicit list of secrets
 const source = new AppConfigSourceAwsSecrets({
@@ -393,7 +403,8 @@ const config = await new AppConfigBuilder().addSource(new AppConfigSourceJson('.
 The GCP counterpart to `AppConfigSourceAwsSecrets`: loads a set of Google Cloud Secret Manager secrets and assembles them into one config layer. Each secret keys into the result under its (short) id — less an optional `stripPrefix` — values are JSON-parsed, and `nameSeparator` nests dotted ids into a tree.
 
 ```typescript
-import { AppConfigBuilder, AppConfigSourceGcpSecrets } from '@maroonedsoftware/appconfig';
+import { AppConfigBuilder } from '@maroonedsoftware/appconfig';
+import { AppConfigSourceGcpSecrets } from '@maroonedsoftware/appconfig/gcp';
 
 // Explicit list of secrets
 const source = new AppConfigSourceGcpSecrets('my-project', {
@@ -580,7 +591,8 @@ Resolves `${pg:KEY}` references against a Postgres settings table — the keyed 
 Because the source needs a logger and connection options, pass a constructed `AppConfigSourcePostgres` (there is no shorthand as with AWS/GCP):
 
 ```typescript
-import { AppConfigBuilder, AppConfigSourceJson, AppConfigSourcePostgres, AppConfigResolverPostgres, AppConfigResolverEnv } from '@maroonedsoftware/appconfig';
+import { AppConfigBuilder, AppConfigSourceJson, AppConfigResolverEnv } from '@maroonedsoftware/appconfig';
+import { AppConfigSourcePostgres, AppConfigResolverPostgres } from '@maroonedsoftware/appconfig/postgres';
 
 const pg = new AppConfigSourcePostgres(logger, { connection: { host: 'db', port: 5432, user: 'app', password: '${env:DB_PASSWORD}', database: 'app' }, resolvers: [new AppConfigResolverEnv()] });
 

@@ -18,6 +18,13 @@ pnpm add @maroonedsoftware/jobbroker injectkit pg-boss reflect-metadata
 
 > **Note:** InjectKit requires `reflect-metadata` to be imported at your application entry point and TypeScript configured with `experimentalDecorators: true` and `emitDecoratorMetadata: true`.
 
+`pg-boss` is an optional peer dependency. The pg-boss backend lives behind a subpath export so importing the core (`@maroonedsoftware/jobbroker`) never loads it:
+
+| Import | Contents | Pulls in |
+|--------|----------|----------|
+| `@maroonedsoftware/jobbroker` | `Job`, `JobBroker`, `JobRunner` | nothing extra |
+| `@maroonedsoftware/jobbroker/pgboss` | `PgBossJobBroker`, `PgBossJobRunner`, `PgBossJobRegistryMap`, `PgBossConnectionProvider` | `pg-boss` |
+
 ## Quick Start
 
 ### 1. Define a Job
@@ -51,7 +58,7 @@ export class SendEmailJob extends Job<EmailPayload> {
 Create a registry and register your jobs:
 
 ```typescript
-import { PgBossJobRegistryMap } from '@maroonedsoftware/jobbroker';
+import { PgBossJobRegistryMap } from '@maroonedsoftware/jobbroker/pgboss';
 
 const registry = new PgBossJobRegistryMap();
 
@@ -72,7 +79,8 @@ import 'reflect-metadata';
 import { PgBoss } from 'pg-boss';
 import { InjectKitRegistry } from 'injectkit';
 import { ConsoleLogger, Logger } from '@maroonedsoftware/logger';
-import { PgBossJobBroker, PgBossJobRunner, PgBossJobRegistryMap, PgBossConnectionProvider, JobBroker, JobRunner } from '@maroonedsoftware/jobbroker';
+import { JobBroker, JobRunner } from '@maroonedsoftware/jobbroker';
+import { PgBossJobBroker, PgBossJobRunner, PgBossJobRegistryMap, PgBossConnectionProvider } from '@maroonedsoftware/jobbroker/pgboss';
 
 // Initialize pg-boss
 const pgboss = new PgBoss('postgres://user:pass@localhost/mydb');
@@ -183,7 +191,7 @@ By default a job row is inserted on pg-boss's own connection, so it commits inde
 
 ```typescript
 import { fromKysely } from 'pg-boss';
-import { PgBossConnectionProvider } from '@maroonedsoftware/jobbroker';
+import { PgBossConnectionProvider } from '@maroonedsoftware/jobbroker/pgboss';
 
 class TransactionalConnectionProvider extends PgBossConnectionProvider {
   constructor(private readonly trx: Transaction<DB>) {
