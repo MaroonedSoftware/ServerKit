@@ -25,12 +25,35 @@
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./postgres": {
+      "types": "./dist/postgres.d.ts",
+      "import": "./dist/postgres.js"
+    },
+    "./yaml": {
+      "types": "./dist/yaml.d.ts",
+      "import": "./dist/yaml.js"
+    },
+    "./aws": {
+      "types": "./dist/aws.d.ts",
+      "import": "./dist/aws.js"
+    },
+    "./gcp": {
+      "types": "./dist/gcp.d.ts",
+      "import": "./dist/gcp.js"
+    },
+    "./package.json": "./package.json"
+  },
   "license": "MIT",
   "files": [
     "dist/**"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm --sourcemap && tsc --emitDeclarationOnly --declaration",
+    "build": "tsup src/index.ts src/postgres.ts src/yaml.ts src/aws.ts src/gcp.ts --format esm --sourcemap && tsc --emitDeclarationOnly --declaration",
     "build:ci": "eslint --max-warnings=0 && pnpm run build",
     "lint": "eslint --fix",
     "format": "prettier --write .",
@@ -58,5 +81,19 @@
     "@google-cloud/secret-manager": "^6.1.1",
     "pg": "^8.21.0",
     "yaml": "^2.8.2"
+  },
+  "peerDependenciesMeta": {
+    "@aws-sdk/client-secrets-manager": {
+      "optional": true
+    },
+    "@google-cloud/secret-manager": {
+      "optional": true
+    },
+    "pg": {
+      "optional": true
+    },
+    "yaml": {
+      "optional": true
+    }
   }
 }
