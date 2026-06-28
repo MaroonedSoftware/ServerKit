@@ -2,7 +2,8 @@ import { Injectable } from 'injectkit';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { DateTime } from 'luxon';
-import type { File, Storage } from '@google-cloud/storage';
+import { Storage } from '@google-cloud/storage';
+import type { File } from '@google-cloud/storage';
 import { StorageAccessDeniedError, StorageObjectNotFoundError } from './storage.errors.js';
 import type {
   SignedUrlOptions,
