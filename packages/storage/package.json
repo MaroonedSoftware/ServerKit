@@ -1,0 +1,77 @@
+{
+  "name": "@maroonedsoftware/storage",
+  "version": "0.0.1",
+  "description": "Storage utilities for ServerKit.",
+  "author": {
+    "name": "Marooned Software",
+    "url": "https://github.com/MaroonedSoftware/serverkit"
+  },
+  "bugs": {
+    "url": "https://github.com/MaroonedSoftware/serverkit/issues"
+  },
+  "homepage": "https://github.com/MaroonedSoftware/serverkit/packages/storage#readme",
+  "keywords": [
+    "backend",
+    "storage",
+    "serverkit",
+    "typescript"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MaroonedSoftware/serverkit.git"
+  },
+  "private": false,
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "license": "MIT",
+  "files": [
+    "dist/**"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --sourcemap && tsc --emitDeclarationOnly --declaration",
+    "build:ci": "eslint --max-warnings=0 && pnpm run build",
+    "lint": "eslint --fix",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:ci": "vitest run --coverage",
+    "test:integration": "vitest run --config vitest.integration.config.ts"
+  },
+  "dependencies": {
+    "@maroonedsoftware/errors": "workspace:*",
+    "injectkit": "^1.5.0",
+    "luxon": "^3.7.2",
+    "mime-types": "^2.1.35"
+  },
+  "peerDependencies": {
+    "@aws-sdk/client-s3": "^3.700.0",
+    "@aws-sdk/lib-storage": "^3.700.0",
+    "@aws-sdk/s3-request-presigner": "^3.700.0",
+    "@google-cloud/storage": "^7.14.0"
+  },
+  "peerDependenciesMeta": {
+    "@aws-sdk/client-s3": {
+      "optional": true
+    },
+    "@aws-sdk/lib-storage": {
+      "optional": true
+    },
+    "@aws-sdk/s3-request-presigner": {
+      "optional": true
+    },
+    "@google-cloud/storage": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@aws-sdk/client-s3": "^3.700.0",
+    "@aws-sdk/lib-storage": "^3.700.0",
+    "@aws-sdk/s3-request-presigner": "^3.700.0",
+    "@google-cloud/storage": "^7.14.0",
+    "@repo/config-eslint": "workspace:*",
+    "@repo/config-typescript": "workspace:*",
+    "@types/luxon": "^3.7.2",
+    "@types/mime-types": "^2.1.4"
+  }
+}
