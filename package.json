@@ -5,6 +5,7 @@
     "build": "turbo run build",
     "build:ci": "turbo run build:ci",
     "changeset": "changeset",
+    "bootstrap:npm": "bash scripts/bootstrap.npm.packages.sh",
     "lint": "turbo run lint",
     "format": "turbo run format",
     "test": "vitest run",
