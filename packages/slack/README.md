@@ -295,6 +295,35 @@ if (isPolicyResultDenied(result)) throw httpError(401).withInternalDetails(resul
 
 The context (`rawBody` + a case-insensitive `getHeader` + `options`) is structurally compatible with `@maroonedsoftware/koa`'s `SignaturePolicyContext<SlackSignatureOptions>`, so the koa `requireSignature` middleware can drive this policy when it's registered under the signature policy name — no koa dependency in this package.
 
+## Use with `@maroonedsoftware/comms`
+
+The `@maroonedsoftware/slack/comms` subpath adapts this package to the channel-agnostic
+[`@maroonedsoftware/comms`](../comms) router, so a `command` / `action` / `message` handler written
+once runs on Slack and every other wired channel. It declares `@maroonedsoftware/comms` as an
+**optional peer** — the slack core doesn't depend on it.
+
+```ts
+import { SlackClient, SlackConfig, verifySlackSignature } from '@maroonedsoftware/slack';
+import { dispatchSlackCommand, dispatchSlackInteraction, dispatchSlackEvent, createSlackNotifier } from '@maroonedsoftware/slack/comms';
+import { router } from './router.js'; // a shared ChannelRouter
+
+router.post('/slack/commands', async (ctx) => {
+  const raw = await rawBody(ctx.req, { encoding: 'utf8' });
+  verifySlackSignature({ signingSecret: ctx.container.get(SlackConfig).signingSecret, rawBody: raw,
+    timestamp: ctx.get('x-slack-request-timestamp'), signature: ctx.get('x-slack-signature') });
+  await dispatchSlackCommand(router, ctx.container.get(SlackClient), Object.fromEntries(new URLSearchParams(raw)) as never);
+  ctx.status = 200; ctx.body = '';
+});
+```
+
+- `dispatchSlackEvent` (→ `message`/`app_mention`, replies via `chat.postMessage`; also returns the
+  `url_verification` challenge), `dispatchSlackCommand` (→ `command`, replies via `response_url`),
+  `dispatchSlackInteraction` (→ `action` for `block_actions`). `view_submission`/modals stay on the
+  native `SlackInteractionHandlerMap`.
+- `createSlackNotifier(client, router.templates)` sends proactively. Buttons render as a Block Kit
+  `actions` block; `reply.sendTemplate(name, data)` renders a registered Slack template;
+  `reply.sendNative(payload)` posts raw Block Kit.
+
 ## Limitations
 
 - v1 supports a single workspace via the bot token in `SlackConfig`. Multi-workspace OAuth install is out of scope.

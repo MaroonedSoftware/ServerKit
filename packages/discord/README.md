@@ -218,6 +218,34 @@ The context (`rawBody` + a case-insensitive `getHeader` + `options`) is structur
 - HTTP interactions only. Real-time Gateway (WebSocket) events are out of scope.
 - v1 targets a single application via the bot token in `DiscordConfig`.
 
+## Use with `@maroonedsoftware/comms`
+
+The `@maroonedsoftware/discord/comms` subpath adapts this package to the channel-agnostic
+[`@maroonedsoftware/comms`](../comms) router (declared as an **optional peer**), so one handler runs
+on Discord and every other wired channel.
+
+```ts
+import { DiscordClient, DiscordConfig, verifyDiscordSignature } from '@maroonedsoftware/discord';
+import { dispatchDiscord, createDiscordNotifier } from '@maroonedsoftware/discord/comms';
+import { router } from './router.js'; // a shared ChannelRouter
+
+http.post('/discord/interactions', async (ctx) => {
+  const raw = await rawBody(ctx.req, { encoding: 'utf8' });
+  verifyDiscordSignature({ publicKey: ctx.container.get(DiscordConfig).publicKey, rawBody: raw,
+    timestamp: ctx.get('x-signature-timestamp'), signature: ctx.get('x-signature-ed25519') });
+  const result = await dispatchDiscord(router, ctx.container.get(DiscordClient), JSON.parse(raw));
+  if (result) ctx.body = result; else ctx.status = 404;
+});
+```
+
+- `dispatchDiscord` handles `PING`→PONG, `APPLICATION_COMMAND`→`command` (string options joined into
+  `command.args`), `MESSAGE_COMPONENT`→`action`. **Reply model:** the handler's first `reply.send` is
+  returned as the interaction callback; further sends post followups via `createFollowupMessage`
+  (Discord's ~3s ack window applies, so reply promptly).
+- There is **no inbound `message`** (HTTP interactions only). Buttons render as component action rows.
+  `createDiscordNotifier(client, router.templates)` posts proactively via `createMessage`;
+  `reply.sendTemplate` / `reply.sendNative` cover rich payloads (embeds, etc.).
+
 ## License
 
 MIT

@@ -229,6 +229,25 @@ importers:
         specifier: ^5.11.1
         version: 5.11.1
 
+  packages/comms:
+    dependencies:
+      '@maroonedsoftware/errors':
+        specifier: workspace:*
+        version: link:../errors
+      '@maroonedsoftware/logger':
+        specifier: workspace:*
+        version: link:../logger
+      injectkit:
+        specifier: ^1.5.0
+        version: 1.5.0
+    devDependencies:
+      '@repo/config-eslint':
+        specifier: workspace:*
+        version: link:../config-eslint
+      '@repo/config-typescript':
+        specifier: workspace:*
+        version: link:../config-typescript
+
   packages/config-eslint:
     devDependencies:
       '@eslint/js':
@@ -282,6 +301,9 @@ importers:
         specifier: ^3.7.2
         version: 3.7.2
     devDependencies:
+      '@maroonedsoftware/comms':
+        specifier: workspace:*
+        version: link:../comms
       '@repo/config-eslint':
         specifier: workspace:*
         version: link:../config-eslint
@@ -703,6 +725,9 @@ importers:
         specifier: ^3.7.2
         version: 3.7.2
     devDependencies:
+      '@maroonedsoftware/comms':
+        specifier: workspace:*
+        version: link:../comms
       '@repo/config-eslint':
         specifier: workspace:*
         version: link:../config-eslint
@@ -768,6 +793,9 @@ importers:
         specifier: ^1.5.0
         version: 1.5.0
     devDependencies:
+      '@maroonedsoftware/comms':
+        specifier: workspace:*
+        version: link:../comms
       '@repo/config-eslint':
         specifier: workspace:*
         version: link:../config-eslint
@@ -805,6 +833,9 @@ importers:
         specifier: ^1.5.0
         version: 1.5.0
     devDependencies:
+      '@maroonedsoftware/comms':
+        specifier: workspace:*
+        version: link:../comms
       '@repo/config-eslint':
         specifier: workspace:*
         version: link:../config-eslint

@@ -195,6 +195,32 @@ The context (`rawBody` + a case-insensitive `getHeader` + `options`) is structur
 
 - v1 targets a single phone number via `WhatsAppConfig`. Media upload/download helpers are out of scope (use `WhatsAppClient.request` against the media endpoints).
 
+## Use with `@maroonedsoftware/comms`
+
+The `@maroonedsoftware/whatsapp/comms` subpath adapts this package to the channel-agnostic
+[`@maroonedsoftware/comms`](../comms) router (declared as an **optional peer**), so one handler runs
+on WhatsApp and every other wired channel.
+
+```ts
+import { WhatsAppClient, WhatsAppConfig, verifyWhatsAppSignature } from '@maroonedsoftware/whatsapp';
+import { dispatchWhatsApp, createWhatsAppNotifier } from '@maroonedsoftware/whatsapp/comms';
+import { router } from './router.js'; // a shared ChannelRouter
+
+http.post('/whatsapp/webhook', async (ctx) => {
+  const raw = await rawBody(ctx.req, { encoding: 'utf8' });
+  verifyWhatsAppSignature({ appSecret: ctx.container.get(WhatsAppConfig).appSecret, rawBody: raw, signature: ctx.get('x-hub-signature-256') });
+  await dispatchWhatsApp(router, ctx.container.get(WhatsAppClient), JSON.parse(raw));
+  ctx.status = 200;
+});
+```
+
+- `dispatchWhatsApp` walks the batch: `/`-prefixed text → `command`, other text → `message`,
+  interactive/quick-reply → `action`. Media and delivery statuses are skipped here — handle them on
+  the native `WhatsAppMessageHandlerMap` / `WhatsAppStatusHandlerMap`.
+- Replies go back to the sender (`message.from`). Buttons render as an interactive button message
+  (≤3) or degrade to a list (>3). `createWhatsAppNotifier(client, router.templates)` sends
+  proactively; `reply.sendTemplate` / `reply.sendNative` cover templates and other rich payloads.
+
 ## License
 
 MIT

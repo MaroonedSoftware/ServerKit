@@ -1,6 +1,6 @@
 {
   "name": "@maroonedsoftware/discord",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "Discord utilities for ServerKit.",
   "author": {
     "name": "Marooned Software",
@@ -25,12 +25,23 @@
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./comms": {
+      "types": "./dist/comms.d.ts",
+      "import": "./dist/comms.js"
+    },
+    "./package.json": "./package.json"
+  },
   "license": "MIT",
   "files": [
     "dist/**"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm --sourcemap && tsc --emitDeclarationOnly --declaration",
+    "build": "tsup src/index.ts src/comms.ts --format esm --sourcemap && tsc --emitDeclarationOnly --declaration",
     "build:ci": "eslint --max-warnings=0 && pnpm run build",
     "lint": "eslint --fix",
     "format": "prettier --write .",
@@ -45,8 +56,17 @@
     "luxon": "^3.7.2"
   },
   "devDependencies": {
+    "@maroonedsoftware/comms": "workspace:*",
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
     "@types/luxon": "^3.7.2"
+  },
+  "peerDependencies": {
+    "@maroonedsoftware/comms": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@maroonedsoftware/comms": {
+      "optional": true
+    }
   }
 }

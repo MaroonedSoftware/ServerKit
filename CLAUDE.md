@@ -53,6 +53,7 @@ packages/
 ├── appconfig/       # Configuration management with multiple sources
 ├── authentication/  # Scheme dispatch, sessions, JWT, OTP, password/email/phone/authenticator/FIDO factors
 ├── cache/           # CacheProvider abstraction with an ioredis implementation
+├── comms/           # Channel-agnostic messaging core (ChannelRouter, Reply/Notifier, TemplateRegistry); chat packages add a ./comms adapter
 ├── discord/         # Discord dispatcher (interaction handlers, Ed25519 signature verification, REST client)
 ├── encryption/      # AES-GCM envelope encryption, per-id KMS provider, PKCE helpers
 ├── errors/          # HTTP error handling and PostgreSQL error mapping
@@ -68,6 +69,8 @@ packages/
 ├── policies/        # Named, DI-friendly allow/deny policies with PolicyService
 ├── scim/            # SCIM user provisioning (filter parser, patch, router, schemas, services)
 ├── slack/           # Slack dispatcher (command/event/interaction handlers, signature verification)
+├── telegram/        # Telegram Bot API dispatcher (command/callback/update handlers, secret-token verification, Bot API client)
+├── whatsapp/        # WhatsApp Cloud API dispatcher (message/interactive/status handlers, HMAC signature + webhook verification, REST client)
 ├── utilities/       # Common utilities (UUID, email, base32, avatar generation)
 ├── zod/             # Zod-to-httpError validation helper
 ├── config-eslint/   # Shared ESLint configuration
@@ -88,8 +91,11 @@ The monorepo uses workspace references (`workspace:*`). Key dependency relations
 - **koa** depends on: `appconfig`, `authentication`, `errors`, `logger`, `multipart`, `policies`, `utilities`
 - **scim** depends on: `authentication`, `errors`, `koa`, `logger`, `utilities`
 - **authentication** depends on: `cache`, `encryption`, `errors`, `logger`, `policies`, `utilities`
-- **slack** depends on: `errors`, `logger`, `policies`
-- **discord** depends on: `errors`, `logger`, `policies`
+- **slack** depends on: `errors`, `logger`, `policies` (+ optional peer `comms` for the `./comms` adapter)
+- **discord** depends on: `errors`, `logger`, `policies` (+ optional peer `comms` for the `./comms` adapter)
+- **whatsapp** depends on: `errors`, `logger`, `policies` (+ optional peer `comms` for the `./comms` adapter)
+- **telegram** depends on: `errors`, `logger`, `policies` (+ optional peer `comms` for the `./comms` adapter)
+- **comms** depends on: `errors`, `logger` (standalone, channel-free core; chat packages bind to it via an optional `./comms` peer)
 - **johnny5** depends on: `appconfig`, `logger`
 - **permissions-dsl** depends on: `permissions`
 - **policies** depends on: `errors`

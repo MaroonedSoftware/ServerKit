@@ -184,6 +184,32 @@ The context (a case-insensitive `getHeader` + `options`, with an ignored optiona
 - Webhook delivery only; long-polling (`getUpdates`) is out of scope.
 - v1 targets a single bot via `TelegramConfig`.
 
+## Use with `@maroonedsoftware/comms`
+
+The `@maroonedsoftware/telegram/comms` subpath adapts this package to the channel-agnostic
+[`@maroonedsoftware/comms`](../comms) router (declared as an **optional peer**), so one handler runs
+on Telegram and every other wired channel.
+
+```ts
+import { TelegramClient, TelegramConfig, verifyTelegramSecretToken } from '@maroonedsoftware/telegram';
+import { dispatchTelegram, createTelegramNotifier } from '@maroonedsoftware/telegram/comms';
+import { router } from './router.js'; // a shared ChannelRouter
+
+http.post('/telegram/webhook', async (ctx) => {
+  const raw = await rawBody(ctx.req, { encoding: 'utf8' });
+  verifyTelegramSecretToken({ secretToken: ctx.container.get(TelegramConfig).secretToken!, headerValue: ctx.get('x-telegram-bot-api-secret-token') });
+  await dispatchTelegram(router, ctx.container.get(TelegramClient), JSON.parse(raw));
+  ctx.status = 200;
+});
+```
+
+- `dispatchTelegram` routes a `/`-command message → `command`, a `callback_query` → `action` (and
+  acknowledges it via `answerCallbackQuery` so handlers stay channel-agnostic), other messages →
+  `message`. Other update types stay on the native handler maps.
+- Replies go to the originating chat. Buttons render as an inline keyboard (`callback_data` = button
+  id). `createTelegramNotifier(client, router.templates)` sends proactively; `reply.sendTemplate` /
+  `reply.sendNative` pass extra `sendMessage` params (parse mode, etc.).
+
 ## License
 
 MIT

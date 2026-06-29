@@ -1,7 +1,7 @@
 {
-  "name": "@maroonedsoftware/whatsapp",
-  "version": "0.0.1",
-  "description": "WhatsApp Cloud API utilities for ServerKit.",
+  "name": "@maroonedsoftware/comms",
+  "version": "0.1.0",
+  "description": "Channel-agnostic messaging core (router, reply, template registry) for ServerKit.",
   "author": {
     "name": "Marooned Software",
     "url": "https://github.com/MaroonedSoftware/serverkit"
@@ -9,10 +9,11 @@
   "bugs": {
     "url": "https://github.com/MaroonedSoftware/serverkit/issues"
   },
-  "homepage": "https://github.com/MaroonedSoftware/serverkit/packages/whatsapp#readme",
+  "homepage": "https://github.com/MaroonedSoftware/serverkit/packages/comms#readme",
   "keywords": [
     "backend",
-    "whatsapp",
+    "comms",
+    "messaging",
     "serverkit",
     "typescript"
   ],
@@ -25,23 +26,12 @@
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    },
-    "./comms": {
-      "types": "./dist/comms.d.ts",
-      "import": "./dist/comms.js"
-    },
-    "./package.json": "./package.json"
-  },
   "license": "MIT",
   "files": [
     "dist/**"
   ],
   "scripts": {
-    "build": "tsup src/index.ts src/comms.ts --format esm --sourcemap && tsc --emitDeclarationOnly --declaration",
+    "build": "tsup src/index.ts --format esm --sourcemap && tsc --emitDeclarationOnly --declaration",
     "build:ci": "eslint --max-warnings=0 && pnpm run build",
     "lint": "eslint --fix",
     "format": "prettier --write .",
@@ -51,22 +41,10 @@
   "dependencies": {
     "@maroonedsoftware/errors": "workspace:*",
     "@maroonedsoftware/logger": "workspace:*",
-    "@maroonedsoftware/policies": "workspace:*",
     "injectkit": "^1.5.0"
   },
   "devDependencies": {
-    "@maroonedsoftware/comms": "workspace:*",
     "@repo/config-eslint": "workspace:*",
-    "@repo/config-typescript": "workspace:*",
-    "@types/luxon": "^3.7.2",
-    "luxon": "^3.7.2"
-  },
-  "peerDependencies": {
-    "@maroonedsoftware/comms": "workspace:*"
-  },
-  "peerDependenciesMeta": {
-    "@maroonedsoftware/comms": {
-      "optional": true
-    }
+    "@repo/config-typescript": "workspace:*"
   }
 }
