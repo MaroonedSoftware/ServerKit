@@ -1,5 +1,17 @@
 # @maroonedsoftware/slack
 
+## 2.0.0
+
+### Minor Changes
+
+- fe8ec2c: Add a `./comms` adapter subpath to each chat package, binding it to the channel-agnostic `@maroonedsoftware/comms` router (declared as an optional peer dependency). Each exposes `dispatch<Channel>…` functions that normalize the channel's inbound payloads into comms events and a `create<Channel>Notifier` for proactive sends, so a single handler runs across every wired channel. The channel cores are unchanged.
+
+### Patch Changes
+
+- ab4acc2: Move `luxon` from `devDependencies` to `dependencies`. `slack.signature.ts` imports `luxon` at runtime, so it must be a regular dependency — it previously resolved only via workspace hoisting and would be missing for an isolated/published consumer.
+- Updated dependencies [fe8ec2c]
+  - @maroonedsoftware/comms@0.2.0
+
 ## 1.9.0
 
 ### Minor Changes
