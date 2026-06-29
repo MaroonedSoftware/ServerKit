@@ -53,6 +53,7 @@ packages/
 ├── appconfig/       # Configuration management with multiple sources
 ├── authentication/  # Scheme dispatch, sessions, JWT, OTP, password/email/phone/authenticator/FIDO factors
 ├── cache/           # CacheProvider abstraction with an ioredis implementation
+├── discord/         # Discord dispatcher (interaction handlers, Ed25519 signature verification, REST client)
 ├── encryption/      # AES-GCM envelope encryption, per-id KMS provider, PKCE helpers
 ├── errors/          # HTTP error handling and PostgreSQL error mapping
 ├── eventbus/        # In-process event bus (subscribers + registration)
@@ -88,6 +89,7 @@ The monorepo uses workspace references (`workspace:*`). Key dependency relations
 - **scim** depends on: `authentication`, `errors`, `koa`, `logger`, `utilities`
 - **authentication** depends on: `cache`, `encryption`, `errors`, `logger`, `policies`, `utilities`
 - **slack** depends on: `errors`, `logger`, `policies`
+- **discord** depends on: `errors`, `logger`, `policies`
 - **johnny5** depends on: `appconfig`, `logger`
 - **permissions-dsl** depends on: `permissions`
 - **policies** depends on: `errors`
