@@ -1,6 +1,6 @@
 {
   "name": "@maroonedsoftware/discord",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "Discord utilities for ServerKit.",
   "author": {
     "name": "Marooned Software",
