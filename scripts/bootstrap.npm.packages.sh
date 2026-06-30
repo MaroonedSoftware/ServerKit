@@ -19,7 +19,7 @@ set -euo pipefail
 # "skip 2FA for the next 5 minutes" so later packages don't re-prompt.
 
 WORKFLOW_FILE="release.yml"          # the workflow that performs the OIDC publish
-REPO="MaroonedSoftware/serverkit"    # owner/repo the trusted publisher lives in
+REPO="MaroonedSoftware/ServerKit"    # owner/repo the trusted publisher lives in
 
 # --- fail fast -------------------------------------------------------------
 npm whoami >/dev/null 2>&1 || { echo "Not logged in. Run: npm login"; exit 1; }
@@ -56,16 +56,50 @@ for dir in packages/*/; do
     ( cd "$dir" && npm publish --access public )
   fi
 
-  # 2. configure trusted publisher if not already set
-  if npm trust list "$name" 2>/dev/null | grep -qi github; then
-    echo "trusted:  $name (already configured)"
-  else
-    echo "trusting: $name"
-    if ! npm trust github "$name" --repository "$REPO" --file "$WORKFLOW_FILE" --allow-publish --yes; then
-      echo "  WARN: trust config failed for $name (already set? OTP needed?)" >&2
-    fi
-    sleep 2   # avoid rate limiting across many packages
-  fi
+  # 2. verify/fix trusted publisher: leave it alone if it already points at the
+  #    right repo+workflow, otherwise revoke the stale config and recreate it.
+  raw="$(npm trust list "$name" --json 2>/dev/null || true)"
+  state="$(REPO="$REPO" WF="$WORKFLOW_FILE" RAW="$raw" node -e '
+    const raw = process.env.RAW || "";
+    let data; try { data = JSON.parse(raw); } catch { console.log("NONE"); process.exit(0); }
+    const arr = Array.isArray(data)
+      ? data
+      : (data.trustedPublishers || data.publishers || data.configs || data.results || (data.id ? [data] : []));
+    if (!arr || arr.length === 0) { console.log("NONE"); process.exit(0); }
+    const repo = process.env.REPO, wf = process.env.WF;
+    const blob = (c) => JSON.stringify(c);
+    if (arr.some((c) => blob(c).includes(repo) && blob(c).includes(wf))) { console.log("OK"); process.exit(0); }
+    let id;
+    const findId = (o) => { if (!o || typeof o !== "object") return; for (const k of Object.keys(o)) {
+      if (k === "id" && (typeof o[k] === "string" || typeof o[k] === "number")) { id = String(o[k]); return; }
+      findId(o[k]); } };
+    arr.forEach(findId);
+    console.log("MISMATCH:" + (id || ""));
+  ')"
+
+  case "$state" in
+    OK)
+      echo "trusted:  $name (already correct)"
+      ;;
+    MISMATCH:*)
+      bad_id="${state#MISMATCH:}"
+      echo "fixing:   $name (stale config -> $REPO / $WORKFLOW_FILE)"
+      if [ -n "$bad_id" ]; then
+        npm trust revoke "$name" --id="$bad_id" || echo "  WARN: revoke failed for $name (id=$bad_id)" >&2
+      else
+        echo "  WARN: could not read existing trust id for $name; trying to recreate" >&2
+      fi
+      npm trust github "$name" --repository "$REPO" --file "$WORKFLOW_FILE" --allow-publish --yes \
+        || echo "  WARN: trust config failed for $name (OTP needed?)" >&2
+      sleep 2
+      ;;
+    *)  # NONE (or unreadable list, e.g. not authed)
+      echo "trusting: $name"
+      npm trust github "$name" --repository "$REPO" --file "$WORKFLOW_FILE" --allow-publish --yes \
+        || echo "  WARN: trust config failed for $name (already set? OTP needed?)" >&2
+      sleep 2
+      ;;
+  esac
 done
 
 echo "Done."
