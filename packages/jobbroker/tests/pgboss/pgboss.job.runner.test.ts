@@ -134,7 +134,7 @@ describe('PgBossJobRunner', () => {
       await workerCallback(mockJobs);
 
       expect(mockContainer.get).toHaveBeenCalledWith(TestJob);
-      expect(testJobInstance.run).toHaveBeenCalledWith({ message: 'Hello' });
+      expect(testJobInstance.run).toHaveBeenCalledWith({ message: 'Hello' }, expect.any(AbortSignal));
     });
 
     it('should process multiple jobs', async () => {
@@ -273,6 +273,131 @@ describe('PgBossJobRunner', () => {
       await workerCallback(mockJobs);
 
       expect(mockContainer.get).toHaveBeenCalledWith(TestJob);
+    });
+  });
+
+  describe('cooperative cancellation', () => {
+    const getWorkerCallback = () => vi.mocked(mockPgBoss.work).mock.calls[0]![1] as (jobs: PgJob<object>[]) => Promise<void>;
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('aborts the signal passed to run when pg-boss reports the job cancelled', async () => {
+      vi.useFakeTimers();
+      mockPgBoss.findJobs = vi.fn().mockResolvedValue([{ id: 'job-1', name: 'test-job', state: 'cancelled', data: {} }]);
+
+      let capturedSignal: AbortSignal | undefined;
+      let resolveRun!: () => void;
+      const running = new Promise<void>(resolve => {
+        resolveRun = resolve;
+      });
+      vi.spyOn(testJobInstance, 'run').mockImplementation(async (_payload, signal) => {
+        capturedSignal = signal;
+        await running;
+      });
+
+      runner.cancelPollIntervalSeconds = 1;
+      await runner.start();
+
+      const callbackPromise = getWorkerCallback()([{ id: 'job-1', data: { message: 'long' } } as unknown as PgJob<object>]);
+
+      // Advance past one poll interval so the runner observes the cancellation.
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(mockPgBoss.findJobs).toHaveBeenCalledWith('test-job', { id: 'job-1' });
+      expect(capturedSignal?.aborted).toBe(true);
+
+      resolveRun();
+      await callbackPromise;
+    });
+
+    it('aborts the signal when the job has been deleted while running', async () => {
+      vi.useFakeTimers();
+      mockPgBoss.findJobs = vi.fn().mockResolvedValue([]);
+
+      let capturedSignal: AbortSignal | undefined;
+      let resolveRun!: () => void;
+      const running = new Promise<void>(resolve => {
+        resolveRun = resolve;
+      });
+      vi.spyOn(testJobInstance, 'run').mockImplementation(async (_payload, signal) => {
+        capturedSignal = signal;
+        await running;
+      });
+
+      runner.cancelPollIntervalSeconds = 1;
+      await runner.start();
+
+      const callbackPromise = getWorkerCallback()([{ id: 'job-1', data: { message: 'long' } } as unknown as PgJob<object>]);
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(capturedSignal?.aborted).toBe(true);
+
+      resolveRun();
+      await callbackPromise;
+    });
+
+    it('stops polling once the job finishes', async () => {
+      vi.useFakeTimers();
+      mockPgBoss.findJobs = vi.fn().mockResolvedValue([{ id: 'job-1', name: 'test-job', state: 'active', data: {} }]);
+      vi.spyOn(testJobInstance, 'run').mockResolvedValue(undefined);
+
+      runner.cancelPollIntervalSeconds = 1;
+      await runner.start();
+
+      await getWorkerCallback()([{ id: 'job-1', data: { message: 'quick' } } as unknown as PgJob<object>]);
+      await vi.advanceTimersByTimeAsync(5000);
+
+      // The worker cleared its poll timer in the finally block, so no lookups fire.
+      expect(mockPgBoss.findJobs).not.toHaveBeenCalled();
+    });
+
+    it('does not poll when cancelPollIntervalSeconds is 0', async () => {
+      vi.useFakeTimers();
+      mockPgBoss.findJobs = vi.fn();
+
+      let capturedSignal: AbortSignal | undefined;
+      let resolveRun!: () => void;
+      const running = new Promise<void>(resolve => {
+        resolveRun = resolve;
+      });
+      vi.spyOn(testJobInstance, 'run').mockImplementation(async (_payload, signal) => {
+        capturedSignal = signal;
+        await running;
+      });
+
+      runner.cancelPollIntervalSeconds = 0;
+      await runner.start();
+
+      const callbackPromise = getWorkerCallback()([{ id: 'job-1', data: { message: 'long' } } as unknown as PgJob<object>]);
+      await vi.advanceTimersByTimeAsync(60000);
+
+      expect(mockPgBoss.findJobs).not.toHaveBeenCalled();
+      expect(capturedSignal?.aborted).toBe(false);
+
+      resolveRun();
+      await callbackPromise;
+    });
+
+    it('runs a handler that ignores the signal to completion despite cancellation', async () => {
+      // Documents the cooperative contract: cancellation is a request, not a kill.
+      vi.useFakeTimers();
+      mockPgBoss.findJobs = vi.fn().mockResolvedValue([{ id: 'job-1', name: 'test-job', state: 'cancelled', data: {} }]);
+
+      let completed = false;
+      vi.spyOn(testJobInstance, 'run').mockImplementation(async () => {
+        // Intentionally never checks the signal.
+        completed = true;
+      });
+
+      runner.cancelPollIntervalSeconds = 1;
+      await runner.start();
+
+      await getWorkerCallback()([{ id: 'job-1', data: { message: 'stubborn' } } as unknown as PgJob<object>]);
+      await vi.advanceTimersByTimeAsync(2000);
+
+      expect(completed).toBe(true);
     });
   });
 

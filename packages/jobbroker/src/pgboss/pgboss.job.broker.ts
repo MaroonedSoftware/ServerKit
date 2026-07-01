@@ -1,6 +1,7 @@
 import { PgBoss } from 'pg-boss';
 import { Injectable } from 'injectkit';
 import { JobBroker } from '../job.broker.js';
+import { JobInfo } from '../job.info.js';
 import { PgBossJobRegistryMap } from './pgboss.job.registration.js';
 import { PgBossConnectionProvider } from './pgboss.connection.provider.js';
 
@@ -62,15 +63,22 @@ export class PgBossJobBroker extends JobBroker {
    * @typeParam Payload - The type of the job payload.
    * @param name - The name of the registered job to execute.
    * @param payload - The data to pass to the job handler.
-   * @returns A promise that resolves when the job has been queued.
+   * @returns A promise that resolves with the id of the queued job.
    * @throws Error if the job name is not found in the registry.
+   * @throws Error if pg-boss does not return a job id (e.g. the job was
+   *         deduplicated away by a singleton policy).
    */
-  async send<Payload extends object>(name: string, payload: Payload): Promise<void> {
+  async send<Payload extends object>(name: string, payload: Payload): Promise<string> {
     if (!this.registrations.has(name)) {
       throw new Error(`Job ${name} is not registered`);
     }
 
-    await this.pgboss.send(name, payload, { db: this.connectionProvider.executor() });
+    const id = await this.pgboss.send(name, payload, { db: this.connectionProvider.executor() });
+    if (!id) {
+      throw new Error(`Failed to enqueue job ${name}`);
+    }
+
+    return id;
   }
 
   /**
@@ -115,5 +123,84 @@ export class PgBossJobBroker extends JobBroker {
     }
 
     await this.pgboss.unschedule(name);
+  }
+
+  /**
+   * Cancels one or more jobs in the PgBoss queue.
+   *
+   * pg-boss marks the job(s) as `cancelled` in PostgreSQL. This works whether a
+   * job is still queued or already running: a queued job is never picked up,
+   * while a running job is observed as cancelled by the {@link PgBossJobRunner}
+   * (which polls for the state change and aborts the handler's `AbortSignal`).
+   * Interrupting a running handler is cooperative — see {@link Job.run}.
+   *
+   * @param name - The name of the registered job to cancel.
+   * @param id - A single job id, or an array of ids, to cancel.
+   * @returns A promise that resolves once the cancellation has been requested.
+   * @throws Error if the job name is not found in the registry.
+   */
+  async cancel(name: string, id: string | string[]): Promise<void> {
+    if (!this.registrations.has(name)) {
+      throw new Error(`Job ${name} is not registered`);
+    }
+
+    await this.pgboss.cancel(name, id, { db: this.connectionProvider.executor() });
+  }
+
+  /**
+   * Resumes one or more previously cancelled jobs, re-queuing them for processing.
+   *
+   * Only jobs currently in the `cancelled` state are affected.
+   *
+   * @param name - The name of the registered job to resume.
+   * @param id - A single job id, or an array of ids, to resume.
+   * @returns A promise that resolves once the jobs have been re-queued.
+   * @throws Error if the job name is not found in the registry.
+   */
+  async resume(name: string, id: string | string[]): Promise<void> {
+    if (!this.registrations.has(name)) {
+      throw new Error(`Job ${name} is not registered`);
+    }
+
+    await this.pgboss.resume(name, id, { db: this.connectionProvider.executor() });
+  }
+
+  /**
+   * Permanently deletes one or more jobs from the PgBoss queue.
+   *
+   * @param name - The name of the registered job to delete.
+   * @param id - A single job id, or an array of ids, to delete.
+   * @returns A promise that resolves once the jobs have been deleted.
+   * @throws Error if the job name is not found in the registry.
+   */
+  async deleteJob(name: string, id: string | string[]): Promise<void> {
+    if (!this.registrations.has(name)) {
+      throw new Error(`Job ${name} is not registered`);
+    }
+
+    await this.pgboss.deleteJob(name, id, { db: this.connectionProvider.executor() });
+  }
+
+  /**
+   * Looks up the current state of a single job.
+   *
+   * @typeParam Payload - The type of the job payload.
+   * @param name - The name of the registered job to look up.
+   * @param id - The id of the job to look up.
+   * @returns A promise that resolves with the {@link JobInfo} for the job, or
+   *          `null` if no job with that id exists.
+   * @throws Error if the job name is not found in the registry.
+   */
+  async getJob<Payload extends object>(name: string, id: string): Promise<JobInfo<Payload> | null> {
+    if (!this.registrations.has(name)) {
+      throw new Error(`Job ${name} is not registered`);
+    }
+
+    const [job] = await this.pgboss.findJobs<Payload>(name, { id, db: this.connectionProvider.executor() });
+    if (!job) {
+      return null;
+    }
+
+    return { id: job.id, name: job.name, state: job.state, data: job.data };
   }
 }

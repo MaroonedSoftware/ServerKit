@@ -363,6 +363,9 @@ importers:
 
   packages/jobbroker:
     dependencies:
+      '@maroonedsoftware/errors':
+        specifier: workspace:*
+        version: link:../errors
       '@maroonedsoftware/logger':
         specifier: workspace:*
         version: link:../logger

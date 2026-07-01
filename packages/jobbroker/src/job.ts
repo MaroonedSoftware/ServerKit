@@ -20,8 +20,10 @@ import { Injectable } from 'injectkit';
  *
  * @Injectable()
  * class SendEmailJob extends Job<EmailPayload> {
- *   async run(payload: EmailPayload): Promise<void> {
- *     await emailService.send(payload.to, payload.subject, payload.body);
+ *   async run(payload: EmailPayload, signal?: AbortSignal): Promise<void> {
+ *     // Long-running work should honor the signal so the job can be cancelled.
+ *     await emailService.send(payload.to, payload.subject, payload.body, { signal });
+ *     if (signal?.aborted) return;
  *   }
  * }
  * ```
@@ -35,9 +37,18 @@ export abstract class Job<Payload extends object = object> {
    * and ready for processing. Implementations should contain the
    * business logic for handling the job.
    *
+   * The optional `signal` is aborted when the job is cancelled (see
+   * {@link JobBroker.cancel}) or when the runner shuts down. Cancellation is
+   * cooperative: long-running handlers should forward `signal` to the async
+   * operations they perform (fetch, database queries, etc.) or periodically
+   * check `signal.aborted` and return early. A handler that ignores the signal
+   * cannot be interrupted and will run to completion.
+   *
    * @param payload - The data required to execute the job.
+   * @param signal - An {@link AbortSignal} that fires when the job is cancelled
+   *                 or the runner stops. Optional; handlers may ignore it.
    * @returns A promise that resolves when the job completes successfully.
    * @throws If the job fails, the error will be caught and logged by the runner.
    */
-  abstract run(payload: Payload): Promise<void>;
+  abstract run(payload: Payload, signal?: AbortSignal): Promise<void>;
 }

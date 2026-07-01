@@ -1,20 +1,28 @@
 import { Injectable } from 'injectkit';
+import { JobInfo } from './job.info.js';
 
 /**
  * Abstract base class for job broker implementations.
  *
- * A job broker is responsible for sending jobs to a queue and managing
- * scheduled jobs. It provides the producer-side interface for the job
- * processing system.
+ * A job broker is responsible for sending jobs to a queue, cancelling and
+ * inspecting jobs, and managing scheduled jobs. It provides the producer-side
+ * interface for the job processing system.
+ *
+ * Backends differ in what they can do. Operations a backend cannot honor throw
+ * a `NotSupportedError` rather than silently doing nothing. The bundled pg-boss
+ * backend supports every operation.
  *
  * @example
  * ```typescript
- * // Sending a job immediately
- * await jobBroker.send('send-email', {
+ * // Sending a job immediately (returns the job id)
+ * const id = await jobBroker.send('send-email', {
  *   to: 'user@example.com',
  *   subject: 'Welcome!',
  *   body: 'Thanks for signing up.'
  * });
+ *
+ * // Cancelling it later, whether it is still queued or already running
+ * await jobBroker.cancel('send-email', id);
  *
  * // Scheduling a recurring job with cron
  * await jobBroker.schedule('daily-report', '0 9 * * *', {
@@ -36,10 +44,12 @@ export abstract class JobBroker {
    * @param name - The unique name identifying the job type.
    *               Must match a registered job handler.
    * @param payload - The data to pass to the job handler.
-   * @returns A promise that resolves when the job has been queued.
+   * @returns A promise that resolves with the id of the queued job. The id can
+   *          be passed to {@link cancel}, {@link resume}, {@link deleteJob}, or
+   *          {@link getJob}.
    * @throws If the job name is not registered.
    */
-  abstract send<Payload extends object>(name: string, payload: Payload): Promise<void>;
+  abstract send<Payload extends object>(name: string, payload: Payload): Promise<string>;
 
   /**
    * Schedules a recurring job using a cron expression.
@@ -68,4 +78,64 @@ export abstract class JobBroker {
    * @throws If the job name is not registered.
    */
   abstract unschedule(name: string): Promise<void>;
+
+  /**
+   * Requests cancellation of one or more jobs.
+   *
+   * Cancellation is best-effort and applies regardless of the job's state: a
+   * job that is still queued is prevented from running, and a job that is
+   * already running is asked to stop. For a running job, cancellation is
+   * cooperative — the job's handler receives an aborted `AbortSignal` (see
+   * {@link Job.run}) and must honor it. A handler that ignores the signal runs
+   * to completion. Some backends may forcefully terminate the running compute
+   * instead; this contract only guarantees the request is delivered.
+   *
+   * @param name - The name of the registered job type.
+   * @param id - A single job id, or an array of ids, to cancel.
+   * @returns A promise that resolves once the cancellation has been requested.
+   * @throws If the job name is not registered.
+   * @throws `NotSupportedError` if the backend cannot cancel jobs.
+   */
+  abstract cancel(name: string, id: string | string[]): Promise<void>;
+
+  /**
+   * Resumes one or more previously cancelled jobs, re-queuing them for processing.
+   *
+   * Only jobs in the `cancelled` state can be resumed; other states are
+   * unaffected.
+   *
+   * @param name - The name of the registered job type.
+   * @param id - A single job id, or an array of ids, to resume.
+   * @returns A promise that resolves once the jobs have been re-queued.
+   * @throws If the job name is not registered.
+   * @throws `NotSupportedError` if the backend cannot resume jobs.
+   */
+  abstract resume(name: string, id: string | string[]): Promise<void>;
+
+  /**
+   * Permanently deletes one or more jobs.
+   *
+   * Removes the job records entirely. Unlike {@link cancel}, a deleted job
+   * leaves no `cancelled` record behind and cannot be resumed.
+   *
+   * @param name - The name of the registered job type.
+   * @param id - A single job id, or an array of ids, to delete.
+   * @returns A promise that resolves once the jobs have been deleted.
+   * @throws If the job name is not registered.
+   * @throws `NotSupportedError` if the backend cannot delete jobs.
+   */
+  abstract deleteJob(name: string, id: string | string[]): Promise<void>;
+
+  /**
+   * Looks up the current state of a single job.
+   *
+   * @typeParam Payload - The type of the job payload.
+   * @param name - The name of the registered job type.
+   * @param id - The id of the job to look up.
+   * @returns A promise that resolves with the {@link JobInfo} for the job, or
+   *          `null` if no job with that id exists.
+   * @throws If the job name is not registered.
+   * @throws `NotSupportedError` if the backend cannot report per-job state.
+   */
+  abstract getJob<Payload extends object>(name: string, id: string): Promise<JobInfo<Payload> | null>;
 }

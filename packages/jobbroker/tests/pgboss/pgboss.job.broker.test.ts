@@ -22,6 +22,10 @@ describe('PgBossJobBroker', () => {
       send: vi.fn().mockResolvedValue('job-id'),
       schedule: vi.fn().mockResolvedValue(undefined),
       unschedule: vi.fn().mockResolvedValue(undefined),
+      cancel: vi.fn().mockResolvedValue({ updated: 1 }),
+      resume: vi.fn().mockResolvedValue({ updated: 1 }),
+      deleteJob: vi.fn().mockResolvedValue({ updated: 1 }),
+      findJobs: vi.fn().mockResolvedValue([]),
     } as unknown as PgBoss;
 
     registrations = new PgBossJobRegistryMap();
@@ -37,13 +41,20 @@ describe('PgBossJobBroker', () => {
   });
 
   describe('send', () => {
-    it('should send a job with payload when job is registered', async () => {
+    it('should send a job with payload when job is registered and return its id', async () => {
       const payload = { message: 'Hello, World!' };
 
-      await broker.send('test-job', payload);
+      const id = await broker.send('test-job', payload);
 
+      expect(id).toBe('job-id');
       expect(mockPgBoss.send).toHaveBeenCalledOnce();
       expect(mockPgBoss.send).toHaveBeenCalledWith('test-job', payload, { db: undefined });
+    });
+
+    it('should throw when pg-boss does not return a job id', async () => {
+      vi.mocked(mockPgBoss.send).mockResolvedValueOnce(null);
+
+      await expect(broker.send('test-job', { message: 'dropped' })).rejects.toThrow('Failed to enqueue job test-job');
     });
 
     it('should throw an error when job is not registered', async () => {
@@ -147,6 +158,94 @@ describe('PgBossJobBroker', () => {
     it('should throw an error when job is not registered', async () => {
       await expect(broker.unschedule('unregistered-job')).rejects.toThrow('Job unregistered-job is not registered');
       expect(mockPgBoss.unschedule).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('cancel', () => {
+    it('should cancel a job by id when registered', async () => {
+      await broker.cancel('test-job', 'job-id');
+
+      expect(mockPgBoss.cancel).toHaveBeenCalledOnce();
+      expect(mockPgBoss.cancel).toHaveBeenCalledWith('test-job', 'job-id', { db: undefined });
+    });
+
+    it('should cancel multiple jobs by id array', async () => {
+      await broker.cancel('test-job', ['a', 'b']);
+
+      expect(mockPgBoss.cancel).toHaveBeenCalledWith('test-job', ['a', 'b'], { db: undefined });
+    });
+
+    it('should cancel on the executor supplied by the connection provider', async () => {
+      const transactionalDb = { executeSql: vi.fn() } as unknown as Db;
+      vi.spyOn(connectionProvider, 'executor').mockReturnValue(transactionalDb);
+
+      await broker.cancel('test-job', 'job-id');
+
+      expect(mockPgBoss.cancel).toHaveBeenCalledWith('test-job', 'job-id', { db: transactionalDb });
+    });
+
+    it('should throw an error when job is not registered', async () => {
+      await expect(broker.cancel('unregistered-job', 'job-id')).rejects.toThrow('Job unregistered-job is not registered');
+      expect(mockPgBoss.cancel).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('resume', () => {
+    it('should resume a job by id when registered', async () => {
+      await broker.resume('test-job', 'job-id');
+
+      expect(mockPgBoss.resume).toHaveBeenCalledOnce();
+      expect(mockPgBoss.resume).toHaveBeenCalledWith('test-job', 'job-id', { db: undefined });
+    });
+
+    it('should throw an error when job is not registered', async () => {
+      await expect(broker.resume('unregistered-job', 'job-id')).rejects.toThrow('Job unregistered-job is not registered');
+      expect(mockPgBoss.resume).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('deleteJob', () => {
+    it('should delete a job by id when registered', async () => {
+      await broker.deleteJob('test-job', 'job-id');
+
+      expect(mockPgBoss.deleteJob).toHaveBeenCalledOnce();
+      expect(mockPgBoss.deleteJob).toHaveBeenCalledWith('test-job', 'job-id', { db: undefined });
+    });
+
+    it('should throw an error when job is not registered', async () => {
+      await expect(broker.deleteJob('unregistered-job', 'job-id')).rejects.toThrow('Job unregistered-job is not registered');
+      expect(mockPgBoss.deleteJob).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getJob', () => {
+    it('should map a pg-boss job to JobInfo when found', async () => {
+      vi.mocked(mockPgBoss.findJobs).mockResolvedValueOnce([
+        {
+          id: 'job-id',
+          name: 'test-job',
+          state: 'active',
+          data: { message: 'hi' },
+        },
+      ] as unknown as Awaited<ReturnType<PgBoss['findJobs']>>);
+
+      const info = await broker.getJob('test-job', 'job-id');
+
+      expect(mockPgBoss.findJobs).toHaveBeenCalledWith('test-job', { id: 'job-id', db: undefined });
+      expect(info).toEqual({ id: 'job-id', name: 'test-job', state: 'active', data: { message: 'hi' } });
+    });
+
+    it('should return null when the job does not exist', async () => {
+      vi.mocked(mockPgBoss.findJobs).mockResolvedValueOnce([]);
+
+      const info = await broker.getJob('test-job', 'missing');
+
+      expect(info).toBeNull();
+    });
+
+    it('should throw an error when job is not registered', async () => {
+      await expect(broker.getJob('unregistered-job', 'job-id')).rejects.toThrow('Job unregistered-job is not registered');
+      expect(mockPgBoss.findJobs).not.toHaveBeenCalled();
     });
   });
 

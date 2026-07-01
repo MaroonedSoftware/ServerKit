@@ -51,6 +51,17 @@ const isPgBossJobRegistration = (registration: any): registration is PgBossJobRe
 @Injectable()
 export class PgBossJobRunner extends JobRunner {
   /**
+   * How often, in seconds, a running job polls pg-boss to detect that it has
+   * been cancelled. When a poll observes the job is no longer present or its
+   * state is `cancelled`, the `AbortSignal` passed to the job's handler is
+   * aborted so cooperative handlers can stop. Set to `0` to disable polling
+   * (running jobs will then only be interruptible on shutdown/timeout).
+   *
+   * @default 5
+   */
+  cancelPollIntervalSeconds = 5;
+
+  /**
    * Creates a new PgBossJobRunner instance.
    *
    * @param container - The DI container for resolving job instances.
@@ -103,15 +114,62 @@ export class PgBossJobRunner extends JobRunner {
         await Promise.allSettled(
           jobs.map(async job => {
             const jobRunner = this.container.get<Job>(identifier);
+            const controller = new AbortController();
+            // pg-boss aborts `job.signal` on timeout/shutdown; combine it with our
+            // own controller, which the cancellation poll aborts. (`signal` is typed
+            // as always present, but may be absent when jobs are faked in tests.)
+            const pgSignal = (job as { signal?: AbortSignal }).signal;
+            const signal = AbortSignal.any(pgSignal ? [controller.signal, pgSignal] : [controller.signal]);
+            const stopWatching = this.watchForCancellation(name, job.id, controller);
             try {
-              await jobRunner.run(job.data);
+              await jobRunner.run(job.data, signal);
             } catch (error) {
               this.logger.error(error);
+            } finally {
+              stopWatching();
             }
           }),
         );
       });
     }
+  }
+
+  /**
+   * Polls pg-boss for a running job and aborts the given controller when the job
+   * has been cancelled (or has disappeared, e.g. via {@link PgBossJobBroker.deleteJob}).
+   *
+   * This is what turns {@link PgBossJobBroker.cancel} into a signal the running
+   * handler can observe, even when `cancel` is called from a different process:
+   * the cancellation is a state change on the shared PostgreSQL row, and every
+   * runner polls that row for the jobs it is currently executing.
+   *
+   * @param name - The queue/job name.
+   * @param id - The id of the running job to watch.
+   * @param controller - The controller to abort once cancellation is detected.
+   * @returns A function that stops the poll; always call it when the job finishes.
+   * @internal
+   */
+  private watchForCancellation(name: string, id: string, controller: AbortController): () => void {
+    if (this.cancelPollIntervalSeconds <= 0) {
+      return () => {};
+    }
+
+    const timer = setInterval(async () => {
+      try {
+        const [job] = await this.pgboss.findJobs(name, { id });
+        if (!job || job.state === 'cancelled') {
+          controller.abort();
+          clearInterval(timer);
+        }
+      } catch (error) {
+        this.logger.error(error);
+      }
+    }, this.cancelPollIntervalSeconds * 1000);
+
+    // Don't let the poll timer keep the process alive on its own.
+    timer.unref?.();
+
+    return () => clearInterval(timer);
   }
 
   /**

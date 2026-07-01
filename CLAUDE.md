@@ -101,7 +101,7 @@ The monorepo uses workspace references (`workspace:*`). Key dependency relations
 - **policies** depends on: `errors`
 - **cache** depends on: `errors`, `logger`, `utilities`
 - **encryption** depends on: `errors`
-- **jobbroker** depends on: `logger`
+- **jobbroker** depends on: `errors`, `logger`
 - **kysely** depends on: `errors`, `utilities`
 - **multipart** depends on: `errors`
 - **zod** depends on: `errors`
