@@ -1,14 +1,24 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { Duration } from 'luxon';
 import { JobBroker } from '../src/job.broker.js';
+import { JobInfo } from '../src/job.info.js';
+import { JobSendOptions } from '../src/job.send.options.js';
 
 class TestJobBroker extends JobBroker {
-  send = vi.fn<(name: string, payload: object) => Promise<void>>().mockResolvedValue(undefined);
+  send = vi.fn<(name: string, payload: object, options?: JobSendOptions) => Promise<string>>().mockResolvedValue('job-id');
   schedule = vi.fn<(name: string, cron: string, payload?: object) => Promise<void>>().mockResolvedValue(undefined);
   unschedule = vi.fn<(name: string) => Promise<void>>().mockResolvedValue(undefined);
+  cancel = vi.fn<(name: string, id: string | string[]) => Promise<void>>().mockResolvedValue(undefined);
+  resume = vi.fn<(name: string, id: string | string[]) => Promise<void>>().mockResolvedValue(undefined);
+  deleteJob = vi.fn<(name: string, id: string | string[]) => Promise<void>>().mockResolvedValue(undefined);
+
+  async getJob<Payload extends object>(_name: string, _id: string): Promise<JobInfo<Payload> | null> {
+    return null;
+  }
 }
 
 class FailingJobBroker extends JobBroker {
-  async send(_name: string, _payload: object): Promise<void> {
+  async send(_name: string, _payload: object, _options?: JobSendOptions): Promise<string> {
     throw new Error('Queue unavailable');
   }
 
@@ -17,6 +27,22 @@ class FailingJobBroker extends JobBroker {
   }
 
   async unschedule(_name: string): Promise<void> {
+    throw new Error('Queue unavailable');
+  }
+
+  async cancel(_name: string, _id: string | string[]): Promise<void> {
+    throw new Error('Queue unavailable');
+  }
+
+  async resume(_name: string, _id: string | string[]): Promise<void> {
+    throw new Error('Queue unavailable');
+  }
+
+  async deleteJob(_name: string, _id: string | string[]): Promise<void> {
+    throw new Error('Queue unavailable');
+  }
+
+  async getJob<Payload extends object>(_name: string, _id: string): Promise<JobInfo<Payload> | null> {
     throw new Error('Queue unavailable');
   }
 }
@@ -33,10 +59,14 @@ describe('JobBroker', () => {
       expect(broker).toBeInstanceOf(JobBroker);
     });
 
-    it('should expose send, schedule, and unschedule methods', () => {
+    it('should expose the full broker surface', () => {
       expect(typeof broker.send).toBe('function');
       expect(typeof broker.schedule).toBe('function');
       expect(typeof broker.unschedule).toBe('function');
+      expect(typeof broker.cancel).toBe('function');
+      expect(typeof broker.resume).toBe('function');
+      expect(typeof broker.deleteJob).toBe('function');
+      expect(typeof broker.getJob).toBe('function');
     });
   });
 
@@ -46,9 +76,17 @@ describe('JobBroker', () => {
       expect(broker.send).toHaveBeenCalledWith('send-email', { to: 'user@example.com' });
     });
 
-    it('should return a Promise that resolves to void', async () => {
+    it('should resolve with the queued job id', async () => {
       const result = await broker.send('test-job', { value: 1 });
-      expect(result).toBeUndefined();
+      expect(result).toBe('job-id');
+    });
+
+    it('should accept optional send options such as startAfter', async () => {
+      const options: JobSendOptions = { startAfter: Duration.fromObject({ minutes: 5 }) };
+
+      await broker.send('deferred-job', { value: 1 }, options);
+
+      expect(broker.send).toHaveBeenCalledWith('deferred-job', { value: 1 }, options);
     });
 
     it('should be called once per invocation', async () => {

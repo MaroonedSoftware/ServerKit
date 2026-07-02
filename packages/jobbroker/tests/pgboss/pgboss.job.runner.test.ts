@@ -7,7 +7,7 @@ import { Job } from '../../src/job.js';
 import { Logger } from '@maroonedsoftware/logger';
 
 class TestJob extends Job<{ message: string }> {
-  async run(payload: { message: string }): Promise<void> {
+  async run(payload: { message: string }, _signal?: AbortSignal): Promise<void> {
     console.log(payload.message);
   }
 }
