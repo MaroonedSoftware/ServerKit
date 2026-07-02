@@ -1,6 +1,6 @@
 {
   "name": "@maroonedsoftware/eventbus",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Synchronous, in-process fan-out event dispatch for ServerKit.",
   "author": {
     "name": "Marooned Software",
