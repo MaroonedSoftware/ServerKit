@@ -1,5 +1,11 @@
 # @maroonedsoftware/encryption
 
+## 0.5.3
+
+### Patch Changes
+
+- b759188: Bump shared runtime dependencies: `injectkit` to `^1.6.0` across packages, plus package-specific bumps to `zxcvbn-ts` (authentication), `@slack/web-api` (slack), `mime-types` (storage), and `prettier` (permissions-dsl).
+
 ## 0.5.2
 
 ### Patch Changes

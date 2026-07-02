@@ -1,5 +1,16 @@
 # @maroonedsoftware/scim
 
+## 0.1.33
+
+### Patch Changes
+
+- b759188: Bump shared runtime dependencies: `injectkit` to `^1.6.0` across packages, plus package-specific bumps to `zxcvbn-ts` (authentication), `@slack/web-api` (slack), `mime-types` (storage), and `prettier` (permissions-dsl).
+- Updated dependencies [b759188]
+- Updated dependencies [b759188]
+  - @maroonedsoftware/authentication@4.28.2
+  - @maroonedsoftware/logger@1.1.2
+  - @maroonedsoftware/koa@2.5.0
+
 ## 0.1.32
 
 ### Patch Changes
