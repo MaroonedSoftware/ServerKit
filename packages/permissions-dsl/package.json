@@ -45,7 +45,7 @@
   "dependencies": {
     "@maroonedsoftware/permissions": "workspace:*",
     "ohm-js": "^17.5.0",
-    "prettier": "^3.8.4",
+    "prettier": "^3.9.4",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },

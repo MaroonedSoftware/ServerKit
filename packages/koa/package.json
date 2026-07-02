@@ -38,7 +38,7 @@
     "test:ci": "vitest run --coverage"
   },
   "dependencies": {
-    "@hapi/bourne": "^3.0.0",
+    "@hapi/bourne": "^4.0.0",
     "@maroonedsoftware/appconfig": "workspace:*",
     "@maroonedsoftware/authentication": "workspace:*",
     "@maroonedsoftware/errors": "workspace:*",
@@ -48,9 +48,9 @@
     "@maroonedsoftware/utilities": "workspace:*",
     "co-body": "^6.2.0",
     "inflation": "^2.1.0",
-    "injectkit": "^1.5.0",
+    "injectkit": "^1.6.0",
     "luxon": "^3.7.2",
-    "qs": "^6.15.2",
+    "qs": "^6.15.3",
     "rate-limiter-flexible": "^11.2.0",
     "raw-body": "^3.0.2"
   },

@@ -55,12 +55,12 @@
   "dependencies": {
     "@maroonedsoftware/errors": "workspace:*",
     "@maroonedsoftware/logger": "workspace:*",
-    "injectkit": "^1.5.0"
+    "injectkit": "^1.6.0"
   },
   "devDependencies": {
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
-    "pg-boss": "^12.20.0"
+    "pg-boss": "^12.24.1"
   },
   "peerDependencies": {
     "pg-boss": "^12.5.4"

@@ -12,6 +12,9 @@ Peer dependencies: `koa`, `@koa/router`, `@koa/cors`.
 
 ## Features
 
+- **ServerKitServerBuilder** — Fluent builder that wires an injectkit container, body parsers, middleware, and routes, then runs the module lifecycle (`setup`/`start`/`shutdown`) around a Koa server
+- **serverKitDefaultMiddleware** — Builds the canonical middleware stack (error → context → optional rate limiter → CORS → authentication) from the built container
+- **RateLimiter** — DI token for an injected `rate-limiter-flexible` limiter; when registered, the default stack inserts `rateLimiterMiddleware` automatically
 - **ServerKitContext** — Koa context extended with `container`, `logger`, `requestId`, `correlationId`, `authenticationSession`, and related request metadata
 - **ServerKitRouter** — Router typed for `ServerKitContext`
 - **ServerKitMiddleware** — Middleware type bound to `ServerKitContext`
@@ -21,7 +24,7 @@ Peer dependencies: `koa`, `@koa/router`, `@koa/cors`.
 - **rateLimiterMiddleware** — Per-IP rate limiting via `rate-limiter-flexible` (429 when exceeded)
 - **authenticationMiddleware** — Resolves the `Authorization` header via `AuthenticationSchemeHandler` and populates `ctx.authenticationSession`
 - **bodyParserMiddleware** — Parses JSON, form, text, multipart, or raw body by allowed content types
-- **defaultParserMappings** — Pre-built MIME-type-to-parser map for use with `bodyParserMiddleware`
+- **defaultParserMappings** — Pre-built MIME-subtype-to-parser map (JSON with a bigint reviver, form, text, multipart, and binary types) for use with `bodyParserMiddleware` and `ServerKitServerBuilder`
 - **requireSignature** — Router middleware that verifies a request HMAC signature against `ctx.rawBody`
 - **requirePolicy** — Router middleware that enforces a valid authentication session and a named policy (defaults to `auth.session.mfa.satisfied`); pluggable via `PolicyService`
 
@@ -59,6 +62,33 @@ router.post('/api/echo', bodyParserMiddleware(['application/json']), async ctx =
 app.use(router.routes()).use(router.allowedMethods());
 
 app.listen(3000);
+```
+
+### Server builder
+
+`ServerKitServerBuilder` wires the container, body parsers, middleware, and routes, then runs each module's lifecycle hooks around a Koa server. It sets Luxon's default zone to UTC on construction and throws until `setup` has built the container.
+
+```typescript
+import { ServerKitServerBuilder } from '@maroonedsoftware/koa';
+
+const builder = await new ServerKitServerBuilder().setup(config, logger, modules);
+
+builder
+  .setupMiddleware() // defaults to serverKitDefaultMiddleware(container)
+  .setupRoutes([router.routes(), router.allowedMethods()]);
+
+await builder.start(3000);
+```
+
+`setup` registers the `Logger` and `AppConfig`, wires the parser mappings (defaulting to `defaultParserMappings`), and runs each module's `setup` hook before building the container. `start` runs every module's `start` hook once listening and installs `SIGINT`/`SIGTERM` handlers that trigger a graceful `shutdown` (each module's `shutdown` hook, then `process.exit()`).
+
+`setupMiddleware` accepts a factory `(container) => ServerKitMiddleware[]`; the default `serverKitDefaultMiddleware` returns error → context → optional rate limiter → CORS → authentication. Register a `RateLimiter` in a module's `setup` to have the rate limiter inserted automatically:
+
+```typescript
+import { RateLimiter } from '@maroonedsoftware/koa';
+import { RateLimiterMemory } from 'rate-limiter-flexible';
+
+registry.register(RateLimiter).useInstance(new RateLimiterMemory({ points: 10, duration: 1 }));
 ```
 
 ### Route handlers with ServerKitContext
@@ -257,38 +287,39 @@ router.post(
 
 ### Custom parser mappings
 
-`defaultParserMappings` is the built-in MIME-type-to-parser map used by `bodyParserMiddleware`. You can extend or replace it to register additional parsers:
+`defaultParserMappings` is the built-in MIME-subtype-to-parser map used by `bodyParserMiddleware` and `ServerKitServerBuilder`. Each value is a `ServerKitParserMapping` — a `parser` class plus an optional `options` object (an injectkit `id` and the pre-built `instance`) registered alongside it. Extend or replace it by spreading into a new object:
 
 ```typescript
 import {
   defaultParserMappings,
   BinaryParser,
-  ServerKitParserMappings,
+  ServerKitParserMapping,
 } from '@maroonedsoftware/koa';
 
-const customMappings = {
+const customMappings: Record<string, ServerKitParserMapping> = {
   ...defaultParserMappings,
-  pdf: BinaryParser,
+  'text/csv': { parser: BinaryParser },
 };
 
-// Register the mappings in the DI container; ServerKitBodyParser will resolve them.
-const builder = diRegistry.register(ServerKitParserMappings).useMap();
-for (const [mimeType, parser] of Object.entries(customMappings)) {
-  builder.add(mimeType, parser);
-}
+// Pass the map to the builder, which registers each parser and its options in the container:
+await builder.setup(config, logger, modules, customMappings);
 ```
 
 The default mappings are:
 
-| MIME subtype         | Parser            |
-| -------------------- | ----------------- |
-| `json`               | `JsonParser`      |
-| `application/*+json` | `JsonParser`      |
-| `urlencoded`         | `FormParser`      |
-| `text`               | `TextParser`      |
-| `multipart`          | `MultipartParser` |
+| MIME subtype               | Parser            | Options                                     |
+| -------------------------- | ----------------- | ------------------------------------------- |
+| `json`                     | `JsonParser`      | `JsonParserOptions` (with the bigint reviver) |
+| `application/*+json`       | `JsonParser`      | `JsonParserOptions` (with the bigint reviver) |
+| `urlencoded`               | `FormParser`      | `FormParserOptions`                         |
+| `text`                     | `TextParser`      | `TextParserOptions`                         |
+| `multipart`                | `MultipartParser` | —                                           |
+| `application/octet-stream` | `BinaryParser`    | —                                           |
+| `application/pdf`          | `BinaryParser`    | —                                           |
+| `application/zip`          | `BinaryParser`    | —                                           |
+| `application/gzip`         | `BinaryParser`    | —                                           |
 
-`BinaryParser` is exported but not registered in `defaultParserMappings`; add it explicitly to handle raw payloads such as PDFs or images.
+The `json` mappings bind a `JsonParserOptions` instance whose `reviver` is `bigIntReviver`, so numeric-string bigints round-trip through JSON bodies out of the box.
 
 ## API
 

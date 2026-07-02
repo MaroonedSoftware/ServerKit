@@ -1,7 +1,24 @@
-import { RateLimiterAbstract, RateLimiterRes } from 'rate-limiter-flexible';
+import { RateLimiterRes } from 'rate-limiter-flexible';
+import type { RateLimiterAbstract } from 'rate-limiter-flexible';
 import { DateTime } from 'luxon';
 import { ServerKitMiddleware } from '../../serverkit.middleware.js';
 import { httpError } from '@maroonedsoftware/errors';
+import { Injectable } from 'injectkit';
+
+/**
+ * DI token for an injected rate limiter.
+ *
+ * `rate-limiter-flexible` only ships {@link RateLimiterAbstract} as a type (it is not part of the
+ * package's runtime exports), so this token cannot `extends` it at runtime. Instead it is a bare
+ * injectable class merged with the {@link RateLimiterAbstract} shape, letting any concrete limiter
+ * (e.g. `RateLimiterMemory`, `RateLimiterRedis`) be registered against it while callers still see
+ * the full `consume`/`points` API.
+ */
+/* eslint-disable @typescript-eslint/no-unsafe-declaration-merging, @typescript-eslint/no-empty-object-type, @typescript-eslint/no-empty-interface */
+@Injectable()
+export abstract class RateLimiter {}
+export interface RateLimiter extends RateLimiterAbstract {}
+/* eslint-enable @typescript-eslint/no-unsafe-declaration-merging, @typescript-eslint/no-empty-object-type, @typescript-eslint/no-empty-interface */
 
 /** Type guard that narrows `error` to a `RateLimiterRes` (i.e. a rate-limit exceeded response). */
 const isRateLimiterError = (error: unknown): error is RateLimiterRes => {
@@ -12,10 +29,10 @@ const isRateLimiterError = (error: unknown): error is RateLimiterRes => {
  * Enforces rate limiting per client IP using a `rate-limiter-flexible` instance.
  * Consumes one token per request; throws HTTP 429 when the limit is exceeded.
  *
- * @param rateLimiter - A {@link RateLimiterAbstract} instance (e.g. `RateLimiterMemory`, `RateLimiterRedis`).
+ * @param rateLimiter - A {@link RateLimiter} instance (e.g. `RateLimiterMemory`, `RateLimiterRedis`).
  * @returns {@link ServerKitMiddleware} that consumes a token and continues or throws 429.
  */
-export const rateLimiterMiddleware = (rateLimiter: RateLimiterAbstract): ServerKitMiddleware => {
+export const rateLimiterMiddleware = (rateLimiter: RateLimiter): ServerKitMiddleware => {
   return async (ctx, next) => {
     try {
       await rateLimiter.consume(ctx.ip);
