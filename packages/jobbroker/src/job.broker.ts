@@ -1,5 +1,6 @@
 import { Injectable } from 'injectkit';
 import { JobInfo } from './job.info.js';
+import { JobSendOptions } from './job.send.options.js';
 
 /**
  * Abstract base class for job broker implementations.
@@ -21,6 +22,16 @@ import { JobInfo } from './job.info.js';
  *   body: 'Thanks for signing up.'
  * });
  *
+ * // Deferring a job: run it no earlier than five minutes from now
+ * await jobBroker.send('send-email', payload, {
+ *   startAfter: Duration.fromObject({ minutes: 5 })
+ * });
+ *
+ * // Deferring to an absolute time
+ * await jobBroker.send('send-email', payload, {
+ *   startAfter: DateTime.now().plus({ hours: 2 })
+ * });
+ *
  * // Cancelling it later, whether it is still queued or already running
  * await jobBroker.cancel('send-email', id);
  *
@@ -36,20 +47,28 @@ import { JobInfo } from './job.info.js';
 @Injectable()
 export abstract class JobBroker {
   /**
-   * Sends a job to the queue for immediate processing.
+   * Sends a job to the queue.
    *
-   * The job will be picked up by a worker as soon as one is available.
+   * By default the job is eligible for immediate processing and will be picked
+   * up by a worker as soon as one is available. Pass {@link JobSendOptions.startAfter}
+   * to defer it: the job becomes eligible only once the given delay has elapsed
+   * (a {@link Duration}) or the given moment has passed (a {@link DateTime}).
+   * Deferral is a lower bound, not a guarantee of exact-time execution — the job
+   * runs at the first opportunity after it becomes eligible.
    *
    * @typeParam Payload - The type of the job payload. Must be an object.
    * @param name - The unique name identifying the job type.
    *               Must match a registered job handler.
    * @param payload - The data to pass to the job handler.
+   * @param options - Optional enqueue options, e.g. `startAfter` to defer the job.
    * @returns A promise that resolves with the id of the queued job. The id can
    *          be passed to {@link cancel}, {@link resume}, {@link deleteJob}, or
    *          {@link getJob}.
    * @throws If the job name is not registered.
+   * @throws `NotSupportedError` if `options.startAfter` requests a deferral the
+   *         backend cannot honor (e.g. a delay beyond the backend's maximum).
    */
-  abstract send<Payload extends object>(name: string, payload: Payload): Promise<string>;
+  abstract send<Payload extends object>(name: string, payload: Payload, options?: JobSendOptions): Promise<string>;
 
   /**
    * Schedules a recurring job using a cron expression.

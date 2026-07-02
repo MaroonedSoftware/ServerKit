@@ -372,6 +372,9 @@ importers:
       injectkit:
         specifier: ^1.6.0
         version: 1.6.0
+      luxon:
+        specifier: ^3.7.2
+        version: 3.7.2
     devDependencies:
       '@repo/config-eslint':
         specifier: workspace:*
@@ -379,6 +382,9 @@ importers:
       '@repo/config-typescript':
         specifier: workspace:*
         version: link:../config-typescript
+      '@types/luxon':
+        specifier: ^3.7.2
+        version: 3.7.2
       pg-boss:
         specifier: ^12.24.1
         version: 12.24.1

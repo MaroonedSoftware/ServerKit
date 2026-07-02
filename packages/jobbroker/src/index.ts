@@ -4,5 +4,6 @@
 export * from './job.broker.js';
 export * from './job.js';
 export * from './job.info.js';
+export * from './job.send.options.js';
 export * from './job.runner.js';
 export * from './not.supported.error.js';

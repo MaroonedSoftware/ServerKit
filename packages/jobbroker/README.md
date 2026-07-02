@@ -121,6 +121,12 @@ const id = await broker.send('send-email', {
   body: 'Thanks for signing up.',
 });
 
+// Defer a job with a relative delay (Luxon Duration)...
+await broker.send('send-email', payload, { startAfter: Duration.fromObject({ minutes: 5 }) });
+
+// ...or until an absolute moment (Luxon DateTime)
+await broker.send('send-email', payload, { startAfter: DateTime.now().plus({ hours: 2 }) });
+
 // Inspect a job's current state
 const info = await broker.getJob('send-email', id); // { id, name, state, data } | null
 
@@ -158,6 +164,8 @@ Lower values reduce cancellation latency at the cost of one extra lookup query p
 
 `cancel`, `resume`, `deleteJob`, and `getJob` are best-effort by contract: a backend that cannot honor an operation throws `NotSupportedError` rather than silently doing nothing. `JobState` (`created | retry | active | completed | cancelled | failed`) is the normalized, lowest-common-denominator lifecycle; alternative backends map their native states to the nearest value. The bundled pg-boss backend supports every operation.
 
+`send`'s `startAfter` is deliberately expressed as *intent* (a relative `Duration` or an absolute `DateTime`), not a wire format, so it maps cleanly onto each backend's native deferral mechanism — pg-boss `startAfter` (unbounded), SQS `DelaySeconds` (max 15 minutes), Cloud Tasks `scheduleTime` (up to 30 days). A backend that cannot honor a requested delay (e.g. an SQS backend asked for a 1-hour delay) throws `NotSupportedError` rather than clamping silently.
+
 ## API Reference
 
 ### `Job<Payload>`
@@ -174,7 +182,7 @@ Abstract base class for sending, cancelling, and inspecting jobs. Operations a b
 
 | Method                                                                | Description                                                        |
 | --------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `send<P>(name: string, payload: P): Promise<string>`                  | Queue a job for immediate processing; resolves with the new job id |
+| `send<P>(name: string, payload: P, options?: JobSendOptions): Promise<string>` | Queue a job; resolves with the new job id. Pass `options.startAfter` (a Luxon `Duration` or `DateTime`) to defer it |
 | `schedule<P>(name: string, cron: string, payload?: P): Promise<void>` | Create a recurring job schedule                                    |
 | `unschedule(name: string): Promise<void>`                             | Remove a recurring job schedule                                    |
 | `cancel(name: string, id: string \| string[]): Promise<void>`         | Request cancellation of queued or running jobs (cooperative)       |

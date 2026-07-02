@@ -1,7 +1,9 @@
 import { PgBoss } from 'pg-boss';
 import { Injectable } from 'injectkit';
+import { DateTime, Duration } from 'luxon';
 import { JobBroker } from '../job.broker.js';
 import { JobInfo } from '../job.info.js';
+import { JobSendOptions } from '../job.send.options.js';
 import { PgBossJobRegistryMap } from './pgboss.job.registration.js';
 import { PgBossConnectionProvider } from './pgboss.connection.provider.js';
 
@@ -54,31 +56,58 @@ export class PgBossJobBroker extends JobBroker {
   }
 
   /**
-   * Sends a job to the PgBoss queue for immediate processing.
+   * Sends a job to the PgBoss queue.
    *
    * The job-insert SQL runs against the executor returned by the injected
    * {@link PgBossConnectionProvider}; when that executor is bound to an active
    * transaction, the job is enqueued atomically with that transaction.
    *
+   * When `options.startAfter` is supplied the job is deferred via pg-boss's
+   * native `startAfter`, which imposes no upper bound on the delay: a
+   * {@link Duration} is converted to a relative number of seconds and a
+   * {@link DateTime} to an absolute `Date`.
+   *
    * @typeParam Payload - The type of the job payload.
    * @param name - The name of the registered job to execute.
    * @param payload - The data to pass to the job handler.
+   * @param options - Optional enqueue options, e.g. `startAfter` to defer the job.
    * @returns A promise that resolves with the id of the queued job.
    * @throws Error if the job name is not found in the registry.
    * @throws Error if pg-boss does not return a job id (e.g. the job was
    *         deduplicated away by a singleton policy).
    */
-  async send<Payload extends object>(name: string, payload: Payload): Promise<string> {
+  async send<Payload extends object>(name: string, payload: Payload, options?: JobSendOptions): Promise<string> {
     if (!this.registrations.has(name)) {
       throw new Error(`Job ${name} is not registered`);
     }
 
-    const id = await this.pgboss.send(name, payload, { db: this.connectionProvider.executor() });
+    const id = await this.pgboss.send(name, payload, {
+      db: this.connectionProvider.executor(),
+      ...this.toStartAfter(options?.startAfter),
+    });
     if (!id) {
       throw new Error(`Failed to enqueue job ${name}`);
     }
 
     return id;
+  }
+
+  /**
+   * Maps a backend-agnostic `startAfter` intent onto pg-boss's native
+   * `startAfter` option.
+   *
+   * A {@link Duration} becomes a relative number of seconds; a {@link DateTime}
+   * becomes an absolute `Date`. Returns an empty object when no deferral was
+   * requested so the field is simply omitted from the send options.
+   */
+  private toStartAfter(startAfter: JobSendOptions['startAfter']): { startAfter?: number | Date } {
+    if (Duration.isDuration(startAfter)) {
+      return { startAfter: startAfter.as('seconds') };
+    }
+    if (DateTime.isDateTime(startAfter)) {
+      return { startAfter: startAfter.toJSDate() };
+    }
+    return {};
   }
 
   /**

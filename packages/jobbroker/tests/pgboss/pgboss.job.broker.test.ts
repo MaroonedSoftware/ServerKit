@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { DateTime, Duration } from 'luxon';
 import { Db, PgBoss } from 'pg-boss';
 import { PgBossJobBroker } from '../../src/pgboss/pgboss.job.broker.js';
 import { PgBossJobRegistryMap } from '../../src/pgboss/pgboss.job.registration.js';
@@ -92,6 +93,30 @@ describe('PgBossJobBroker', () => {
       await broker.send('test-job', { message: 'tx' });
 
       expect(mockPgBoss.send).toHaveBeenCalledWith('test-job', { message: 'tx' }, { db: transactionalDb });
+    });
+
+    it('should not set startAfter when no options are provided', async () => {
+      await broker.send('test-job', { message: 'immediate' });
+
+      const [, , sendOptions] = vi.mocked(mockPgBoss.send).mock.calls[0]!;
+      expect(sendOptions).not.toHaveProperty('startAfter');
+    });
+
+    it('should defer via startAfter seconds when given a Duration', async () => {
+      const payload = { message: 'later' };
+
+      await broker.send('test-job', payload, { startAfter: Duration.fromObject({ minutes: 5 }) });
+
+      expect(mockPgBoss.send).toHaveBeenCalledWith('test-job', payload, { db: undefined, startAfter: 300 });
+    });
+
+    it('should defer via an absolute Date when given a DateTime', async () => {
+      const runAt = DateTime.fromISO('2030-01-01T00:00:00.000Z', { zone: 'utc' });
+      const payload = { message: 'at' };
+
+      await broker.send('test-job', payload, { startAfter: runAt });
+
+      expect(mockPgBoss.send).toHaveBeenCalledWith('test-job', payload, { db: undefined, startAfter: runAt.toJSDate() });
     });
   });
 
