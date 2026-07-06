@@ -1,5 +1,12 @@
 # @maroonedsoftware/jobbroker
 
+## 1.8.1
+
+### Patch Changes
+
+- Updated dependencies [b00d9b4]
+  - @maroonedsoftware/errors@1.7.1
+
 ## 1.8.0
 
 ### Minor Changes

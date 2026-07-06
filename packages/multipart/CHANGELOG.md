@@ -1,5 +1,12 @@
 # @maroonedsoftware/multipart
 
+## 1.2.2
+
+### Patch Changes
+
+- Updated dependencies [b00d9b4]
+  - @maroonedsoftware/errors@1.7.1
+
 ## 1.2.1
 
 ### Patch Changes

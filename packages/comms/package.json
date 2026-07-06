@@ -1,6 +1,6 @@
 {
   "name": "@maroonedsoftware/comms",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Channel-agnostic messaging core (router, reply, template registry) for ServerKit.",
   "author": {
     "name": "Marooned Software",
