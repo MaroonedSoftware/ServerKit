@@ -1,6 +1,6 @@
 {
   "name": "@maroonedsoftware/slack",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Slack utilities for ServerKit.",
   "author": {
     "name": "Marooned Software",

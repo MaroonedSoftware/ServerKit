@@ -1,5 +1,14 @@
 # @maroonedsoftware/johnny5
 
+## 4.0.1
+
+### Patch Changes
+
+- Updated dependencies [b00d9b4]
+  - @maroonedsoftware/permissions-dsl@0.4.3
+  - @maroonedsoftware/appconfig@2.1.2
+  - @maroonedsoftware/koa@2.5.1
+
 ## 4.0.0
 
 ### Patch Changes
