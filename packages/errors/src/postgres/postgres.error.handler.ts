@@ -1,4 +1,4 @@
-import { httpError } from '../http/http.error.js';
+import { httpError, type HttpStatusCodes } from '../http/http.error.js';
 
 /**
  * Interface representing a PostgreSQL error with a specific error code.
@@ -39,6 +39,35 @@ export const isPostgresError = (error: Error): error is PostgresError => {
   return typeof code === 'string' && POSTGRES_CODE_PATTERN.test(code);
 };
 
+/** How a given SQLSTATE code maps to an HTTP response: a status and, for opaque 500s, internal-only context for logging. */
+interface PostgresErrorMapping {
+  status: HttpStatusCodes;
+  internal?: Record<string, unknown>;
+}
+
+/**
+ * SQLSTATE code → HTTP mapping. Codes absent from this table fall through to a
+ * bare 500 (see {@link PostgresErrorHandler}). Grouped by response class:
+ * - 23505 (unique violation) → 409; 23503 (FK violation) → 404
+ * - validation-shaped codes → 400
+ * - transaction rollback / deadlock → 500 with an internal `msg` for logs
+ */
+const POSTGRES_ERROR_MAP: Record<string, PostgresErrorMapping> = {
+  '23505': { status: 409 },
+  '23503': { status: 404 },
+  '22000': { status: 400 },
+  '22003': { status: 400 },
+  '22004': { status: 400 },
+  '22023': { status: 400 },
+  '23502': { status: 400 },
+  '22P02': { status: 400 },
+  '23514': { status: 400 },
+  '40000': { status: 500, internal: { msg: 'Transaction rollback' } },
+  '40001': { status: 500, internal: { msg: 'Transaction rollback' } },
+  '40002': { status: 500, internal: { msg: 'Transaction rollback' } },
+  '40P01': { status: 500, internal: { msg: 'Deadlock' } },
+};
+
 /**
  * Handles PostgreSQL errors by converting them to appropriate HTTP errors.
  * Maps PostgreSQL error codes to HTTP status codes:
@@ -65,30 +94,8 @@ export const isPostgresError = (error: Error): error is PostgresError => {
  * ```
  */
 export const PostgresErrorHandler = (error: Error) => {
-  if (isPostgresError(error)) {
-    switch (error.code) {
-      case '23505':
-        throw httpError(409).withCause(error);
-      case '23503':
-        throw httpError(404).withCause(error);
-      case '22000':
-      case '22003':
-      case '22004':
-      case '22023':
-      case '23502':
-      case '22P02':
-      case '23514':
-        throw httpError(400).withCause(error);
-      case '40000':
-      case '40001':
-      case '40002':
-        throw httpError(500).withCause(error).withInternalDetails({ msg: 'Transaction rollback' });
-      case '40P01':
-        throw httpError(500).withCause(error).withInternalDetails({ msg: 'Deadlock' });
-      default:
-        throw httpError(500).withCause(error);
-    }
-  } else {
-    throw error;
-  }
+  if (!isPostgresError(error)) throw error;
+  const mapping = POSTGRES_ERROR_MAP[error.code] ?? { status: 500 };
+  const mapped = httpError(mapping.status).withCause(error);
+  throw mapping.internal ? mapped.withInternalDetails(mapping.internal) : mapped;
 };

@@ -106,81 +106,84 @@ const validateLocal = (opts: LowerOptions, file: FileNode): void => {
     }
 };
 
-const validateRefs = (opts: LowerOptions, file: FileNode): void => {
-    const nsByName = new Map(file.namespaces.map(n => [n.name, n] as const));
+/** Shared context for the reference-validation pass: diagnostic options plus the namespace lookup table. */
+interface RefScope {
+    opts: LowerOptions;
+    nsByName: Map<string, NamespaceNode>;
+}
 
-    const checkExpr = (ns: NamespaceNode, where: PermissionNode, expr: ExprNode): void => {
-        const relNames = new Set<string>();
-        const permNames = new Set<string>();
-        for (const m of ns.members) {
-            if (m.kind === 'relation') relNames.add(m.name);
-            else permNames.add(m.name);
-        }
+/** A `ref` resolves only if the name is a declared relation or permission in the same namespace. */
+const checkRefExpr = (scope: RefScope, ns: NamespaceNode, where: PermissionNode, expr: Extract<ExprNode, { kind: 'ref' }>): void => {
+    const declared = ns.members.some(m => m.name === expr.name);
+    if (!declared) {
+        fail(scope.opts, expr.loc, `${ns.name}.${where.name}: reference to unknown '${expr.name}'`);
+    }
+};
 
-        switch (expr.kind) {
-            case 'ref':
-                if (!relNames.has(expr.name) && !permNames.has(expr.name)) {
-                    fail(opts, expr.loc, `${ns.name}.${where.name}: reference to unknown '${expr.name}'`);
-                }
-                return;
-            case 'ttu': {
-                const tupRel = ns.members.find((m): m is RelationNode => m.kind === 'relation' && m.name === expr.tupleRelation);
-                if (!tupRel) {
-                    fail(opts, expr.loc, `${ns.name}.${where.name}: tupleToUserset walks unknown tuple relation '${expr.tupleRelation}'`);
-                }
-                // computedRelation must exist on at least one subject namespace of tupleRelation
-                let resolved = false;
-                for (const s of tupRel.subjects) {
-                    if (s.relation !== undefined) continue; // userset subjects don't define namespaces to walk
-                    const target = nsByName.get(s.namespace);
-                    if (!target) continue;
-                    const found = target.members.some(m => m.name === expr.computedRelation);
-                    if (found) {
-                        resolved = true;
-                        break;
-                    }
-                }
-                if (!resolved) {
-                    fail(
-                        opts,
-                        expr.loc,
-                        `${ns.name}.${where.name}: tupleToUserset references '${expr.computedRelation}' which is not defined on any subject namespace of '${expr.tupleRelation}'`,
-                    );
-                }
-                return;
+/** A `tupleToUserset` needs its tuple relation to exist and its computed relation to live on some walkable subject namespace. */
+const checkTtuExpr = (scope: RefScope, ns: NamespaceNode, where: PermissionNode, expr: Extract<ExprNode, { kind: 'ttu' }>): void => {
+    const tupRel = ns.members.find((m): m is RelationNode => m.kind === 'relation' && m.name === expr.tupleRelation);
+    if (!tupRel) {
+        fail(scope.opts, expr.loc, `${ns.name}.${where.name}: tupleToUserset walks unknown tuple relation '${expr.tupleRelation}'`);
+    }
+    // computedRelation must exist on at least one subject namespace of tupleRelation.
+    const resolved = tupRel.subjects.some(s => {
+        if (s.relation !== undefined) return false; // userset subjects don't define namespaces to walk
+        const target = scope.nsByName.get(s.namespace);
+        return target?.members.some(m => m.name === expr.computedRelation) ?? false;
+    });
+    if (!resolved) {
+        fail(
+            scope.opts,
+            expr.loc,
+            `${ns.name}.${where.name}: tupleToUserset references '${expr.computedRelation}' which is not defined on any subject namespace of '${expr.tupleRelation}'`,
+        );
+    }
+};
+
+/** Recursively validate that every reference inside a permission expression resolves; dispatches on node kind. */
+const checkExprRefs = (scope: RefScope, ns: NamespaceNode, where: PermissionNode, expr: ExprNode): void => {
+    switch (expr.kind) {
+        case 'ref':
+            return checkRefExpr(scope, ns, where, expr);
+        case 'ttu':
+            return checkTtuExpr(scope, ns, where, expr);
+        case 'union':
+        case 'intersection':
+            if (expr.children.length === 0) {
+                fail(scope.opts, expr.loc, `${ns.name}.${where.name}: ${expr.kind} requires at least one child`);
             }
-            case 'union':
-            case 'intersection':
-                if (expr.children.length === 0) {
-                    fail(opts, expr.loc, `${ns.name}.${where.name}: ${expr.kind} requires at least one child`);
-                }
-                expr.children.forEach(c => checkExpr(ns, where, c));
-                return;
-            case 'exclusion':
-                checkExpr(ns, where, expr.base);
-                checkExpr(ns, where, expr.subtract);
-                return;
-        }
-    };
+            expr.children.forEach(c => checkExprRefs(scope, ns, where, c));
+            return;
+        case 'exclusion':
+            checkExprRefs(scope, ns, where, expr.base);
+            checkExprRefs(scope, ns, where, expr.subtract);
+            return;
+    }
+};
 
+/** Every subject of a relation must name a known namespace, and any subject userset must name a relation that exists there. */
+const checkRelationSubjects = (scope: RefScope, ns: NamespaceNode, m: RelationNode): void => {
+    for (const s of m.subjects) {
+        const target = scope.nsByName.get(s.namespace);
+        if (!target) {
+            fail(scope.opts, s.loc, `${ns.name}.${m.name}: unknown subject namespace '${s.namespace}'`);
+        }
+        if (s.relation !== undefined) {
+            const exists = target.members.some(mm => mm.name === s.relation);
+            if (!exists) {
+                fail(scope.opts, s.loc, `${ns.name}.${m.name}: unknown subject relation '${s.namespace}.${s.relation}'`);
+            }
+        }
+    }
+};
+
+const validateRefs = (opts: LowerOptions, file: FileNode): void => {
+    const scope: RefScope = { opts, nsByName: new Map(file.namespaces.map(n => [n.name, n] as const)) };
     for (const ns of file.namespaces) {
         for (const m of ns.members) {
-            if (m.kind === 'relation') {
-                for (const s of m.subjects) {
-                    const target = nsByName.get(s.namespace);
-                    if (!target) {
-                        fail(opts, s.loc, `${ns.name}.${m.name}: unknown subject namespace '${s.namespace}'`);
-                    }
-                    if (s.relation !== undefined) {
-                        const exists = target.members.some(mm => mm.name === s.relation);
-                        if (!exists) {
-                            fail(opts, s.loc, `${ns.name}.${m.name}: unknown subject relation '${s.namespace}.${s.relation}'`);
-                        }
-                    }
-                }
-            } else {
-                checkExpr(ns, m, m.expr);
-            }
+            if (m.kind === 'relation') checkRelationSubjects(scope, ns, m);
+            else checkExprRefs(scope, ns, m, m.expr);
         }
     }
 };

@@ -85,44 +85,28 @@ export interface CompileOptions {
     dryRun?: boolean;
 }
 
+/** A single input file paired with its cache decision and the namespace names visible to it. */
+interface FilePlan {
+    parsed: ParsedFile;
+    visibleNames: string[];
+    cached: boolean;
+}
+
+/** Everything stage 4 produces: the outputs written, cache bookkeeping, and the index inputs. */
+interface CodegenResult {
+    writtenOutputs: string[];
+    cachedNamespaces: string[];
+    namespaceNames: string[];
+    namespaceImports: { name: string; from: string }[];
+    newFiles: Record<string, CachedFileEntry>;
+}
+
 /**
- * Compile every `.perm` file matched by `config.patterns` into TypeScript.
- * Pipeline: discover → parse → cross-file duplicate-namespace check → per-file
- * semantic validation (with sibling namespaces visible) → codegen → optional
- * prettier pass → write.
- *
- * Reuses outputs from `<cacheDir>/manifest.json` when an input file's source
- * hash and visible-namespace name set are unchanged since the last run.
- * Diagnostics across files are aggregated and surfaced as an
- * {@link AggregateCompileError}.
- *
- * Output: one file per namespace at `output.namespace` (with `{filename}`
- * replaced by the namespace name) plus an aggregate `output.model` file that
- * re-exports the namespaces and constructs an `AuthorizationModel`. Generated
- * files whose source namespace no longer exists are deleted.
- *
- * Pass `{ dryRun: true }` to plan without writing — see {@link CompileOptions}.
- *
- * @throws {AggregateCompileError} when one or more files produce
- *   {@link CompileError}s (grammar errors, duplicate or unknown names,
- *   tupleToUserset references that don't resolve, or invalid models).
- * @throws {Error} if no files match `patterns`.
+ * Stage 1 — read and parse every input. Parsing is cheap, so we always re-parse
+ * (namespace names feed the cross-file dup check and must be authoritative).
+ * {@link CompileError}s are collected; any other error is re-thrown.
  */
-export const compile = async (config: PermissionsConfig, options: CompileOptions = {}): Promise<CompileResult> => {
-    const dryRun = options.dryRun === true;
-    const inputs = await expandPatterns(config);
-    if (inputs.length === 0) {
-        throw new Error(`no files matched patterns: ${config.patterns.join(', ')}`);
-    }
-
-    const compilerVersion = await readCompilerVersion();
-    const configHash = computeConfigHash(config, compilerVersion);
-    const cacheDir = config.cacheDir ?? resolve(config.rootDir, 'node_modules', '.cache', 'pdsl');
-    const manifestPath = resolve(cacheDir, 'manifest.json');
-    const prevManifest = await loadManifest(manifestPath, configHash);
-
-    // 1. Parse every file. (Parsing is cheap; we always re-parse so namespace
-    //    names — which feed the cross-file dup check — are authoritative.)
+const parseInputFiles = async (inputs: string[]): Promise<{ parsed: ParsedFile[]; errors: CompileError[] }> => {
     const parsed: ParsedFile[] = [];
     const errors: CompileError[] = [];
     for (const filename of inputs) {
@@ -136,8 +120,12 @@ export const compile = async (config: PermissionsConfig, options: CompileOptions
             else throw err;
         }
     }
+    return { parsed, errors };
+};
 
-    // 2. Cross-file: detect every duplicate namespace (continue past the first).
+/** Stage 2 — one {@link CompileError} per namespace declared in more than one file (continues past the first). */
+const collectDuplicateNamespaces = (parsed: ParsedFile[]): CompileError[] => {
+    const errors: CompileError[] = [];
     const firstSeen = new Map<string, ParsedFile>();
     for (const p of parsed) {
         for (const ns of p.file.namespaces) {
@@ -156,19 +144,17 @@ export const compile = async (config: PermissionsConfig, options: CompileOptions
             if (!prior) firstSeen.set(ns.name, p);
         }
     }
+    return errors;
+};
 
-    // 3. Per-file validation — each file sees its own namespaces plus sibling
-    //    namespaces from other files. Skip lower() for files whose source AND
-    //    visible-name set match the previous run.
+/**
+ * Stage 3a — pair each parsed file with the namespaces visible to it (its own
+ * plus every sibling) and decide whether the previous run's output can be
+ * reused (source hash AND visible-name set unchanged, with outputs on record).
+ */
+const buildFilePlans = (parsed: ParsedFile[], prevManifest: CacheManifest): { plans: FilePlan[]; allNamespaces: NamespaceNode[] } => {
     const allNamespaces: NamespaceNode[] = parsed.flatMap(p => p.file.namespaces);
     const allNames = allNamespaces.map(n => n.name);
-
-    interface FilePlan {
-        parsed: ParsedFile;
-        visibleNames: string[];
-        cached: boolean;
-    }
-
     const plans: FilePlan[] = parsed.map(p => {
         const ownNames = new Set(p.file.namespaces.map(n => n.name));
         const visibleNames = [...p.file.namespaces.map(n => n.name), ...allNames.filter(n => !ownNames.has(n))];
@@ -180,7 +166,12 @@ export const compile = async (config: PermissionsConfig, options: CompileOptions
             prev.namespaceNames.every(n => prev.outputs[n] !== undefined);
         return { parsed: p, visibleNames, cached };
     });
+    return { plans, allNamespaces };
+};
 
+/** Stage 3b — semantically validate every non-cached file, with its sibling namespaces visible. */
+const validatePlans = (plans: FilePlan[], allNamespaces: NamespaceNode[]): CompileError[] => {
+    const errors: CompileError[] = [];
     for (const plan of plans) {
         if (plan.cached) continue;
         const ownNames = new Set(plan.parsed.file.namespaces.map(n => n.name));
@@ -188,17 +179,27 @@ export const compile = async (config: PermissionsConfig, options: CompileOptions
         const result = validateFile({ source: plan.parsed.source, filename: plan.parsed.filename, siblings });
         if (result.error) errors.push(result.error);
     }
+    return errors;
+};
 
-    if (errors.length > 0) {
-        throw new AggregateCompileError(errors);
-    }
-
-    // 4. Codegen — one TS file per namespace + an aggregate index.
+/**
+ * Stage 4 — render one TypeScript file per namespace, serving unchanged outputs
+ * from the previous manifest and (re)writing the rest. Returns the written
+ * paths, the namespaces served from cache, and the manifest entries + index
+ * imports the later stages consume.
+ */
+const generateNamespaceOutputs = async (args: {
+    plans: FilePlan[];
+    prevManifest: CacheManifest;
+    config: PermissionsConfig;
+    modelOut: string;
+    dryRun: boolean;
+}): Promise<CodegenResult> => {
+    const { plans, prevManifest, config, modelOut, dryRun } = args;
     const writtenOutputs: string[] = [];
     const cachedNamespaces: string[] = [];
     const namespaceNames: string[] = [];
     const namespaceImports: { name: string; from: string }[] = [];
-    const modelOut = resolveModelOutput(config);
     const newFiles: Record<string, CachedFileEntry> = {};
 
     for (const plan of plans) {
@@ -234,18 +235,39 @@ export const compile = async (config: PermissionsConfig, options: CompileOptions
         newFiles[plan.parsed.filename] = fileEntry;
     }
 
-    // 5. Aggregate index — rebuild whenever the namespace name set or order
-    //    changes, or when the model output path moves.
+    return { writtenOutputs, cachedNamespaces, namespaceNames, namespaceImports, newFiles };
+};
+
+/**
+ * Stage 5 — render and write the aggregate index, rebuilt only when the
+ * namespace set/order changes or the model output path moves. Always returns
+ * the content hash (the manifest records it regardless of whether we wrote).
+ */
+const writeAggregateIndex = async (args: {
+    config: PermissionsConfig;
+    namespaceImports: { name: string; from: string }[];
+    modelOut: string;
+    prevManifest: CacheManifest;
+    dryRun: boolean;
+}): Promise<{ written: boolean; contentHash: string }> => {
+    const { config, namespaceImports, modelOut, prevManifest, dryRun } = args;
     const indexSrc = renderIndex({ permissionsImport: config.permissionsImport, namespaceImports });
     const formattedIndex = config.prettier ? await formatWithPrettier(indexSrc, modelOut) : indexSrc;
-    const indexContentHash = hashString(formattedIndex);
-    const indexNeedsWrite = prevManifest.index === null || prevManifest.index.path !== modelOut || prevManifest.index.contentHash !== indexContentHash;
-    if (indexNeedsWrite) {
-        const written = dryRun ? await wouldWrite(modelOut, formattedIndex) : await writeIfChanged(modelOut, formattedIndex);
-        if (written) writtenOutputs.push(modelOut);
-    }
+    const contentHash = hashString(formattedIndex);
+    const needsWrite = prevManifest.index === null || prevManifest.index.path !== modelOut || prevManifest.index.contentHash !== contentHash;
+    if (!needsWrite) return { written: false, contentHash };
+    const written = dryRun ? await wouldWrite(modelOut, formattedIndex) : await writeIfChanged(modelOut, formattedIndex);
+    return { written, contentHash };
+};
 
-    // 6. Orphan cleanup — anything the previous run wrote that this run didn't.
+/** Stage 6 — delete anything the previous run wrote that this run no longer produces (including a moved index). */
+const removeOrphans = async (args: {
+    newFiles: Record<string, CachedFileEntry>;
+    modelOut: string;
+    prevManifest: CacheManifest;
+    dryRun: boolean;
+}): Promise<string[]> => {
+    const { newFiles, modelOut, prevManifest, dryRun } = args;
     const currentOutputs = new Set<string>();
     for (const entry of Object.values(newFiles)) for (const o of Object.values(entry.outputs)) currentOutputs.add(o.path);
     currentOutputs.add(modelOut);
@@ -262,19 +284,85 @@ export const compile = async (config: PermissionsConfig, options: CompileOptions
         if (!dryRun) await rm(prevManifest.index.path, { force: true });
         orphaned.push(prevManifest.index.path);
     }
+    return orphaned;
+};
+
+/**
+ * Compile every `.perm` file matched by `config.patterns` into TypeScript.
+ * Pipeline: discover → parse → cross-file duplicate-namespace check → per-file
+ * semantic validation (with sibling namespaces visible) → codegen → optional
+ * prettier pass → write. Each numbered stage is a dedicated helper; this
+ * function only sequences them and threads the shared manifest state.
+ *
+ * Reuses outputs from `<cacheDir>/manifest.json` when an input file's source
+ * hash and visible-namespace name set are unchanged since the last run.
+ * Diagnostics across files are aggregated and surfaced as an
+ * {@link AggregateCompileError}.
+ *
+ * Output: one file per namespace at `output.namespace` (with `{filename}`
+ * replaced by the namespace name) plus an aggregate `output.model` file that
+ * re-exports the namespaces and constructs an `AuthorizationModel`. Generated
+ * files whose source namespace no longer exists are deleted.
+ *
+ * Pass `{ dryRun: true }` to plan without writing — see {@link CompileOptions}.
+ *
+ * @throws {AggregateCompileError} when one or more files produce
+ *   {@link CompileError}s (grammar errors, duplicate or unknown names,
+ *   tupleToUserset references that don't resolve, or invalid models).
+ * @throws {Error} if no files match `patterns`.
+ */
+export const compile = async (config: PermissionsConfig, options: CompileOptions = {}): Promise<CompileResult> => {
+    const dryRun = options.dryRun === true;
+    const inputs = await expandPatterns(config);
+    if (inputs.length === 0) {
+        throw new Error(`no files matched patterns: ${config.patterns.join(', ')}`);
+    }
+
+    const compilerVersion = await readCompilerVersion();
+    const configHash = computeConfigHash(config, compilerVersion);
+    const cacheDir = config.cacheDir ?? resolve(config.rootDir, 'node_modules', '.cache', 'pdsl');
+    const manifestPath = resolve(cacheDir, 'manifest.json');
+    const prevManifest = await loadManifest(manifestPath, configHash);
+
+    // 1. Parse every file.
+    const { parsed, errors } = await parseInputFiles(inputs);
+
+    // 2. Cross-file duplicate-namespace detection.
+    errors.push(...collectDuplicateNamespaces(parsed));
+
+    // 3. Plan cache reuse, then validate the non-cached files against their siblings.
+    const { plans, allNamespaces } = buildFilePlans(parsed, prevManifest);
+    errors.push(...validatePlans(plans, allNamespaces));
+
+    if (errors.length > 0) {
+        throw new AggregateCompileError(errors);
+    }
+
+    const modelOut = resolveModelOutput(config);
+
+    // 4. Codegen — one TS file per namespace.
+    const codegen = await generateNamespaceOutputs({ plans, prevManifest, config, modelOut, dryRun });
+    const writtenOutputs = [...codegen.writtenOutputs];
+
+    // 5. Aggregate index.
+    const index = await writeAggregateIndex({ config, namespaceImports: codegen.namespaceImports, modelOut, prevManifest, dryRun });
+    if (index.written) writtenOutputs.push(modelOut);
+
+    // 6. Orphan cleanup.
+    const orphaned = await removeOrphans({ newFiles: codegen.newFiles, modelOut, prevManifest, dryRun });
 
     // 7. Persist the manifest (skipped under dryRun so the next real compile still has accurate state).
     if (!dryRun) {
         const nextManifest: CacheManifest = {
             version: 1,
             configHash,
-            files: newFiles,
-            index: { path: modelOut, contentHash: indexContentHash },
+            files: codegen.newFiles,
+            index: { path: modelOut, contentHash: index.contentHash },
         };
         await saveManifest(manifestPath, nextManifest);
     }
 
-    return { inputs, outputs: writtenOutputs, namespaces: namespaceNames, cached: cachedNamespaces, orphaned };
+    return { inputs, outputs: writtenOutputs, namespaces: codegen.namespaceNames, cached: codegen.cachedNamespaces, orphaned };
 };
 
 /** Like {@link writeIfChanged}, but never touches disk — returns whether a write *would* occur. */
