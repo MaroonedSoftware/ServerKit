@@ -48,5 +48,8 @@
   "devDependencies": {
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

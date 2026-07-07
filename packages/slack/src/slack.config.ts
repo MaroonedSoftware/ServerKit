@@ -28,6 +28,12 @@ export interface SlackConfig {
    * verification rejects them as replays. Defaults to `300` (5 minutes).
    */
   signatureMaxAgeSeconds?: number;
+  /**
+   * Per-request timeout (in milliseconds) for outbound `SlackClient.postWebhook`
+   * calls. Defaults to
+   * {@link import('./client/slack.client.js').SLACK_DEFAULT_REQUEST_TIMEOUT_MS} (10s).
+   */
+  requestTimeoutMs?: number;
 }
 
 @Injectable()

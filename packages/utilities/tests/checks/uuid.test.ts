@@ -35,6 +35,18 @@ describe('isUuid', () => {
       expect(isUuid('550e8400-e29b-01d4-a716-446655440000')).toBe(true);
     });
 
+    it('should return true for valid UUID v6', () => {
+      expect(isUuid('1ec9414c-232a-6b00-b3c8-9e6bdeced846')).toBe(true);
+    });
+
+    it('should return true for valid UUID v7', () => {
+      expect(isUuid('017f22e2-79b0-7cc3-98c4-dc0c0c07398f')).toBe(true);
+    });
+
+    it('should return true for valid UUID v8', () => {
+      expect(isUuid('550e8400-e29b-81d4-a716-446655440000')).toBe(true);
+    });
+
     it('should return true for various valid variant bits (8, 9, a, b)', () => {
       expect(isUuid('550e8400-e29b-41d4-8716-446655440000')).toBe(true);
       expect(isUuid('550e8400-e29b-41d4-9716-446655440000')).toBe(true);
@@ -87,12 +99,10 @@ describe('isUuid', () => {
       expect(isUuid('urn:uuid:550e8400-e29b-41d4-a716-446655440000')).toBe(false);
     });
 
-    it('should return false for invalid version (6-9, a-f)', () => {
-      expect(isUuid('550e8400-e29b-61d4-a716-446655440000')).toBe(false);
-      expect(isUuid('550e8400-e29b-71d4-a716-446655440000')).toBe(false);
-      expect(isUuid('550e8400-e29b-81d4-a716-446655440000')).toBe(false);
+    it('should return false for invalid version (9, a-f)', () => {
       expect(isUuid('550e8400-e29b-91d4-a716-446655440000')).toBe(false);
       expect(isUuid('550e8400-e29b-a1d4-a716-446655440000')).toBe(false);
+      expect(isUuid('550e8400-e29b-f1d4-a716-446655440000')).toBe(false);
     });
 
     it('should return false for invalid variant bits (c-f)', () => {

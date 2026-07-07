@@ -29,7 +29,7 @@ describe('PostgresErrorHandler', () => {
   });
 
   describe('foreign key violation (23503)', () => {
-    it('should throw 404 Not Found error', () => {
+    it('should throw 409 Conflict error', () => {
       const error = createPostgresError('23503', 'foreign key constraint violated');
       expect(() => PostgresErrorHandler(error)).toThrow();
       try {
@@ -37,7 +37,7 @@ describe('PostgresErrorHandler', () => {
       } catch (thrown) {
         expect(IsHttpError(thrown)).toBe(true);
         const httpError = thrown as HttpError;
-        expect(httpError.statusCode).toBe(404);
+        expect(httpError.statusCode).toBe(409);
         expect(httpError.cause).toBe(error);
       }
     });

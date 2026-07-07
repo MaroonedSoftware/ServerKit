@@ -69,6 +69,15 @@ describe('BasicAuthenticationHandler', () => {
       expect(issuer.verify).toHaveBeenCalledWith('alice', 'secret');
     });
 
+    it('preserves colons in the password, splitting only on the first colon', async () => {
+      const validSession = makeValidSession();
+      vi.mocked(issuer.verify).mockResolvedValue(validSession);
+
+      await handler.authenticate('basic', encodeBasic('alice', 'p:a:s:s:word'));
+
+      expect(issuer.verify).toHaveBeenCalledWith('alice', 'p:a:s:s:word');
+    });
+
     it('returns the AuthenticationSession resolved by issuer.verify', async () => {
       const validSession = makeValidSession();
       vi.mocked(issuer.verify).mockResolvedValue(validSession);

@@ -92,6 +92,44 @@ describe('corsMiddleware', () => {
     });
   });
 
+  describe('single-string origin', () => {
+    let app: AppHandle;
+    beforeAll(async () => {
+      // A plain string (not an array) must be treated as one allowed origin,
+      // not iterated character-by-character.
+      app = await startApp({ origin: 'https://single.example.com' });
+    });
+    afterAll(async () => {
+      await app.close();
+    });
+
+    it('allows the matching origin', async () => {
+      const res = await fetch(app.url, { headers: { Origin: 'https://single.example.com' } });
+      expect(res.headers.get('access-control-allow-origin')).toBe('https://single.example.com');
+    });
+
+    it('does not echo a different origin', async () => {
+      const res = await fetch(app.url, { headers: { Origin: 'https://other.example.com' } });
+      const allow = res.headers.get('access-control-allow-origin');
+      expect(allow === null || allow === '').toBe(true);
+    });
+  });
+
+  describe('wildcard origin + credentials guard', () => {
+    it('throws at construction when origin "*" is combined with credentials: true', () => {
+      expect(() => corsMiddleware({ origin: '*', credentials: true })).toThrow(/credentials/);
+    });
+
+    it('throws when a defaulted wildcard origin is combined with credentials: true', () => {
+      // origin omitted → defaults to ['*']; still a foot-gun with credentials.
+      expect(() => corsMiddleware({ credentials: true })).toThrow(/credentials/);
+    });
+
+    it('allows credentials with an explicit origin', () => {
+      expect(() => corsMiddleware({ origin: 'https://app.example.com', credentials: true })).not.toThrow();
+    });
+  });
+
   describe('regexp origin matcher', () => {
     let app: AppHandle;
     beforeAll(async () => {

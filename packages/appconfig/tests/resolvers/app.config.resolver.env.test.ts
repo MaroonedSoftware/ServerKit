@@ -134,6 +134,24 @@ describe('AppConfigResolverEnv', () => {
         expect(owner.value).toBe('http://localhost:3000');
       });
 
+      it('resolves two composed env references independently with the default pattern', async () => {
+        // Regression: a greedy `/\$\{env:(.+)\}/g` default would match the whole
+        // `${env:HOST}:${env:PORT}` span once with the garbage key `HOST}:${env:PORT`,
+        // blanking the value. The non-greedy default resolves each reference separately.
+        process.env['HOST'] = 'localhost';
+        process.env['PORT'] = '5432';
+        const provider = new AppConfigResolverEnv();
+        const owner: Record<string, unknown> = { value: '${env:HOST}:${env:PORT}' };
+        const meta: ObjectVisitorMeta = {
+          owner,
+          propertyPath: 'value',
+          path: 'value',
+          propertyType: 'string',
+        };
+        await provider.resolve('${env:HOST}:${env:PORT}', meta);
+        expect(owner.value).toBe('localhost:5432');
+      });
+
       it('should parse JSON values from environment', async () => {
         // The regex captures just the key part (JSON_KEY) in the first capture group
         process.env['JSON_KEY'] = '{"key": "value", "number": 42}';
@@ -151,9 +169,10 @@ describe('AppConfigResolverEnv', () => {
     });
 
     describe('with string prefix', () => {
-      it('should require global regex for matchAll', async () => {
-        // String 'env:' becomes RegExp('env:') which is not global
-        // matchAll requires a global regex, so this will throw
+      it('compiles the string prefix into a global regex so matchAll does not throw', async () => {
+        // String 'env:' becomes RegExp('env:', 'g'); the constructor always forces the `g`
+        // flag that matchAll requires, so resolve() no longer throws. With no capture group
+        // the key is undefined and 'env:' is stripped, leaving the remainder.
         const provider = new AppConfigResolverEnv('env:');
         const owner: Record<string, unknown> = { value: 'env:TEST_KEY' };
         const meta: ObjectVisitorMeta = {
@@ -162,8 +181,8 @@ describe('AppConfigResolverEnv', () => {
           path: 'value',
           propertyType: 'string',
         };
-        // matchAll throws if regex is not global
-        await expect(provider.resolve('env:TEST_KEY', meta)).rejects.toThrow();
+        await provider.resolve('env:TEST_KEY', meta);
+        expect(owner.value).toBe('TEST_KEY');
       });
 
       it('should handle invalid JSON and return string', async () => {
@@ -224,8 +243,9 @@ describe('AppConfigResolverEnv', () => {
     });
 
     describe('with RegExp prefix', () => {
-      it('should require global regex for matchAll', async () => {
-        // Non-global regex will throw in matchAll
+      it('upgrades a non-global regex to global so matchAll does not throw', async () => {
+        // A non-global regex would make matchAll throw; the constructor adds the `g` flag.
+        process.env.TEST_KEY = 'test_value';
         const provider = new AppConfigResolverEnv(/^env:(.+)$/);
         const owner: Record<string, unknown> = { value: 'env:TEST_KEY' };
         const meta: ObjectVisitorMeta = {
@@ -234,7 +254,8 @@ describe('AppConfigResolverEnv', () => {
           path: 'value',
           propertyType: 'string',
         };
-        await expect(provider.resolve('env:TEST_KEY', meta)).rejects.toThrow();
+        await provider.resolve('env:TEST_KEY', meta);
+        expect(owner.value).toBe('test_value');
       });
 
       it('should work with custom global regex pattern', async () => {

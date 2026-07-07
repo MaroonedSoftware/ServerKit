@@ -6,6 +6,19 @@ import { DiscordError } from '../discord.error.js';
 /** Base URL for the Discord REST API (v10). */
 export const DISCORD_API_BASE = 'https://discord.com/api/v10';
 
+/** Default per-request timeout (ms) applied to outbound REST calls. */
+export const DISCORD_DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+
+/**
+ * Masks the interaction-token segment of the token-bearing REST paths so a path
+ * is safe to log. The token is a live 15-minute credential, so it is replaced
+ * with `***` in both `/webhooks/{applicationId}/{token}…` (followups, edits) and
+ * `/interactions/{id}/{token}/callback` (initial response) routes. Other paths
+ * are returned unchanged.
+ */
+export const redactDiscordWebhookToken = (path: string): string =>
+  path.replace(/^(\/webhooks\/[^/]+\/)[^/]+/, '$1***').replace(/^(\/interactions\/[^/]+\/)[^/]+/, '$1***');
+
 /** HTTP methods used by {@link DiscordClient.request}. */
 type DiscordHttpMethod = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
 
@@ -53,6 +66,16 @@ export class DiscordClient {
    */
   createFollowupMessage(token: string, body: Record<string, unknown>): Promise<unknown> {
     return this.request('POST', `/webhooks/${this.config.applicationId}/${token}`, { body, auth: false });
+  }
+
+  /**
+   * Sends the initial interaction response via
+   * `POST /interactions/{id}/{token}/callback` (no bot auth — the token
+   * authorizes). Acknowledges the interaction so subsequent
+   * {@link createFollowupMessage} calls are valid.
+   */
+  createInteractionResponse(interactionId: string, token: string, body: Record<string, unknown>): Promise<unknown> {
+    return this.request('POST', `/interactions/${interactionId}/${token}/callback`, { body, auth: false });
   }
 
   /**
@@ -106,15 +129,19 @@ export class DiscordClient {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(this.config.requestTimeoutMs ?? DISCORD_DEFAULT_REQUEST_TIMEOUT_MS),
     });
 
     if (!response.ok) {
       const text = await response.text().catch(() => '');
-      this.logger.warn('Discord REST call returned non-OK status', { status: response.status, method, path });
-      throw new DiscordError(`Discord REST call ${method} ${path} returned ${response.status}`).withInternalDetails({
+      // The interaction token lives in `/webhooks/{app}/{token}` paths — redact
+      // it before it reaches the log or the loggable internalDetails.
+      const safePath = redactDiscordWebhookToken(path);
+      this.logger.warn('Discord REST call returned non-OK status', { status: response.status, method, path: safePath });
+      throw new DiscordError(`Discord REST call ${method} ${safePath} returned ${response.status}`).withInternalDetails({
         status: response.status,
         body: text,
-        url,
+        url: `${DISCORD_API_BASE}${safePath}`,
       });
     }
 

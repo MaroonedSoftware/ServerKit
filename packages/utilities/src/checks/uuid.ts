@@ -1,12 +1,15 @@
 /**
- * Regular expression pattern for validating UUID strings (versions 0-5).
- * Matches the standard 8-4-4-4-12 hexadecimal format.
+ * Regular expression pattern for validating UUID strings (versions 0-8).
+ * Matches the standard 8-4-4-4-12 hexadecimal format. The version nibble
+ * accepts 0-8, covering the time/name/random versions plus the newer v6/v7/v8;
+ * the variant nibble accepts `0` (so the all-zero nil UUID stays valid) and the
+ * RFC 4122 variant bits `8/9/a/b`.
  */
-const UuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-5][0-9a-f]{3}-[089ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-8][0-9a-f]{3}-[089ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
  * Validates whether a string is a valid UUID (Universally Unique Identifier).
- * Supports UUID versions 0-5 in the standard 8-4-4-4-12 hexadecimal format.
+ * Supports UUID versions 0-8 in the standard 8-4-4-4-12 hexadecimal format.
  *
  * @param value - The string to validate as a UUID.
  * @returns `true` if the string is a valid UUID, `false` otherwise.

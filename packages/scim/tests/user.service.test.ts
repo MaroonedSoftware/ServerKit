@@ -69,6 +69,46 @@ describe('ScimUserService', () => {
     expect(patched.id).toBe(created.id);
   });
 
+  it('patch rejects changing userName to one owned by another user with a 409 uniqueness error', async () => {
+    const { service } = makeService();
+    await service.create({ userName: 'alice' });
+    const bob = await service.create({ userName: 'bob' });
+
+    try {
+      await service.patch(bob.id, [{ op: 'replace', path: 'userName', value: 'alice' }]);
+      expect.fail('expected uniqueness error');
+    } catch (error) {
+      expect(IsScimError(error)).toBe(true);
+      if (IsScimError(error)) {
+        expect(error.statusCode).toBe(409);
+        expect(error.scimType).toBe('uniqueness');
+      }
+    }
+  });
+
+  it('patch allows re-setting userName to the same value (self is not a conflict)', async () => {
+    const { service } = makeService();
+    const alice = await service.create({ userName: 'alice' });
+    const patched = await service.patch(alice.id, [{ op: 'replace', path: 'userName', value: 'alice' }]);
+    expect(patched.userName).toBe('alice');
+  });
+
+  it('patch rejects removing the required userName with a 400 invalidValue error', async () => {
+    const { service } = makeService();
+    const created = await service.create({ userName: 'bjensen' });
+
+    try {
+      await service.patch(created.id, [{ op: 'remove', path: 'userName' }]);
+      expect.fail('expected invalidValue error');
+    } catch (error) {
+      expect(IsScimError(error)).toBe(true);
+      if (IsScimError(error)) {
+        expect(error.statusCode).toBe(400);
+        expect(error.scimType).toBe('invalidValue');
+      }
+    }
+  });
+
   it('delete removes the user', async () => {
     const { service, repo } = makeService();
     const created = await service.create({ userName: 'bjensen' });

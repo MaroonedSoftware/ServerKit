@@ -234,14 +234,16 @@ http.post('/discord/interactions', async (ctx) => {
   verifyDiscordSignature({ publicKey: ctx.container.get(DiscordConfig).publicKey, rawBody: raw,
     timestamp: ctx.get('x-signature-timestamp'), signature: ctx.get('x-signature-ed25519') });
   const result = await dispatchDiscord(router, ctx.container.get(DiscordClient), JSON.parse(raw));
-  if (result) ctx.body = result; else ctx.status = 404;
+  if (result) ctx.body = result; else ctx.status = 200; // 200: matched-and-acked or nothing to reply
 });
 ```
 
 - `dispatchDiscord` handles `PING`→PONG, `APPLICATION_COMMAND`→`command` (string options joined into
-  `command.args`), `MESSAGE_COMPONENT`→`action`. **Reply model:** the handler's first `reply.send` is
-  returned as the interaction callback; further sends post followups via `createFollowupMessage`
-  (Discord's ~3s ack window applies, so reply promptly).
+  `command.args`), `MESSAGE_COMPONENT`→`action`. **Reply model:** a single `reply.send` is returned as
+  the interaction callback. If the handler replies **more than once**, the adapter acknowledges the
+  interaction out of band (via `createInteractionResponse`) so every reply is delivered as a valid
+  followup; `dispatchDiscord` then returns `undefined` and the route responds with an empty 2xx.
+  Discord's ~3s ack window applies, so reply promptly.
 - There is **no inbound `message`** (HTTP interactions only). Buttons render as component action rows.
   `createDiscordNotifier(client, router.templates)` posts proactively via `createMessage`;
   `reply.sendTemplate` / `reply.sendNative` cover rich payloads (embeds, etc.).

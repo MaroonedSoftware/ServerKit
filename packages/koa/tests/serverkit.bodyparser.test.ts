@@ -90,6 +90,21 @@ describe('ServerKitBodyParser', () => {
       expect(result).toBe(parseResult);
     });
 
+    it('resolves a concrete +json type to a wildcard-registered parser (not 415)', async () => {
+      // type-is returns the concrete type (application/vnd.api+json) when it matches the
+      // wildcard key application/*+json, so a direct Map.get(matched) misses.
+      const parseResult = { parsed: { data: true }, raw: '{"data":true}' };
+      mockParser.parse.mockResolvedValue(parseResult);
+      mappings.set('application/*+json', mockParser as unknown as ServerKitParser);
+      const bodyParser = new ServerKitBodyParser(mappings);
+      vi.mocked(mockCtx.request.is).mockReturnValue('application/vnd.api+json');
+
+      const result = await bodyParser.parse(mockCtx);
+
+      expect(result).toBe(parseResult);
+      expect(mockParser.parse).toHaveBeenCalledWith(mockCtx.req);
+    });
+
     it('propagates errors thrown by the parser', async () => {
       mockParser.parse.mockRejectedValue(new Error('parse failed'));
       mappings.set('application/json', mockParser as unknown as ServerKitParser);

@@ -30,6 +30,11 @@ export interface TelegramConfig {
   secretToken?: string;
   /** Bot API base URL. Defaults to {@link TELEGRAM_DEFAULT_API_BASE_URL} (override for a self-hosted Bot API server). */
   apiBaseUrl?: string;
+  /**
+   * Per-request timeout (in milliseconds) for outbound Bot API calls. Defaults to
+   * {@link import('./client/telegram.client.js').TELEGRAM_DEFAULT_REQUEST_TIMEOUT_MS} (10s).
+   */
+  requestTimeoutMs?: number;
 }
 
 @Injectable()

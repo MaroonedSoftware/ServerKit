@@ -45,6 +45,30 @@ Cache utilities with pluggable backends.
 
 ---
 
+### Comms
+
+Channel-agnostic messaging core for ServerKit.
+
+- `ChannelRouter` dispatch with `Reply` / `Notifier` helpers and a `TemplateRegistry`
+- Standalone, channel-free core — chat packages bind to it via an optional `./comms` adapter
+- Depends only on the errors and logger packages
+
+[View documentation →](./packages/comms/README.md)
+
+---
+
+### Discord
+
+Discord interaction dispatcher for ServerKit.
+
+- Interaction handlers with Ed25519 request-signature verification
+- Built-in REST client
+- Optional `./comms` adapter for the messaging core
+
+[View documentation →](./packages/discord/README.md)
+
+---
+
 ### Encryption
 
 Encryption primitives for ServerKit applications, including envelope encryption and a pluggable KMS provider interface.
@@ -68,6 +92,18 @@ Comprehensive error handling with fluent API design and database integration.
 - Class-level error decorators
 
 [View documentation →](./packages/errors/README.md)
+
+---
+
+### EventBus
+
+Synchronous, in-process fan-out event dispatch.
+
+- Register subscribers and publish events in-process
+- No external broker or transport
+- DI-friendly and dependency-free
+
+[View documentation →](./packages/eventbus/README.md)
 
 ---
 
@@ -198,6 +234,18 @@ SCIM 2.0 (RFC 7643/7644) server toolkit — schemas, filter parser, PATCH applie
 
 ---
 
+### Slack
+
+Slack dispatcher for ServerKit.
+
+- Command, event, and interaction handlers
+- Request-signature verification
+- Optional `./comms` adapter for the messaging core
+
+[View documentation →](./packages/slack/README.md)
+
+---
+
 ### Storage
 
 Object storage abstraction with pluggable backends.
@@ -211,6 +259,18 @@ Object storage abstraction with pluggable backends.
 
 ---
 
+### Telegram
+
+Telegram Bot API dispatcher for ServerKit.
+
+- Command, callback, and update handlers
+- Secret-token webhook verification
+- Bot API client, plus an optional `./comms` adapter
+
+[View documentation →](./packages/telegram/README.md)
+
+---
+
 ### Utilities
 
 Common utility functions for everyday server development.
@@ -221,6 +281,18 @@ Common utility functions for everyday server development.
 - Lightweight and dependency-free
 
 [View documentation →](./packages/utilities/README.md)
+
+---
+
+### WhatsApp
+
+WhatsApp Cloud API dispatcher for ServerKit.
+
+- Message, interactive, and status handlers
+- HMAC signature and webhook verification
+- REST client, plus an optional `./comms` adapter
+
+[View documentation →](./packages/whatsapp/README.md)
 
 ---
 
@@ -238,7 +310,7 @@ Zod utilities for ServerKit, integrated with the errors package.
 ## Requirements
 
 - Node.js 22+
-- pnpm 10.24.0+
+- pnpm 11.1.1+
 
 ## Development
 

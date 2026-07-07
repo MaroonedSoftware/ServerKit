@@ -42,4 +42,25 @@ describe('validateFile', () => {
         expect(result.error).toBeUndefined();
         expect(result.file.namespaces.map(n => n.name)).toEqual(['user', 'doc']);
     });
+
+    it('rejects a namespace named after a JS reserved word (`class`)', () => {
+        const result = validateFile({ source: `namespace class { relation self: class }`, filename: 'class.perm' });
+        expect(result.error).toBeInstanceOf(CompileError);
+        expect(result.error!.message).toContain('reserved');
+        expect(result.lowered).toBeUndefined();
+    });
+
+    it('rejects a namespace named `model` (collides with the index export)', () => {
+        const result = validateFile({ source: `namespace model { relation self: model }`, filename: 'model.perm' });
+        expect(result.error).toBeInstanceOf(CompileError);
+        expect(result.error!.message).toContain('reserved');
+        expect(result.lowered).toBeUndefined();
+    });
+
+    it('rejects a namespace named after a permissions builder (`union`)', () => {
+        const result = validateFile({ source: `namespace union { relation self: union }`, filename: 'union.perm' });
+        expect(result.error).toBeInstanceOf(CompileError);
+        expect(result.error!.message).toContain('reserved');
+        expect(result.lowered).toBeUndefined();
+    });
 });

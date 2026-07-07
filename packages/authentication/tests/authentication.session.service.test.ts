@@ -10,6 +10,7 @@ const makeCacheProvider = () =>
   ({
     get: vi.fn().mockResolvedValue(null),
     set: vi.fn().mockResolvedValue(undefined),
+    add: vi.fn().mockResolvedValue(true),
     update: vi.fn().mockResolvedValue(undefined),
     delete: vi.fn().mockResolvedValue(null),
   }) as unknown as CacheProvider;
@@ -327,16 +328,31 @@ describe('AuthenticationSessionService', () => {
       expect(passedFactors[0].authenticatedAt.toUnixInteger()).toBe(1700000000);
     });
 
-    it('returns a Bearer token response with expiresIn taken from the JWT exp claim', async () => {
+    it('returns a Bearer token response with expiresIn as seconds-until-expiry, not the absolute exp timestamp', async () => {
       const session = makeStoredSession();
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(session));
-      jwtProvider.create = vi.fn().mockReturnValue({ token: 'my-jwt', decoded: { exp: 1700003600 } });
+      // exp is an absolute unix timestamp one hour in the future.
+      const exp = Math.floor(DateTime.now().toSeconds()) + 3600;
+      jwtProvider.create = vi.fn().mockReturnValue({ token: 'my-jwt', decoded: { exp } });
 
       const result = await service.issueTokenForSession('session-token');
 
       expect(result.accessToken).toBe('my-jwt');
       expect(result.tokenType).toBe('Bearer');
-      expect(result.expiresIn).toBe(1700003600);
+      // expiresIn is a short lifetime (~3600s), not the huge absolute timestamp.
+      expect(result.expiresIn).toBeGreaterThan(3590);
+      expect(result.expiresIn).toBeLessThanOrEqual(3600);
+    });
+
+    it('floors expiresIn at 0 when the token has already expired', async () => {
+      const session = makeStoredSession();
+      cache.get = vi.fn().mockResolvedValue(JSON.stringify(session));
+      const exp = Math.floor(DateTime.now().toSeconds()) - 3600;
+      jwtProvider.create = vi.fn().mockReturnValue({ token: 'my-jwt', decoded: { exp } });
+
+      const result = await service.issueTokenForSession('session-token');
+
+      expect(result.expiresIn).toBe(0);
     });
 
     it('returns expiresIn=0 when the decoded JWT is missing an exp claim', async () => {
@@ -482,6 +498,11 @@ describe('AuthenticationSessionService', () => {
       get: vi.fn(async (k: string) => store.get(k) ?? null),
       set: vi.fn(async (k: string, v: string) => {
         store.set(k, v);
+      }),
+      add: vi.fn(async (k: string, v: string) => {
+        if (store.has(k)) return false;
+        store.set(k, v);
+        return true;
       }),
       update: vi.fn(async (k: string, v: string) => {
         store.set(k, v);

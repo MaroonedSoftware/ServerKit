@@ -12,6 +12,20 @@ import { MultipartLimits } from './types.js';
 export const MAX_FILE_SIZE = 20 * 1024 * 1024;
 
 /**
+ * Default maximum number of non-file form fields enforced by `MultipartBody` when the
+ * caller does not override the `fields` limit. Busboy otherwise leaves this at `Infinity`,
+ * allowing a field flood to exhaust memory. Exported so consumers can compose their own limits.
+ */
+export const MAX_FIELDS = 1000;
+
+/**
+ * Default maximum number of parts (fields + files) enforced by `MultipartBody` when the
+ * caller does not override the `parts` limit. Set slightly above {@link MAX_FIELDS} to leave
+ * headroom for file parts. Busboy otherwise leaves this at `Infinity`.
+ */
+export const MAX_PARTS = 1010;
+
+/**
  * High-level API for parsing multipart/form-data request bodies.
  *
  * This class provides a simple interface for handling file uploads and form fields
@@ -42,7 +56,8 @@ export class MultipartBody {
    *
    * @param req - The incoming HTTP request containing multipart data
    * @param _limits - Default limits applied to all parse operations.
-   *                  Defaults to 1 file maximum and 20MB file size limit.
+   *                  Defaults to 1 file, a 20MB file size limit, {@link MAX_FIELDS} fields,
+   *                  and {@link MAX_PARTS} parts so a field/parts flood cannot exhaust memory.
    */
   /** Guards against `parse()` being invoked more than once on the same instance. */
   private parseCalled = false;
@@ -52,6 +67,8 @@ export class MultipartBody {
     private readonly _limits: MultipartLimits = {
       files: 1,
       fileSize: MAX_FILE_SIZE,
+      fields: MAX_FIELDS,
+      parts: MAX_PARTS,
     },
   ) {}
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { BinaryParser } from '../../src/parsers/binary.parser.js';
+import { BinaryParser, BinaryParserOptions } from '../../src/parsers/binary.parser.js';
 import { makeReq } from './helpers.js';
 
 describe('BinaryParser', () => {
@@ -29,6 +29,22 @@ describe('BinaryParser', () => {
   it('preserves binary data exactly', async () => {
     const content = Buffer.from([0x00, 0x01, 0xff, 0xfe, 0x7f]);
     const result = await parser.parse(makeReq(content));
+
+    expect(result.parsed).toEqual(content);
+  });
+
+  it('rejects a body over the configured limit with 413', async () => {
+    const limited = new BinaryParser(Object.assign(new BinaryParserOptions(), { limit: '8b' }));
+    const content = Buffer.from('this body is definitely longer than eight bytes');
+
+    await expect(limited.parse(makeReq(content))).rejects.toMatchObject({ status: 413 });
+  });
+
+  it('accepts a body within the configured limit', async () => {
+    const limited = new BinaryParser(Object.assign(new BinaryParserOptions(), { limit: '1kb' }));
+    const content = Buffer.from('small');
+
+    const result = await limited.parse(makeReq(content));
 
     expect(result.parsed).toEqual(content);
   });

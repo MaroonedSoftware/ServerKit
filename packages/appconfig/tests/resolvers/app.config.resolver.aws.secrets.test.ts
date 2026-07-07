@@ -73,9 +73,11 @@ describe('AppConfigResolverAwsSecrets', () => {
       expect(owner[1]).toBe('static');
     });
 
-    it('throws for a non-global regex (matchAll requirement)', async () => {
+    it('upgrades a non-global regex to global so matchAll does not throw', async () => {
       const resolver = stubbedResolver(async () => 'x', /^\$\{aws:(.+)\}$/);
-      await expect(resolver.resolve('${aws:SECRET}', meta({ value: '' }, 'value'))).rejects.toThrow();
+      const owner: Record<string, unknown> = { value: '${aws:SECRET}' };
+      await resolver.resolve('${aws:SECRET}', meta(owner, 'value'));
+      expect(owner.value).toBe('x');
     });
 
     it('propagates a source error', async () => {

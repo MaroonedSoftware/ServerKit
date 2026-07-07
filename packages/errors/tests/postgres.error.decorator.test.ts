@@ -55,7 +55,7 @@ describe('OnPostgresError decorator', () => {
   });
 
   describe('foreign key violation (23503)', () => {
-    it('should convert to 404 Not Found error', () => {
+    it('should convert to 409 Conflict error', () => {
       @OnPostgresError()
       class TestClass {
         method(): void {
@@ -70,7 +70,7 @@ describe('OnPostgresError decorator', () => {
       } catch (thrown) {
         expect(IsHttpError(thrown)).toBe(true);
         const httpError = thrown as HttpError;
-        expect(httpError.statusCode).toBe(404);
+        expect(httpError.statusCode).toBe(409);
         expect((httpError.cause as PostgresError).code).toBe('23503');
       }
     });
@@ -378,7 +378,7 @@ describe('OnPostgresError decorator', () => {
         instance.method2();
       } catch (thrown) {
         expect(IsHttpError(thrown)).toBe(true);
-        expect((thrown as HttpError).statusCode).toBe(404);
+        expect((thrown as HttpError).statusCode).toBe(409);
       }
     });
   });
@@ -419,7 +419,7 @@ describe('OnPostgresError decorator', () => {
         instance.value = 'test';
       } catch (thrown) {
         expect(IsHttpError(thrown)).toBe(true);
-        expect((thrown as HttpError).statusCode).toBe(404);
+        expect((thrown as HttpError).statusCode).toBe(409);
       }
     });
   });

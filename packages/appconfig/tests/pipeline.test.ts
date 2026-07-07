@@ -33,6 +33,16 @@ describe('buildConfigObject', () => {
     expect(result).toEqual({ db: { host: 'b', port: 5432 } });
   });
 
+  it('replaces arrays with the later snapshot rather than concatenating them', async () => {
+    const result = await buildConfigObject([{ a: ['*'] }, { a: ['x'] }], [], false);
+    expect(result).toEqual({ a: ['x'] });
+  });
+
+  it('replaces nested arrays while still deep-merging their sibling objects', async () => {
+    const result = await buildConfigObject([{ cors: { origins: ['*'], creds: { a: 1 } } }, { cors: { origins: ['x.com'], creds: { b: 2 } } }], [], false);
+    expect(result).toEqual({ cors: { origins: ['x.com'], creds: { a: 1, b: 2 } } });
+  });
+
   it('applies resolvers across the merged tree, including nested values', async () => {
     const result = await buildConfigObject(
       [{ name: '${upper:hello}', db: { user: '${upper:admin}' } }, { plain: 'kept' }],

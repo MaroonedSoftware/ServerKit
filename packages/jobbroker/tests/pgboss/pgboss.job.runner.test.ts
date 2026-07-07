@@ -157,7 +157,7 @@ describe('PgBossJobRunner', () => {
       expect(testJobInstance.run).toHaveBeenCalledTimes(3);
     });
 
-    it('should log error when job execution fails', async () => {
+    it('should log error and reject the work callback when job execution fails', async () => {
       const testError = new Error('Job failed');
       vi.spyOn(testJobInstance, 'run').mockRejectedValue(testError);
 
@@ -168,20 +168,20 @@ describe('PgBossJobRunner', () => {
 
       const mockJobs: PgJob<object>[] = [{ id: 'job-1', data: { message: 'Hello' } } as unknown as PgJob<object>];
 
-      await workerCallback(mockJobs);
-
-      // Allow async catch to complete
-      await new Promise(resolve => setTimeout(resolve, 0));
+      // The callback must reject so pg-boss sees the failure (and applies retryLimit /
+      // dead-lettering) rather than acking the batch as complete.
+      await expect(workerCallback(mockJobs)).rejects.toBe(testError);
 
       expect(mockLogger.error).toHaveBeenCalledWith(testError);
     });
 
-    it('should continue processing other jobs when one fails', async () => {
+    it('should continue processing other jobs when one fails, then reject with an AggregateError only for the failures', async () => {
       let callCount = 0;
+      const secondError = new Error('Second job failed');
       vi.spyOn(testJobInstance, 'run').mockImplementation(async () => {
         callCount++;
         if (callCount === 2) {
-          throw new Error('Second job failed');
+          throw secondError;
         }
       });
 
@@ -199,12 +199,32 @@ describe('PgBossJobRunner', () => {
         { id: 'job-3', data: { message: 'Third' } } as unknown as PgJob<object>,
       ];
 
-      await workerCallback(mockJobs);
-
-      // Allow async operations to complete
-      await new Promise(resolve => setTimeout(resolve, 0));
+      // A single bad job does not stop its siblings (all three run), but the handler
+      // still rejects so pg-boss retries the one that threw.
+      await expect(workerCallback(mockJobs)).rejects.toBe(secondError);
 
       expect(testJobInstance.run).toHaveBeenCalledTimes(3);
+    });
+
+    it('rejects with an AggregateError of every failure when multiple jobs throw', async () => {
+      const errors = [new Error('a failed'), new Error('b failed')];
+      let callCount = 0;
+      vi.spyOn(testJobInstance, 'run').mockImplementation(async () => {
+        throw errors[callCount++]!;
+      });
+
+      await runner.start();
+
+      const workCall = vi.mocked(mockPgBoss.work).mock.calls[0]!;
+      const workerCallback = workCall[1] as (jobs: PgJob<object>[]) => Promise<void>;
+
+      const mockJobs: PgJob<object>[] = [
+        { id: 'job-1', data: { message: 'a' } } as unknown as PgJob<object>,
+        { id: 'job-2', data: { message: 'b' } } as unknown as PgJob<object>,
+      ];
+
+      await expect(workerCallback(mockJobs)).rejects.toBeInstanceOf(AggregateError);
+      expect(mockLogger.error).toHaveBeenCalledTimes(2);
     });
 
     it('does not resolve the worker callback until every job in the batch has settled', async () => {

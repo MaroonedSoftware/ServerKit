@@ -65,13 +65,20 @@ const normalize = (update: TelegramUpdate): { event: IncomingEvent; to: string }
  * message → `command`, a `callback_query` → `action` (keyed by `data`, and
  * acknowledged via `answerCallbackQuery`), other messages → `message`. Other
  * update types are left to the telegram package's native handlers.
+ *
+ * Every `callback_query` update is acknowledged in a `finally`, so the inline
+ * button spinner is always dismissed — even when the query carried no `data`
+ * (nothing to route) or the handler threw (which would otherwise trigger a
+ * Telegram redelivery with the spinner still hanging).
  */
 export const dispatchTelegram = async (router: ChannelRouter, client: TelegramClient, update: TelegramUpdate): Promise<void> => {
-  const normalized = normalize(update);
-  if (!normalized) return;
+  try {
+    const normalized = normalize(update);
+    if (!normalized) return;
 
-  await router.dispatch(normalized.event, bindReply(createTelegramNotifier(client, router.templates), normalized.to));
-
-  // Dismiss the inline-button spinner so handlers stay channel-agnostic.
-  if (update.callback_query) await client.answerCallbackQuery({ callback_query_id: update.callback_query.id });
+    await router.dispatch(normalized.event, bindReply(createTelegramNotifier(client, router.templates), normalized.to));
+  } finally {
+    // Dismiss the inline-button spinner so handlers stay channel-agnostic.
+    if (update.callback_query) await client.answerCallbackQuery({ callback_query_id: update.callback_query.id });
+  }
 };

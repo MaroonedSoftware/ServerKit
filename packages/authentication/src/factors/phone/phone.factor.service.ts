@@ -7,6 +7,9 @@ import { PhoneFactorRepository } from './phone.factor.repository.js';
 import { PolicyService } from '@maroonedsoftware/policies';
 import { OtpProvider } from '../../providers/otp.provider.js';
 
+/** Default number of verification attempts allowed against a single challenge before it is invalidated. */
+const DEFAULT_MAX_VERIFICATION_ATTEMPTS = 5;
+
 /**
  * Configuration options for {@link PhoneFactorService}.
  */
@@ -19,6 +22,8 @@ export class PhoneFactorServiceOptions {
     public readonly otpExpiration: Duration = Duration.fromDurationLike({ minutes: 10 }),
     /** Length of the generated OTP code, in digits. Defaults to 6. */
     public readonly tokenLength: number = 6,
+    /** Maximum number of failed verification attempts allowed against a single challenge before it is invalidated. Defaults to 5. */
+    public readonly maxVerificationAttempts: number = DEFAULT_MAX_VERIFICATION_ATTEMPTS,
   ) {}
 }
 
@@ -28,6 +33,8 @@ type PhonePayload = {
   code: string;
   expiresAt: number;
   issuedAt: number;
+  /** Number of failed verification attempts recorded against this challenge. */
+  attempts?: number;
 };
 
 type IssuePayload = PhonePayload & {
@@ -342,12 +349,40 @@ export class PhoneFactorService {
       throw unauthorizedError('Bearer error="invalid_factor"');
     }
 
-    this.verifyPayload(payload, code);
+    try {
+      this.verifyPayload(payload, code);
+    } catch (error) {
+      await this.recordFailedAttempt(challengeId, payload);
+      throw error;
+    }
 
     await this.cache.delete(this.getChallengeKey(challengeId));
     await this.cache.delete(this.getChallengeKey(`${payload.actorId}_${payload.factorId}`));
 
     return factor;
+  }
+
+  /**
+   * Record a failed verification attempt against a challenge, bounding the number
+   * of guesses an attacker can make within the challenge's TTL.
+   *
+   * The updated attempt count is persisted back to the cache (preserving the
+   * remaining TTL). Once the configured maximum is reached the challenge is
+   * invalidated (deleted under both cache keys) and a 429 is thrown so further
+   * guesses cannot be made even before the TTL elapses.
+   */
+  private async recordFailedAttempt(challengeId: string, payload: IssuePayload) {
+    const attempts = (payload.attempts ?? 0) + 1;
+    const maxAttempts = this.options.maxVerificationAttempts ?? DEFAULT_MAX_VERIFICATION_ATTEMPTS;
+
+    if (attempts >= maxAttempts) {
+      await this.cache.delete(this.getChallengeKey(challengeId));
+      await this.cache.delete(this.getChallengeKey(`${payload.actorId}_${payload.factorId}`));
+      throw httpError(429).withDetails({ code: 'too many attempts' });
+    }
+
+    payload.attempts = attempts;
+    await this.cache.update(this.getChallengeKey(challengeId), JSON.stringify(payload));
   }
 
   /**

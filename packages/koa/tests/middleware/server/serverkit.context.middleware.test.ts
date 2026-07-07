@@ -122,16 +122,24 @@ describe('serverKitContextMiddleware', () => {
     );
   });
 
-  it('should set ctx.requestId to a new UUID regardless of x-request-id header', async () => {
-    mockCtx.headers['x-request-id'] = 'req-456';
+  it('should preserve an inbound x-request-id header', async () => {
+    const requestId = 'req-456';
+    mockCtx.headers['x-request-id'] = requestId;
     const middleware = serverKitContextMiddleware(mockContainer as unknown as Container);
 
     await middleware(mockCtx, mockNext);
 
-    expect(mockCtx.requestId).toBeDefined();
-    expect(mockCtx.requestId).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-    );
+    expect(mockCtx.requestId).toBe(requestId);
+    expect(mockCtx.set).toHaveBeenCalledWith('x-request-id', requestId);
+  });
+
+  it('should use the first value when x-request-id header is an array', async () => {
+    (mockCtx.headers as Record<string, string | string[]>)['x-request-id'] = ['req-first', 'req-second'];
+    const middleware = serverKitContextMiddleware(mockContainer as unknown as Container);
+
+    await middleware(mockCtx, mockNext);
+
+    expect(mockCtx.requestId).toBe('req-first');
   });
 
   it('should set ctx.requestId to new UUID when header absent', async () => {

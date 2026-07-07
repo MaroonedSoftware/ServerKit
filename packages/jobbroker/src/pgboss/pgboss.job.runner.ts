@@ -111,7 +111,7 @@ export class PgBossJobRunner extends JobRunner {
       }
 
       await this.pgboss.work(name, async (jobs: PgJob<object>[]) => {
-        await Promise.allSettled(
+        const results = await Promise.allSettled(
           jobs.map(async job => {
             const jobRunner = this.container.get<Job>(identifier);
             const controller = new AbortController();
@@ -124,12 +124,27 @@ export class PgBossJobRunner extends JobRunner {
             try {
               await jobRunner.run(job.data, signal);
             } catch (error) {
+              // Log first so a sibling's failure can't suppress this job's diagnostics,
+              // then rethrow so `allSettled` records the rejection below.
               this.logger.error(error);
+              throw error;
             } finally {
               stopWatching();
             }
           }),
         );
+
+        // Every job in the batch is isolated (they run concurrently and each logs its own
+        // error), but the work handler itself must reject when any job threw. Otherwise
+        // pg-boss treats the whole batch as completed and never applies retryLimit or
+        // dead-lettering to the jobs that actually failed.
+        const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected').map(result => result.reason);
+        if (failures.length === 1) {
+          throw failures[0];
+        }
+        if (failures.length > 1) {
+          throw new AggregateError(failures, `${failures.length} of ${jobs.length} jobs in queue "${name}" failed`);
+        }
       });
     }
   }

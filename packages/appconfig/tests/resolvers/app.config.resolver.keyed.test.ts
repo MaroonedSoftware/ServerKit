@@ -59,6 +59,20 @@ describe('AppConfigKeyedResolver', () => {
     expect(resolver.canResolve('${other:x}')).toBe(false);
   });
 
+  it('compiles a string prefix into a global regex so resolve does not throw', async () => {
+    // A string prefix compiles to `new RegExp(prefix)`, which is non-global; `matchAll`
+    // in resolve() would throw without the constructor forcing the `g` flag.
+    const get = vi.fn(async (key: string) => `value-for-${key}`);
+    const resolver = new AppConfigKeyedResolver(source(get), '\\$\\{vault:([^}]+)\\}');
+    const owner: Record<string, unknown> = { value: '${vault:db}' };
+
+    expect(resolver.canResolve('${vault:db}')).toBe(true);
+    await resolver.resolve('${vault:db}', meta(owner, 'value'));
+
+    expect(get).toHaveBeenCalledWith('db');
+    expect(owner.value).toBe('value-for-db');
+  });
+
   it('propagates a source error', async () => {
     const resolver = new AppConfigKeyedResolver(
       source(async () => {

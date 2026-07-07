@@ -48,13 +48,13 @@ interface PostgresErrorMapping {
 /**
  * SQLSTATE code → HTTP mapping. Codes absent from this table fall through to a
  * bare 500 (see {@link PostgresErrorHandler}). Grouped by response class:
- * - 23505 (unique violation) → 409; 23503 (FK violation) → 404
+ * - 23505 (unique violation) → 409; 23503 (FK violation) → 409
  * - validation-shaped codes → 400
  * - transaction rollback / deadlock → 500 with an internal `msg` for logs
  */
 const POSTGRES_ERROR_MAP: Record<string, PostgresErrorMapping> = {
   '23505': { status: 409 },
-  '23503': { status: 404 },
+  '23503': { status: 409 },
   '22000': { status: 400 },
   '22003': { status: 400 },
   '22004': { status: 400 },
@@ -72,7 +72,7 @@ const POSTGRES_ERROR_MAP: Record<string, PostgresErrorMapping> = {
  * Handles PostgreSQL errors by converting them to appropriate HTTP errors.
  * Maps PostgreSQL error codes to HTTP status codes:
  * - 23505 (unique constraint violation) → 409 Conflict
- * - 23503 (foreign key violation) → 404 Not Found
+ * - 23503 (foreign key violation) → 409 Conflict
  * - 23502, 22P02, 22003, 22004, 22023, 23514 (validation errors) → 400 Bad Request
  * - 40000, 40001, 40002 (transaction rollback) → 500 Internal Server Error
  * - 40P01 (deadlock) → 500 Internal Server Error

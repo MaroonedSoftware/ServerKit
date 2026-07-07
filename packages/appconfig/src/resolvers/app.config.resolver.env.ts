@@ -31,7 +31,10 @@ export class AppConfigResolverEnv implements AppConfigResolver {
    * @param prefix - A regex pattern or string to match environment variable references.
    *   If a string is provided, it will be converted to a RegExp. The regex must have at
    *   least one capture group that extracts the environment variable key. Defaults to
-   *   `/\$\{env:(.+)\}/g` which matches `${env:KEY}` patterns.
+   *   `/\$\{env:([^}]+)\}/g` which matches `${env:KEY}` patterns. The capture is non-greedy
+   *   (`[^}]+`, not `.+`) so composed references like `${env:HOST}:${env:PORT}` match each
+   *   reference separately instead of one greedy span with a garbage key. The pattern is
+   *   always compiled with the `g` flag (required by `matchAll`).
    *
    * @example
    * ```typescript
@@ -39,8 +42,10 @@ export class AppConfigResolverEnv implements AppConfigResolver {
    * const resolver2 = new AppConfigResolverEnv(/\$\{([^}]+)\}/g); // ${KEY}
    * ```
    */
-  constructor(prefix: string | RegExp = /\$\{env:(.+)\}/g) {
-    this.prefix = typeof prefix === 'string' ? new RegExp(prefix) : prefix;
+  constructor(prefix: string | RegExp = /\$\{env:([^}]+)\}/g) {
+    const regex = typeof prefix === 'string' ? new RegExp(prefix) : prefix;
+    // `resolve` uses `matchAll`, which throws on a non-global regex — always ensure `g`.
+    this.prefix = regex.global ? regex : new RegExp(regex.source, `${regex.flags}g`);
   }
 
   /**

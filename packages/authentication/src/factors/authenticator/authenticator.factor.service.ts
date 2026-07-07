@@ -8,6 +8,11 @@ import { DateTime, Duration } from 'luxon';
 import { CacheProvider } from '@maroonedsoftware/cache';
 import crypto from 'node:crypto';
 
+/** Default number of failed validation attempts allowed within the window before further attempts are blocked. */
+const DEFAULT_MAX_VALIDATION_ATTEMPTS = 5;
+/** Default sliding window over which failed validation attempts are counted. */
+const DEFAULT_VALIDATION_ATTEMPT_WINDOW = Duration.fromDurationLike({ minutes: 5 });
+
 /**
  * Configuration options for {@link AuthenticatorFactorService}.
  */
@@ -20,6 +25,10 @@ export class AuthenticatorFactorServiceOptions {
     public readonly registrationExpiration: Duration = Duration.fromDurationLike({ minutes: 30 }),
     /** How long a validated factor session remains cached. */
     public readonly factorExpiration: Duration = Duration.fromDurationLike({ hours: 4 }),
+    /** Maximum number of failed code validations allowed per actor+factor within {@link validationAttemptWindow} before further attempts are blocked. Defaults to 5. */
+    public readonly maxValidationAttempts: number = DEFAULT_MAX_VALIDATION_ATTEMPTS,
+    /** Sliding window over which failed code validations are counted. Defaults to 5 minutes. */
+    public readonly validationAttemptWindow: Duration = DEFAULT_VALIDATION_ATTEMPT_WINDOW,
     /** Default OTP algorithm options applied when none are supplied per-call. */
     public readonly defaults: OtpOptions = {
       type: 'totp',
@@ -71,6 +80,10 @@ export class AuthenticatorFactorService {
 
   private getRegistrationKey(key: string) {
     return `authenticator_factor_registration_${key}`;
+  }
+
+  private getAttemptKey(actorId: string, factorId: string) {
+    return `authenticator_factor_attempts_${actorId}_${factorId}`;
   }
 
   private async cacheRegistration(payload: RegistrationPayload, expiration: Duration) {
@@ -231,8 +244,15 @@ export class AuthenticatorFactorService {
    * @param actorId  - The actor that owns the factor.
    * @param factorId - The factor record id to validate against.
    * @param code     - The current OTP code from the user's authenticator app.
+   * A short-lived, per-actor+factor failed-attempt counter bounds how many
+   * invalid codes may be tried within {@link AuthenticatorFactorServiceOptions.validationAttemptWindow}
+   * (default 5 attempts per 5 minutes). Once the budget is exhausted further
+   * attempts are blocked with a 429 until the window elapses; a successful
+   * validation clears the counter.
+   *
    * @returns The verified {@link AuthenticatorFactor}.
    * @throws HTTP 401 when the factor does not exist, is inactive, or the code is invalid.
+   * @throws HTTP 429 when too many failed attempts have been made within the window.
    */
   async validateFactor(actorId: string, factorId: string, code: string) {
     const factor = await this.authenticatorFactorRepository.getFactor(actorId, factorId);
@@ -240,11 +260,24 @@ export class AuthenticatorFactorService {
       throw unauthorizedError('Bearer error="invalid_factor"');
     }
 
+    const attemptKey = this.getAttemptKey(actorId, factorId);
+    const maxAttempts = this.options.maxValidationAttempts ?? DEFAULT_MAX_VALIDATION_ATTEMPTS;
+    const cachedAttempts = await this.cache.get(attemptKey);
+    const attempts = cachedAttempts ? Number(cachedAttempts) : 0;
+
+    if (attempts >= maxAttempts) {
+      throw httpError(429).withDetails({ code: 'too many attempts' });
+    }
+
     const secret = this.encryptionProvider.decrypt(factor.secretHash);
 
     if (!this.otpProvider.validate(code, secret, factor)) {
+      const window = this.options.validationAttemptWindow ?? DEFAULT_VALIDATION_ATTEMPT_WINDOW;
+      await this.cache.set(attemptKey, String(attempts + 1), window);
       throw unauthorizedError('Bearer error="invalid_code"');
     }
+
+    await this.cache.delete(attemptKey);
 
     return factor;
   }

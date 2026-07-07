@@ -595,9 +595,14 @@ export class AuthenticationSessionService {
 
     const { jti, familyId, sessionToken } = decoded;
 
+    // Atomically claim this jti so two concurrent presentations of the same
+    // refresh token cannot both pass the reuse gate. `add` sets the key only if
+    // it does not already exist; a `false` result means the jti was already
+    // consumed (a replay / theft signal).
     const consumedKey = this.getConsumedKey(jti);
-    const alreadyConsumed = await this.cache.get(consumedKey);
-    if (alreadyConsumed) {
+    const consumedTtlSeconds = Math.max(decoded.exp ? decoded.exp - Math.floor(DateTime.now().toSeconds()) : 0, MIN_CONSUMED_TTL_SECONDS);
+    const claimed = await this.cache.add(consumedKey, '1', { ttl: Duration.fromObject({ seconds: consumedTtlSeconds }) });
+    if (!claimed) {
       await this.revokeFamily(familyId);
       await this.runHook('onRefreshReuseDetected', hook => hook({ familyId, jti, sessionToken }));
       throw unauthorizedError('Bearer error="invalid_token"').withInternalDetails({
@@ -610,9 +615,6 @@ export class AuthenticationSessionService {
       await this.runHook('onValidationFailed', hook => hook(sessionToken, { reason: 'session_not_found' }));
       throw unauthorizedError('Bearer error="invalid_token"');
     }
-
-    const consumedTtlSeconds = Math.max(decoded.exp ? decoded.exp - Math.floor(DateTime.now().toSeconds()) : 0, MIN_CONSUMED_TTL_SECONDS);
-    await this.cache.set(consumedKey, '1', Duration.fromObject({ seconds: consumedTtlSeconds }));
 
     const tokens = await this.issueTokensForLoadedSession(session);
 
@@ -642,7 +644,7 @@ export class AuthenticationSessionService {
     return {
       accessToken: token,
       tokenType: 'Bearer',
-      expiresIn: decoded.exp ?? 0,
+      expiresIn: decoded.exp ? Math.max(decoded.exp - Math.floor(DateTime.now().toSeconds()), 0) : 0,
       refreshToken: refresh.token,
       scope: decoded.scope ? decoded.scope.join(' ') : '',
     };

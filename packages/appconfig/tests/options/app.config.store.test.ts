@@ -67,6 +67,26 @@ describe('AppConfigStore', () => {
     expect(live.getString('mode')).toBe('y');
   });
 
+  it('isolates a throwing listener: still notifies the rest and reload resolves with the new config live', async () => {
+    const { builder, set } = mutableBuilder({ a: 1 });
+    const store = await builder.buildStore();
+
+    const throwing = vi.fn(() => {
+      throw new Error('listener boom');
+    });
+    const other = vi.fn();
+    store.subscribe(throwing);
+    store.subscribe(other);
+
+    set(() => Promise.resolve({ a: 2 }));
+    // A throwing listener must not reject the reload — the swapped-in config is already live.
+    await expect(store.reload()).resolves.toBeUndefined();
+
+    expect(throwing).toHaveBeenCalledTimes(1);
+    expect(other).toHaveBeenCalledTimes(1);
+    expect(store.current.get('a')).toBe(2);
+  });
+
   it('stops notifying after unsubscribe', async () => {
     const { builder, set } = mutableBuilder({ a: 1 });
     const store = await builder.buildStore();

@@ -69,6 +69,71 @@ const lowerNamespace = (ns: NamespaceNode): NamespaceDef => {
 
 const NAME_RE = /^[a-z][a-z0-9_]*$/;
 
+// A namespace name becomes a TypeScript `const`/import/export binding in the
+// generated code (`export const <name> = defineNamespace(...)`, and the index
+// re-exports each namespace next to `export const model = ...`). NAME_RE already
+// forces lowercase, but a lowercase word can still be a JS reserved word or
+// collide with a runtime builder / the index's `model` export, producing
+// uncompilable output. Reject those names with a clear diagnostic instead.
+const RESERVED_NAMESPACE_NAMES = new Set<string>([
+    // JS reserved words (and future/strict-mode reserved) that match NAME_RE.
+    'await',
+    'break',
+    'case',
+    'catch',
+    'class',
+    'const',
+    'continue',
+    'debugger',
+    'default',
+    'delete',
+    'do',
+    'else',
+    'enum',
+    'export',
+    'extends',
+    'false',
+    'finally',
+    'for',
+    'function',
+    'if',
+    'implements',
+    'import',
+    'in',
+    'instanceof',
+    'interface',
+    'let',
+    'new',
+    'null',
+    'package',
+    'private',
+    'protected',
+    'public',
+    'return',
+    'static',
+    'super',
+    'switch',
+    'this',
+    'throw',
+    'true',
+    'try',
+    'typeof',
+    'var',
+    'void',
+    'while',
+    'with',
+    'yield',
+    // Runtime builders imported into every generated namespace module.
+    'defineNamespace',
+    'computed',
+    'tupleToUserset',
+    'union',
+    'intersection',
+    'exclusion',
+    // Aggregate-index bindings the namespace re-exports sit beside.
+    'model',
+]);
+
 function fail(opts: LowerOptions, span: SourceSpan, message: string): never {
     throw new CompileError({ source: opts.source, filename: opts.filename, span, message });
 }
@@ -78,6 +143,13 @@ const validateLocal = (opts: LowerOptions, file: FileNode): void => {
     for (const ns of file.namespaces) {
         if (!NAME_RE.test(ns.name)) {
             fail(opts, ns.nameLoc, `namespace name must match ${NAME_RE}: '${ns.name}'`);
+        }
+        if (RESERVED_NAMESPACE_NAMES.has(ns.name)) {
+            fail(
+                opts,
+                ns.nameLoc,
+                `namespace name '${ns.name}' is reserved: it is a JavaScript keyword or collides with a generated identifier (a permissions builder or the 'model' export). Rename the namespace.`,
+            );
         }
         const prior = seenNs.get(ns.name);
         if (prior) fail(opts, ns.nameLoc, `duplicate namespace: '${ns.name}'`);

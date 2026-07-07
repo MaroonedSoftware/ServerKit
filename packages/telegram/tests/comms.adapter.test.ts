@@ -57,6 +57,30 @@ describe('telegram /comms adapter', () => {
     expect(handler.mock.calls[0]![0]).toMatchObject({ kind: 'message', text: 'just chatting', user: { id: '7', username: 'ada' } });
   });
 
+  it('answers a callback_query that carries no data (nothing to route)', async () => {
+    const router = new ChannelRouter();
+    const handler = vi.fn();
+    router.action('x', handler);
+    const { client, answerCallbackQuery } = makeClient();
+
+    await dispatchTelegram(router, client, { update_id: 4, callback_query: { id: 'cq2', from: { id: 7 }, message: { message_id: 1, chat: { id: 42, type: 'private' }, date: 1 } } } as TelegramUpdate);
+
+    expect(handler).not.toHaveBeenCalled();
+    expect(answerCallbackQuery).toHaveBeenCalledWith({ callback_query_id: 'cq2' });
+  });
+
+  it('answers the callback_query even when the handler throws', async () => {
+    const router = new ChannelRouter();
+    router.action('boom', async () => { throw new Error('handler failed'); });
+    const { client, answerCallbackQuery } = makeClient();
+
+    await expect(
+      dispatchTelegram(router, client, { update_id: 5, callback_query: { id: 'cq3', from: { id: 7 }, data: 'boom', message: { message_id: 1, chat: { id: 42, type: 'private' }, date: 1 } } } as TelegramUpdate),
+    ).rejects.toThrow('handler failed');
+
+    expect(answerCallbackQuery).toHaveBeenCalledWith({ callback_query_id: 'cq3' });
+  });
+
   it('ignores updates with no message or callback data', async () => {
     const router = new ChannelRouter();
     const handler = vi.fn();

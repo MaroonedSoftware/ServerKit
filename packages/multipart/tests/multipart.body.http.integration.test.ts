@@ -123,6 +123,52 @@ describe('MultipartBody (real HTTP)', () => {
     expect(err.internalDetails?.filename).toBe('toobig.bin');
   });
 
+  it('rejects with a 413 HttpError when the number of fields exceeds the fields limit', async () => {
+    let parseError: unknown;
+
+    handler = async (req, res) => {
+      try {
+        const body = new MultipartBody(req, { files: 1, fileSize: 1024 * 1024, fields: 2 });
+        await body.parse(async (_field, stream) => {
+          for await (const _chunk of stream) {
+            // drain
+          }
+        });
+        res.writeHead(200);
+        res.end('ok');
+      } catch (err) {
+        parseError = err;
+        if (!res.headersSent) res.writeHead(413);
+        res.end();
+      }
+    };
+
+    const form = new FormData();
+    form.append('a', '1');
+    form.append('b', '2');
+    form.append('c', '3');
+    form.append('d', '4');
+    form.append('e', '5');
+
+    const res = await fetch(`${baseUrl}/`, {
+      method: 'POST',
+      body: form,
+      signal: AbortSignal.timeout(2000),
+    });
+
+    expect(res.status).toBe(413);
+    const err = parseError as { statusCode?: number; internalDetails?: { reason?: string } };
+    expect(err.statusCode).toBe(413);
+    expect(err.internalDetails?.reason).toBe('Reached fields limit');
+  });
+
+  it('applies default field and parts caps when no limits are supplied', async () => {
+    const body = new MultipartBody({ headers: {} } as unknown as IncomingMessage);
+    const limits = (body as unknown as { _limits: { fields?: number; parts?: number } })._limits;
+    expect(limits.fields).toBe(1000);
+    expect(limits.parts).toBe(1010);
+  });
+
   it('rejects with a 400 HttpError when the client aborts before the body completes', async () => {
     let parseError: unknown;
     const firstChunkReceived = new Promise<void>(resolve => {

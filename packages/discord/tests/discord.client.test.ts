@@ -94,4 +94,43 @@ describe('DiscordClient', () => {
     const client = new DiscordClient(cfg, makeLogger());
     await expect(client.createMessage('C1', { content: 'hi' })).rejects.toBeInstanceOf(DiscordError);
   });
+
+  it('createInteractionResponse POSTs to the callback route WITHOUT bot auth', async () => {
+    fetchMock().mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const client = new DiscordClient(cfg, makeLogger());
+
+    await client.createInteractionResponse('i1', 'tok123', { type: 4, data: { content: 'ack' } });
+
+    const [url, init] = lastCall();
+    expect(url).toBe(`${DISCORD_API_BASE}/interactions/i1/tok123/callback`);
+    expect(init.method).toBe('POST');
+    expect((init.headers as Record<string, string>).authorization).toBeUndefined();
+  });
+
+  it('does not leak the interaction token in the logged/error internalDetails', async () => {
+    fetchMock().mockResolvedValueOnce(new Response('boom', { status: 500 }));
+    const logger = makeLogger();
+    const client = new DiscordClient(cfg, logger);
+
+    const err = await client.createFollowupMessage('super-secret-token', { content: 'x' }).catch((e: DiscordError) => e);
+
+    expect(err).toBeInstanceOf(DiscordError);
+    const details = (err as DiscordError).internalDetails as { url: string };
+    expect(details.url).not.toContain('super-secret-token');
+    expect(details.url).toBe(`${DISCORD_API_BASE}/webhooks/app1/***`);
+    expect((err as DiscordError).message).not.toContain('super-secret-token');
+    // The warn log must not carry the raw token either.
+    const warnArgs = (logger.warn as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(JSON.stringify(warnArgs)).not.toContain('super-secret-token');
+  });
+
+  it('passes an AbortSignal (timeout) on outbound requests', async () => {
+    fetchMock().mockResolvedValueOnce(new Response('{}', { status: 200 }));
+    const client = new DiscordClient(cfg, makeLogger());
+
+    await client.createMessage('C1', { content: 'hi' });
+
+    const [, init] = lastCall();
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
 });

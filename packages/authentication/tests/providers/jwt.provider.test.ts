@@ -171,6 +171,31 @@ describe('JwtProvider', () => {
       expect(logger.error).toHaveBeenCalled();
     });
 
+    it('rejects a token signed with a different algorithm on the same RSA key (alg pinning)', () => {
+      // PS256 uses the same RSA key material as RS256, so without an explicit
+      // `algorithms: ['RS256']` pin the verify call would accept this token.
+      const psToken = jsonwebtoken.sign({ sub: 'attacker' }, pem, {
+        algorithm: 'PS256',
+        issuer: 'https://auth.example.com',
+        expiresIn: 3600,
+      });
+
+      const result = provider.decode(psToken, 'https://auth.example.com');
+
+      expect(result).toBeUndefined();
+      expect(logger.error).toHaveBeenCalled();
+    });
+
+    it('throws HTTP 401 for a PS256 token when reThrow is true', () => {
+      const psToken = jsonwebtoken.sign({ sub: 'attacker' }, pem, {
+        algorithm: 'PS256',
+        issuer: 'https://auth.example.com',
+        expiresIn: 3600,
+      });
+
+      expect(() => provider.decode(psToken, 'https://auth.example.com', false, true)).toThrow();
+    });
+
     it('verifies with the public half of the key pair, not the private key', () => {
       // The provider derives a public key from the private PEM at construction time;
       // an explicit public PEM passed in should still be enough on its own to verify

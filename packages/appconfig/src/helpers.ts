@@ -83,9 +83,15 @@ export function structurallyEqual(a: unknown, b: unknown): boolean {
  *
  * Supports arbitrary nesting depth — a key with N separators produces N+1 levels.
  *
+ * Path segments equal to `__proto__`, `constructor`, or `prototype` are rejected: without
+ * this guard a key whose segments include `__proto__` would walk onto (and mutate) the
+ * shared `Object.prototype`, a classic prototype-pollution vector when the record originates
+ * from untrusted env/config input.
+ *
  * @param record    - The flat key/value record to transform.
  * @param separator - The string used to delimit path segments (e.g. `'__'`).
  * @returns A new nested object.
+ * @throws {Error} When any key contains a `__proto__`, `constructor`, or `prototype` segment.
  *
  * @example
  * ```typescript
@@ -100,11 +106,17 @@ export function structurallyEqual(a: unknown, b: unknown): boolean {
  * // → { WEBHOOK: { secret: 'abc', header: 'X-Sig' }, DATABASE_URL: 'postgres://localhost/db' }
  * ```
  */
+const FORBIDDEN_PATH_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype']);
+
 export function nestKeys(record: Record<string, unknown>, separator: string): Record<string, unknown> {
   const result: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(record)) {
     const parts = key.split(separator);
+
+    if (parts.some(part => FORBIDDEN_PATH_SEGMENTS.has(part))) {
+      throw new Error(`nestKeys: refusing to build a path through a forbidden key segment in "${key}"`);
+    }
 
     if (parts.length === 1) {
       result[key] = value;

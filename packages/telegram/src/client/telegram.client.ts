@@ -3,6 +3,9 @@ import { Logger } from '@maroonedsoftware/logger';
 import { TelegramConfig, TELEGRAM_DEFAULT_API_BASE_URL } from '../telegram.config.js';
 import { TelegramError } from '../telegram.error.js';
 
+/** Default per-request timeout (ms) applied to outbound Bot API calls. */
+export const TELEGRAM_DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+
 /** Shape of a Bot API response envelope. */
 type TelegramApiResponse = { ok: boolean; result?: unknown; description?: string; error_code?: number };
 
@@ -64,6 +67,7 @@ export class TelegramClient {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(params),
+      signal: AbortSignal.timeout(this.config.requestTimeoutMs ?? TELEGRAM_DEFAULT_REQUEST_TIMEOUT_MS),
     });
 
     const text = await response.text().catch(() => '');

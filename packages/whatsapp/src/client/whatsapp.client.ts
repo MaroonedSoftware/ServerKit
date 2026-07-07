@@ -6,6 +6,9 @@ import { WhatsAppError } from '../whatsapp.error.js';
 /** Base host for the Meta Graph API. */
 export const WHATSAPP_GRAPH_API_HOST = 'https://graph.facebook.com';
 
+/** Default per-request timeout (ms) applied to outbound Graph API calls. */
+export const WHATSAPP_DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+
 /** HTTP methods used by {@link WhatsAppClient.request}. */
 type WhatsAppHttpMethod = 'GET' | 'POST' | 'DELETE';
 
@@ -71,6 +74,7 @@ export class WhatsAppClient {
       method,
       headers: { 'content-type': 'application/json', authorization: `Bearer ${this.config.accessToken}` },
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(this.config.requestTimeoutMs ?? WHATSAPP_DEFAULT_REQUEST_TIMEOUT_MS),
     });
 
     if (!response.ok) {

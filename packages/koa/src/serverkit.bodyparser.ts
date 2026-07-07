@@ -23,6 +23,38 @@ import { httpError } from '@maroonedsoftware/errors';
 export class ServerKitParserMappings extends Map<string, ServerKitParser> {}
 
 /**
+ * Tests a concrete media type (e.g. `application/vnd.api+json`) against a registered
+ * wildcard mapping key (e.g. `application/*+json` or the `+json` shorthand) using the
+ * same suffix/wildcard semantics as `type-is`.
+ *
+ * `ctx.request.is()` returns the concrete matched type — not the pattern key — when a
+ * request matches a wildcard registration, so a direct `Map.get(matched)` misses. This
+ * helper lets the concrete type resolve back to the wildcard-registered parser instead
+ * of falling through to a 415.
+ *
+ * @param pattern - The registered mapping key (may contain `*` or start with `+`).
+ * @param type - The concrete media type resolved from the request's `Content-Type`.
+ * @returns `true` when `type` matches `pattern`.
+ */
+const wildcardTypeMatches = (pattern: string, type: string): boolean => {
+  // `+json` shorthand normalizes to `*/*+json`.
+  const expected = pattern.startsWith('+') ? `*/*${pattern}` : pattern;
+  const expectedParts = expected.split('/');
+  const actualParts = type.split('/');
+  if (expectedParts.length !== 2 || actualParts.length !== 2) return false;
+  const [expectedType, expectedSub] = expectedParts as [string, string];
+  const [actualType, actualSub] = actualParts as [string, string];
+
+  if (expectedType !== '*' && expectedType !== actualType) return false;
+  if (expectedSub.startsWith('*+')) {
+    // e.g. `*+json` matches any subtype ending in `+json`.
+    return actualSub.endsWith(expectedSub.slice(1));
+  }
+  if (expectedSub !== '*' && expectedSub !== actualSub) return false;
+  return true;
+};
+
+/**
  * Selects and invokes the appropriate {@link ServerKitParser} for the incoming request
  * based on its `Content-Type` header.
  *
@@ -53,10 +85,31 @@ export class ServerKitBodyParser {
     if (!mimeType) {
       throw httpError(415).withDetails({ body: 'Unsupported media type' });
     }
-    const parser = this.parsers.get(mimeType);
+    // Exact-match fast path; fall back to wildcard resolution so a concrete type
+    // (e.g. `application/vnd.api+json`) matched via a wildcard registration
+    // (e.g. `application/*+json`) still finds its parser instead of throwing 415.
+    const parser = this.parsers.get(mimeType) ?? this.resolveWildcardParser(mimeType);
     if (!parser) {
       throw httpError(415).withDetails({ body: 'Unsupported media type' });
     }
     return parser.parse(ctx.req);
+  }
+
+  /**
+   * Resolves a parser for a concrete media type by testing it against each registered
+   * wildcard-shaped mapping key. Only keys containing `*` or starting with `+` are
+   * considered, so a genuinely unregistered concrete type still falls through to 415.
+   *
+   * @param matched - The concrete media type resolved from the request's `Content-Type`.
+   * @returns The matching {@link ServerKitParser}, or `undefined` when none applies.
+   */
+  private resolveWildcardParser(matched: string): ServerKitParser | undefined {
+    for (const key of this.mimeTypes) {
+      if ((key.includes('*') || key.startsWith('+')) && wildcardTypeMatches(key, matched)) {
+        const parser = this.parsers.get(key);
+        if (parser) return parser;
+      }
+    }
+    return undefined;
   }
 }

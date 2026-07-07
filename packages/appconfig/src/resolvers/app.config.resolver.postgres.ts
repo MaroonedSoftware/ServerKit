@@ -34,9 +34,10 @@ export class AppConfigResolverPostgres extends AppConfigKeyedResolver {
    *
    * @param source - The Postgres source whose `get` resolves each reference.
    * @param prefix - A regex pattern or string to match references. Must have at least one
-   *   capture group extracting the key. Defaults to `/\$\{pg:(.+)\}/g`.
+   *   capture group extracting the key. Defaults to `/\$\{pg:([^}]+)\}/g` (the non-greedy
+   *   `[^}]+` keeps composed references from matching one greedy span).
    */
-  constructor(source: AppConfigSourcePostgres, prefix: string | RegExp = /\$\{pg:(.+)\}/g) {
+  constructor(source: AppConfigSourcePostgres, prefix: string | RegExp = /\$\{pg:([^}]+)\}/g) {
     super(source, prefix);
   }
 }

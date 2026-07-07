@@ -32,7 +32,8 @@ export class AppConfigResolverGcpSecrets extends AppConfigKeyedResolver {
    * @param source - Either the GCP project id (a default {@link AppConfigSourceGcpSecrets}
    *   is built for it), or an existing source instance to share its client/configuration.
    * @param prefix - A regex pattern or string to match secret references. Must have at least
-   *   one capture group extracting the secret name. Defaults to `/\$\{gcp:(.+)\}/g`.
+   *   one capture group extracting the secret name. Defaults to `/\$\{gcp:([^}]+)\}/g` (the
+   *   non-greedy `[^}]+` keeps composed references from matching one greedy span).
    *
    * @example
    * ```typescript
@@ -42,7 +43,7 @@ export class AppConfigResolverGcpSecrets extends AppConfigKeyedResolver {
    * new AppConfigResolverGcpSecrets('my-project', /\$\{secret:([^}]+)\}/g);
    * ```
    */
-  constructor(source: string | AppConfigSourceGcpSecrets, prefix: string | RegExp = /\$\{gcp:(.+)\}/g) {
+  constructor(source: string | AppConfigSourceGcpSecrets, prefix: string | RegExp = /\$\{gcp:([^}]+)\}/g) {
     super(typeof source === 'string' ? new AppConfigSourceGcpSecrets(source) : source, prefix);
   }
 }

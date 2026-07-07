@@ -34,7 +34,8 @@ export class AppConfigResolverAwsSecrets extends AppConfigKeyedResolver {
    *   built for it), or an existing source instance to share its client/configuration. When
    *   a region is omitted it is resolved from the standard AWS provider chain.
    * @param prefix - A regex pattern or string to match secret references. Must have at least
-   *   one capture group extracting the secret id. Defaults to `/\$\{aws:(.+)\}/g`.
+   *   one capture group extracting the secret id. Defaults to `/\$\{aws:([^}]+)\}/g` (the
+   *   non-greedy `[^}]+` keeps composed references from matching one greedy span).
    *
    * @example
    * ```typescript
@@ -45,7 +46,7 @@ export class AppConfigResolverAwsSecrets extends AppConfigKeyedResolver {
    * new AppConfigResolverAwsSecrets('us-east-1', /\$\{secret:([^}]+)\}/g);
    * ```
    */
-  constructor(source?: string | AppConfigSourceAwsSecrets, prefix: string | RegExp = /\$\{aws:(.+)\}/g) {
+  constructor(source?: string | AppConfigSourceAwsSecrets, prefix: string | RegExp = /\$\{aws:([^}]+)\}/g) {
     super(source instanceof AppConfigSourceAwsSecrets ? source : new AppConfigSourceAwsSecrets({ region: source }), prefix);
   }
 }

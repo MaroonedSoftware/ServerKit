@@ -71,8 +71,19 @@ const validate = async (doc: TextDocument): Promise<void> => {
         const result = validateFile({ source: text, filename, siblings: workspaceIndex.siblings(doc.uri) });
         err = result.error;
     } catch (parseErr) {
-        if (parseErr instanceof CompileError) err = parseErr;
-        else throw parseErr;
+        // `validateFile` normally returns diagnostics as `result.error`, but a
+        // pathological input can make the parser throw instead of returning —
+        // e.g. Ohm blowing the stack (RangeError) on deeply nested expressions.
+        // A CompileError is a real diagnostic; anything else is an internal
+        // failure we log rather than let bubble into an unhandled rejection
+        // that would take the whole language server down.
+        if (parseErr instanceof CompileError) {
+            err = parseErr;
+        } else {
+            connection.console.error(`validate(${doc.uri}) failed: ${parseErr instanceof Error ? (parseErr.stack ?? parseErr.message) : String(parseErr)}`);
+            void connection.sendDiagnostics({ uri: doc.uri, diagnostics: [] });
+            return;
+        }
     }
     if (err) {
         // Span coordinates are offsets into the source passed to `lower()` — which is
@@ -91,9 +102,19 @@ const validate = async (doc: TextDocument): Promise<void> => {
     void connection.sendDiagnostics({ uri: doc.uri, diagnostics });
 };
 
+// Fire-and-forget entry point for the document/watch event handlers. `validate`
+// guards its own body, but `await initialScan` (or any future addition) could
+// still reject; catch here so a rejected validation is logged rather than
+// crashing the server with an unhandled promise rejection.
+const scheduleValidate = (doc: TextDocument): void => {
+    validate(doc).catch(err => {
+        connection.console.error(`validate(${doc.uri}) rejected: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`);
+    });
+};
+
 const revalidateAll = (): void => {
     for (const doc of documents.all()) {
-        void validate(doc);
+        scheduleValidate(doc);
     }
 };
 
@@ -145,11 +166,11 @@ connection.onInitialize((params): InitializeResult => {
 
 documents.onDidChangeContent(change => {
     workspaceIndex.updateFromText(change.document.uri, change.document.getText());
-    void validate(change.document);
+    scheduleValidate(change.document);
 });
 documents.onDidOpen(change => {
     workspaceIndex.updateFromText(change.document.uri, change.document.getText());
-    void validate(change.document);
+    scheduleValidate(change.document);
 });
 documents.onDidClose(change => {
     void connection.sendDiagnostics({ uri: change.document.uri, diagnostics: [] });

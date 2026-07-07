@@ -112,7 +112,10 @@ export const verifySlackSignature = (input: VerifySlackSignatureInput): void => 
     });
   }
 
-  const expected = `v0=${createHmac('sha256', signingSecret).update(`v0:${ts}:${rawBody}`).digest('hex')}`;
+  // Sign with the raw header value verbatim (not the parsed `ts`): Slack computes
+  // its signature over the exact `X-Slack-Request-Timestamp` string it sent, so a
+  // non-canonical-but-numeric header (e.g. leading zeros) must round-trip as-is.
+  const expected = `v0=${createHmac('sha256', signingSecret).update(`v0:${timestamp}:${rawBody}`).digest('hex')}`;
   const expectedBuf = Buffer.from(expected, 'utf8');
   const providedBuf = Buffer.from(signature, 'utf8');
 

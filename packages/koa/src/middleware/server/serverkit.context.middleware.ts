@@ -31,7 +31,8 @@ export const serverKitContextMiddleware = (container: Container): ServerKitMiddl
     const correlationId = ctx.headers['x-correlation-id'];
     ctx.correlationId = Array.isArray(correlationId) ? (correlationId[0] ?? crypto.randomUUID()) : (correlationId ?? crypto.randomUUID());
 
-    ctx.requestId = crypto.randomUUID();
+    const requestId = ctx.headers['x-request-id'];
+    ctx.requestId = Array.isArray(requestId) ? (requestId[0] ?? crypto.randomUUID()) : (requestId ?? crypto.randomUUID());
 
     ctx.headers['x-correlation-id'] = ctx.correlationId;
     ctx.set('x-correlation-id', ctx.correlationId);

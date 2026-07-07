@@ -36,6 +36,11 @@ export interface DiscordConfig {
    * you want replay protection.
    */
   signatureMaxAgeSeconds?: number;
+  /**
+   * Per-request timeout (in milliseconds) for outbound REST calls. Defaults to
+   * {@link import('./client/discord.client.js').DISCORD_DEFAULT_REQUEST_TIMEOUT_MS} (10s).
+   */
+  requestTimeoutMs?: number;
 }
 
 @Injectable()

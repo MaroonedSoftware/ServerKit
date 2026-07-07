@@ -35,7 +35,9 @@ export class AppConfigKeyedResolver implements AppConfigResolver {
     private readonly source: AppConfigSource,
     prefix: string | RegExp,
   ) {
-    this.prefix = typeof prefix === 'string' ? new RegExp(prefix) : prefix;
+    const regex = typeof prefix === 'string' ? new RegExp(prefix) : prefix;
+    // `resolve` uses `matchAll`, which throws on a non-global regex — always ensure `g`.
+    this.prefix = regex.global ? regex : new RegExp(regex.source, `${regex.flags}g`);
   }
 
   /**

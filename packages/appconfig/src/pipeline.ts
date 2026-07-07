@@ -1,7 +1,16 @@
-import { deepmerge } from 'deepmerge-ts';
+import { deepmergeCustom } from 'deepmerge-ts';
 import { AppConfigResolver } from './app.config.resolver.js';
 import { resolveValues } from './resolve.js';
 import { resolveReferences } from './references.js';
+
+/**
+ * Deep-merge that keeps object merging but **replaces** arrays with the later source's value
+ * rather than concatenating them. Concatenation (the deepmerge-ts default) would make it
+ * impossible for a higher-priority source to override an array (e.g. `cors.origins: ['*']`
+ * from a base file could never be narrowed by a later layer). `mergeArrays: false` gives
+ * arrays last-wins semantics, consistent with how scalar values already override.
+ */
+const deepmerge = deepmergeCustom({ mergeArrays: false });
 
 /**
  * The core configuration pipeline: deep-merge source snapshots, resolve `${…}` references

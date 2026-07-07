@@ -32,7 +32,9 @@ export class BasicAuthenticationHandler implements AuthenticationHandler {
     }
 
     const decoded = Buffer.from(value, 'base64').toString('utf-8');
-    const [username, password] = decoded.split(':');
+    const separatorIndex = decoded.indexOf(':');
+    const username = separatorIndex === -1 ? '' : decoded.slice(0, separatorIndex);
+    const password = separatorIndex === -1 ? '' : decoded.slice(separatorIndex + 1);
 
     if (username && password) {
       return await this.issuer.verify(username, password);

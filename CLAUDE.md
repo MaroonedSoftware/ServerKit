@@ -9,8 +9,8 @@ ServerKit is a modular TypeScript monorepo for building Node.js server applicati
 **Tech Stack:**
 
 - Node.js 22+
-- TypeScript 5.9.3
-- pnpm 10.24.0+ (workspace monorepo)
+- TypeScript 6.0.3
+- pnpm 11.1.1+ (workspace monorepo)
 - Turbo (build orchestration)
 - Vitest (testing)
 - ESLint (linting)
@@ -69,6 +69,7 @@ packages/
 ├── policies/        # Named, DI-friendly allow/deny policies with PolicyService
 ├── scim/            # SCIM user provisioning (filter parser, patch, router, schemas, services)
 ├── slack/           # Slack dispatcher (command/event/interaction handlers, signature verification)
+├── storage/         # Object storage providers (disk, AWS S3, GCS) behind a DI-friendly StorageProvider
 ├── telegram/        # Telegram Bot API dispatcher (command/callback/update handlers, secret-token verification, Bot API client)
 ├── whatsapp/        # WhatsApp Cloud API dispatcher (message/interactive/status handlers, HMAC signature + webhook verification, REST client)
 ├── utilities/       # Common utilities (UUID, email, base32, avatar generation)
@@ -104,6 +105,7 @@ The monorepo uses workspace references (`workspace:*`). Key dependency relations
 - **jobbroker** depends on: `errors`, `logger`
 - **kysely** depends on: `errors`, `utilities`
 - **multipart** depends on: `errors`
+- **storage** depends on: `errors` (+ optional peer AWS S3 / Google Cloud Storage SDKs for the `./s3` and `./gcs` backends)
 - **zod** depends on: `errors`
 - **errors**, **appconfig**, **logger**, **utilities**, **permissions**, **eventbus** are standalone (no internal deps)
 - All packages use `config-eslint` and `config-typescript`

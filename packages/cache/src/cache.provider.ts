@@ -27,6 +27,19 @@ export abstract class CacheProvider {
   abstract set(key: string, value: string, ttl: Duration): Promise<void>;
 
   /**
+   * Atomically stores `value` under `key` **only if the key does not already exist**
+   * (set-if-absent). Use this as a lightweight lock/claim primitive: concurrent callers
+   * race, and exactly one wins.
+   *
+   * @param key     - Cache key.
+   * @param value   - String value to store when the key is absent.
+   * @param options - Optional settings. `ttl` sets an expiry on the newly created entry.
+   * @returns `true` if the key was created (it did not previously exist), `false` if a value
+   *   was already present and nothing was written.
+   */
+  abstract add(key: string, value: string, options?: { ttl?: Duration }): Promise<boolean>;
+
+  /**
    * Overwrites the value of an existing entry, optionally resetting its TTL.
    * @param key   - Cache key of an existing entry.
    * @param value - Replacement value.

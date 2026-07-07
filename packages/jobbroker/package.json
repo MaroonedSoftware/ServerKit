@@ -71,5 +71,8 @@
     "pg-boss": {
       "optional": true
     }
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

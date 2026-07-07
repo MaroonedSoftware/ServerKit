@@ -19,10 +19,20 @@ export interface CorsOptions extends Omit<cors.Options, 'origin'> {
  * @returns {@link ServerKitMiddleware} that applies CORS headers.
  */
 export const corsMiddleware = (options?: CorsOptions): ServerKitMiddleware => {
+  // Normalize origin to an array up front. A plain string would otherwise be iterated
+  // character-by-character below, so a single-origin string could never match.
+  const matchers: (string | RegExp)[] = options?.origin == null ? ['*'] : typeof options.origin === 'string' ? [options.origin] : options.origin;
+
+  // Reflecting an arbitrary caller Origin under a wildcard while also sending
+  // credentials produces a universal credentialed CORS policy, which browsers forbid
+  // and which defeats the purpose of same-origin protection. Fail fast at construction.
+  if (options?.credentials && matchers.some(matcher => matcher === '*')) {
+    throw new Error('corsMiddleware: origin "*" cannot be combined with credentials: true — specify explicit origin(s) instead.');
+  }
+
   // return the request origin as its own matcher to support RegExp
   const originMatcher = (ctx: Context): string => {
     const origin = ctx.get('origin');
-    const matchers = options?.origin ?? ['*'];
     for (const matcher of matchers) {
       if (matcher === '*') {
         return origin;

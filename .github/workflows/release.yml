@@ -5,6 +5,12 @@ on:
     branches:
       - main
 
+# Serialize releases: two merges to main must not race on the version commit /
+# publish. Don't cancel an in-flight release mid-publish — queue the next one.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   id-token: write # Required for OIDC
   contents: write # to create release (changesets/action)

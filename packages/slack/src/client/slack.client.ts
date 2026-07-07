@@ -6,6 +6,25 @@ import { SlackConfig } from '../slack.config.js';
 import { SlackError } from '../slack.error.js';
 import { adaptLogger } from './slack.logger.adapter.js';
 
+/** Default per-request timeout (ms) applied to outbound `postWebhook` calls. */
+export const SLACK_DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+
+/**
+ * Redacts a Slack webhook / `response_url` so it is safe to log. The final path
+ * segment is the secret token (and the query string can carry secrets too), so
+ * both are stripped, leaving only the host and path prefix.
+ */
+export const redactSlackUrl = (raw: string): string => {
+  try {
+    const url = new URL(raw);
+    const segments = url.pathname.split('/').filter(Boolean);
+    if (segments.length > 0) segments[segments.length - 1] = '***';
+    return `${url.origin}/${segments.join('/')}`;
+  } catch {
+    return '***';
+  }
+};
+
 /**
  * Payload for an incoming-webhook POST. Mirrors the subset of fields Slack's
  * incoming webhooks accept (text, blocks, attachments, response shaping).
@@ -88,11 +107,15 @@ export class SlackClient {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(this.config.requestTimeoutMs ?? SLACK_DEFAULT_REQUEST_TIMEOUT_MS),
     });
     if (!response.ok) {
       const body = await response.text().catch(() => '');
-      this.logger.warn('Slack webhook POST returned non-OK status', { status: response.status, body });
-      throw new SlackError(`Slack webhook POST returned ${response.status}`).withInternalDetails({ status: response.status, body, url: target });
+      // `target` is a response_url / incoming-webhook URL whose last path segment
+      // is a secret — redact it before it reaches the log or internalDetails.
+      const safeUrl = redactSlackUrl(target);
+      this.logger.warn('Slack webhook POST returned non-OK status', { status: response.status, body, url: safeUrl });
+      throw new SlackError(`Slack webhook POST returned ${response.status}`).withInternalDetails({ status: response.status, body, url: safeUrl });
     }
   }
 }

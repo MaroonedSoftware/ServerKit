@@ -1,7 +1,8 @@
 import { Injectable } from 'injectkit';
+import { randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { copyFile, mkdir, readdir, rename, rm, stat as fsStat, unlink } from 'node:fs/promises';
-import { dirname, join, posix, relative, resolve, sep } from 'node:path';
+import { basename, dirname, join, posix, relative, resolve, sep } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
 import { DateTime } from 'luxon';
@@ -54,9 +55,23 @@ export class DiskStorageProvider extends StorageProvider {
 
   async write(key: string, body: Readable | Buffer | string, _options?: StorageWriteOptions): Promise<void> {
     const path = this.resolveKey(key);
-    await mkdir(dirname(path), { recursive: true });
+    const dir = dirname(path);
+    await mkdir(dir, { recursive: true });
     const source = body instanceof Readable ? body : Readable.from(body instanceof Buffer ? body : Buffer.from(body));
-    await pipeline(source, createWriteStream(path));
+    // Write to a temp file in the same directory, then atomically `rename` it into place.
+    // Streaming straight to the final path leaves a truncated file readable as "complete"
+    // if the process dies mid-write; the rename swap means readers only ever see the old
+    // file or the fully-written new one. Same-directory keeps it on one filesystem so the
+    // rename stays atomic.
+    const tempPath = join(dir, `.${basename(path)}.${randomUUID()}.tmp`);
+    try {
+      await pipeline(source, createWriteStream(tempPath));
+      await rename(tempPath, path);
+    } catch (error) {
+      // Best-effort cleanup of the partial temp file; never mask the original error.
+      await rm(tempPath, { force: true }).catch(() => {});
+      throw error;
+    }
   }
 
   async read(key: string, options?: StorageReadOptions): Promise<Readable> {

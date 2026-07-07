@@ -69,9 +69,11 @@ describe('AppConfigResolverGcpSecrets', () => {
       expect(owner[1]).toBe('static');
     });
 
-    it('throws for a non-global regex (matchAll requirement)', async () => {
+    it('upgrades a non-global regex to global so matchAll does not throw', async () => {
       const resolver = new AppConfigResolverGcpSecrets(fakeSource(async () => 'x'), /^\$\{gcp:(.+)\}$/);
-      await expect(resolver.resolve('${gcp:SECRET}', meta({ value: '' }, 'value'))).rejects.toThrow();
+      const owner: Record<string, unknown> = { value: '${gcp:SECRET}' };
+      await resolver.resolve('${gcp:SECRET}', meta(owner, 'value'));
+      expect(owner.value).toBe('x');
     });
 
     it('propagates a source error', async () => {

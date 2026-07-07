@@ -118,12 +118,24 @@ export class ScimUserService {
    *
    * @throws {ScimError} 404 when no user exists with the given id.
    * @throws {ScimError} 400 propagated from {@link applyScimPatch} for invalid
-   *   paths, unknown ops, or no-target failures.
+   *   paths, unknown ops, or no-target failures, or `invalidValue` when the patch
+   *   would remove the required `userName`.
+   * @throws {ScimError} 409 `uniqueness` when the patch changes `userName` to a
+   *   value already owned by another user.
    */
   async patch(id: string, ops: ScimPatchOp[]): Promise<ScimUser> {
     const existing = await this.repository.findById(id);
     if (!existing) throw scimError(404, undefined, 'Not Found').withDetails({ message: `User "${id}" not found` });
     const patched = applyScimPatch(existing as unknown as Record<string, unknown>, ops) as unknown as ScimUser;
+    if (!patched.userName) {
+      throw scimError(400, 'invalidValue', 'Bad Request').withDetails({ message: '"userName" is required' });
+    }
+    if (patched.userName !== existing.userName) {
+      const conflict = await this.repository.findByUserName(patched.userName);
+      if (conflict && conflict.id !== id) {
+        throw scimError(409, 'uniqueness', 'Conflict').withDetails({ message: `userName "${patched.userName}" already exists` });
+      }
+    }
     patched.id = existing.id;
     patched.meta = {
       ...existing.meta,

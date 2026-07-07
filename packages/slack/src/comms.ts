@@ -12,13 +12,22 @@ import type { SlackEventsRequest } from './slack.dispatcher.js';
 
 type SlackPayload = Record<string, unknown>;
 
+/**
+ * Neutralizes Slack broadcast control sequences in user-supplied text so it
+ * cannot ping a whole channel/workspace. `<!everyone>`, `<!channel>`, `<!here>`
+ * (and their `<!channel|label>` forms) are rewritten to harmless literal
+ * `@everyone`/`@channel`/`@here` text.
+ */
+const sanitizeText = (text: string | undefined): string | undefined => (text === undefined ? undefined : text.replace(/<!(everyone|channel|here)(\|[^>]*)?>/gi, '@$1'));
+
 /** Renders a portable message to a Slack chat payload (`text`, or `text` + Block Kit `actions`). */
 const render = (message: OutgoingMessage): SlackPayload => {
-  if (!message.buttons?.length) return { text: message.text };
+  const text = sanitizeText(message.text);
+  if (!message.buttons?.length) return { text };
   return {
-    text: message.text,
+    text,
     blocks: [
-      { type: 'section', text: { type: 'mrkdwn', text: message.text } },
+      { type: 'section', text: { type: 'mrkdwn', text } },
       {
         type: 'actions',
         elements: message.buttons.map(b => ({ type: 'button', action_id: b.id, text: { type: 'plain_text', text: b.label }, value: b.value ?? b.id })),

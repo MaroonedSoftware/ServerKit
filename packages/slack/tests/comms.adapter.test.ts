@@ -85,6 +85,22 @@ describe('slack /comms adapter', () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
+  it('neutralizes broadcast mention control sequences in rendered text', async () => {
+    const router = new ChannelRouter();
+    router.command('say', async (_e, reply) => reply.send({ text: 'ping <!channel> and <!everyone> now' }));
+    const { client, postWebhook } = makeClient();
+
+    await dispatchSlackCommand(router, client, {
+      command: '/say', text: '', user_id: 'U1', user_name: 'ada', channel_id: 'C1',
+      response_url: 'https://hooks.slack.com/x', trigger_id: 't', token: '', team_id: 'T', team_domain: 'd',
+    } as never);
+
+    const payload = postWebhook.mock.calls[0]![0] as { text: string };
+    expect(payload.text).toBe('ping @channel and @everyone now');
+    expect(payload.text).not.toContain('<!channel>');
+    expect(payload.text).not.toContain('<!everyone>');
+  });
+
   it('createSlackNotifier.sendTemplate uses a native renderer then throws for unknown names', async () => {
     const router = new ChannelRouter();
     router.templates.register('card', 'slack', (d: { id: string }) => ({ blocks: [{ id: d.id }] }));

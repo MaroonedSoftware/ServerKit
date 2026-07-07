@@ -7,7 +7,13 @@ import type { DiscordClient } from '../src/client/discord.client.js';
 const makeClient = () => {
   const createMessage = vi.fn().mockResolvedValue({});
   const createFollowupMessage = vi.fn().mockResolvedValue({});
-  return { client: { createMessage, createFollowupMessage } as unknown as DiscordClient, createMessage, createFollowupMessage };
+  const createInteractionResponse = vi.fn().mockResolvedValue({});
+  return {
+    client: { createMessage, createFollowupMessage, createInteractionResponse } as unknown as DiscordClient,
+    createMessage,
+    createFollowupMessage,
+    createInteractionResponse,
+  };
 };
 
 const base = { id: 'i1', token: 'tok', application_id: 'app1' };
@@ -41,19 +47,40 @@ describe('discord /comms adapter', () => {
     expect(createFollowupMessage).not.toHaveBeenCalled();
   });
 
-  it('sends the second reply as a followup', async () => {
+  it('acknowledges the interaction before followups when the handler replies twice', async () => {
     const router = new ChannelRouter();
     router.command('deploy', async (_e, reply) => {
       await reply.send({ text: 'first' });
       await reply.send({ text: 'second' });
     });
-    const { client, createFollowupMessage } = makeClient();
+    const { client, createInteractionResponse, createFollowupMessage } = makeClient();
 
     const result = await dispatchDiscord(router, client, { ...base, type: InteractionType.APPLICATION_COMMAND, data: { name: 'deploy' } } as never);
 
-    expect((result as { data: { content: string } }).data.content).toBe('first');
+    // The interaction is acked out of band with the first reply, so the route
+    // gets no callback to serialize (and must not double-ack).
+    expect(result).toBeUndefined();
+    expect(createInteractionResponse).toHaveBeenCalledOnce();
+    expect(createInteractionResponse).toHaveBeenCalledWith('i1', 'tok', {
+      type: InteractionCallbackType.CHANNEL_MESSAGE_WITH_SOURCE,
+      data: { content: 'first', allowed_mentions: { parse: [] } },
+    });
+    // The second reply is a valid followup, sent after the ack.
     expect(createFollowupMessage).toHaveBeenCalledOnce();
-    expect(createFollowupMessage).toHaveBeenCalledWith('tok', { content: 'second' });
+    expect(createFollowupMessage).toHaveBeenCalledWith('tok', { content: 'second', allowed_mentions: { parse: [] } });
+    expect(createInteractionResponse.mock.invocationCallOrder[0]!).toBeLessThan(createFollowupMessage.mock.invocationCallOrder[0]!);
+  });
+
+  it('restricts allowed_mentions so user text cannot trigger @everyone pings', async () => {
+    const router = new ChannelRouter();
+    router.command('say', async (_e, reply) => reply.send({ text: 'hey @everyone ship it' }));
+    const { client } = makeClient();
+
+    const result = await dispatchDiscord(router, client, { ...base, type: InteractionType.APPLICATION_COMMAND, data: { name: 'say' } } as never);
+
+    const data = (result as { data: { content: string; allowed_mentions: { parse: unknown[] } } }).data;
+    expect(data.content).toBe('hey @everyone ship it');
+    expect(data.allowed_mentions).toEqual({ parse: [] });
   });
 
   it('routes a message component by custom_id', async () => {

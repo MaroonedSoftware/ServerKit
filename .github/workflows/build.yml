@@ -3,6 +3,11 @@ name: Build
 on:
   workflow_call:
 
+# Least privilege: build/test only reads the repo. Publishing runs in the
+# separate deploy job with its own elevated permissions.
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -10,6 +15,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          # Don't leave the GITHUB_TOKEN in .git/config for the install/test job.
+          persist-credentials: false
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6

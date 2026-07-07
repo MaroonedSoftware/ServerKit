@@ -194,6 +194,37 @@ describe('verifySlackSignature', () => {
     );
   });
 
+  it('signs over the raw timestamp header verbatim, not the normalized number', () => {
+    // Non-canonical but numeric header (leading zeros). Slack signs the exact
+    // string it sent, so the base string must use "0…" not the parsed integer.
+    const rawTsHeader = `0${NOW}`; // e.g. "01700000000" → Number(...) === NOW
+    const rawBody = '{"ok":true}';
+
+    // A signature computed over the RAW header must verify.
+    expect(() =>
+      verifySlackSignature({
+        signingSecret: SECRET,
+        rawBody,
+        timestamp: rawTsHeader,
+        signature: sign(rawBody, rawTsHeader),
+        now: NOW,
+      }),
+    ).not.toThrow();
+
+    // A signature computed over the NORMALIZED number must NOT verify.
+    expectFailure(
+      () =>
+        verifySlackSignature({
+          signingSecret: SECRET,
+          rawBody,
+          timestamp: rawTsHeader,
+          signature: sign(rawBody, String(NOW)),
+          now: NOW,
+        }),
+      'invalid_signature',
+    );
+  });
+
   it('uses the real clock when `now` is not provided', () => {
     const ts = String(Math.floor(Date.now() / 1000));
     const rawBody = 'live';

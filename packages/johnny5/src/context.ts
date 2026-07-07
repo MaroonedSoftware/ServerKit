@@ -44,6 +44,11 @@ const expandValue = (value: string): string =>
         return process.env[key] ?? '';
     });
 
+// True when `value` is wrapped in a matching pair of `quote` characters (at
+// least the two delimiters). Used to tell a quoted value apart from an
+// unquoted one before stripping inline comments or unwrapping.
+const isWrapped = (value: string, quote: "'" | '"'): boolean => value.length >= 2 && value.startsWith(quote) && value.endsWith(quote);
+
 const loadEnvFile = (path: string, logger: CliLogger): void => {
     if (!existsSync(path)) return;
     let contents: string;
@@ -63,12 +68,23 @@ const loadEnvFile = (path: string, logger: CliLogger): void => {
         const key = trimmed.slice(0, eqIdx).trim();
         const rawValue = trimmed.slice(eqIdx + 1).trim();
 
+        // Strip an inline comment on unquoted values (` #...` — a '#' preceded
+        // by whitespace, dotenv-compatible). Quotes protect a literal '#', and a
+        // '#' with no leading whitespace stays part of the value, so
+        // `PORT=3000 # api` loads as "3000" while `PASS=ab#cd` and
+        // `X='3000 # keep'` are left untouched.
+        let raw = rawValue;
+        if (!isWrapped(raw, "'") && !isWrapped(raw, '"')) {
+            const commentIdx = raw.search(/\s#/);
+            if (commentIdx !== -1) raw = raw.slice(0, commentIdx).trimEnd();
+        }
+
         // Detect quoting style before unwrapping. Single-quoted values are
         // taken literally; double-quoted and unquoted values get $VAR
         // expansion against the current process.env.
-        const singleQuoted = rawValue.startsWith("'") && rawValue.endsWith("'");
-        const doubleQuoted = rawValue.startsWith('"') && rawValue.endsWith('"');
-        let value = singleQuoted || doubleQuoted ? rawValue.slice(1, -1) : rawValue;
+        const singleQuoted = isWrapped(raw, "'");
+        const doubleQuoted = isWrapped(raw, '"');
+        let value = singleQuoted || doubleQuoted ? raw.slice(1, -1) : raw;
         if (!singleQuoted) value = expandValue(value);
 
         if (!(key in process.env)) process.env[key] = value;

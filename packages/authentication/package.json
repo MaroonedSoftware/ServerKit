@@ -58,5 +58,8 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/luxon": "^3.7.2",
     "@types/qrcode": "^1.5.6"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

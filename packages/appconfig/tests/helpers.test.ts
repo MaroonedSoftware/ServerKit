@@ -248,6 +248,25 @@ describe('nestKeys', () => {
       expect(result).toEqual({ A: { key: 'val' } });
     });
   });
+
+  describe('prototype pollution', () => {
+    it('throws and does not pollute Object.prototype for a __proto__ path segment', () => {
+      expect(() => nestKeys({ 'a.__proto__.polluted': 'yes' }, '.')).toThrow();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect(({} as any).polluted).toBeUndefined();
+    });
+
+    it('throws for a constructor path segment', () => {
+      expect(() => nestKeys({ constructor__prototype__x: 'y' }, '__')).toThrow();
+    });
+
+    it('throws for a bare __proto__ key', () => {
+      // Build via JSON.parse so `__proto__` is a real own property (an object literal
+      // would instead set the prototype and never appear in Object.entries).
+      const record = JSON.parse('{"__proto__": "x"}') as Record<string, unknown>;
+      expect(() => nestKeys(record, '.')).toThrow();
+    });
+  });
 });
 
 describe('structurallyEqual', () => {

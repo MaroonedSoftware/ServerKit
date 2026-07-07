@@ -30,6 +30,11 @@ export interface WhatsAppConfig {
   verifyToken: string;
   /** Graph API version. Defaults to {@link WHATSAPP_DEFAULT_GRAPH_API_VERSION}. */
   graphApiVersion?: string;
+  /**
+   * Per-request timeout (in milliseconds) for outbound Graph API calls. Defaults to
+   * {@link import('./client/whatsapp.client.js').WHATSAPP_DEFAULT_REQUEST_TIMEOUT_MS} (10s).
+   */
+  requestTimeoutMs?: number;
 }
 
 @Injectable()

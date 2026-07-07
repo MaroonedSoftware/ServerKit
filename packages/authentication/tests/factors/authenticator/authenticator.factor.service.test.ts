@@ -20,6 +20,25 @@ const makeCacheProvider = () =>
     delete: vi.fn().mockResolvedValue(null),
   }) as unknown as CacheProvider;
 
+// A stateful in-memory cache, needed to exercise the per-actor+factor failed-attempt counter across calls.
+const makeStatefulCache = (initial: Record<string, string> = {}) => {
+  const store = new Map<string, string>(Object.entries(initial));
+  return {
+    get: vi.fn(async (key: string) => store.get(key) ?? null),
+    set: vi.fn(async (key: string, value: string) => {
+      store.set(key, value);
+    }),
+    update: vi.fn(async (key: string, value: string) => {
+      store.set(key, value);
+    }),
+    delete: vi.fn(async (key: string) => {
+      const existed = store.has(key);
+      store.delete(key);
+      return existed ? key : null;
+    }),
+  } as unknown as CacheProvider;
+};
+
 const makeOtpProvider = () =>
   ({
     createSecret: vi.fn().mockReturnValue('TESTSECRET'),
@@ -306,6 +325,51 @@ describe('AuthenticatorFactorService', () => {
       const factor = makeAuthenticatorFactor();
       repo.getFactor = vi.fn().mockResolvedValue(factor);
       await expect(service.validateFactor('actor-1', 'factor-1', '123456')).resolves.toBe(factor);
+    });
+
+    it('records a failed attempt in the cache on an invalid code', async () => {
+      const statefulCache = makeStatefulCache();
+      service = new AuthenticatorFactorService(makeOptions(), otpProvider, repo, encryptionProvider, statefulCache);
+      repo.getFactor = vi.fn().mockResolvedValue(makeAuthenticatorFactor());
+      vi.mocked(otpProvider.validate).mockReturnValue(false);
+
+      await expect(service.validateFactor('actor-1', 'factor-1', 'wrong')).rejects.toMatchObject({ statusCode: 401 });
+
+      expect(statefulCache.set).toHaveBeenCalledWith('authenticator_factor_attempts_actor-1_factor-1', '1', expect.anything());
+    });
+
+    it('clears the failed-attempt counter on a successful validation', async () => {
+      const statefulCache = makeStatefulCache({ 'authenticator_factor_attempts_actor-1_factor-1': '2' });
+      service = new AuthenticatorFactorService(makeOptions(), otpProvider, repo, encryptionProvider, statefulCache);
+      repo.getFactor = vi.fn().mockResolvedValue(makeAuthenticatorFactor());
+      vi.mocked(otpProvider.validate).mockReturnValue(true);
+
+      await service.validateFactor('actor-1', 'factor-1', '123456');
+
+      expect(statefulCache.delete).toHaveBeenCalledWith('authenticator_factor_attempts_actor-1_factor-1');
+      expect(await statefulCache.get('authenticator_factor_attempts_actor-1_factor-1')).toBeNull();
+    });
+
+    it('blocks further attempts with a 429 once the attempt budget is exhausted within the window', async () => {
+      const statefulCache = makeStatefulCache();
+      service = new AuthenticatorFactorService(
+        { ...makeOptions(), maxValidationAttempts: 5, validationAttemptWindow: Duration.fromObject({ minutes: 5 }) },
+        otpProvider,
+        repo,
+        encryptionProvider,
+        statefulCache,
+      );
+      repo.getFactor = vi.fn().mockResolvedValue(makeAuthenticatorFactor());
+      vi.mocked(otpProvider.validate).mockReturnValue(false);
+
+      // 5 failed attempts are allowed, each returning an invalid-code 401.
+      for (let i = 0; i < 5; i++) {
+        await expect(service.validateFactor('actor-1', 'factor-1', 'wrong')).rejects.toMatchObject({ statusCode: 401 });
+      }
+
+      // The 6th attempt is blocked with a 429 — even a valid code cannot get through.
+      vi.mocked(otpProvider.validate).mockReturnValue(true);
+      await expect(service.validateFactor('actor-1', 'factor-1', '123456')).rejects.toMatchObject({ statusCode: 429 });
     });
   });
 

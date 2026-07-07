@@ -253,6 +253,30 @@ describe('parseAndValidate', () => {
     }
   });
 
+  it('never yields an undefined detail value for an unhandled issue code', async () => {
+    // The default branch of describeIssue returns issue.message; for an issue code it does
+    // not explicitly handle this could be undefined, violating the
+    // Record<string, string | string[]> contract. Assert every detail value is a defined
+    // string (or string[]) regardless of code.
+    const schema = z.object({
+      value: z.string().superRefine((_val, ctx) => {
+        ctx.addIssue({ code: 'unknown_future_code', path: [] } as never);
+      }),
+    });
+    try {
+      await parseAndValidate({ value: 'anything' }, schema);
+      expect.fail('should have thrown');
+    } catch (err) {
+      const details = (err as HttpError).details!;
+      const values = Object.values(details);
+      expect(values.length).toBeGreaterThan(0);
+      for (const v of values) {
+        expect(v).not.toBeUndefined();
+        expect(typeof v === 'string' || Array.isArray(v)).toBe(true);
+      }
+    }
+  });
+
   it('should apply schema transforms on success', async () => {
     const schema = z.object({ id: z.string().transform(s => parseInt(s, 10)) });
     const result = await parseAndValidate({ id: '42' }, schema);

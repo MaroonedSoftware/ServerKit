@@ -15,6 +15,25 @@ const makeCacheProvider = () =>
     delete: vi.fn().mockResolvedValue(null),
   }) as unknown as CacheProvider;
 
+// A stateful in-memory cache, needed to exercise attempt counting that persists across verify calls.
+const makeStatefulCache = (initial: Record<string, string> = {}) => {
+  const store = new Map<string, string>(Object.entries(initial));
+  return {
+    get: vi.fn(async (key: string) => store.get(key) ?? null),
+    set: vi.fn(async (key: string, value: string) => {
+      store.set(key, value);
+    }),
+    update: vi.fn(async (key: string, value: string) => {
+      store.set(key, value);
+    }),
+    delete: vi.fn(async (key: string) => {
+      const existed = store.has(key);
+      store.delete(key);
+      return existed ? key : null;
+    }),
+  } as unknown as CacheProvider;
+};
+
 const makeOtpProvider = () =>
   ({
     createSecret: vi.fn().mockReturnValue('TESTSECRET'),
@@ -359,6 +378,41 @@ describe('PhoneFactorService', () => {
 
       expect(cache.delete).toHaveBeenCalledWith('phone_factor_challenge_chal-id-1');
       expect(cache.delete).toHaveBeenCalledWith('phone_factor_challenge_actor-1_factor-1');
+    });
+
+    it('increments the attempt counter and persists it after a failed verification', async () => {
+      const payload = makeChallengePayload();
+      const statefulCache = makeStatefulCache({ 'phone_factor_challenge_chal-id-1': JSON.stringify(payload) });
+      service = new PhoneFactorService(makeOptions(), repo, otpProvider, statefulCache, policyService);
+      repo.getFactor = vi.fn().mockResolvedValue(makePhoneFactor());
+      vi.mocked(otpProvider.validate).mockReturnValue(false);
+
+      await expect(service.verifyPhoneChallenge('chal-id-1', 'wrong')).rejects.toMatchObject({ statusCode: 400 });
+
+      expect(statefulCache.update).toHaveBeenCalledWith('phone_factor_challenge_chal-id-1', expect.any(String));
+      const stored = await statefulCache.get('phone_factor_challenge_chal-id-1');
+      expect(JSON.parse(stored!).attempts).toBe(1);
+    });
+
+    it('locks out the challenge after the attempt budget is exhausted', async () => {
+      const payload = makeChallengePayload();
+      const statefulCache = makeStatefulCache({ 'phone_factor_challenge_chal-id-1': JSON.stringify(payload) });
+      service = new PhoneFactorService({ ...makeOptions(), maxVerificationAttempts: 5 }, repo, otpProvider, statefulCache, policyService);
+      repo.getFactor = vi.fn().mockResolvedValue(makePhoneFactor());
+      vi.mocked(otpProvider.validate).mockReturnValue(false);
+
+      // First 4 wrong guesses return an invalid-code 400.
+      for (let i = 0; i < 4; i++) {
+        await expect(service.verifyPhoneChallenge('chal-id-1', 'wrong')).rejects.toMatchObject({ statusCode: 400 });
+      }
+
+      // The 5th guess exhausts the budget: lockout (429) and the challenge is invalidated.
+      await expect(service.verifyPhoneChallenge('chal-id-1', 'wrong')).rejects.toMatchObject({ statusCode: 429 });
+      expect(await statefulCache.get('phone_factor_challenge_chal-id-1')).toBeNull();
+
+      // Once invalidated, even the correct code no longer verifies — the challenge is gone.
+      vi.mocked(otpProvider.validate).mockReturnValue(true);
+      await expect(service.verifyPhoneChallenge('chal-id-1', '123456')).rejects.toMatchObject({ statusCode: 404 });
     });
   });
 

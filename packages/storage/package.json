@@ -88,5 +88,8 @@
     "@repo/config-typescript": "workspace:*",
     "@types/luxon": "^3.7.2",
     "@types/mime-types": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

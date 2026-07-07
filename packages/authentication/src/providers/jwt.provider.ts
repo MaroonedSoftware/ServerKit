@@ -88,7 +88,7 @@ export class JwtProvider {
    */
   decode(token: string, issuer: string, ignoreExpiration?: boolean, reThrow: boolean = false) {
     try {
-      const decoded = jsonwebtoken.verify(token, this.pemPublicKey, { issuer, ignoreExpiration });
+      const decoded = jsonwebtoken.verify(token, this.pemPublicKey, { issuer, ignoreExpiration, algorithms: ['RS256'] });
 
       if (typeof decoded === 'string') {
         if (reThrow) {

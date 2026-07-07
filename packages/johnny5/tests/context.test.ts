@@ -55,6 +55,24 @@ describe('buildContext', () => {
         expect(process.env['JOHNNY5_TEST_LITERAL']).toBe('${JOHNNY5_TEST_HOST}/x');
     });
 
+    it('strips an inline ` #` comment from unquoted values but keeps a literal # and quoted comments', async () => {
+        const envPath = path.join(dir, '.env');
+        await writeFile(
+            envPath,
+            [
+                'JOHNNY5_TEST_PORT=3000 # api port',
+                'JOHNNY5_TEST_HASH=ab#cd',
+                "JOHNNY5_TEST_QCOMMENT='3000 # keep'",
+                'JOHNNY5_TEST_DQCOMMENT="foo" # trailing',
+            ].join('\n') + '\n',
+        );
+        await buildContext({ repoRoot: dir, envFiles: ['.env'] });
+        expect(process.env['JOHNNY5_TEST_PORT']).toBe('3000');
+        expect(process.env['JOHNNY5_TEST_HASH']).toBe('ab#cd');
+        expect(process.env['JOHNNY5_TEST_QCOMMENT']).toBe('3000 # keep');
+        expect(process.env['JOHNNY5_TEST_DQCOMMENT']).toBe('foo');
+    });
+
     it('does not overwrite a value already present in process.env', async () => {
         process.env['JOHNNY5_TEST_PRESENT'] = 'keep';
         const envPath = path.join(dir, '.env');

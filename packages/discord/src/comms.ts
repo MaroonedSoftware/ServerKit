@@ -9,9 +9,13 @@ import { InteractionType, InteractionCallbackType, type DiscordInteraction, type
 
 type DiscordData = Record<string, unknown>;
 
-/** Renders a portable message to a Discord message `data` body (`content` + component rows). */
+/**
+ * Renders a portable message to a Discord message `data` body (`content` +
+ * component rows). `allowed_mentions: { parse: [] }` is always set so
+ * user-supplied text can never trigger `@everyone`/`@here`/role pings.
+ */
 const render = (message: OutgoingMessage): DiscordData => {
-  const data: DiscordData = { content: message.text };
+  const data: DiscordData = { content: message.text, allowed_mentions: { parse: [] } };
   if (message.buttons?.length) {
     const rows: unknown[] = [];
     for (let i = 0; i < message.buttons.length; i += 5) {
@@ -45,16 +49,38 @@ export const createDiscordNotifier = (client: DiscordClient, templates: Template
 });
 
 /**
- * Reply bound to one interaction: the first `send`/`sendTemplate`/`sendNative`
- * becomes the interaction callback returned by {@link dispatchDiscord}; later
- * sends post followups via `createFollowupMessage`. `getCallback()` exposes the
- * captured first response.
+ * Reply bound to one interaction.
+ *
+ * The single-reply fast path keeps the message in memory and lets
+ * {@link dispatchDiscord} return it as the HTTP interaction callback (the ack).
+ *
+ * The moment a *second* reply is requested the interaction has not been acked
+ * yet — the HTTP callback is only sent after `dispatch` returns — so a followup
+ * would race ahead of the ack and Discord would 404. To make multi-reply
+ * handlers robust we acknowledge out of band: the captured first reply is sent
+ * via `POST /interactions/{id}/{token}/callback` ({@link DiscordClient.createInteractionResponse}),
+ * and this and every later reply then go out as valid followups. Once acked,
+ * `getCallback()` returns `undefined` so the route does not double-acknowledge.
  */
 const interactionReply = (client: DiscordClient, templates: TemplateRegistry, interaction: DiscordInteraction): Reply & { getCallback(): DiscordInteractionResponse | undefined } => {
   let callback: DiscordInteractionResponse | undefined;
+  let acknowledged = false;
   const deliver = async (data: DiscordData) => {
-    if (callback === undefined) callback = { type: InteractionCallbackType.CHANNEL_MESSAGE_WITH_SOURCE, data };
-    else await client.createFollowupMessage(interaction.token, data);
+    if (!acknowledged && callback === undefined) {
+      // First reply: capture it as the interaction's initial response.
+      callback = { type: InteractionCallbackType.CHANNEL_MESSAGE_WITH_SOURCE, data };
+      return;
+    }
+    if (!acknowledged) {
+      // Second reply: the HTTP ack has not gone out yet. Send the captured first
+      // reply as the initial interaction response now so followups are valid,
+      // then drop it so the route won't send it again.
+      const first = callback!;
+      callback = undefined;
+      acknowledged = true;
+      await client.createInteractionResponse(interaction.id, interaction.token, first);
+    }
+    await client.createFollowupMessage(interaction.token, data);
   };
   return {
     channel: 'discord',
@@ -77,9 +103,12 @@ const invokingUser = (interaction: DiscordInteraction): { id: string; username?:
  * - `APPLICATION_COMMAND` → a `command` event (string option values joined into `args`).
  * - `MESSAGE_COMPONENT` → an `action` event keyed by `custom_id`.
  *
- * Returns the interaction callback the route serializes (the handler's first
- * reply), or `undefined` if nothing matched or the handler did not reply — on
- * Discord a matched handler is expected to reply.
+ * Returns the interaction callback the route serializes (the handler's single
+ * reply), or `undefined` if nothing matched, the handler did not reply, or the
+ * handler replied more than once. In the multi-reply case the adapter has
+ * already acknowledged the interaction out of band (see {@link interactionReply})
+ * and delivered every reply as a followup, so the route should respond with an
+ * empty 2xx rather than treating `undefined` as "no handler".
  */
 export const dispatchDiscord = async (router: ChannelRouter, client: DiscordClient, interaction: DiscordInteraction): Promise<DiscordInteractionResponse | undefined> => {
   if (interaction.type === InteractionType.PING) return { type: InteractionCallbackType.PONG };

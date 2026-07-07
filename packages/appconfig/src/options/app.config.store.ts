@@ -148,8 +148,15 @@ export class AppConfigStore<TRoot = Record<string, unknown>> {
     const next = new AppConfig<TRoot>(merged as TRoot);
     this.snapshots = candidate;
     this.config = next;
+    // The swap is already committed and `next` is live. Notification is best-effort: one
+    // listener throwing must not stop the others from being notified, nor make `reload()`
+    // reject over a config that is already in effect. Isolate each call and log failures.
     for (const listener of this.listeners) {
-      listener(next);
+      try {
+        listener(next);
+      } catch (error) {
+        this.logger?.error('AppConfigStore: config-change listener threw', error);
+      }
     }
   }
 

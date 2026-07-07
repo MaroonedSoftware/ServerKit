@@ -20,7 +20,9 @@ function describeIssue(issue: ZodIssue): string {
     case 'custom':
       return issue.message || 'Invalid value';
     default:
-      return issue.message;
+      // Some issue codes carry no `message`; fall back to a stable string so the
+      // Record<string, string | string[]> contract is never violated with `undefined`.
+      return issue.message ?? 'Invalid value';
   }
 }
 

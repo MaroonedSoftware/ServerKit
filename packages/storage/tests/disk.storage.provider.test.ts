@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { chmod, mkdtemp, rm } from 'node:fs/promises';
+import { chmod, mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -54,6 +54,28 @@ describe('write / read', () => {
 
   it('read throws StorageObjectNotFoundError for a missing key', async () => {
     await expect(provider.read('missing.txt')).rejects.toBeInstanceOf(StorageObjectNotFoundError);
+  });
+
+  it('leaves no temp files behind after a successful write', async () => {
+    await provider.write('atomic/note.txt', 'complete');
+    const entries = await readdir(join(root, 'atomic'));
+    expect(entries).toEqual(['note.txt']);
+  });
+
+  it('does not create the final file and cleans up when the source stream errors mid-write', async () => {
+    const boom = new Readable({
+      read() {
+        this.push('partial');
+        this.destroy(new Error('stream boom'));
+      },
+    });
+
+    await expect(provider.write('atomic/broken.txt', boom)).rejects.toThrow('stream boom');
+
+    // The final path was never created (rename never ran), and the temp file was cleaned up.
+    expect(await provider.exists('atomic/broken.txt')).toBe(false);
+    const entries = await readdir(join(root, 'atomic')).catch(() => []);
+    expect(entries).toEqual([]);
   });
 
   it('reads an inclusive byte range', async () => {

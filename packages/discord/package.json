@@ -68,5 +68,8 @@
     "@maroonedsoftware/comms": {
       "optional": true
     }
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

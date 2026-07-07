@@ -109,6 +109,33 @@ describe('SlackClient.postWebhook', () => {
     const client = new SlackClient({ ...cfg, incomingWebhookUrl: 'https://hooks.slack.com/x' }, makeLogger());
     await expect(client.postWebhook({ text: 'hi' })).rejects.toBeInstanceOf(SlackError);
   });
+
+  it('does not leak the response_url secret in the logged/error internalDetails', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(new Response('boom', { status: 500 }));
+    const logger = makeLogger();
+    const client = new SlackClient(cfg, logger);
+    const responseUrl = 'https://hooks.slack.com/actions/T00000000/1234567890/AbCdEfSecretToken?foo=bar';
+
+    const err = await client.postWebhook({ text: 'hi' }, responseUrl).catch((e: SlackError) => e);
+
+    expect(err).toBeInstanceOf(SlackError);
+    const details = (err as SlackError).internalDetails as { url: string };
+    expect(details.url).not.toContain('AbCdEfSecretToken');
+    expect(details.url).not.toContain('foo=bar');
+    expect(details.url).toBe('https://hooks.slack.com/actions/T00000000/1234567890/***');
+    const warnArgs = (logger.warn as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(JSON.stringify(warnArgs)).not.toContain('AbCdEfSecretToken');
+  });
+
+  it('passes an AbortSignal (timeout) on the outbound webhook POST', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(new Response('ok', { status: 200 }));
+    const client = new SlackClient({ ...cfg, incomingWebhookUrl: 'https://hooks.slack.com/x' }, makeLogger());
+
+    await client.postWebhook({ text: 'hi' });
+
+    const [, init] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect((init as RequestInit).signal).toBeInstanceOf(AbortSignal);
+  });
 });
 
 describe('adaptLogger', () => {
