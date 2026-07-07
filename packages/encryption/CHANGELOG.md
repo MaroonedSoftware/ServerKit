@@ -1,5 +1,13 @@
 # @maroonedsoftware/encryption
 
+## 0.5.5
+
+### Patch Changes
+
+- dfe5304: Declare `engines.node >= 22` in the package manifest to match the supported runtime.
+- Updated dependencies [dfe5304]
+  - @maroonedsoftware/errors@1.8.0
+
 ## 0.5.4
 
 ### Patch Changes

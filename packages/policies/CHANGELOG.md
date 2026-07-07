@@ -1,5 +1,13 @@
 # @maroonedsoftware/policies
 
+## 0.5.3
+
+### Patch Changes
+
+- dfe5304: Declare `engines.node >= 22` in the package manifest to match the supported runtime.
+- Updated dependencies [dfe5304]
+  - @maroonedsoftware/errors@1.8.0
+
 ## 0.5.2
 
 ### Patch Changes
