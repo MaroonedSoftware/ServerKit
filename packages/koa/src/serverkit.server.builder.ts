@@ -186,7 +186,7 @@ export class ServerKitServerBuilder {
    *
    * @throws {ServerkitError} If called before {@link setup} has built the container.
    */
-  public async shutdown() {
+  protected async shutdown() {
     this.assertInitialized();
     this.logger.info('Server closing');
     for (const module of this.modules) {

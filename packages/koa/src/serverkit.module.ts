@@ -8,7 +8,7 @@ import { AppConfig } from '@maroonedsoftware/appconfig';
  * respond to application startup/shutdown, and clean up resources. All
  * lifecycle methods are optional — implement only what your module needs.
  *
- * @template ConfigT - The application config type, defaults to `AppConfig`.
+ * @template ConfigT - The application config type. Must extend `AppConfig`; defaults to `AppConfig`.
  *
  * @example
  * ```typescript
@@ -25,7 +25,7 @@ import { AppConfig } from '@maroonedsoftware/appconfig';
  * };
  * ```
  */
-export interface ServerKitModule<ConfigT = AppConfig> {
+export interface ServerKitModule<ConfigT extends AppConfig = AppConfig> {
   /**
    * The name of the module.
    */
