@@ -1,5 +1,12 @@
 # @maroonedsoftware/johnny5
 
+## 6.0.1
+
+### Patch Changes
+
+- Updated dependencies [dc2a24b]
+  - @maroonedsoftware/koa@2.7.1
+
 ## 6.0.0
 
 ### Patch Changes

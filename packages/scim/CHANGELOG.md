@@ -1,5 +1,12 @@
 # @maroonedsoftware/scim
 
+## 0.2.2
+
+### Patch Changes
+
+- Updated dependencies [dc2a24b]
+  - @maroonedsoftware/koa@2.7.1
+
 ## 0.2.1
 
 ### Patch Changes
