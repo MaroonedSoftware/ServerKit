@@ -1,5 +1,12 @@
 # @maroonedsoftware/johnny5
 
+## 7.0.0
+
+### Patch Changes
+
+- Updated dependencies [df1a520]
+  - @maroonedsoftware/koa@2.8.0
+
 ## 6.0.1
 
 ### Patch Changes
