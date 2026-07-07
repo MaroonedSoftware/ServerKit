@@ -50,7 +50,7 @@ const router = new ServerKitRouter();
 router.post('{path}', bodyParserMiddleware(['multipart/form-data']), async ctx => {
   ctx.logger.info('Handling file upload', { requestId: ctx.requestId });
 
-  const body = ctx.body as MultipartBody;
+  const body = ctx.parsedBody as MultipartBody;
 
   // Validate files
   if (body.files.length === 0) {
@@ -124,7 +124,7 @@ When this skill is invoked:
 3. **Generate route code:**
    - Use POST method (uploads are always POST)
    - Add bodyParserMiddleware with 'multipart/form-data'
-   - Cast ctx.body to MultipartBody type
+   - Cast ctx.parsedBody to MultipartBody type (the parsed body, not the response `ctx.body`)
    - Include proper imports
 
 4. **Add file handling code:**

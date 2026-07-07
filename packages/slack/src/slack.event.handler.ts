@@ -34,6 +34,21 @@ export type SlackEventCallback = {
 };
 
 /**
+ * Derive a stable, collision-free idempotency key for a Slack event delivery.
+ *
+ * Slack redelivers an `event_callback` (with an `X-Slack-Retry-Num` header) when
+ * the initial ack is slow or non-2xx. The assigned `event_id` is stable across
+ * those redeliveries, so it keys de-duplication. We scope it by `team_id` where
+ * present so ids from different workspaces can never collide.
+ *
+ * @param envelope - The `event_callback` envelope (only `event_id` / `team_id` are read).
+ * @returns `slack:event:{team_id}:{event_id}`, or `slack:event:{event_id}` when no team id.
+ */
+export function slackEventIdempotencyKey(envelope: Pick<SlackEventCallback, 'event_id' | 'team_id'>): string {
+  return envelope.team_id ? `slack:event:${envelope.team_id}:${envelope.event_id}` : `slack:event:${envelope.event_id}`;
+}
+
+/**
  * Handler for a single Slack event type (e.g. `app_mention`, `message`,
  * `reaction_added`). Registered in {@link SlackEventHandlerMap}.
  *

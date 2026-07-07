@@ -145,3 +145,28 @@ export const interactiveReplyId = (message: WhatsAppMessage): string | undefined
   }
   return undefined;
 };
+
+/**
+ * Derive a stable idempotency key for an inbound message delivery.
+ *
+ * WhatsApp redelivers the whole webhook (not the individual item) on any non-2xx
+ * ack, so de-duplication runs per message. The `wamid…` `message.id` is assigned
+ * by WhatsApp and stable across those redeliveries, which makes it the natural key.
+ *
+ * @param message - The inbound message (only `id` is read).
+ * @returns `whatsapp:message:{message.id}`.
+ */
+export const whatsappMessageIdempotencyKey = (message: Pick<WhatsAppMessage, 'id'>): string => `whatsapp:message:${message.id}`;
+
+/**
+ * Derive a stable idempotency key for a delivery-status update.
+ *
+ * A single outbound message legitimately emits several statuses (`sent` →
+ * `delivered` → `read`) that all share the same `status.id`, so the status VALUE
+ * is part of the key — otherwise the later transitions would be collapsed as
+ * duplicates of the first. Redeliveries of the *same* transition still collide.
+ *
+ * @param status - The delivery status (only `id` and `status` are read).
+ * @returns `whatsapp:status:{status.id}:{status.status}`.
+ */
+export const whatsappStatusIdempotencyKey = (status: Pick<WhatsAppStatus, 'id' | 'status'>): string => `whatsapp:status:${status.id}:${status.status}`;

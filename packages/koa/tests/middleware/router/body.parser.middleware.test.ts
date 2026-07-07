@@ -35,6 +35,7 @@ describe('bodyParserMiddleware', () => {
       request: mockRequest as any,
       req: {} as any,
       body: undefined,
+      parsedBody: undefined,
       container: mockContainer as any,
     } as unknown as ServerKitContext;
 
@@ -154,8 +155,10 @@ describe('bodyParserMiddleware', () => {
 
         expect(mockContainer.get).toHaveBeenCalledWith(ServerKitBodyParser);
         expect(mockBodyParser.parse).toHaveBeenCalledWith(mockCtx);
-        expect(mockCtx.body).toEqual(jsonData);
+        expect(mockCtx.parsedBody).toEqual(jsonData);
         expect(mockCtx.rawBody).toBe(rawJson);
+        // The parsed request must NOT leak into ctx.body (the response slot).
+        expect(mockCtx.body).toBeUndefined();
         expect(mockNext).toHaveBeenCalledTimes(1);
       });
 
@@ -170,7 +173,7 @@ describe('bodyParserMiddleware', () => {
         await middleware(mockCtx, mockNext);
 
         expect(mockBodyParser.parse).toHaveBeenCalledWith(mockCtx);
-        expect(mockCtx.body).toEqual(jsonData);
+        expect(mockCtx.parsedBody).toEqual(jsonData);
         expect(mockCtx.rawBody).toBe(rawJson);
       });
     });
@@ -187,7 +190,7 @@ describe('bodyParserMiddleware', () => {
         await middleware(mockCtx, mockNext);
 
         expect(mockBodyParser.parse).toHaveBeenCalledWith(mockCtx);
-        expect(mockCtx.body).toEqual(formData);
+        expect(mockCtx.parsedBody).toEqual(formData);
         expect(mockCtx.rawBody).toBe(rawForm);
         expect(mockNext).toHaveBeenCalledTimes(1);
       });
@@ -204,7 +207,7 @@ describe('bodyParserMiddleware', () => {
         await middleware(mockCtx, mockNext);
 
         expect(mockBodyParser.parse).toHaveBeenCalledWith(mockCtx);
-        expect(mockCtx.body).toBe(textData);
+        expect(mockCtx.parsedBody).toBe(textData);
         expect(mockCtx.rawBody).toBe(textData);
         expect(mockNext).toHaveBeenCalledTimes(1);
       });
@@ -221,7 +224,7 @@ describe('bodyParserMiddleware', () => {
         await middleware(mockCtx, mockNext);
 
         expect(mockBodyParser.parse).toHaveBeenCalledWith(mockCtx);
-        expect(mockCtx.body).toBe(mockMultipartBody);
+        expect(mockCtx.parsedBody).toBe(mockMultipartBody);
         expect(mockCtx.rawBody).toBeUndefined();
         expect(mockNext).toHaveBeenCalledTimes(1);
       });
@@ -238,7 +241,7 @@ describe('bodyParserMiddleware', () => {
         await middleware(mockCtx, mockNext);
 
         expect(mockBodyParser.parse).toHaveBeenCalledWith(mockCtx);
-        expect(mockCtx.body).toBe(pdfBuffer);
+        expect(mockCtx.parsedBody).toBe(pdfBuffer);
         expect(mockCtx.rawBody).toBeUndefined();
         expect(mockNext).toHaveBeenCalledTimes(1);
       });

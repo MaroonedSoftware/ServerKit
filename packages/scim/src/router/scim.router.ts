@@ -186,14 +186,11 @@ export const createScimRouter = (options: CreateScimRouterOptions): Router<unkno
 };
 
 /**
- * `bodyParserMiddleware` writes the parsed request body to `ctx.body` (the
- * codebase convention). Move it into a local before the handler reassigns
- * `ctx.body` to the response.
+ * `bodyParserMiddleware` writes the parsed request body to `ctx.parsedBody`
+ * (distinct from `ctx.body`, which is the response). Return it for the handler.
  */
 const takeRequestBody = (ctx: ServerKitContext): unknown => {
-  const body = ctx.body;
-  ctx.body = undefined;
-  return body;
+  return ctx.parsedBody;
 };
 
 const parseListQueryFromUrl = (query: ServerKitContext['query'], maxResults: number): ScimListQuery => {

@@ -14,7 +14,7 @@ router.put(
     });
 
     const userId = ctx.params.id;
-    const body = ctx.body as { name?: string; email?: string };
+    const body = ctx.parsedBody as { name?: string; email?: string };
 
     // Validate
     if (!userId) {

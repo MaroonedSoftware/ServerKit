@@ -1,6 +1,6 @@
 # @maroonedsoftware/cache
 
-Cache abstraction for ServerKit. Provides a DI-friendly `CacheProvider` interface and a production-ready ioredis implementation.
+Cache abstraction for ServerKit. Provides a DI-friendly `CacheProvider` interface, a production-ready ioredis implementation, and an `IdempotencyStore` for de-duplicating at-least-once deliveries.
 
 ## Installation
 
@@ -70,15 +70,47 @@ Base class to extend when implementing a custom cache backend.
 |--------|-----------|-------------|
 | `get` | `(key: string) => Promise<string \| null>` | Returns the stored value or `null` if absent/expired. |
 | `set` | `(key: string, value: string, ttl: Duration) => Promise<void>` | Stores a value with an explicit TTL. |
-| `update` | `(key: string, value: string, ttl?: Duration) => Promise<void>` | Overwrites a value; omit `ttl` to preserve the original expiry. |
+| `add` | `(key: string, value: string, options?: { ttl?: Duration }) => Promise<boolean>` | Atomic set-if-absent claim primitive; returns `true` if the key was created, `false` if it already existed. |
+| `update` | `(key: string, value: string, ttl?: Duration) => Promise<void>` | Overwrites an existing value; omit `ttl` to preserve the original expiry. Will not resurrect an expired key. |
 | `delete` | `(key: string) => Promise<string \| null>` | Removes the entry and returns the key, or `null` if it didn't exist. |
 
 ### `IoRedisCacheProvider`
 
 Concrete `CacheProvider` backed by [ioredis](https://github.com/redis/ioredis). Requires an `ioredis` `Redis` instance injected via the DI container.
 
-- Uses Redis `EX` for TTL-bearing writes (TTLs are rounded to whole seconds, since `EX` is integer-only).
-- Uses Redis `KEEPTTL` when updating without a new TTL.
+- Uses Redis `EX` for TTL-bearing writes (TTLs are clamped to a minimum of 1 whole second, since `EX` is integer-only).
+- `add` uses `SET … NX` so the claim is atomic across concurrent callers.
+- `update` without a new TTL uses `SET … KEEPTTL XX`, so an entry that has since expired is not resurrected without an expiry.
+
+### `IdempotencyStore` (abstract) and `CacheIdempotencyStore`
+
+De-duplicates at-least-once deliveries (webhooks, retried queue messages) keyed by a stable, source-provided id. `CacheIdempotencyStore` is the default implementation, backed by `CacheProvider.add` as its atomic claim primitive.
+
+```typescript
+import { CacheProvider, IdempotencyStore, CacheIdempotencyStore } from '@maroonedsoftware/cache';
+
+container.bind(CacheProvider).to(IoRedisCacheProvider);
+container.bind(IdempotencyStore).to(CacheIdempotencyStore);
+
+// Run side-effecting work at most once per key, across processes.
+const outcome = await store.deduplicate(`slack:event:${eventId}`, async () => {
+  await processEvent();
+});
+
+switch (outcome.status) {
+  case 'processed': /* ran; outcome.result holds the return value */ break;
+  case 'duplicate': /* already claimed elsewhere — skip, still ack the source */ break;
+  case 'dropped':   /* dead-lettered after repeated failures — ack + alert */ break;
+}
+```
+
+`deduplicate(key, work, options?)` claims the key (short-lived in-flight marker via `add`), runs `work`, then records a completed marker retained for `retentionTtl`. If `work` throws, the claim is released so the source's next redelivery can retry — until the failure count reaches `maxAttempts`, at which point the key is dead-lettered (`dropped`) rather than reprocessed forever.
+
+| Option | Default | Purpose |
+|--------|---------|---------|
+| `inFlightTtl` | 5 minutes | Lifetime of the in-flight claim; must exceed the slowest `work`. |
+| `retentionTtl` | 24 hours | How long the completed/dead marker is kept; size to the source's redelivery window. |
+| `maxAttempts` | 5 | Failures before an event is dead-lettered. |
 
 ## Custom implementations
 

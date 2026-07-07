@@ -129,6 +129,22 @@ export interface DiscordInteractionHandler {
  * @returns The routing key, or `undefined` if the payload doesn't carry an
  *   identifier we can route on (or is a type we don't route, like `PING`).
  */
+/**
+ * Derives the stable idempotency key for an interaction: `discord:interaction:{interaction.id}`.
+ *
+ * `interaction.id` is a snowflake that is unique per interaction, so it is the
+ * natural de-duplication key. Unlike Slack/WhatsApp/Telegram, Discord does NOT
+ * redeliver HTTP interactions (they are request/response and the response body
+ * matters). This key exists to guard against a duplicate *side effect* from an
+ * out-of-band resend (a proxy/gateway retry or a client double-submit), not as a
+ * general redelivery-safety net. The `PING` handshake is answered directly by the
+ * dispatcher and never reaches this key.
+ *
+ * @see {@link DiscordDispatcher.dispatchInteraction} — pass `options.idempotency`
+ *   to have the dispatcher wrap the handler invocation with this key.
+ */
+export const discordInteractionIdempotencyKey = (interaction: Pick<DiscordInteraction, 'id'>): string => `discord:interaction:${interaction.id}`;
+
 export const interactionRouteKey = (interaction: DiscordInteraction): string | undefined => {
   switch (interaction.type) {
     case InteractionType.APPLICATION_COMMAND: {

@@ -1,12 +1,29 @@
 import { describe, it, expect, vi } from 'vitest';
+import type { IdempotencyOutcome, IdempotencyStore } from '@maroonedsoftware/cache';
 import {
   TelegramCommandHandlerMap,
   TelegramCallbackQueryHandlerMap,
   TelegramUpdateHandlerMap,
   TelegramDispatcher,
+  telegramUpdateIdempotencyKey,
 } from '../src/telegram.dispatcher.js';
 import type { TelegramMessage, TelegramUpdate } from '../src/telegram.update.handler.js';
 import { makeLogger } from './helpers.js';
+
+/**
+ * Minimal in-memory {@link IdempotencyStore}: the first call for a key runs `work`
+ * (`processed`), any later call for the same key is a `duplicate` and skips `work`.
+ */
+const makeIdempotencyStub = (): IdempotencyStore => {
+  const seen = new Set<string>();
+  return {
+    deduplicate: async <T>(key: string, work: () => Promise<T>): Promise<IdempotencyOutcome<T>> => {
+      if (seen.has(key)) return { status: 'duplicate' };
+      seen.add(key);
+      return { status: 'processed', result: await work() };
+    },
+  };
+};
 
 const makeDispatcher = () => {
   const commands = new TelegramCommandHandlerMap();
@@ -96,5 +113,34 @@ describe('TelegramDispatcher.dispatchUpdate', () => {
     const { dispatcher, logger } = makeDispatcher();
     await dispatcher.dispatchUpdate({ update_id: 107 } as TelegramUpdate);
     expect(logger.debug).toHaveBeenCalled();
+  });
+
+  it('derives a stable idempotency key from update_id', () => {
+    expect(telegramUpdateIdempotencyKey({ update_id: 108 })).toBe('telegram:update:108');
+  });
+
+  it('routes an update once across identical redeliveries when idempotency is provided', async () => {
+    const { dispatcher, updates } = makeDispatcher();
+    const handler = { handle: vi.fn() };
+    updates.set('message', handler);
+    const idempotency = makeIdempotencyStub();
+
+    const update: TelegramUpdate = { update_id: 200, message: message('hello') };
+    await dispatcher.dispatchUpdate(update, { idempotency });
+    await dispatcher.dispatchUpdate({ ...update }, { idempotency });
+
+    expect(handler.handle).toHaveBeenCalledOnce();
+  });
+
+  it('routes every delivery when idempotency is not provided (unchanged behaviour)', async () => {
+    const { dispatcher, updates } = makeDispatcher();
+    const handler = { handle: vi.fn() };
+    updates.set('message', handler);
+
+    const update: TelegramUpdate = { update_id: 201, message: message('hello') };
+    await dispatcher.dispatchUpdate(update);
+    await dispatcher.dispatchUpdate({ ...update });
+
+    expect(handler.handle).toHaveBeenCalledTimes(2);
   });
 });

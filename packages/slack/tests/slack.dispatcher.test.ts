@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { SlackEventHandlerMap, SlackCommandHandlerMap, SlackInteractionHandlerMap, SlackDispatcher } from '../src/slack.dispatcher.js';
+import { slackEventIdempotencyKey } from '../src/slack.event.handler.js';
+import type { IdempotencyOutcome, IdempotencyStore } from '@maroonedsoftware/cache';
 import type { Logger } from '@maroonedsoftware/logger';
 
 const makeLogger = (): Logger => ({
@@ -9,6 +11,22 @@ const makeLogger = (): Logger => ({
   debug: vi.fn(),
   trace: vi.fn(),
 });
+
+/**
+ * Minimal in-memory {@link IdempotencyStore}: the first caller for a key runs
+ * `work`, every later caller for that key is a `duplicate`. Enough to prove the
+ * dispatcher runs the handler at most once per key.
+ */
+const makeIdempotencyStore = (): IdempotencyStore => {
+  const seen = new Set<string>();
+  return {
+    async deduplicate<T>(key: string, work: () => Promise<T>): Promise<IdempotencyOutcome<T>> {
+      if (seen.has(key)) return { status: 'duplicate' };
+      seen.add(key);
+      return { status: 'processed', result: await work() };
+    },
+  };
+};
 
 const makeDispatcher = () => {
   const events = new SlackEventHandlerMap();
@@ -67,6 +85,62 @@ describe('SlackDispatcher.dispatchEvent', () => {
     const result = await dispatcher.dispatchEvent({ type: 'something_new' });
     expect(result).toBeUndefined();
     expect(logger.debug).toHaveBeenCalled();
+  });
+
+  const makeEnvelope = () => ({
+    type: 'event_callback' as const,
+    team_id: 'T1',
+    api_app_id: 'A1',
+    event_id: 'Ev1',
+    event_time: 123,
+    event: { type: 'app_mention', user: 'U1', text: 'hi' },
+  });
+
+  it('invokes the handler once for two identical deliveries when idempotency is provided', async () => {
+    const { dispatcher, events } = makeDispatcher();
+    const handler = { handle: vi.fn() };
+    events.set('app_mention', handler);
+    const idempotency = makeIdempotencyStore();
+
+    await dispatcher.dispatchEvent(makeEnvelope(), { idempotency });
+    const second = await dispatcher.dispatchEvent(makeEnvelope(), { idempotency });
+
+    expect(handler.handle).toHaveBeenCalledOnce();
+    expect(second).toBeUndefined();
+  });
+
+  it('invokes the handler for both deliveries without idempotency (unchanged behavior)', async () => {
+    const { dispatcher, events } = makeDispatcher();
+    const handler = { handle: vi.fn() };
+    events.set('app_mention', handler);
+
+    await dispatcher.dispatchEvent(makeEnvelope());
+    await dispatcher.dispatchEvent(makeEnvelope());
+
+    expect(handler.handle).toHaveBeenCalledTimes(2);
+  });
+
+  it('never de-duplicates url_verification even with an idempotency store', async () => {
+    const { dispatcher } = makeDispatcher();
+    const idempotency = makeIdempotencyStore();
+    const deduplicate = vi.spyOn(idempotency, 'deduplicate');
+
+    const first = await dispatcher.dispatchEvent({ type: 'url_verification', challenge: 'abc123' }, { idempotency });
+    const second = await dispatcher.dispatchEvent({ type: 'url_verification', challenge: 'abc123' }, { idempotency });
+
+    expect(first).toEqual({ challenge: 'abc123' });
+    expect(second).toEqual({ challenge: 'abc123' });
+    expect(deduplicate).not.toHaveBeenCalled();
+  });
+});
+
+describe('slackEventIdempotencyKey', () => {
+  it('scopes the key by team id when present', () => {
+    expect(slackEventIdempotencyKey({ team_id: 'T1', event_id: 'Ev1' })).toBe('slack:event:T1:Ev1');
+  });
+
+  it('falls back to the event id alone when team id is absent', () => {
+    expect(slackEventIdempotencyKey({ team_id: '', event_id: 'Ev1' })).toBe('slack:event:Ev1');
   });
 });
 

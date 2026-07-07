@@ -57,15 +57,20 @@
     "luxon": "^3.7.2"
   },
   "devDependencies": {
+    "@maroonedsoftware/cache": "workspace:*",
     "@maroonedsoftware/comms": "workspace:*",
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
     "@types/luxon": "^3.7.2"
   },
   "peerDependencies": {
+    "@maroonedsoftware/cache": "workspace:*",
     "@maroonedsoftware/comms": "workspace:*"
   },
   "peerDependenciesMeta": {
+    "@maroonedsoftware/cache": {
+      "optional": true
+    },
     "@maroonedsoftware/comms": {
       "optional": true
     }

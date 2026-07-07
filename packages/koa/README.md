@@ -56,7 +56,7 @@ app.use(serverKitContextMiddleware(container));
 app.use(corsMiddleware({ origin: ['*'] }));
 
 router.post('/api/echo', bodyParserMiddleware(['application/json']), async ctx => {
-  ctx.body = { echoed: ctx.body, requestId: ctx.requestId };
+  ctx.body = { echoed: ctx.parsedBody, requestId: ctx.requestId };
 });
 
 app.use(router.routes()).use(router.allowedMethods());
@@ -210,14 +210,16 @@ app.use(rateLimiterMiddleware(rateLimiter));
 
 Allow specific content types; empty array disallows any body. Supports JSON, urlencoded, text, multipart, and raw (e.g. PDF).
 
+The parsed body is placed on `ctx.parsedBody` (the raw bytes on `ctx.rawBody`). It is deliberately not written to `ctx.body`, which in Koa is the *response* body.
+
 ```typescript
 router.post('/api/upload', bodyParserMiddleware(['multipart/form-data']), async ctx => {
-  const body = ctx.body as MultipartBody;
+  const body = ctx.parsedBody as MultipartBody;
   // ...
 });
 
 router.post('/api/json', bodyParserMiddleware(['application/json']), async ctx => {
-  const data = ctx.body as Record<string, unknown>;
+  const data = ctx.parsedBody as Record<string, unknown>;
   // ...
 });
 ```

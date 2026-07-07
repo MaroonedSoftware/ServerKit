@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import type { IdempotencyStore, IdempotencyOutcome } from '@maroonedsoftware/cache';
 import { DiscordInteractionHandlerMap, DiscordDispatcher } from '../src/discord.dispatcher.js';
 import { InteractionType, InteractionCallbackType, type DiscordInteraction } from '../src/discord.interaction.handler.js';
 import { makeLogger } from './helpers.js';
@@ -10,6 +11,25 @@ const makeDispatcher = () => {
 };
 
 const base = { id: 'i1', token: 'tok', application_id: 'app1' };
+
+/**
+ * In-memory {@link IdempotencyStore} stub: the first call for a key runs `work` and is
+ * `processed`; every later call for the same key is a `duplicate` and never runs `work`.
+ */
+const makeIdempotencyStub = (): IdempotencyStore & { keys: string[] } => {
+  const seen = new Set<string>();
+  return {
+    keys: [],
+    async deduplicate<T>(key: string, work: () => Promise<T>): Promise<IdempotencyOutcome<T>> {
+      (this as { keys: string[] }).keys.push(key);
+      if (seen.has(key)) {
+        return { status: 'duplicate' };
+      }
+      seen.add(key);
+      return { status: 'processed', result: await work() };
+    },
+  };
+};
 
 describe('DiscordDispatcher.dispatchInteraction', () => {
   it('responds to a PING with a PONG', async () => {
@@ -89,5 +109,60 @@ describe('DiscordDispatcher.dispatchInteraction', () => {
     const { dispatcher, interactions } = makeDispatcher();
     interactions.set('command:ack', { handle: vi.fn().mockResolvedValue(undefined) });
     expect(await dispatcher.dispatchInteraction({ ...base, type: InteractionType.APPLICATION_COMMAND, data: { name: 'ack' } })).toBeUndefined();
+  });
+
+  describe('with options.idempotency', () => {
+    it('invokes the handler once for a duplicate interaction id and returns the response only the first time', async () => {
+      const { dispatcher, interactions } = makeDispatcher();
+      const handler = { handle: vi.fn().mockResolvedValue({ type: InteractionCallbackType.CHANNEL_MESSAGE_WITH_SOURCE, data: { content: 'ok' } }) };
+      interactions.set('command:deploy', handler);
+      const idempotency = makeIdempotencyStub();
+      const interaction: DiscordInteraction = { ...base, type: InteractionType.APPLICATION_COMMAND, data: { name: 'deploy' } };
+
+      const first = await dispatcher.dispatchInteraction(interaction, { idempotency });
+      const second = await dispatcher.dispatchInteraction(interaction, { idempotency });
+
+      expect(handler.handle).toHaveBeenCalledOnce();
+      expect(first).toEqual({ type: InteractionCallbackType.CHANNEL_MESSAGE_WITH_SOURCE, data: { content: 'ok' } });
+      expect(second).toBeUndefined();
+      expect(idempotency.keys).toEqual(['discord:interaction:i1', 'discord:interaction:i1']);
+    });
+
+    it('never de-duplicates a PING — it always answers with a PONG and skips the store', async () => {
+      const { dispatcher } = makeDispatcher();
+      const idempotency = makeIdempotencyStub();
+      const first = await dispatcher.dispatchInteraction({ ...base, type: InteractionType.PING }, { idempotency });
+      const second = await dispatcher.dispatchInteraction({ ...base, type: InteractionType.PING }, { idempotency });
+      expect(first).toEqual({ type: InteractionCallbackType.PONG });
+      expect(second).toEqual({ type: InteractionCallbackType.PONG });
+      expect(idempotency.keys).toEqual([]);
+    });
+
+    it('logs a warning and skips the handler on a dropped (dead-lettered) outcome', async () => {
+      const { dispatcher, interactions, logger } = makeDispatcher();
+      const handler = { handle: vi.fn() };
+      interactions.set('command:deploy', handler);
+      const idempotency: IdempotencyStore = {
+        async deduplicate() {
+          return { status: 'dropped', attempts: 5 };
+        },
+      };
+      const result = await dispatcher.dispatchInteraction({ ...base, type: InteractionType.APPLICATION_COMMAND, data: { name: 'deploy' } }, { idempotency });
+      expect(result).toBeUndefined();
+      expect(handler.handle).not.toHaveBeenCalled();
+      expect(logger.warn).toHaveBeenCalled();
+    });
+
+    it('is unchanged from the no-options path when idempotency is omitted', async () => {
+      const { dispatcher, interactions } = makeDispatcher();
+      const handler = { handle: vi.fn().mockResolvedValue({ type: InteractionCallbackType.CHANNEL_MESSAGE_WITH_SOURCE, data: { content: 'ok' } }) };
+      interactions.set('command:deploy', handler);
+      const interaction: DiscordInteraction = { ...base, type: InteractionType.APPLICATION_COMMAND, data: { name: 'deploy' } };
+      const first = await dispatcher.dispatchInteraction(interaction);
+      const second = await dispatcher.dispatchInteraction(interaction);
+      expect(handler.handle).toHaveBeenCalledTimes(2);
+      expect(first).toEqual({ type: InteractionCallbackType.CHANNEL_MESSAGE_WITH_SOURCE, data: { content: 'ok' } });
+      expect(second).toEqual({ type: InteractionCallbackType.CHANNEL_MESSAGE_WITH_SOURCE, data: { content: 'ok' } });
+    });
   });
 });

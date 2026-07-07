@@ -22,7 +22,7 @@ router.post(
   async ctx => {
     ctx.logger.info('Handling file upload', { requestId: ctx.requestId });
 
-    const body = ctx.body as MultipartBody;
+    const body = ctx.parsedBody as MultipartBody;
 
     // Validate that at least one file was uploaded
     if (body.files.length === 0) {
@@ -135,7 +135,7 @@ router.post(
       requestId: ctx.requestId
     });
 
-    const body = ctx.body as MultipartBody;
+    const body = ctx.parsedBody as MultipartBody;
 
     // Validate single file
     if (body.files.length === 0) {

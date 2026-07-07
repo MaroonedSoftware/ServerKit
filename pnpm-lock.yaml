@@ -301,6 +301,9 @@ importers:
         specifier: ^3.7.2
         version: 3.7.2
     devDependencies:
+      '@maroonedsoftware/cache':
+        specifier: workspace:*
+        version: link:../cache
       '@maroonedsoftware/comms':
         specifier: workspace:*
         version: link:../comms
@@ -734,6 +737,9 @@ importers:
         specifier: ^3.7.2
         version: 3.7.2
     devDependencies:
+      '@maroonedsoftware/cache':
+        specifier: workspace:*
+        version: link:../cache
       '@maroonedsoftware/comms':
         specifier: workspace:*
         version: link:../comms
@@ -802,6 +808,9 @@ importers:
         specifier: ^1.6.0
         version: 1.6.0
     devDependencies:
+      '@maroonedsoftware/cache':
+        specifier: workspace:*
+        version: link:../cache
       '@maroonedsoftware/comms':
         specifier: workspace:*
         version: link:../comms
@@ -842,6 +851,9 @@ importers:
         specifier: ^1.6.0
         version: 1.6.0
     devDependencies:
+      '@maroonedsoftware/cache':
+        specifier: workspace:*
+        version: link:../cache
       '@maroonedsoftware/comms':
         specifier: workspace:*
         version: link:../comms

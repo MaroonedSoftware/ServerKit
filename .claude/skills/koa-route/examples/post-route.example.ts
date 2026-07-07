@@ -6,8 +6,8 @@ const router = new ServerKitRouter();
 router.post('/api/users', bodyParserMiddleware(['application/json']), async ctx => {
   ctx.logger.info('Handling POST /api/users', { requestId: ctx.requestId });
 
-  // Validate request body
-  const body = ctx.body as { name?: string; email?: string };
+  // Validate request body (parsed body lives on ctx.parsedBody, not ctx.body)
+  const body = ctx.parsedBody as { name?: string; email?: string };
 
   if (!body.name || !body.email) {
     throw httpError(400).withDetails({

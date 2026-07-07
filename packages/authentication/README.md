@@ -282,10 +282,11 @@ const codeChallenge = ctx.query.code_challenge;
 await pkce.storeChallenge(codeChallenge, JSON.stringify({ redirectUrl, scope }), Duration.fromObject({ minutes: 10 }));
 
 // --- Token step (client → /token) ---
-// The client sends back the verifier
-const stateJson = await pkce.getVerifier(ctx.body.code_verifier);
+// The client sends back the verifier (parsed request body lives on ctx.parsedBody)
+const { code_verifier } = ctx.parsedBody as { code_verifier: string };
+const stateJson = await pkce.getVerifier(code_verifier);
 if (!stateJson) throw httpError(400);
-await pkce.deleteVerifier(ctx.body.code_verifier); // single-use
+await pkce.deleteVerifier(code_verifier); // single-use
 ```
 
 If you control both halves of the pair (e.g. issuing your own download links), use `storeVerifier` / `getVerifier` / `deleteVerifier` and skip the manual `pkceCreateChallenge` call.

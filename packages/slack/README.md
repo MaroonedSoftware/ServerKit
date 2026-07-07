@@ -27,6 +27,7 @@ pnpm add @maroonedsoftware/slack
 | `verifySlackSignature(input)`   | Pure helper that validates Slack's v0 HMAC scheme + replay window. No request/context coupling.               |
 | `SlackSignaturePolicy`          | `@maroonedsoftware/policies` form of `verifySlackSignature` (registered under `SLACK_SIGNATURE_POLICY`). Delegates to the helper but answers as a `PolicyResult`, so it slots into ServerKit's policy pipeline. |
 | `interactionRouteKey(payload)`  | Helper that produces the `SlackInteractionHandlerMap` key for a given payload.                                |
+| `slackEventIdempotencyKey(envelope)` | Pure helper that derives a stable de-dup key (`slack:event:{team_id}:{event_id}`) for an `event_callback` envelope. |
 
 ## Configuration
 
@@ -134,6 +135,32 @@ router.post('/slack/events', async (ctx) => {
 ```
 
 `dispatchEvent` returns `{ challenge }` for the `url_verification` handshake and `undefined` for everything else (event handlers run for their side effects). Unregistered event types are logged at debug and acked — Slack retries any non-2xx, so dropping unknown events on the floor is intentional.
+
+#### Handling redelivery
+
+Slack redelivers an `event_callback` (with an `X-Slack-Retry-Num` header) whenever your ack is slow or non-2xx, so an event can be handled more than once. Two ways to make delivery idempotent, most-durable first:
+
+**Recommended — validate, enqueue, ack.** Do the minimum in the request (verify + parse), then enqueue a job keyed by `event_id` and ack `200` immediately. Deduplication is the queue's job: `@maroonedsoftware/jobbroker` maps to pg-boss's `singletonKey`, so enqueuing the same `event_id` twice collapses to one job that runs once, outside the request path.
+
+```ts
+// Inside the route, after verifying the signature and parsing the body:
+const body = JSON.parse(raw);
+if (body.type === 'url_verification') { ctx.body = { challenge: body.challenge }; return; }
+if (body.type === 'event_callback') {
+  await jobBroker.send('slack.event', body, { singletonKey: slackEventIdempotencyKey(body) });
+}
+ctx.status = 200; ctx.body = ''; // ack fast; a worker calls dispatchEvent later
+```
+
+**Edge dedup — one store, one arg.** When you'd rather handle events inline, pass an `IdempotencyStore` and `dispatchEvent` runs the handler at most once per `event_id` (keyed by `slackEventIdempotencyKey`). A duplicate/dropped redelivery skips the handler and acks. Omit the option and behaviour is unchanged. The `url_verification` handshake is never de-duplicated.
+
+```ts
+import { IdempotencyStore } from '@maroonedsoftware/cache';
+
+const result = await ctx.container.get(SlackDispatcher).dispatchEvent(JSON.parse(raw), {
+  idempotency: ctx.container.get(IdempotencyStore),
+});
+```
 
 ### Slash commands
 

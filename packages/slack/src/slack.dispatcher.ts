@@ -1,5 +1,7 @@
 import { Injectable } from 'injectkit';
 import { Logger } from '@maroonedsoftware/logger';
+import type { IdempotencyStore } from '@maroonedsoftware/cache';
+import { slackEventIdempotencyKey } from './slack.event.handler.js';
 import type { SlackEventCallback, SlackEventHandler } from './slack.event.handler.js';
 import type { SlackCommandHandler, SlackCommandPayload, SlackCommandResponse } from './slack.command.handler.js';
 import {
@@ -107,30 +109,51 @@ export class SlackDispatcher {
    * Dispatch a parsed Events API body.
    *
    * - Returns `{ challenge }` for `url_verification` — the caller serializes
-   *   it as the response body.
+   *   it as the response body. This handshake is NEVER de-duplicated: it must
+   *   always echo the challenge.
    * - For `event_callback`, looks up a handler in {@link SlackEventHandlerMap}
    *   keyed by `event.type` and invokes it. Returns `undefined`. Slack retries
    *   any non-2xx so unknown event types are logged at debug and acked.
    * - For any other top-level type, logs and returns `undefined`.
+   *
+   * Pass `options.idempotency` to de-duplicate `event_callback` deliveries: Slack
+   * redelivers events (with an `X-Slack-Retry-Num` header) on a slow/failed ack,
+   * so wrapping the handler in an {@link IdempotencyStore} keyed by
+   * {@link slackEventIdempotencyKey} runs it at most once per `event_id`. A
+   * `duplicate`/`dropped` outcome skips the handler and acks (returns `undefined`).
+   * When `options.idempotency` is omitted, behaviour is unchanged.
    */
-  async dispatchEvent(body: SlackEventsRequest): Promise<SlackEventsResponse> {
+  async dispatchEvent(body: SlackEventsRequest, options?: { idempotency?: IdempotencyStore }): Promise<SlackEventsResponse> {
     if (body.type === 'url_verification') {
       return { challenge: (body as { challenge: string }).challenge };
     }
 
     if (body.type === 'event_callback') {
       const envelope = body as SlackEventCallback;
-      const handler = this.events.get(envelope.event.type);
-      if (handler) {
-        await handler.handle(envelope.event, {
-          teamId: envelope.team_id,
-          eventId: envelope.event_id,
-          eventTime: envelope.event_time,
-          envelope,
-        });
-      } else {
-        this.logger.debug('No Slack event handler registered for event type', { type: envelope.event.type });
+      const handleEvent = async (): Promise<void> => {
+        const handler = this.events.get(envelope.event.type);
+        if (handler) {
+          await handler.handle(envelope.event, {
+            teamId: envelope.team_id,
+            eventId: envelope.event_id,
+            eventTime: envelope.event_time,
+            envelope,
+          });
+        } else {
+          this.logger.debug('No Slack event handler registered for event type', { type: envelope.event.type });
+        }
+      };
+
+      if (options?.idempotency) {
+        const key = slackEventIdempotencyKey(envelope);
+        const outcome = await options.idempotency.deduplicate(key, handleEvent);
+        if (outcome.status === 'dropped') {
+          this.logger.warn('Slack event dead-lettered after repeated failures', { key, attempts: outcome.attempts });
+        }
+        return undefined;
       }
+
+      await handleEvent();
       return undefined;
     }
 

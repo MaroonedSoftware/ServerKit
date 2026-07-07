@@ -92,10 +92,10 @@ The monorepo uses workspace references (`workspace:*`). Key dependency relations
 - **koa** depends on: `appconfig`, `authentication`, `errors`, `logger`, `multipart`, `policies`, `utilities`
 - **scim** depends on: `authentication`, `errors`, `koa`, `logger`, `utilities`
 - **authentication** depends on: `cache`, `encryption`, `errors`, `logger`, `policies`, `utilities`
-- **slack** depends on: `errors`, `logger`, `policies` (+ optional peer `comms` for the `./comms` adapter)
-- **discord** depends on: `errors`, `logger`, `policies` (+ optional peer `comms` for the `./comms` adapter)
-- **whatsapp** depends on: `errors`, `logger`, `policies` (+ optional peer `comms` for the `./comms` adapter)
-- **telegram** depends on: `errors`, `logger`, `policies` (+ optional peer `comms` for the `./comms` adapter)
+- **slack** depends on: `errors`, `logger`, `policies` (+ optional peers `comms` for the `./comms` adapter and `cache` for webhook de-duplication)
+- **discord** depends on: `errors`, `logger`, `policies` (+ optional peers `comms` for the `./comms` adapter and `cache` for webhook de-duplication)
+- **whatsapp** depends on: `errors`, `logger`, `policies` (+ optional peers `comms` for the `./comms` adapter and `cache` for webhook de-duplication)
+- **telegram** depends on: `errors`, `logger`, `policies` (+ optional peers `comms` for the `./comms` adapter and `cache` for webhook de-duplication)
 - **comms** depends on: `errors`, `logger` (standalone, channel-free core; chat packages bind to it via an optional `./comms` peer)
 - **johnny5** depends on: `appconfig`, `logger`
 - **permissions-dsl** depends on: `permissions`

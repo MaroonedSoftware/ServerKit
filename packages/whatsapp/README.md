@@ -28,6 +28,8 @@ pnpm add @maroonedsoftware/whatsapp
 | `verifyWhatsAppWebhook(input)`    | Pure helper for the subscription verification (`GET`) handshake; returns the challenge to echo.                |
 | `WhatsAppSignaturePolicy`         | `@maroonedsoftware/policies` form of `verifyWhatsAppSignature` (registered under `WHATSAPP_SIGNATURE_POLICY`). |
 | `interactiveReplyId(message)`     | Helper that produces the `WhatsAppInteractiveHandlerMap` key for an interactive/quick-reply message.           |
+| `whatsappMessageIdempotencyKey(message)` | Pure helper: `whatsapp:message:{message.id}` — the de-duplication key for an inbound message.            |
+| `whatsappStatusIdempotencyKey(status)`   | Pure helper: `whatsapp:status:{status.id}:{status.status}` — keyed by status VALUE so `sent`/`delivered`/`read` don't collide. |
 
 ## Configuration
 
@@ -135,6 +137,36 @@ router.post('/whatsapp/webhook', async (ctx) => {
   ctx.status = 200;
 });
 ```
+
+### De-duplicating redeliveries
+
+WhatsApp is at-least-once: any non-2xx ack (or a slow one) makes Meta resend the **whole** webhook, so the same `message.id` / `status` can arrive more than once. There are two ways to make processing exactly-once, and they compose.
+
+**(a) Durable — enqueue then ack (recommended for real work).** Handlers should ack in milliseconds, so offload the actual work to a job and let the queue own idempotency. Key the job by the message id (or `status.id:status.status`) so a redelivery enqueues the *same* job identity and the broker collapses it. With `@maroonedsoftware/jobbroker` (pg-boss) that is the job's `singletonKey` — a second insert with the same key is a no-op:
+
+```ts
+class TextHandler implements WhatsAppMessageHandler {
+  async handle(message, context) {
+    // Conceptually: broker.send('whatsapp.inbound', { message, context }, { singletonKey: message.id })
+    // Redelivery re-enqueues the same singletonKey → deduped by the queue, not by us.
+    await this.jobs.enqueue('whatsapp.inbound', { message, context }, { singletonKey: message.id });
+  }
+}
+// Ack 200 immediately after dispatchWebhook returns — the work runs off the request path.
+```
+
+**(b) Edge dedup — one line at the front door.** For lighter handlers (or as a guard in front of the enqueue) pass an `IdempotencyStore` into `dispatchWebhook`. Each message and status is wrapped per item (`whatsappMessageIdempotencyKey` / `whatsappStatusIdempotencyKey`), so a redelivered batch replays only the items it hasn't already processed:
+
+```ts
+import { IdempotencyStore } from '@maroonedsoftware/cache';
+
+await ctx.container.get(WhatsAppDispatcher).dispatchWebhook(JSON.parse(raw), {
+  idempotency: ctx.container.get(IdempotencyStore),
+});
+ctx.status = 200;
+```
+
+De-dup is per item (not per batch) because WhatsApp resends the entire webhook on failure. Statuses are keyed by their VALUE too, so the legitimate `sent → delivered → read` sequence for one message is each processed rather than collapsed. Omit `options` for the default at-least-once behaviour.
 
 ### Routing
 

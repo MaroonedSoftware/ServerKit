@@ -28,6 +28,7 @@ pnpm add @maroonedsoftware/telegram
 | `TelegramSecretTokenPolicy`         | `@maroonedsoftware/policies` form of the check (registered under `TELEGRAM_SECRET_TOKEN_POLICY`).              |
 | `parseCommand(message)`             | Helper that extracts a `/command` (and args) from a message, stripping any `@botname` suffix.                  |
 | `updateType(update)`                | Helper that returns an update's content type — the `TelegramUpdateHandlerMap` key.                             |
+| `telegramUpdateIdempotencyKey(update)` | Pure helper returning `telegram:update:{update_id}` — the de-duplication key for a redelivered update.       |
 
 ## Configuration
 
@@ -137,6 +138,48 @@ router.post('/telegram/webhook', async (ctx) => {
 If a command or callback query has no matching handler, the dispatcher falls back to the update-type map (so a generic `message`/`callback_query` handler can still run). Each handler receives a context with the resolved `chatId`, `from`, `updateId`, and the raw `update`.
 
 Telegram only invokes a command if the user's text begins with `/`; `parseCommand` lowercases the name and strips an `@botname` suffix (so `/Start@MyBot` routes as `/start`).
+
+### Handling redeliveries (de-duplication)
+
+Telegram redelivers the same update (same `update_id`) whenever your webhook answers with a non-2xx
+status. If your handlers have side effects, a slow or flaky ack can cause them to run twice. There are
+two ways to make delivery effectively at-most-once.
+
+**(a) Durable — validate, enqueue, ack.** The most robust pattern for webhooks: do only cheap work
+in the request (verify the secret token, parse the body), enqueue a background job keyed by
+`update_id`, then ack `200` immediately. The queue's own de-duplication then guarantees the update is
+processed once. With `@maroonedsoftware/jobbroker` (pg-boss), pass the `update_id` as the job's
+`singletonKey` so an identical redelivery is collapsed to a single queued job:
+
+```ts
+router.post('/telegram/webhook', async (ctx) => {
+  const raw = await rawBody(ctx.req, { encoding: 'utf8' });
+  verifyTelegramSecretToken({
+    secretToken: ctx.container.get(TelegramConfig).secretToken!,
+    headerValue: ctx.get('x-telegram-bot-api-secret-token'),
+  });
+  const update = JSON.parse(raw);
+  // Enqueue keyed by update_id — pg-boss's singletonKey dedupes a redelivered update.
+  await ctx.container.get(JobBroker).send('telegram.update', update, { singletonKey: String(update.update_id) });
+  ctx.status = 200; // ack fast; the worker calls dispatchUpdate(update) later
+});
+```
+
+**(b) Edge dedup — one liner.** If you dispatch inline and just want to guard against redeliveries,
+pass an `IdempotencyStore` (from `@maroonedsoftware/cache`). `dispatchUpdate` wraps the routing in
+`store.deduplicate(telegramUpdateIdempotencyKey(update), …)`, so a redelivered `update_id` is routed
+at most once; a `duplicate`/`dropped` outcome is skipped. Omit the option and behaviour is unchanged.
+
+```ts
+import { IdempotencyStore } from '@maroonedsoftware/cache';
+
+await ctx.container.get(TelegramDispatcher).dispatchUpdate(JSON.parse(raw), {
+  idempotency: ctx.container.get(IdempotencyStore),
+});
+```
+
+`telegramUpdateIdempotencyKey` keys on `update_id` alone, which is unique *per bot*. For a multi-bot
+deployment sharing one store, prefix a bot id yourself.
 
 ## Secret-token verification
 

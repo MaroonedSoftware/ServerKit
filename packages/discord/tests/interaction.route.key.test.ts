@@ -1,7 +1,17 @@
 import { describe, it, expect } from 'vitest';
-import { interactionRouteKey, InteractionType, type DiscordInteraction } from '../src/discord.interaction.handler.js';
+import { interactionRouteKey, discordInteractionIdempotencyKey, InteractionType, type DiscordInteraction } from '../src/discord.interaction.handler.js';
 
 const base = { id: 'i1', token: 'tok', application_id: 'app1' };
+
+describe('discordInteractionIdempotencyKey', () => {
+  it('derives discord:interaction:{id} from the interaction id', () => {
+    expect(discordInteractionIdempotencyKey({ ...base, type: InteractionType.APPLICATION_COMMAND })).toBe('discord:interaction:i1');
+  });
+
+  it('keys purely on interaction.id (independent of type or data)', () => {
+    expect(discordInteractionIdempotencyKey({ id: 'snowflake-42' })).toBe('discord:interaction:snowflake-42');
+  });
+});
 
 describe('interactionRouteKey', () => {
   it('routes APPLICATION_COMMAND by data.name', () => {

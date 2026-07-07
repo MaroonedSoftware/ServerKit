@@ -25,6 +25,7 @@ pnpm add @maroonedsoftware/discord
 | `verifyDiscordSignature(input)`   | Pure helper that validates Discord's Ed25519 signature (with optional replay window). No request/context coupling. |
 | `DiscordSignaturePolicy`          | `@maroonedsoftware/policies` form of `verifyDiscordSignature` (registered under `DISCORD_SIGNATURE_POLICY`). Delegates to the helper but answers as a `PolicyResult`, so it slots into ServerKit's policy pipeline. |
 | `interactionRouteKey(interaction)`| Helper that produces the `DiscordInteractionHandlerMap` key for a given interaction.                          |
+| `discordInteractionIdempotencyKey(interaction)` | Pure helper → `discord:interaction:{interaction.id}`. Stable key for optional [side-effect de-duplication](#de-duplicating-side-effects). |
 | `InteractionType` / `InteractionCallbackType` | Numeric enums for Discord's interaction and callback `type` values.                              |
 
 ## Configuration
@@ -133,6 +134,24 @@ router.post('/discord/interactions', async (ctx) => {
 ```
 
 `dispatchInteraction` returns `{ type: PONG }` for the handshake. For slow work, return a `DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE` callback and follow up via `discordClient.createFollowupMessage(interaction.token, …)` (the interaction token is valid for 15 minutes).
+
+### De-duplicating side effects
+
+**Discord does not redeliver HTTP interactions.** They are request/response, and the response body matters (a `PING` must `PONG`, a command must return its callback). So unlike Slack/WhatsApp/Telegram — which redeliver events on a slow/failed ack — Discord dedup is **not** a redelivery-safety net. It is a conservative guard against a duplicate **side effect** from an out-of-band resend: a proxy/gateway retry, or a client double-submit of the same interaction.
+
+Pass an optional `@maroonedsoftware/cache` [`IdempotencyStore`](../cache) (an **optional peer** — no runtime dependency if you don't use it) as `options.idempotency`. The dispatcher wraps only the handler invocation, keyed by `discordInteractionIdempotencyKey(interaction)` = `discord:interaction:{interaction.id}`. The `PING` handshake is answered directly and **never** de-duplicated. A first delivery is `processed` and its response body is returned unchanged; only a genuine duplicate of the same `interaction.id` skips the handler and returns `undefined` (ack `200`):
+
+```ts
+import { IdempotencyStore } from '@maroonedsoftware/cache';
+
+const result = await ctx.container.get(DiscordDispatcher).dispatchInteraction(JSON.parse(raw), {
+  idempotency: ctx.container.get(IdempotencyStore),
+});
+if (result) ctx.body = result;
+else ctx.status = 200; // PONG/callback already sent, or a duplicate was skipped
+```
+
+Because the ~3s ack window is tight, dedup here protects fast, in-request side effects. For handlers that do **real** work, prefer the durable pattern: return a `DEFERRED_*` callback immediately and enqueue a background job keyed by `interaction.id` (e.g. via `@maroonedsoftware/jobbroker`), so the de-duplication and retries live around the slow work rather than the interaction response.
 
 ### Interaction routing
 

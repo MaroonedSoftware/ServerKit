@@ -28,8 +28,14 @@ export interface ServerKitContext extends Context {
   correlationId: string;
   /** Request ID; from `X-Request-Id` header or generated. */
   requestId: string;
-  /** Raw body for this request. */
+  /** Raw request body bytes for this request. */
   rawBody: BinaryLike;
+  /**
+   * Parsed request body, populated by {@link bodyParserMiddleware} from the request's
+   * `Content-Type`. Distinct from `ctx.body`, which is the *response* body in Koa.
+   * Typed as `unknown`; narrow or cast it in handlers (e.g. `ctx.parsedBody as MyDto`).
+   */
+  parsedBody: unknown;
   /** Authentication session. */
   authenticationSession: AuthenticationSession;
 }

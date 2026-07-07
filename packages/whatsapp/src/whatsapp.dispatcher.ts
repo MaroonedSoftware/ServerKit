@@ -1,7 +1,10 @@
 import { Injectable } from 'injectkit';
 import { Logger } from '@maroonedsoftware/logger';
+import type { IdempotencyStore } from '@maroonedsoftware/cache';
 import {
   interactiveReplyId,
+  whatsappMessageIdempotencyKey,
+  whatsappStatusIdempotencyKey,
   WhatsAppInteractiveHandler,
   WhatsAppMessageHandler,
   WhatsAppStatusHandler,
@@ -11,6 +14,16 @@ import {
   type WhatsAppValue,
   type WhatsAppWebhookBody,
 } from './whatsapp.message.handler.js';
+
+/**
+ * Per-call options for {@link WhatsAppDispatcher.dispatchWebhook}.
+ *
+ * Pass `idempotency` to de-duplicate at-least-once redeliveries: WhatsApp resends
+ * the entire webhook on any non-2xx ack, so each message and status is wrapped in
+ * an {@link IdempotencyStore} and processed at most once per item. Omit it for the
+ * default at-least-once behaviour.
+ */
+export type WhatsAppDispatchOptions = { idempotency?: IdempotencyStore };
 
 /**
  * Injectable map of WhatsApp message `type` → {@link WhatsAppMessageHandler}.
@@ -82,17 +95,25 @@ export class WhatsAppDispatcher {
   /**
    * Walks the batched webhook body, dispatching every message and status it
    * contains. Resolves once all handlers have settled.
+   *
+   * Pass `options.idempotency` to de-duplicate at-least-once redeliveries. Because
+   * WhatsApp resends the whole webhook (not the failed item) on a non-2xx ack,
+   * de-duplication is PER ITEM: each message is keyed by
+   * {@link whatsappMessageIdempotencyKey} and each status by
+   * {@link whatsappStatusIdempotencyKey}, so a redelivered batch replays only the
+   * items it has not already processed. A `duplicate`/`dropped` outcome skips that
+   * item and moves on. When `options.idempotency` is omitted, behaviour is unchanged.
    */
-  async dispatchWebhook(body: WhatsAppWebhookBody): Promise<void> {
+  async dispatchWebhook(body: WhatsAppWebhookBody, options?: WhatsAppDispatchOptions): Promise<void> {
     for (const entry of body.entry ?? []) {
       for (const change of entry.changes ?? []) {
         const value = change.value;
         if (!value) continue;
         for (const message of value.messages ?? []) {
-          await this.dispatchMessage(message, entry.id, value);
+          await this.dispatchMessage(message, entry.id, value, options);
         }
         for (const status of value.statuses ?? []) {
-          await this.dispatchStatus(status, entry.id, value);
+          await this.dispatchStatus(status, entry.id, value, options);
         }
       }
     }
@@ -104,39 +125,65 @@ export class WhatsAppDispatcher {
    * first; everything else (and id-less interactives with no specific handler)
    * falls back to the message-type map ({@link WhatsAppMessageHandlerMap}).
    */
-  private async dispatchMessage(message: WhatsAppMessage, wabaId: string, value: WhatsAppValue): Promise<void> {
-    const context: WhatsAppMessageContext = {
-      phoneNumberId: value.metadata.phone_number_id,
-      displayPhoneNumber: value.metadata.display_phone_number,
-      wabaId,
-      contact: value.contacts?.find(c => c.wa_id === message.from) ?? value.contacts?.[0],
-      value,
-    };
+  private async dispatchMessage(message: WhatsAppMessage, wabaId: string, value: WhatsAppValue, options?: WhatsAppDispatchOptions): Promise<void> {
+    const work = async (): Promise<void> => {
+      const context: WhatsAppMessageContext = {
+        phoneNumberId: value.metadata.phone_number_id,
+        displayPhoneNumber: value.metadata.display_phone_number,
+        wabaId,
+        contact: value.contacts?.find(c => c.wa_id === message.from) ?? value.contacts?.[0],
+        value,
+      };
 
-    const replyId = interactiveReplyId(message);
-    if (replyId) {
-      const interactive = this.interactives.get(replyId);
-      if (interactive) {
-        await interactive.handle(message, context);
+      const replyId = interactiveReplyId(message);
+      if (replyId) {
+        const interactive = this.interactives.get(replyId);
+        if (interactive) {
+          await interactive.handle(message, context);
+          return;
+        }
+      }
+
+      const handler = this.messages.get(message.type);
+      if (!handler) {
+        this.logger.debug('No WhatsApp message handler registered', { type: message.type, replyId });
         return;
       }
-    }
+      await handler.handle(message, context);
+    };
 
-    const handler = this.messages.get(message.type);
-    if (!handler) {
-      this.logger.debug('No WhatsApp message handler registered', { type: message.type, replyId });
+    if (options?.idempotency) {
+      const key = whatsappMessageIdempotencyKey(message);
+      const outcome = await options.idempotency.deduplicate(key, work);
+      if (outcome.status === 'dropped') {
+        this.logger.warn('WhatsApp message dead-lettered after repeated failures', { key, attempts: outcome.attempts });
+      }
       return;
     }
-    await handler.handle(message, context);
+
+    await work();
   }
 
   /** Dispatch a single delivery status, keyed by `status.status`. */
-  private async dispatchStatus(status: WhatsAppStatus, wabaId: string, value: WhatsAppValue): Promise<void> {
-    const handler = this.statuses.get(status.status);
-    if (!handler) {
-      this.logger.debug('No WhatsApp status handler registered', { status: status.status });
+  private async dispatchStatus(status: WhatsAppStatus, wabaId: string, value: WhatsAppValue, options?: WhatsAppDispatchOptions): Promise<void> {
+    const work = async (): Promise<void> => {
+      const handler = this.statuses.get(status.status);
+      if (!handler) {
+        this.logger.debug('No WhatsApp status handler registered', { status: status.status });
+        return;
+      }
+      await handler.handle(status, { phoneNumberId: value.metadata.phone_number_id, displayPhoneNumber: value.metadata.display_phone_number, wabaId, value });
+    };
+
+    if (options?.idempotency) {
+      const key = whatsappStatusIdempotencyKey(status);
+      const outcome = await options.idempotency.deduplicate(key, work);
+      if (outcome.status === 'dropped') {
+        this.logger.warn('WhatsApp status dead-lettered after repeated failures', { key, attempts: outcome.attempts });
+      }
       return;
     }
-    await handler.handle(status, { phoneNumberId: value.metadata.phone_number_id, displayPhoneNumber: value.metadata.display_phone_number, wabaId, value });
+
+    await work();
   }
 }
