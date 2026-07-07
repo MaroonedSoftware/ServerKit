@@ -1,5 +1,11 @@
 # @maroonedsoftware/koa
 
+## 2.7.1
+
+### Patch Changes
+
+- dc2a24b: Constrain `ServerKitModule<ConfigT>` so `ConfigT` must extend `AppConfig`, ensuring the config passed to `setup` is always usable as an `AppConfig`.
+
 ## 2.7.0
 
 ### Minor Changes
