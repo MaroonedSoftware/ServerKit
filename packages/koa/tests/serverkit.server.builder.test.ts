@@ -4,6 +4,7 @@ import type { Server } from 'node:http';
 import { Settings } from 'luxon';
 import Koa from 'koa';
 import { InjectKitContainerNoop, type Container } from 'injectkit';
+import type Router from '@koa/router';
 import { ServerKitServerBuilder } from '../src/serverkit.server.builder.js';
 import { ServerKitBodyParser, ServerKitParserMappings } from '../src/serverkit.bodyparser.js';
 import { BinaryParser } from '../src/parsers/binary.parser.js';
@@ -74,13 +75,13 @@ describe('ServerKitServerBuilder', () => {
       expect(container.get(AppConfig)).toBe(config);
     });
 
-    it('builds the container and returns the builder for chaining', async () => {
+    it('builds and returns the container', async () => {
       const builder = new ServerKitServerBuilder();
 
       const result = await builder.setup(config, logger, []);
 
-      expect(result).toBe(builder);
-      expect(internals(builder).container).toBeDefined();
+      expect(result).toBe(internals(builder).container);
+      expect(result).not.toBeInstanceOf(InjectKitContainerNoop);
     });
 
     it('invokes each module setup hook with the registry and config', async () => {
@@ -98,7 +99,9 @@ describe('ServerKitServerBuilder', () => {
       const module = createModule({ setup: undefined });
       const builder = new ServerKitServerBuilder();
 
-      await expect(builder.setup(config, logger, [module])).resolves.toBe(builder);
+      const result = await builder.setup(config, logger, [module]);
+
+      expect(result).toBe(internals(builder).container);
     });
 
     it('stores the provided modules for later lifecycle hooks', async () => {
@@ -182,14 +185,25 @@ describe('ServerKitServerBuilder', () => {
   });
 
   describe('setupRoutes', () => {
-    it('registers each route middleware on the server and returns the builder', () => {
+    it("mounts each router's routes() and allowedMethods() and returns the builder", () => {
       const builder = new ServerKitServerBuilder();
-      const route: ServerKitMiddleware = async (_ctx, next) => next();
+      const routesMw: ServerKitMiddleware = async (_ctx, next) => next();
+      const allowedMw: ServerKitMiddleware = async (_ctx, next) => next();
+      const router = {
+        routes: vi.fn(() => routesMw),
+        allowedMethods: vi.fn(() => allowedMw),
+      } as unknown as Router;
+      const before = internals(builder).server.middleware.length;
 
-      const result = builder.setupRoutes([route]);
+      const result = builder.setupRoutes([router]);
 
       expect(result).toBe(builder);
-      expect(internals(builder).server.middleware).toContain(route);
+      expect(router.routes).toHaveBeenCalledTimes(1);
+      expect(router.allowedMethods).toHaveBeenCalledTimes(1);
+      const middleware = internals(builder).server.middleware;
+      expect(middleware.length).toBe(before + 2);
+      expect(middleware).toContain(routesMw);
+      expect(middleware).toContain(allowedMw);
     });
   });
 

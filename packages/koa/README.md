@@ -71,11 +71,12 @@ app.listen(3000);
 ```typescript
 import { ServerKitServerBuilder } from '@maroonedsoftware/koa';
 
-const builder = await new ServerKitServerBuilder().setup(config, logger, modules);
+const builder = new ServerKitServerBuilder();
+await builder.setup(config, logger, modules); // returns the built container
 
 builder
   .setupMiddleware() // defaults to serverKitDefaultMiddleware(container)
-  .setupRoutes([router.routes(), router.allowedMethods()]);
+  .setupRoutes([router]); // mounts router.routes() + router.allowedMethods()
 
 await builder.start(3000);
 ```

@@ -9,18 +9,20 @@ import { ServerKitBodyParser, ServerKitParserMappings } from './serverkit.bodypa
 import { ServerKitMiddleware } from './serverkit.middleware.js';
 import { ServerkitError } from '@maroonedsoftware/errors';
 import { serverKitDefaultMiddleware } from './middleware/server/serverkit.default.middlewares.js';
+import Router from '@koa/router';
 
 /**
  * Fluent builder that wires an InjectKit-backed Koa server through its full lifecycle:
  * dependency registration, body-parser setup, middleware and route mounting, listening, and
  * graceful shutdown.
  *
- * Typical usage chains {@link setup} → {@link setupMiddleware} → {@link setupRoutes} → {@link start}:
+ * Typical usage runs {@link setup} (which returns the built container), then chains
+ * {@link setupMiddleware} → {@link setupRoutes}, then {@link start}:
  * ```typescript
- * const server = await new ServerKitServerBuilder()
- *   .setup(config, logger, modules);
- * server.setupMiddleware().setupRoutes(routes);
- * await server.start(3000);
+ * const builder = new ServerKitServerBuilder();
+ * await builder.setup(config, logger, modules);
+ * builder.setupMiddleware().setupRoutes([router]);
+ * await builder.start(3000);
  * ```
  *
  * Construction sets Luxon's default zone to UTC and installs a {@link InjectKitContainerNoop}
@@ -52,7 +54,7 @@ export class ServerKitServerBuilder {
    * @param logger - Logger registered in the container and used for lifecycle logging.
    * @param modules - Modules whose `setup`/`start`/`shutdown` hooks run across the server lifecycle.
    * @param parserMappings - MIME-subtype-to-parser mappings to register; defaults to {@link defaultParserMappings}.
-   * @returns This builder, for chaining.
+   * @returns The built container.
    */
   public async setup(
     config: AppConfig,
@@ -75,8 +77,7 @@ export class ServerKitServerBuilder {
     }
 
     this.container = this.registry.build();
-
-    return this;
+    return this.container;
   }
 
   /**
@@ -120,14 +121,14 @@ export class ServerKitServerBuilder {
   }
 
   /**
-   * Mounts route middleware onto the server, after the middleware stack.
+   * Mounts routers onto the server, after the middleware stack.
    *
-   * @param routes - Route middleware to register in order.
+   * @param routes - Routers whose `routes()` and `allowedMethods()` middleware are mounted in order.
    * @returns This builder, for chaining.
    */
-  public setupRoutes(routes: ServerKitMiddleware[]): this {
+  public setupRoutes(routes: Router[]): this {
     for (const route of routes) {
-      this.server.use(route);
+      this.server.use(route.routes()).use(route.allowedMethods());
     }
     return this;
   }
@@ -146,8 +147,8 @@ export class ServerKitServerBuilder {
   public async start(port: number) {
     this.assertInitialized();
 
-    this.server.on('error', (err) => this.onErrorListener(err));
-    this.server.on('warn', (err) => this.onWarnListener(err));
+    this.server.on('error', err => this.onErrorListener(err));
+    this.server.on('warn', err => this.onWarnListener(err));
 
     const controller = new AbortController();
     const serverInstance = this.server.listen({ port, signal: controller.signal, captureRejections: true }, async () => {
