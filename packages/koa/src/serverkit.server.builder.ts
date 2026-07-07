@@ -9,7 +9,7 @@ import { ServerKitBodyParser, ServerKitParserMappings } from './serverkit.bodypa
 import { ServerKitMiddleware } from './serverkit.middleware.js';
 import { ServerkitError } from '@maroonedsoftware/errors';
 import { serverKitDefaultMiddleware } from './middleware/server/serverkit.default.middlewares.js';
-import Router from '@koa/router';
+import { ServerKitRouterType } from './serverkit.router.js';
 
 /**
  * Fluent builder that wires an InjectKit-backed Koa server through its full lifecycle:
@@ -126,7 +126,7 @@ export class ServerKitServerBuilder {
    * @param routes - Routers whose `routes()` and `allowedMethods()` middleware are mounted in order.
    * @returns This builder, for chaining.
    */
-  public setupRoutes(routes: Router[]): this {
+  public setupRoutes(routes: ServerKitRouterType[]): this {
     for (const route of routes) {
       this.server.use(route.routes()).use(route.allowedMethods());
     }

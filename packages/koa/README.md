@@ -17,6 +17,7 @@ Peer dependencies: `koa`, `@koa/router`, `@koa/cors`.
 - **RateLimiter** — DI token for an injected `rate-limiter-flexible` limiter; when registered, the default stack inserts `rateLimiterMiddleware` automatically
 - **ServerKitContext** — Koa context extended with `container`, `logger`, `requestId`, `correlationId`, `authenticationSession`, and related request metadata
 - **ServerKitRouter** — Router typed for `ServerKitContext`
+- **ServerKitRouterType** — The router instance type returned by `ServerKitRouter`, for typing routers without referencing `@koa/router` directly
 - **ServerKitMiddleware** — Middleware type bound to `ServerKitContext`
 - **serverKitContextMiddleware** — Populates context with scoped container, logger, and request/correlation IDs; registers the live context against the `ServerKitContext` injection token so request-scoped services can inject it
 - **corsMiddleware** — CORS headers with `'*'`, string, or RegExp origin matching

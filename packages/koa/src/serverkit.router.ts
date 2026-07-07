@@ -12,3 +12,11 @@ import { ServerKitContext } from './serverkit.context.js';
  * @returns A new {@link Router} instance with the given options.
  */
 export const ServerKitRouter = <StateT = DefaultState, ContextT = ServerKitContext>(options?: RouterOptions) => new Router<StateT, ContextT>(options);
+
+/**
+ * The concrete router instance type returned by {@link ServerKitRouter}.
+ *
+ * Use this to type router variables, parameters, and collections (e.g. arrays of
+ * routers passed to a server builder) without referencing `@koa/router` directly.
+ */
+export type ServerKitRouterType = ReturnType<typeof ServerKitRouter>;

@@ -218,7 +218,9 @@ const parseListQueryFromBody = (body: unknown, maxResults: number): ScimListQuer
     sortBy: typeof body.sortBy === 'string' ? body.sortBy : undefined,
     sortOrder: parseSortOrder(typeof body.sortOrder === 'string' ? body.sortOrder : undefined),
     attributes: Array.isArray(body.attributes) ? body.attributes.filter((a): a is string => typeof a === 'string') : undefined,
-    excludedAttributes: Array.isArray(body.excludedAttributes) ? body.excludedAttributes.filter((a): a is string => typeof a === 'string') : undefined,
+    excludedAttributes: Array.isArray(body.excludedAttributes)
+      ? body.excludedAttributes.filter((a): a is string => typeof a === 'string')
+      : undefined,
   };
 };
 
@@ -238,7 +240,10 @@ const clamp = (value: number, min: number, max: number): number => Math.max(min,
 
 const parseCsvParam = (raw: string | undefined): string[] | undefined => {
   if (!raw) return undefined;
-  const parts = raw.split(',').map(s => s.trim()).filter(Boolean);
+  const parts = raw
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
   return parts.length > 0 ? parts : undefined;
 };
 
