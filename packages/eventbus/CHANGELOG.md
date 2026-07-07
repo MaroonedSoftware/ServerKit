@@ -1,5 +1,11 @@
 # @maroonedsoftware/eventbus
 
+## 0.1.2
+
+### Patch Changes
+
+- dfe5304: Declare `engines.node >= 22` in the package manifest to match the supported runtime.
+
 ## 0.1.1
 
 ### Patch Changes
