@@ -72,12 +72,12 @@ describe('JwtProvider', () => {
   });
 
   describe('decode', () => {
-    const create = (overrides: { issuer?: string; expiresIn?: Duration; claims?: Record<string, unknown> } = {}) =>
+    const create = (overrides: { issuer?: string; audience?: string | string[]; expiresIn?: Duration; claims?: Record<string, unknown> } = {}) =>
       provider.create(
         overrides.claims ?? {},
         'user-1',
         overrides.issuer ?? 'https://auth.example.com',
-        'https://api.example.com',
+        overrides.audience ?? 'https://api.example.com',
         overrides.expiresIn ?? Duration.fromObject({ hours: 1 }),
       ).token;
 
@@ -96,6 +96,46 @@ describe('JwtProvider', () => {
 
       expect(result).toBeUndefined();
       expect(logger.error).toHaveBeenCalled();
+    });
+
+    it('returns undefined and logs when the audience claim does not match the expected audience', () => {
+      const token = create({ audience: 'https://evil.example.com' });
+
+      const result = provider.decode(token, 'https://auth.example.com', false, false, 'https://api.example.com');
+
+      expect(result).toBeUndefined();
+      expect(logger.error).toHaveBeenCalled();
+    });
+
+    it('throws HTTP 401 for a mismatched audience when reThrow is true', () => {
+      const token = create({ audience: 'https://evil.example.com' });
+
+      expect(() => provider.decode(token, 'https://auth.example.com', false, true, 'https://api.example.com')).toThrow();
+    });
+
+    it('verifies and returns the payload when the audience matches', () => {
+      const token = create({ audience: 'https://api.example.com', claims: { role: 'admin' } });
+
+      const result = provider.decode(token, 'https://auth.example.com', false, false, 'https://api.example.com');
+
+      expect(result).toMatchObject({ role: 'admin', aud: 'https://api.example.com' });
+    });
+
+    it('accepts a token whose audience matches any entry in an allowed array', () => {
+      const token = create({ audience: 'https://api.example.com' });
+
+      const result = provider.decode(token, 'https://auth.example.com', false, false, ['https://other.example.com', 'https://api.example.com']);
+
+      expect(result).toMatchObject({ sub: 'user-1' });
+    });
+
+    it('does not check audience when none is supplied (backward compatible)', () => {
+      const token = create({ audience: 'https://whatever.example.com' });
+
+      const result = provider.decode(token, 'https://auth.example.com');
+
+      expect(result).toMatchObject({ sub: 'user-1', aud: 'https://whatever.example.com' });
+      expect(logger.error).not.toHaveBeenCalled();
     });
 
     it('returns undefined and logs when the signature is tampered with', () => {

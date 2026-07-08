@@ -384,7 +384,7 @@ export class AuthenticationSessionService {
    * @throws 401 when the JWT is invalid, the session is not found, or the subjects don't match.
    */
   async lookupSessionFromJwt(jwt: string, ignoreJwtExpiration?: boolean) {
-    const jwtPayload = this.jwtProvider.decode(jwt, this.options.issuer, ignoreJwtExpiration);
+    const jwtPayload = this.jwtProvider.decode(jwt, this.options.issuer, ignoreJwtExpiration, false, this.options.audience);
     if (!jwtPayload) {
       await this.runHook('onValidationFailed', hook => hook('', { reason: 'jwt_decode_failed' }));
       throw unauthorizedError('Bearer error="invalid_token"');
@@ -587,7 +587,9 @@ export class AuthenticationSessionService {
    *   resolves to a live session.
    */
   async refreshSession(refreshToken: string): Promise<AuthenticationToken> {
-    const decoded = this.jwtProvider.decode(refreshToken, this.options.issuer) as (RefreshTokenPayload & { exp?: number }) | undefined;
+    const decoded = this.jwtProvider.decode(refreshToken, this.options.issuer, undefined, false, this.options.audience) as
+      | (RefreshTokenPayload & { exp?: number })
+      | undefined;
     if (!decoded || decoded.kind !== 'refresh' || !decoded.jti || !decoded.familyId || !decoded.sessionToken) {
       await this.runHook('onValidationFailed', hook => hook('', { reason: 'refresh_token_invalid' }));
       throw unauthorizedError('Bearer error="invalid_token"');
