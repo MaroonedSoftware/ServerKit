@@ -1,5 +1,13 @@
 # @maroonedsoftware/johnny5
 
+## 7.0.2
+
+### Patch Changes
+
+- Updated dependencies [6327141]
+  - @maroonedsoftware/appconfig@2.3.0
+  - @maroonedsoftware/koa@2.8.2
+
 ## 7.0.1
 
 ### Patch Changes
