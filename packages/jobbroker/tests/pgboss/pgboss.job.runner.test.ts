@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { Duration } from 'luxon';
 import { Job as PgJob, PgBoss } from 'pg-boss';
 import { Container } from 'injectkit';
 import { PgBossJobRunner } from '../../src/pgboss/pgboss.job.runner.js';
@@ -28,6 +29,7 @@ describe('PgBossJobRunner', () => {
       start: vi.fn().mockResolvedValue(undefined),
       getQueue: vi.fn().mockResolvedValue(null),
       createQueue: vi.fn().mockResolvedValue(undefined),
+      updateQueue: vi.fn().mockResolvedValue(undefined),
       schedule: vi.fn().mockResolvedValue(undefined),
       work: vi.fn(),
       stop: vi.fn().mockResolvedValue(undefined),
@@ -446,6 +448,149 @@ describe('PgBossJobRunner', () => {
       expect(mockPgBoss.getQueue).not.toHaveBeenCalled();
       expect(mockPgBoss.createQueue).not.toHaveBeenCalled();
       expect(mockPgBoss.work).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('queue policy', () => {
+    it('creates the queue with the name only when no policy is declared (backward compatible)', async () => {
+      await runner.start();
+
+      // The single-argument form must be preserved so existing callers are unaffected.
+      expect(mockPgBoss.createQueue).toHaveBeenCalledWith('test-job');
+      expect(mockPgBoss.updateQueue).not.toHaveBeenCalled();
+    });
+
+    it('creates an absent queue with mapped pg-boss options when a policy is declared', async () => {
+      registrations.clear();
+      registrations.set('charge.webhook', {
+        job: TestJob,
+        policy: {
+          retryLimit: 5,
+          retryDelay: Duration.fromObject({ seconds: 30 }),
+          retryBackoff: true,
+          retryDelayMax: Duration.fromObject({ minutes: 10 }),
+          expiresIn: Duration.fromObject({ minutes: 2 }),
+        },
+      });
+      runner = new PgBossJobRunner(mockContainer, registrations, mockPgBoss, mockLogger);
+
+      await runner.start();
+
+      expect(mockPgBoss.createQueue).toHaveBeenCalledWith('charge.webhook', {
+        retryLimit: 5,
+        retryDelay: 30,
+        retryBackoff: true,
+        retryDelayMax: 600,
+        expireInSeconds: 120,
+      });
+      expect(mockPgBoss.updateQueue).not.toHaveBeenCalled();
+    });
+
+    it('updates an existing queue with the policy instead of recreating it', async () => {
+      vi.mocked(mockPgBoss.getQueue).mockResolvedValue({ name: 'test-job' } as unknown as Awaited<ReturnType<PgBoss['getQueue']>>);
+
+      registrations.clear();
+      registrations.set('test-job', { job: TestJob, policy: { retryLimit: 3 } });
+      runner = new PgBossJobRunner(mockContainer, registrations, mockPgBoss, mockLogger);
+
+      await runner.start();
+
+      expect(mockPgBoss.createQueue).not.toHaveBeenCalled();
+      expect(mockPgBoss.updateQueue).toHaveBeenCalledWith('test-job', { retryLimit: 3 });
+    });
+
+    it('rounds sub-second Duration values to whole seconds', async () => {
+      registrations.clear();
+      registrations.set('rounding-job', {
+        job: TestJob,
+        policy: { retryDelay: Duration.fromObject({ milliseconds: 1500 }) },
+      });
+      runner = new PgBossJobRunner(mockContainer, registrations, mockPgBoss, mockLogger);
+
+      await runner.start();
+
+      expect(mockPgBoss.createQueue).toHaveBeenCalledWith('rounding-job', { retryDelay: 2 });
+    });
+
+    it('merges defaultQueuePolicy beneath each queue policy, letting the queue override fields', async () => {
+      registrations.clear();
+      registrations.set('overrides', { job: TestJob, policy: { retryLimit: 10 } });
+      registrations.set('defaults-only', TestJob);
+      runner = new PgBossJobRunner(mockContainer, registrations, mockPgBoss, mockLogger);
+      runner.defaultQueuePolicy = { retryLimit: 2, retryBackoff: true };
+
+      await runner.start();
+
+      // Own policy wins for retryLimit; the default's retryBackoff still applies.
+      expect(mockPgBoss.createQueue).toHaveBeenCalledWith('overrides', { retryLimit: 10, retryBackoff: true });
+      // A queue with no policy of its own still receives the runner-wide default.
+      expect(mockPgBoss.createQueue).toHaveBeenCalledWith('defaults-only', { retryLimit: 2, retryBackoff: true });
+    });
+
+    it('applies the policy to on-demand jobs without scheduling them', async () => {
+      registrations.clear();
+      registrations.set('on-demand', { job: TestJob, policy: { retryLimit: 4 } });
+      runner = new PgBossJobRunner(mockContainer, registrations, mockPgBoss, mockLogger);
+
+      await runner.start();
+
+      expect(mockPgBoss.createQueue).toHaveBeenCalledWith('on-demand', { retryLimit: 4 });
+      expect(mockPgBoss.schedule).not.toHaveBeenCalled();
+    });
+
+    it('applies the policy to scheduled jobs alongside the cron schedule', async () => {
+      registrations.clear();
+      registrations.set('nightly', { job: TestJob, cron: '0 0 * * *', policy: { retryLimit: 1 } });
+      runner = new PgBossJobRunner(mockContainer, registrations, mockPgBoss, mockLogger);
+
+      await runner.start();
+
+      expect(mockPgBoss.createQueue).toHaveBeenCalledWith('nightly', { retryLimit: 1 });
+      expect(mockPgBoss.schedule).toHaveBeenCalledWith('nightly', '0 0 * * *');
+    });
+  });
+
+  describe('dead-letter queues', () => {
+    it('auto-creates a referenced dead-letter queue that does not yet exist, before the source queue', async () => {
+      registrations.clear();
+      registrations.set('charge.webhook', { job: TestJob, policy: { retryLimit: 5, deadLetter: 'charge.webhook.dead' } });
+      runner = new PgBossJobRunner(mockContainer, registrations, mockPgBoss, mockLogger);
+
+      await runner.start();
+
+      // The DLQ is created as a plain queue, and before the queue that references it.
+      const created = vi.mocked(mockPgBoss.createQueue).mock.calls.map(call => call[0]);
+      expect(created).toEqual(['charge.webhook.dead', 'charge.webhook']);
+      expect(mockPgBoss.createQueue).toHaveBeenCalledWith('charge.webhook.dead');
+      expect(mockPgBoss.createQueue).toHaveBeenCalledWith('charge.webhook', { retryLimit: 5, deadLetter: 'charge.webhook.dead' });
+    });
+
+    it('does not recreate a dead-letter queue that already exists', async () => {
+      vi.mocked(mockPgBoss.getQueue).mockImplementation(async (name: string) =>
+        name === 'charge.webhook.dead' ? ({ name } as unknown as Awaited<ReturnType<PgBoss['getQueue']>>) : null,
+      );
+
+      registrations.clear();
+      registrations.set('charge.webhook', { job: TestJob, policy: { deadLetter: 'charge.webhook.dead' } });
+      runner = new PgBossJobRunner(mockContainer, registrations, mockPgBoss, mockLogger);
+
+      await runner.start();
+
+      const created = vi.mocked(mockPgBoss.createQueue).mock.calls.map(call => call[0]);
+      expect(created).not.toContain('charge.webhook.dead');
+      expect(created).toContain('charge.webhook');
+    });
+
+    it('creates a shared dead-letter queue only once across multiple source queues', async () => {
+      registrations.clear();
+      registrations.set('charge.webhook', { job: TestJob, policy: { deadLetter: 'money.dead' } });
+      registrations.set('payout.webhook', { job: TestJob, policy: { deadLetter: 'money.dead' } });
+      runner = new PgBossJobRunner(mockContainer, registrations, mockPgBoss, mockLogger);
+
+      await runner.start();
+
+      const dlqCreations = vi.mocked(mockPgBoss.createQueue).mock.calls.filter(call => call[0] === 'money.dead');
+      expect(dlqCreations).toHaveLength(1);
     });
   });
 });
