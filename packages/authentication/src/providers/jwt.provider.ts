@@ -1,7 +1,7 @@
 import { Injectable } from 'injectkit';
 import { Logger } from '@maroonedsoftware/logger';
 import { Duration } from 'luxon';
-import jsonwebtoken from 'jsonwebtoken';
+import jsonwebtoken, { type VerifyOptions } from 'jsonwebtoken';
 import { createPublicKey } from 'node:crypto';
 import { httpError, unauthorizedError } from '@maroonedsoftware/errors';
 
@@ -83,12 +83,22 @@ export class JwtProvider {
    * @param issuer            - Expected `iss` claim; verification fails if it does not match.
    * @param ignoreExpiration  - When `true`, an expired token is still decoded (useful for refresh flows).
    * @param reThrow           - When `true`, errors are re-thrown as HTTP 401 instead of returning `undefined`.
+   * @param audience          - Expected `aud` claim(s). When provided, verification fails if the token's
+   *   `aud` matches none of them; the check accepts a string or an array of allowed values. Omit to skip
+   *   the audience check entirely (backward-compatible default).
    * @returns The decoded {@link JwtPayload}, or `undefined` if verification fails and `reThrow` is `false`.
    * @throws HTTP 401 when verification fails and `reThrow` is `true`.
    */
-  decode(token: string, issuer: string, ignoreExpiration?: boolean, reThrow: boolean = false) {
+  decode(token: string, issuer: string, ignoreExpiration?: boolean, reThrow: boolean = false, audience?: string | string[]) {
     try {
-      const decoded = jsonwebtoken.verify(token, this.pemPublicKey, { issuer, ignoreExpiration, algorithms: ['RS256'] });
+      // jsonwebtoken types `audience` as a string, RegExp, or non-empty tuple; a plain `string[]` is
+      // accepted at runtime, so widen it to the option type here rather than constraining the public API.
+      const decoded = jsonwebtoken.verify(token, this.pemPublicKey, {
+        issuer,
+        audience: audience as VerifyOptions['audience'],
+        ignoreExpiration,
+        algorithms: ['RS256'],
+      });
 
       if (typeof decoded === 'string') {
         if (reThrow) {

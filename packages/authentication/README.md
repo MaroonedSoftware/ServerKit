@@ -185,6 +185,8 @@ const stepUp = await sessionService.rotateSession(session.sessionToken, { acr: '
 await sessionService.deleteSession(session.sessionToken);
 ```
 
+`lookupSessionFromJwt` (access tokens) and `refreshSession` (refresh tokens) both verify the token against the `audience` configured on `AuthenticationSessionServiceOptions` — the same value used to sign the `aud` claim. A token minted for a different audience (even with the same issuer and signing key) is rejected with a 401. Leaving `audience` unset skips the check, so existing deployments are unaffected.
+
 #### Refresh-token rotation and theft detection
 
 Refresh tokens are single-use JWTs that carry `kind: 'refresh'`, `jti`, `familyId`, and `sessionToken` claims. Every issuance registers the `jti` in a family blob (`auth_refresh_family_{familyId}`). On `refreshSession`:
@@ -1139,7 +1141,7 @@ Constructed with `(logger, pemPrivateKey, pemPublicKey?)`. When `pemPublicKey` i
 | Method                                                 | Returns                       | Description                          |
 | ------------------------------------------------------ | ----------------------------- | ------------------------------------ |
 | `create(payload, subject, issuer, audience, expiresIn)` | `{ token, decoded }`         | Sign an RS256 JWT (uses the private key)    |
-| `decode(token, issuer, ignoreExpiration?, reThrow?)`   | `JwtPayload \| undefined`    | Verify and decode an RS256 JWT (uses the public key) |
+| `decode(token, issuer, ignoreExpiration?, reThrow?, audience?)` | `JwtPayload \| undefined` | Verify and decode an RS256 JWT (uses the public key). When `audience` is supplied, the token's `aud` claim must match it (string or array of allowed values); omit it to skip the audience check. |
 
 ### `OtpProvider`
 

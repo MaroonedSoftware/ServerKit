@@ -10,11 +10,14 @@ import { AuthenticationSession } from '../types.js';
  * {@link JwtAuthenticationHandler} resolves the matching issuer at runtime and
  * delegates to {@link parse} with both the raw `token` and the decoded `payload`.
  *
- * **Implementations MUST cryptographically verify the token's signature.** The
- * `payload` argument is supplied as a convenience but originates from an
- * unverified `jsonwebtoken.decode` call — it is only safe to trust after the
- * implementation has re-verified the signature against its own trusted key
- * material (e.g. JWKS, static public key).
+ * **Implementations MUST cryptographically verify the token's signature** and
+ * assert the claims they depend on (at minimum `iss`, `exp`, and the expected
+ * `aud` for this issuer). The `payload` argument is supplied as a convenience
+ * but originates from an unverified `jsonwebtoken.decode` call: it is only safe
+ * to trust after the implementation has re-verified the signature against its
+ * own trusted key material (e.g. JWKS, static public key). Audience is
+ * per-issuer, so this handler does not assert it centrally; each issuer pins
+ * its own `aud`.
  *
  * @example
  * ```typescript

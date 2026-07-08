@@ -216,6 +216,17 @@ describe('AuthenticationSessionService', () => {
       expect(result.session.sessionToken).toBe('session-token');
       expect(result.jwtPayload).toBe(payload);
     });
+
+    it('asserts the configured audience when verifying the access token', async () => {
+      const session = makeStoredSession({ subject: 'user-1' });
+      jwtProvider.decode = vi.fn().mockReturnValue({ sessionToken: 'session-token', sub: 'user-1' });
+      cache.get = vi.fn().mockResolvedValue(JSON.stringify(session));
+
+      await service.lookupSessionFromJwt('valid.jwt');
+
+      // audience is the trailing decode() argument; issuer is arg 2.
+      expect(jwtProvider.decode).toHaveBeenCalledWith('valid.jwt', 'https://auth.example.com', undefined, false, 'https://api.example.com');
+    });
   });
 
   describe('deleteSession', () => {
@@ -643,6 +654,29 @@ describe('AuthenticationSessionService', () => {
       });
       expect(onSessionRevoked).toHaveBeenCalled();
       expect(onSessionRevoked.mock.calls.some(c => c[1]?.reason === 'theft')).toBe(true);
+    });
+
+    it('asserts the configured audience when verifying the refresh token', async () => {
+      const harness = makeLiveHarness();
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider, harness.logger);
+
+      const session = await svc.createSession('user-1', {}, makeFactor());
+      const tokens = await svc.issueTokenForSession(session.sessionToken);
+      const refreshPayload = (harness.jwtProvider.create as ReturnType<typeof vi.fn>).mock.calls[1]![0] as {
+        kind: string;
+        jti: string;
+        familyId: string;
+        sessionToken: string;
+      };
+      (harness.jwtProvider.decode as ReturnType<typeof vi.fn>).mockReturnValue({
+        ...refreshPayload,
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      });
+
+      await svc.refreshSession(tokens.refreshToken!);
+
+      // audience is the trailing decode() argument; the refresh path keeps the default (falsy) ignoreExpiration.
+      expect(harness.jwtProvider.decode).toHaveBeenCalledWith(tokens.refreshToken, 'https://auth.example.com', undefined, false, 'https://api.example.com');
     });
 
     it('rejects a refresh token with a missing/wrong kind claim', async () => {
