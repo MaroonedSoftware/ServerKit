@@ -109,11 +109,26 @@ describe('AppConfigSourceDotenv', () => {
       await expect(source.load()).rejects.toThrow();
     });
 
-    it('should not mutate process.env (pure source)', async () => {
-      writeFileSync(testFile, 'SHOULD_NOT_LEAK=1\n', 'utf8');
+    it('should mutate process.env (populateProcessEnv defaults true)', async () => {
+      writeFileSync(testFile, 'SHOULD_LEAK=1\n', 'utf8');
       const source = new AppConfigSourceDotenv(testFile);
       await source.load();
+      expect(process.env.SHOULD_LEAK).toBe('1');
+    });
+
+    it('should not mutate process.env (pure source)', async () => {
+      writeFileSync(testFile, 'SHOULD_NOT_LEAK=1\n', 'utf8');
+      const source = new AppConfigSourceDotenv(testFile, { populateProcessEnv: false });
+      await source.load();
       expect(process.env.SHOULD_NOT_LEAK).toBeUndefined();
+    });
+
+    it('should not override process.env (overrideProcessEnv defaults true)', async () => {
+      process.env.SHOULD_LEAK = '1';
+      writeFileSync(testFile, 'SHOULD_LEAK=2\n', 'utf8');
+      const source = new AppConfigSourceDotenv(testFile, { overrideProcessEnv: false });
+      await source.load();
+      expect(process.env.SHOULD_LEAK).toBe('1');
     });
 
     it('should return a promise', async () => {
@@ -161,11 +176,7 @@ describe('AppConfigSourceDotenv', () => {
     });
 
     it('should mix grouped and ungrouped keys', async () => {
-      writeFileSync(
-        testFile,
-        ['DATABASE_URL=postgres://localhost/db', 'WEBHOOK__secret=abc', 'WEBHOOK__header=X-Sig'].join('\n'),
-        'utf8',
-      );
+      writeFileSync(testFile, ['DATABASE_URL=postgres://localhost/db', 'WEBHOOK__secret=abc', 'WEBHOOK__header=X-Sig'].join('\n'), 'utf8');
 
       const source = new AppConfigSourceDotenv(testFile, { groupSeparator: '__' });
       const config = await source.load();

@@ -24,6 +24,33 @@ export interface AppConfigSourceDotenvOptions extends AppConfigSourceFileOptions
    * ```
    */
   groupSeparator?: string;
+
+  /**
+   * When set, the parsed environment variables are populated into `process.env`.
+   *
+   * Defaults to `true`.
+   *
+   * @example
+   * ```typescript
+   * const source = new AppConfigSourceDotenv('./.env', { populateProcessEnv: true });
+   * await source.load();
+   * // → process.env.WEBHOOK_SECRET = 'abc'
+   * ```
+   */
+  populateProcessEnv?: boolean;
+
+  /**
+   * When set, the parsed environment variables override existing `process.env` variables.
+   *
+   * Defaults to `true`.
+   *
+   * @example
+   * ```typescript
+   * const source = new AppConfigSourceDotenv('./.env', { overrideProcessEnv: true });
+   * await source.load();
+   * // → process.env.WEBHOOK_SECRET = 'abc'
+   */
+  overrideProcessEnv?: boolean;
 }
 
 /**
@@ -43,10 +70,14 @@ export interface AppConfigSourceDotenvOptions extends AppConfigSourceFileOptions
  * const source1 = new AppConfigSourceDotenv();                              // ./.env
  * const source2 = new AppConfigSourceDotenv('./config/.env.local');         // custom path
  * const source3 = new AppConfigSourceDotenv('./.env', { groupSeparator: '__' });
+ * const source4 = new AppConfigSourceDotenv('./.env', { populateProcessEnv: false });
+ * const source5 = new AppConfigSourceDotenv('./.env', { populateProcessEnv: true, overrideProcessEnv: false });
  * ```
  */
 export class AppConfigSourceDotenv extends AppConfigSourceFile {
   private readonly groupSeparator?: string;
+  private readonly populateProcessEnv: boolean;
+  private readonly overrideProcessEnv: boolean;
 
   /**
    * Creates a new AppConfigSourceDotenv instance.
@@ -57,6 +88,8 @@ export class AppConfigSourceDotenv extends AppConfigSourceFile {
   constructor(filePath = '.env', options?: AppConfigSourceDotenvOptions) {
     super(filePath, options);
     this.groupSeparator = options?.groupSeparator;
+    this.populateProcessEnv = options?.populateProcessEnv ?? true;
+    this.overrideProcessEnv = options?.overrideProcessEnv ?? true;
   }
 
   /**
@@ -67,6 +100,11 @@ export class AppConfigSourceDotenv extends AppConfigSourceFile {
    */
   protected parse(text: string): Record<string, unknown> {
     const parsed = dotenv.parse(text);
+    if (this.populateProcessEnv) {
+      dotenv.populate(process.env, parsed, {
+        override: this.overrideProcessEnv,
+      });
+    }
     return this.groupSeparator ? nestKeys(parsed, this.groupSeparator) : parsed;
   }
 }
