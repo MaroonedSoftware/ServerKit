@@ -9,6 +9,8 @@ A flexible background job processing library with support for scheduled and on-d
 - **Scheduled jobs** using cron expressions
 - **On-demand jobs** for immediate execution
 - **Cancellation** of queued _and_ running jobs, plus state lookup, delete, and resume
+- **Per-queue retry & dead-letter policy** for retry limits, backoff, and poison-message capture
+- **Dead-letter monitoring** to inspect, redrive, retry, or discard failed jobs
 - **PostgreSQL backing** for reliability and transactional guarantees
 
 ## Installation
@@ -23,8 +25,8 @@ pnpm add @maroonedsoftware/jobbroker injectkit pg-boss reflect-metadata
 
 | Import                               | Contents                                                                                 | Pulls in      |
 | ------------------------------------ | ---------------------------------------------------------------------------------------- | ------------- |
-| `@maroonedsoftware/jobbroker`        | `Job`, `JobBroker`, `JobRunner`, `JobInfo`, `JobState`, `NotSupportedError`              | nothing extra |
-| `@maroonedsoftware/jobbroker/pgboss` | `PgBossJobBroker`, `PgBossJobRunner`, `PgBossJobRegistryMap`, `PgBossConnectionProvider` | `pg-boss`     |
+| `@maroonedsoftware/jobbroker`        | `Job`, `JobBroker`, `JobRunner`, `JobMonitor`, `JobInfo`, `JobState`, `JobQueuePolicy`, `NotSupportedError` | nothing extra |
+| `@maroonedsoftware/jobbroker/pgboss` | `PgBossJobBroker`, `PgBossJobRunner`, `PgBossJobMonitor`, `PgBossJobRegistryMap`, `PgBossConnectionProvider` | `pg-boss`     |
 
 ## Quick Start
 
@@ -74,6 +76,17 @@ registry.set('daily-report', {
   job: DailyReportJob,
   cron: '0 9 * * *', // Every day at 9 AM
 });
+
+// On-demand job with a retry / dead-letter policy (see "Retry & dead-letter policy")
+registry.set('deliver-webhook', {
+  job: DeliverWebhookJob,
+  policy: {
+    retryLimit: 5,
+    retryDelay: Duration.fromObject({ seconds: 30 }),
+    retryBackoff: true,
+    deadLetter: 'deliver-webhook-dead',
+  },
+});
 ```
 
 ### 3. Set Up the Broker and Runner
@@ -83,8 +96,8 @@ import 'reflect-metadata';
 import { PgBoss } from 'pg-boss';
 import { InjectKitRegistry } from 'injectkit';
 import { ConsoleLogger, Logger } from '@maroonedsoftware/logger';
-import { JobBroker, JobRunner } from '@maroonedsoftware/jobbroker';
-import { PgBossJobBroker, PgBossJobRunner, PgBossJobRegistryMap, PgBossConnectionProvider } from '@maroonedsoftware/jobbroker/pgboss';
+import { JobBroker, JobRunner, JobMonitor } from '@maroonedsoftware/jobbroker';
+import { PgBossJobBroker, PgBossJobRunner, PgBossJobMonitor, PgBossJobRegistryMap, PgBossConnectionProvider } from '@maroonedsoftware/jobbroker/pgboss';
 
 // Initialize pg-boss
 const pgboss = new PgBoss('postgres://user:pass@localhost/mydb');
@@ -98,6 +111,7 @@ diRegistry.register(Logger).useClass(ConsoleLogger).asSingleton();
 diRegistry.register(PgBossConnectionProvider).useClass(PgBossConnectionProvider).asSingleton();
 diRegistry.register(JobBroker).useClass(PgBossJobBroker).asSingleton();
 diRegistry.register(JobRunner).useClass(PgBossJobRunner).asSingleton();
+diRegistry.register(JobMonitor).useClass(PgBossJobMonitor).asSingleton();
 
 // Build the container
 const container = diRegistry.build();
@@ -160,6 +174,80 @@ runner.cancelPollIntervalSeconds = 2; // default 5; set to 0 to disable polling
 
 Lower values reduce cancellation latency at the cost of one extra lookup query per running job per interval.
 
+## Retry & dead-letter policy
+
+By default a job that keeps failing is retried a couple of times and then marked `failed` — where it stays, with nothing draining it. For money-critical or webhook work you usually want an explicit retry budget, backoff between attempts, and a **dead-letter queue (DLQ)** so a job that exhausts its retries is preserved for inspection or replay instead of being dropped.
+
+Declare a `JobQueuePolicy` on the registration, right where the job is mapped. Every field is optional, and durations are Luxon `Duration`s (mapped to whole seconds for pg-boss):
+
+```typescript
+import { Duration } from 'luxon';
+
+registry.set('deliver-webhook', {
+  job: DeliverWebhookJob,
+  policy: {
+    retryLimit: 5, // attempts before the job is failed / dead-lettered
+    retryDelay: Duration.fromObject({ seconds: 30 }), // base delay between attempts
+    retryBackoff: true, // grow the delay exponentially (with jitter) from retryDelay
+    retryDelayMax: Duration.fromObject({ minutes: 10 }), // cap for the backoff curve
+    expiresIn: Duration.fromObject({ minutes: 2 }), // a run is considered stuck after this
+    deadLetter: 'deliver-webhook-dead', // where exhausted jobs land
+  },
+});
+```
+
+The policy is applied to the queue when `runner.start()` runs: an absent queue is **created** with these options, and an existing queue is **updated** to match, so changing a policy and restarting reconciles it. When a registration declares no policy, its queue is created exactly as before — this feature is fully backward-compatible.
+
+**Dead-letter queues are auto-created.** If `deadLetter` names a queue that does not yet exist, the runner creates it (as a plain queue) before the source queue that references it, so you don't have to register a placeholder. A DLQ you actually want to *drain* is just another registered job whose name matches — give it its own handler (and, if you like, its own policy). A DLQ you only want to inspect can be left unregistered; jobs simply accumulate there for manual review or redrive.
+
+To apply the same defaults to **every** queue without repeating them, set `defaultQueuePolicy` on the runner. Each queue's own policy is layered on top, so a field a queue sets wins over the default:
+
+```typescript
+const runner = container.get(JobRunner) as PgBossJobRunner;
+runner.defaultQueuePolicy = {
+  retryLimit: 3,
+  retryBackoff: true,
+  retryDelay: Duration.fromObject({ seconds: 10 }),
+};
+await runner.start();
+```
+
+Retry and dead-letter behavior is a **queue-level** concern here, not a per-`send` one: it is declared once where the job is registered rather than on each `broker.send(...)`. This matches how the mainstream backends model it (pg-boss `retryLimit`/`deadLetter`, SQS's redrive policy, Cloud Tasks' `maxAttempts`), none of which support per-message retry overrides — so `JobQueuePolicy` stays portable across backends.
+
+## Monitoring & draining dead-letter queues
+
+Capturing a poison message is only half the job: a consumer needs to see what landed in a dead-letter queue and act on it. `JobMonitor` is the operator-side companion to `JobBroker` (produce) and `JobRunner` (consume) — it reads queue depth, lists the stuck jobs, and remediates them. Unlike the broker, it operates on **any queue name and does not require the queue to be registered**, because a dead-letter queue is often an unregistered sink with no worker of its own.
+
+```typescript
+const monitor = container.get(JobMonitor);
+
+// Observe — poll depth/health (e.g. from a reconciliation cron) to alert on a growing DLQ
+const stats = await monitor.getQueueStats('deliver-webhook-dead');
+// stats: { name, queued, active, failed, total } | null (null when the queue does not exist)
+
+if (stats && stats.total > 0) {
+  // Retrieve — inspect the poison messages (id, state, original payload)
+  const stuck = await monitor.listJobs<WebhookPayload>('deliver-webhook-dead');
+  logger.warn(`${stuck.length} webhooks in the dead-letter queue`, { ids: stuck.map(j => j.id) });
+
+  // Act — move them back to their original source queue to reprocess, oldest first, rate-limited
+  const moved = await monitor.redrive('deliver-webhook-dead', { limit: 100 });
+
+  // ...or discard a specific unrecoverable message
+  await monitor.deleteJob('deliver-webhook-dead', stuck[0].id);
+}
+```
+
+| Method                                                              | Description                                                                                     |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `getQueueStats(name)`                                               | Point-in-time `{ name, queued, active, failed, total }`, or `null` if the queue does not exist. |
+| `listJobs<P>(name, options?)`                                       | List retained jobs as `JobInfo<P>[]`; filter by `id`, partial `data`, or `queuedOnly`.          |
+| `redrive(name, options?)`                                           | Move dead-lettered jobs back to their source (or a `destination`), oldest first; returns count. |
+| `deleteJob(name, id)`                                               | Permanently discard one or more jobs (no registry check, so DLQ sinks are serviceable).         |
+| `retryJob(name, id)`                                                | Re-attempt failed jobs **in place**; for a DLQ sink prefer `redrive`, which moves them to a worker. |
+
+`redrive` returns each job to the queue it was dead-lettered from by default, so a worker can process it again. Pass `destination` to funnel everything into one queue, `sourceName` to drain just one source's jobs from a shared DLQ, and `limit` to move in controlled batches. All operations source their pg-boss `db` executor from `PgBossConnectionProvider`, so a remediation can run inside a transaction when you override the provider (see [Transactional enqueue](#transactional-enqueue)).
+
 ### Backend portability
 
 `cancel`, `resume`, `deleteJob`, and `getJob` are best-effort by contract: a backend that cannot honor an operation throws `NotSupportedError` rather than silently doing nothing. `JobState` (`created | retry | active | completed | cancelled | failed`) is the normalized, lowest-common-denominator lifecycle; alternative backends map their native states to the nearest value. The bundled pg-boss backend supports every operation.
@@ -203,6 +291,20 @@ Abstract base class for processing jobs from the queue.
 | `start(): Promise<void>` | Start processing jobs      |
 | `stop(): Promise<void>`  | Gracefully stop processing |
 
+### `JobMonitor`
+
+Abstract base class for observing queues and remediating dead-letter queues. Operates on raw queue names (no registry check). Operations a backend cannot honor throw `NotSupportedError`. See [Monitoring & draining dead-letter queues](#monitoring--draining-dead-letter-queues).
+
+| Method                                                                     | Description                                                                     |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `getQueueStats(name: string): Promise<JobQueueStats \| null>`              | Queue depth/health counts, or `null` if the queue does not exist                |
+| `listJobs<P>(name: string, options?: JobQueryOptions): Promise<JobInfo<P>[]>` | List retained jobs, optionally filtered by `id`, `data`, or `queuedOnly`      |
+| `redrive(name: string, options?: JobRedriveOptions): Promise<number>`      | Move dead-lettered jobs back to source (or a `destination`); returns count moved |
+| `deleteJob(name: string, id: string \| string[]): Promise<void>`           | Permanently discard jobs                                                        |
+| `retryJob(name: string, id: string \| string[]): Promise<void>`            | Re-attempt failed jobs in place                                                 |
+
+`JobQueueStats` is `{ name, queued, active, failed, total }`. `JobQueryOptions` is `{ id?, data?, queuedOnly? }`. `JobRedriveOptions` is `{ destination?, sourceName?, limit? }`.
+
 ### `PgBossJobRegistryMap`
 
 A `Map<string, Identifier<Job> | PgBossJobRegistration>` for registering jobs.
@@ -210,16 +312,30 @@ A `Map<string, Identifier<Job> | PgBossJobRegistration>` for registering jobs.
 Entries can be either:
 
 - A job class identifier (for on-demand jobs)
-- A `PgBossJobRegistration` object with `job` and `cron` properties (for scheduled jobs)
+- A `PgBossJobRegistration` object (for scheduled jobs, jobs with a queue policy, or both)
 
 ### `PgBossJobRegistration`
 
-Configuration object for a scheduled job.
+Configuration object for a job. Only `job` is required, so it covers on-demand jobs (`{ job }`), scheduled jobs (`{ job, cron }`), and either with a retry/dead-letter policy attached.
 
-| Property | Type              | Description                                                |
-| -------- | ----------------- | ---------------------------------------------------------- |
-| `job`    | `Identifier<Job>` | The job class identifier to instantiate when the job runs. |
-| `cron`   | `string`          | A cron expression defining when the job should run.        |
+| Property | Type              | Description                                                          |
+| -------- | ----------------- | ------------------------------------------------------------------- |
+| `job`    | `Identifier<Job>` | The job class identifier to instantiate when the job runs.          |
+| `cron`   | `string`          | Optional cron expression defining when the job should run.          |
+| `policy` | `JobQueuePolicy`  | Optional per-queue retry and dead-letter policy for the job's queue. |
+
+### `JobQueuePolicy`
+
+Backend-agnostic per-queue retry and dead-letter policy (see [Retry & dead-letter policy](#retry--dead-letter-policy)). Every field is optional; durations are Luxon `Duration`s.
+
+| Property        | Type       | Description                                                                             |
+| --------------- | ---------- | --------------------------------------------------------------------------------------- |
+| `retryLimit`    | `number`   | Attempts before a job is failed (and dead-lettered, if `deadLetter` is set).            |
+| `retryDelay`    | `Duration` | Delay before retrying; the base of the curve when `retryBackoff` is on.                 |
+| `retryBackoff`  | `boolean`  | Grow the retry delay exponentially (with jitter) from `retryDelay` instead of fixed.    |
+| `retryDelayMax` | `Duration` | Upper bound on the backoff delay. Only used when `retryBackoff` is on.                  |
+| `expiresIn`     | `Duration` | How long a run may take before it is considered stuck and made eligible for retry.      |
+| `deadLetter`    | `string`   | Name of the dead-letter queue that receives jobs which exhaust their retries.           |
 
 ### `PgBossJobBroker`
 
@@ -268,6 +384,12 @@ await repository.withTransaction(async trx => {
 Concrete `JobRunner` implementation backed by pg-boss. Constructor signature: `new PgBossJobRunner(container: Container, registrations: PgBossJobRegistryMap, pgboss: PgBoss, logger: Logger)`. Calls `pgboss.start()` during `start()` and `pgboss.stop()` during `stop()`. Job instances are resolved from the DI container on each invocation. Typically resolved through the DI container rather than instantiated directly.
 
 Exposes a `cancelPollIntervalSeconds` property (default `5`) that controls how often a running job is polled for cancellation; set it to `0` to disable polling. See [Cancelling jobs](#cancelling-jobs).
+
+Also exposes an optional `defaultQueuePolicy` (a `JobQueuePolicy`) applied beneath every queue's own policy, so all queues can share retry/dead-letter defaults without repeating them. See [Retry & dead-letter policy](#retry--dead-letter-policy).
+
+### `PgBossJobMonitor`
+
+Concrete `JobMonitor` implementation backed by pg-boss. Constructor signature: `new PgBossJobMonitor(pgboss: PgBoss, connectionProvider: PgBossConnectionProvider)`. Reads and remediates queues via pg-boss's `getQueue`, `findJobs`, `redrive`, `deleteJob`, and `retry`, sourcing the `db` executor from the injected `PgBossConnectionProvider` (so remediation can be transactional). Does not consult the job registry, so it works on unregistered dead-letter sinks. Typically resolved through the DI container rather than instantiated directly.
 
 ## Graceful Shutdown
 

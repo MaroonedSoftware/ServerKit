@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { Duration } from 'luxon';
 import { PgBossJobRegistryMap, PgBossJobRegistration } from '../../src/pgboss/pgboss.job.registration.js';
 import { Job } from '../../src/job.js';
 
@@ -137,6 +138,38 @@ describe('PgBossJobRegistration type', () => {
 
     expect(registration.job).toBe(TestJob);
     expect(registration.cron).toBe('0 0 * * *');
+  });
+
+  it('should type an on-demand job registration with a queue policy and no cron', () => {
+    const registration: PgBossJobRegistration = {
+      job: TestJob,
+      policy: {
+        retryLimit: 5,
+        retryDelay: Duration.fromObject({ seconds: 30 }),
+        retryBackoff: true,
+        deadLetter: 'test.job.dead',
+      },
+    };
+
+    expect(registration.job).toBe(TestJob);
+    expect(registration.cron).toBeUndefined();
+    expect(registration.policy?.retryLimit).toBe(5);
+    expect(registration.policy?.deadLetter).toBe('test.job.dead');
+  });
+
+  it('should type a scheduled job registration that also carries a policy', () => {
+    const registration: PgBossJobRegistration = {
+      job: TestJob,
+      cron: '0 0 * * *',
+      policy: { expiresIn: Duration.fromObject({ minutes: 2 }) },
+    };
+
+    const registry = new PgBossJobRegistryMap();
+    registry.set('nightly', registration);
+
+    const retrieved = registry.get('nightly') as PgBossJobRegistration;
+    expect(retrieved.cron).toBe('0 0 * * *');
+    expect(retrieved.policy?.expiresIn?.as('seconds')).toBe(120);
   });
 
   it('should support various cron expressions', () => {
