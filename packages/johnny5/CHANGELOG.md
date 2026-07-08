@@ -1,5 +1,11 @@
 # @maroonedsoftware/johnny5
 
+## 7.0.1
+
+### Patch Changes
+
+- @maroonedsoftware/koa@2.8.1
+
 ## 7.0.0
 
 ### Patch Changes
