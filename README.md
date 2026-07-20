@@ -167,6 +167,19 @@ Lightweight logging abstraction designed for dependency injection.
 
 ---
 
+### MCP
+
+Model Context Protocol (MCP) server support wrapping the official SDK.
+
+- DI-registered tool/resource handler maps behind an `McpDispatcher`
+- Stateless (default) and stateful (`Mcp-Session-Id`) transport over Streamable HTTP
+- `AsyncLocalStorage`-backed request context for concurrency-safe handlers
+- Bearer auth as a `@maroonedsoftware/policies` policy
+
+[View documentation →](./packages/mcp/README.md)
+
+---
+
 ### Multipart
 
 Robust multipart/form-data parsing with stream support.
