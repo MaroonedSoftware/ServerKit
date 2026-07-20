@@ -63,6 +63,7 @@ packages/
 ├── koa/             # Koa middleware and utilities
 ├── kysely/          # Kysely repository base, transaction helpers, PG type overrides
 ├── logger/          # Logger interface and console implementation
+├── mcp/             # MCP (Model Context Protocol) server dispatcher wrapping the official SDK
 ├── multipart/       # Multipart form-data parsing
 ├── permissions/     # Zanzibar-style relationship-based access control
 ├── permissions-dsl/ # DSL for the permissions language (grammar, parser, compiler, codegen, CLI)
@@ -96,6 +97,7 @@ The monorepo uses workspace references (`workspace:*`). Key dependency relations
 - **discord** depends on: `errors`, `logger`, `policies` (+ optional peers `comms` for the `./comms` adapter and `cache` for webhook de-duplication)
 - **whatsapp** depends on: `errors`, `logger`, `policies` (+ optional peers `comms` for the `./comms` adapter and `cache` for webhook de-duplication)
 - **telegram** depends on: `errors`, `logger`, `policies` (+ optional peers `comms` for the `./comms` adapter and `cache` for webhook de-duplication)
+- **mcp** depends on: `errors`, `logger`, `policies` (+ the official `@modelcontextprotocol/sdk` as the protocol engine; optional peer `cache` for stateful session/event storage)
 - **comms** depends on: `errors`, `logger` (standalone, channel-free core; chat packages bind to it via an optional `./comms` peer)
 - **johnny5** depends on: `appconfig`, `logger`
 - **permissions-dsl** depends on: `permissions`
