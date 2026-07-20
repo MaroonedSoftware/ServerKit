@@ -1,6 +1,6 @@
 {
   "name": "@maroonedsoftware/mcp",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Model Context Protocol (MCP) server dispatcher for ServerKit.",
   "author": {
     "name": "Marooned Software",
