@@ -4,9 +4,9 @@ Synchronous, in-process fan-out event dispatch for ServerKit. A thin wrapper ove
 
 ## When to use this vs `@maroonedsoftware/jobbroker`
 
-| You want… | Use |
-| --- | --- |
-| Fan-out to multiple handlers, all in the same request / transaction | `@maroonedsoftware/eventbus` |
+| You want…                                                                      | Use                           |
+| ------------------------------------------------------------------------------ | ----------------------------- |
+| Fan-out to multiple handlers, all in the same request / transaction            | `@maroonedsoftware/eventbus`  |
 | One handler, runs later in a separate process/transaction, retries, scheduling | `@maroonedsoftware/jobbroker` |
 
 `EventBus.publish()` is **synchronous to the caller** — it awaits every subscriber and propagates the first error. `JobBroker.send()` is **fire-and-forget** to a queue.
@@ -62,11 +62,7 @@ const registry = new EventSubscriberRegistryMap();
 registry.set('requirement.completed', [AuditRequirementCompletedSubscriber]);
 
 // Fan-out: multiple subscribers, dispatched in this order
-registry.set('user.signed.up', [
-  SendWelcomeEmailSubscriber,
-  ProvisionDefaultWorkspaceSubscriber,
-  TrackSignupAnalyticsSubscriber,
-]);
+registry.set('user.signed.up', [SendWelcomeEmailSubscriber, ProvisionDefaultWorkspaceSubscriber, TrackSignupAnalyticsSubscriber]);
 ```
 
 ### 3. Wire DI
@@ -112,8 +108,8 @@ Minimum shape an event must satisfy: `{ type: EventType }`. Intersect with your 
 
 ### `EventBus`
 
-| Method | Description |
-| --- | --- |
+| Method                                                 | Description                                                                         |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------------- |
 | `publish<E extends BusEvent>(event: E): Promise<void>` | Fan out to every registered subscriber for `event.type`. Throws if none registered. |
 
 Constructor: `new EventBus(registry: EventSubscriberRegistryMap, container: Container)`. Typically resolved via DI.
@@ -122,8 +118,8 @@ Constructor: `new EventBus(registry: EventSubscriberRegistryMap, container: Cont
 
 Abstract base for subscribers.
 
-| Method | Description |
-| --- | --- |
+| Method                            | Description                                                                               |
+| --------------------------------- | ----------------------------------------------------------------------------------------- |
 | `handle(event: E): Promise<void>` | Process the event. Throwing aborts remaining subscribers and propagates to the publisher. |
 
 ### `EventSubscriberRegistryMap`

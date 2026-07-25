@@ -24,8 +24,7 @@ const startApp = async (options?: CorsOptions): Promise<AppHandle> => {
 
   return {
     url: `http://127.0.0.1:${port}`,
-    close: () =>
-      new Promise<void>((resolve, reject) => server.close(err => (err ? reject(err) : resolve()))),
+    close: () => new Promise<void>((resolve, reject) => server.close(err => (err ? reject(err) : resolve()))),
   };
 };
 

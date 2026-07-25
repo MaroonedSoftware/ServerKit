@@ -213,9 +213,7 @@ describe('EmailFactorService', () => {
       expect(DateTime.isDateTime(result.expiresAt)).toBe(true);
       expect(DateTime.isDateTime(result.issuedAt)).toBe(true);
       // expiresAt is otpExpiration after issuedAt.
-      expect(result.expiresAt.toUnixInteger() - result.issuedAt.toUnixInteger()).toBe(
-        Math.round(makeOptions().otpExpiration.as('seconds')),
-      );
+      expect(result.expiresAt.toUnixInteger() - result.issuedAt.toUnixInteger()).toBe(Math.round(makeOptions().otpExpiration.as('seconds')));
       expect(result.alreadyRegistered).toBe(false);
     });
 
@@ -541,5 +539,4 @@ describe('EmailFactorService', () => {
       expect(cache.get).toHaveBeenCalledWith('email_factor_registration_reg-id-1');
     });
   });
-
 });

@@ -52,13 +52,15 @@ class MyJwtHandler implements AuthenticationHandler {
       issuedAt: DateTime.fromSeconds(payload.iat),
       lastAccessedAt: DateTime.now(),
       expiresAt: DateTime.fromSeconds(payload.exp),
-      factors: [{
-        method: 'password',
-        methodId: payload.factorId,
-        kind: 'knowledge',
-        issuedAt: DateTime.fromSeconds(payload.iat),
-        authenticatedAt: DateTime.fromSeconds(payload.iat),
-      }],
+      factors: [
+        {
+          method: 'password',
+          methodId: payload.factorId,
+          kind: 'knowledge',
+          issuedAt: DateTime.fromSeconds(payload.iat),
+          authenticatedAt: DateTime.fromSeconds(payload.iat),
+        },
+      ],
       claims: payload,
     };
   }
@@ -81,8 +83,8 @@ registry.register(AuthenticationSchemeHandler).useClass(AuthenticationSchemeHand
 const schemeHandler = container.get(AuthenticationSchemeHandler);
 
 const session = await schemeHandler.handle('Bearer eyJhbGci...');
-console.log(session.subject);  // 'user-123'
-console.log(session.claims);   // { sub: 'user-123', ... }
+console.log(session.subject); // 'user-123'
+console.log(session.claims); // { sub: 'user-123', ... }
 
 // Missing or malformed header
 const empty = await schemeHandler.handle(undefined);
@@ -206,13 +208,13 @@ new AuthenticationSessionServiceOptions(
   'https://auth.example.com',
   'https://api.example.com',
   Duration.fromObject({ minutes: 15 }), // access token + session TTL
-  Duration.fromObject({ days: 30 }),    // refresh token TTL
+  Duration.fromObject({ days: 30 }), // refresh token TTL
   {
-    onSessionCreated:        session => audit.log('session.created', session),
-    onSessionRefreshed:      (session, { previousJti }) => audit.log('session.refreshed', { session, previousJti }),
-    onSessionRevoked:        (session, { reason }) => audit.log('session.revoked', { session, reason }),
-    onValidationFailed:      (sessionToken, { reason }) => audit.log('session.validation_failed', { sessionToken, reason }),
-    onRefreshReuseDetected:  ({ familyId, jti, sessionToken }) => security.alert('refresh.theft', { familyId, jti, sessionToken }),
+    onSessionCreated: session => audit.log('session.created', session),
+    onSessionRefreshed: (session, { previousJti }) => audit.log('session.refreshed', { session, previousJti }),
+    onSessionRevoked: (session, { reason }) => audit.log('session.revoked', { session, reason }),
+    onValidationFailed: (sessionToken, { reason }) => audit.log('session.validation_failed', { sessionToken, reason }),
+    onRefreshReuseDetected: ({ familyId, jti, sessionToken }) => security.alert('refresh.theft', { familyId, jti, sessionToken }),
   },
 );
 ```
@@ -230,7 +232,11 @@ const otp = container.get(OtpProvider);
 const secret = otp.createSecret();
 
 // Produce a QR-code URI
-const uri = otp.generateURI(secret, { type: 'totp', algorithm: 'sha1', periodSeconds: 30, tokenLength: 6, counter: 0 }, { issuer: 'MyApp', label: user.email });
+const uri = otp.generateURI(
+  secret,
+  { type: 'totp', algorithm: 'sha1', periodSeconds: 30, tokenLength: 6, counter: 0 },
+  { issuer: 'MyApp', label: user.email },
+);
 
 // Validate a code submitted by the user
 const valid = otp.validate(submittedCode, secret, { type: 'totp', periodSeconds: 30 });
@@ -373,6 +379,7 @@ const verifiedFactor = await emailFactors.verifyEmailChallenge(challengeId, subm
 ```
 
 `registerEmailFactor` rejects the request before issuing a code when:
+
 - the email format is invalid (HTTP 400),
 - the email is rejected by the `email.allowed` policy via `PolicyService` (HTTP 400 — invalid format or domain on the configured deny list, e.g. disposable mail providers),
 - `EmailFactorRepository.isDomainInviteOnly(domain)` returns `true` (HTTP 403 — implement this to gate registration to allow-listed domains, e.g. workspaces that require an invite),
@@ -420,19 +427,17 @@ const authenticatorFactors = container.get(AuthenticatorFactorService);
 // already cached for the actor (or the supplied registrationId), in which
 // case the cached secret/uri/qrCode are returned so the same QR code can
 // be re-rendered without invalidating the secret the user may have scanned.
-const { registrationId, secret, uri, qrCode, expiresAt, alreadyRegistered } =
-  await authenticatorFactors.registerAuthenticatorFactor(user.id, 'Personal phone');
+const { registrationId, secret, uri, qrCode, expiresAt, alreadyRegistered } = await authenticatorFactors.registerAuthenticatorFactor(
+  user.id,
+  'Personal phone',
+);
 // Display qrCode (a data URL) to the user so they can scan it into their authenticator app.
 // secret is also returned for manual entry.
 // The optional second argument (`label`) is stored on the AuthenticatorFactor
 // and surfaced wherever the actor's factors are listed.
 
 // Step 2: user enters the code from their app; verify it and persist the factor
-const factor = await authenticatorFactors.createAuthenticatorFactorFromRegistration(
-  user.id,
-  registrationId,
-  submittedCode,
-);
+const factor = await authenticatorFactors.createAuthenticatorFactorFromRegistration(user.id, registrationId, submittedCode);
 ```
 
 You can override OTP algorithm defaults per registration:
@@ -512,11 +517,10 @@ const fidoFactors = container.get(FidoFactorService);
 // Step 1: emit an attestation challenge to the browser. `alreadyRegistered`
 // is true when a pending registration was already cached for this actor —
 // reuse the same payload so back-to-back calls don't re-prompt the authenticator.
-const { registrationId, attestation, alreadyRegistered } =
-  await fidoFactors.registerFidoFactor(user.id, {
-    userName: user.email,
-    userDisplayName: user.name,
-  });
+const { registrationId, attestation, alreadyRegistered } = await fidoFactors.registerFidoFactor(user.id, {
+  userName: user.email,
+  userDisplayName: user.name,
+});
 // Send `attestation` to the browser; client decodes `attestation.challenge`
 // and `attestation.user.id` from base64 to ArrayBuffers, calls
 // navigator.credentials.create({ publicKey: attestation }), and posts the
@@ -531,8 +535,7 @@ const factor = await fidoFactors.createFidoFactorFromRegistration(user.id, regis
 // the actor's active factors, so the browser only prompts for ones they have.
 // Pass a specific `factorId` to scope the challenge to that one factor; pass
 // `undefined` to allow any of the actor's active factors.
-const { challengeId, assertion, alreadyIssued } =
-  await fidoFactors.createFidoAuthorizationChallenge(user.id, undefined);
+const { challengeId, assertion, alreadyIssued } = await fidoFactors.createFidoAuthorizationChallenge(user.id, undefined);
 // Client decodes `assertion.challenge` and each `assertion.allowCredentials[].id`
 // to ArrayBuffers, calls navigator.credentials.get({ publicKey: assertion }),
 // and posts back along with the `challengeId`.
@@ -552,26 +555,24 @@ Missing or expired registrations and challenges throw HTTP 404 with `{ registrat
 Register one or more providers via `OidcProviderRegistry`. Discovery (`.well-known/openid-configuration`) is lazy and cached per provider per process. Public clients (mobile, SPA) are supported by omitting `clientSecret` — PKCE is mandatory in that mode.
 
 ```typescript
-import {
-  OidcFactorService,
-  OidcProviderRegistry,
-  OidcProviderRegistryConfig,
-  OidcActorEmailLookup,
-} from '@maroonedsoftware/authentication';
+import { OidcFactorService, OidcProviderRegistry, OidcProviderRegistryConfig, OidcActorEmailLookup } from '@maroonedsoftware/authentication';
 
 // Wire providers via DI (sourced from AppConfig — keep clientSecret out of code)
-registry.registerValue(OidcProviderRegistryConfig, new OidcProviderRegistryConfig([
-  {
-    name: 'google',
-    issuer: new URL('https://accounts.google.com'),
-    clientId: config.google.clientId,
-    clientSecret: config.google.clientSecret,
-    scopes: ['openid', 'profile', 'email'],
-    redirectUri: new URL('https://app.example.com/auth/google/callback'),
-    authorizeParams: { access_type: 'offline', prompt: 'consent' }, // needed for Google to issue a refresh token
-    persistRefreshToken: true,
-  },
-]));
+registry.registerValue(
+  OidcProviderRegistryConfig,
+  new OidcProviderRegistryConfig([
+    {
+      name: 'google',
+      issuer: new URL('https://accounts.google.com'),
+      clientId: config.google.clientId,
+      clientSecret: config.google.clientSecret,
+      scopes: ['openid', 'profile', 'email'],
+      redirectUri: new URL('https://app.example.com/auth/google/callback'),
+      authorizeParams: { access_type: 'offline', prompt: 'consent' }, // needed for Google to issue a refresh token
+      persistRefreshToken: true,
+    },
+  ]),
+);
 registry.register(OidcProviderRegistry).useClass(OidcProviderRegistry).asSingleton();
 registry.register(OidcFactorService).useClass(OidcFactorService).asSingleton();
 
@@ -580,7 +581,9 @@ registry.register(OidcFactorService).useClass(OidcFactorService).asSingleton();
 // table — and returns the actorId so OidcFactorService can auto-link.
 @Injectable()
 class MyEmailLookup extends OidcActorEmailLookup {
-  constructor(private readonly emails: EmailFactorRepository) { super(); }
+  constructor(private readonly emails: EmailFactorRepository) {
+    super();
+  }
   async findActorByEmail(email: string) {
     const factor = await this.emails.lookupFactor(email);
     return factor?.active ? factor.actorId : undefined;
@@ -646,7 +649,7 @@ import {
 const github = new GitHub(config.github.clientId, config.github.clientSecret, 'https://app.example.com/auth/github/callback');
 const githubClient: OAuth2ProviderClient = {
   createAuthorizationURL: (state, _codeVerifier, scopes) => github.createAuthorizationURL(state, scopes),
-  validateAuthorizationCode: async (code) => {
+  validateAuthorizationCode: async code => {
     const tokens = await github.validateAuthorizationCode(code);
     return {
       accessToken: tokens.accessToken(),
@@ -657,29 +660,32 @@ const githubClient: OAuth2ProviderClient = {
   },
 };
 
-registry.registerValue(OAuth2ProviderRegistryConfig, new OAuth2ProviderRegistryConfig([
-  {
-    name: 'github',
-    client: githubClient,
-    scopes: ['read:user', 'user:email'],
-    usesPKCE: false, // GitHub does not support PKCE
-    fetchProfile: async (accessToken) => {
-      const [user, emails] = await Promise.all([
-        fetch('https://api.github.com/user', { headers: { Authorization: `Bearer ${accessToken}` } }).then((r) => r.json()),
-        fetch('https://api.github.com/user/emails', { headers: { Authorization: `Bearer ${accessToken}` } }).then((r) => r.json()),
-      ]);
-      const primary = emails.find((e: { primary: boolean }) => e.primary);
-      return {
-        subject: String(user.id),
-        email: primary?.email,
-        emailVerified: primary?.verified === true,
-        name: user.name ?? user.login,
-        picture: user.avatar_url,
-        rawProfile: { user, emails },
-      };
+registry.registerValue(
+  OAuth2ProviderRegistryConfig,
+  new OAuth2ProviderRegistryConfig([
+    {
+      name: 'github',
+      client: githubClient,
+      scopes: ['read:user', 'user:email'],
+      usesPKCE: false, // GitHub does not support PKCE
+      fetchProfile: async accessToken => {
+        const [user, emails] = await Promise.all([
+          fetch('https://api.github.com/user', { headers: { Authorization: `Bearer ${accessToken}` } }).then(r => r.json()),
+          fetch('https://api.github.com/user/emails', { headers: { Authorization: `Bearer ${accessToken}` } }).then(r => r.json()),
+        ]);
+        const primary = emails.find((e: { primary: boolean }) => e.primary);
+        return {
+          subject: String(user.id),
+          email: primary?.email,
+          emailVerified: primary?.verified === true,
+          name: user.name ?? user.login,
+          picture: user.avatar_url,
+          rawProfile: { user, emails },
+        };
+      },
     },
-  },
-]));
+  ]),
+);
 registry.register(OAuth2ProviderRegistry).useClass(OAuth2ProviderRegistry).asSingleton();
 registry.register(OAuth2FactorService).useClass(OAuth2FactorService).asSingleton();
 
@@ -766,16 +772,12 @@ if (started.method === 'phone' && !started.alreadyIssued) {
 }
 
 // When the client submits the proof:
-const completed = await mfaOrchestrator.completeMfa(
-  mfaChallengeId,
-  { method: 'phone', challengeId: 'phone-chal-1', code: '123456' },
-);
+const completed = await mfaOrchestrator.completeMfa(mfaChallengeId, { method: 'phone', challengeId: 'phone-chal-1', code: '123456' });
 // completed.actor, completed.primaryFactor, completed.secondaryFactor — mint the final session yourself.
-const session = await sessionService.createSession(
-  completed.actor.actorId,
-  { role: user.role },
-  [completed.primaryFactor, completed.secondaryFactor],
-);
+const session = await sessionService.createSession(completed.actor.actorId, { role: user.role }, [
+  completed.primaryFactor,
+  completed.secondaryFactor,
+]);
 const token = await sessionService.issueTokenForSession(session.sessionToken);
 ```
 
@@ -906,9 +908,15 @@ container.bind(RecoverySessionServiceOptions).toConstantValue(new RecoverySessio
 container.bind(RecoverySessionService).toSelf();
 container.bind(RecoveryOrchestratorHooksProvider).toConstantValue(
   new RecoveryOrchestratorHooksProvider({
-    onUnlock: async actorId => {/* clear additional rate limiters */},
-    onRebindMfaFactor: async ({ actorId, method, methodId }) => {/* application-specific rebind */},
-    onFullRecovery: async ({ actorId, identityProof }) => {/* apply KYC / admin-approved proof */},
+    onUnlock: async actorId => {
+      /* clear additional rate limiters */
+    },
+    onRebindMfaFactor: async ({ actorId, method, methodId }) => {
+      /* application-specific rebind */
+    },
+    onFullRecovery: async ({ actorId, identityProof }) => {
+      /* apply KYC / admin-approved proof */
+    },
   }),
 );
 container.bind(RecoveryOrchestrator).toSelf();
@@ -984,27 +992,27 @@ authoritative server-side record stored in cache. JWTs issued from this
 session are short-lived signed references — revoke the session to invalidate
 all tokens derived from it.
 
-| Property          | Type                            | Description                                              |
-| ----------------- | ------------------------------- | -------------------------------------------------------- |
-| `subject`         | `string`                        | Subject identifier (typically a user id)                 |
-| `sessionToken`    | `string`                        | Opaque random token used as the cache key and embedded in JWTs |
-| `issuedAt`        | `DateTime`                      | When the session was originally issued                   |
-| `lastAccessedAt`  | `DateTime`                      | When the session was last accessed                       |
-| `expiresAt`       | `DateTime`                      | When the session expires                                 |
-| `factors`         | `AuthenticationSessionFactor[]` | MFA factors satisfied in this session                    |
-| `claims`          | `Record<string, unknown>`       | Arbitrary key/value claims to embed in tokens issued from this session |
+| Property         | Type                            | Description                                                            |
+| ---------------- | ------------------------------- | ---------------------------------------------------------------------- |
+| `subject`        | `string`                        | Subject identifier (typically a user id)                               |
+| `sessionToken`   | `string`                        | Opaque random token used as the cache key and embedded in JWTs         |
+| `issuedAt`       | `DateTime`                      | When the session was originally issued                                 |
+| `lastAccessedAt` | `DateTime`                      | When the session was last accessed                                     |
+| `expiresAt`      | `DateTime`                      | When the session expires                                               |
+| `factors`        | `AuthenticationSessionFactor[]` | MFA factors satisfied in this session                                  |
+| `claims`         | `Record<string, unknown>`       | Arbitrary key/value claims to embed in tokens issued from this session |
 
 ### `AuthenticationSessionFactor`
 
 Describes a single satisfied authentication factor within a session.
 
-| Property            | Type                          | Description                                                       |
-| ------------------- | ----------------------------- | ----------------------------------------------------------------- |
-| `method`            | `AuthenticationFactorMethod`  | Verification method used (e.g. `"password"`, `"authenticator"`, `"fido"`) |
-| `methodId`          | `string`                      | Stable identifier for the specific factor record (e.g. a DB row id) |
-| `kind`              | `AuthenticationFactorKind`    | MFA category: `"knowledge"`, `"possession"`, or `"biometric"`     |
-| `issuedAt`          | `DateTime`                    | When this factor entry was first added to the session             |
-| `authenticatedAt`   | `DateTime`                    | When the factor was most recently re-verified                     |
+| Property          | Type                         | Description                                                               |
+| ----------------- | ---------------------------- | ------------------------------------------------------------------------- |
+| `method`          | `AuthenticationFactorMethod` | Verification method used (e.g. `"password"`, `"authenticator"`, `"fido"`) |
+| `methodId`        | `string`                     | Stable identifier for the specific factor record (e.g. a DB row id)       |
+| `kind`            | `AuthenticationFactorKind`   | MFA category: `"knowledge"`, `"possession"`, or `"biometric"`             |
+| `issuedAt`        | `DateTime`                   | When this factor entry was first added to the session                     |
+| `authenticatedAt` | `DateTime`                   | When the factor was most recently re-verified                             |
 
 ### `AuthenticationFactorMethod`
 
@@ -1018,11 +1026,11 @@ type AuthenticationFactorMethod = 'phone' | 'password' | 'authenticator' | 'emai
 type AuthenticationFactorKind = 'knowledge' | 'possession' | 'biometric';
 ```
 
-| Value        | Meaning              | Examples                        |
-| ------------ | -------------------- | ------------------------------- |
-| `knowledge`  | Something you know   | Password, PIN                   |
-| `possession` | Something you have   | TOTP app, hardware security key |
-| `biometric`  | Something you are    | Fingerprint, face ID            |
+| Value        | Meaning            | Examples                        |
+| ------------ | ------------------ | ------------------------------- |
+| `knowledge`  | Something you know | Password, PIN                   |
+| `possession` | Something you have | TOTP app, hardware security key |
+| `biometric`  | Something you are  | Fingerprint, face ID            |
 
 ### `invalidAuthenticationSession`
 
@@ -1038,8 +1046,8 @@ if (session === invalidAuthenticationSession) {
 
 ### `AuthenticationSchemeHandler`
 
-| Method                         | Returns                          | Description                                                                             |
-| ------------------------------ | -------------------------------- | --------------------------------------------------------------------------------------- |
+| Method                         | Returns                          | Description                                                                                           |
+| ------------------------------ | -------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | `handle(authorizationHeader?)` | `Promise<AuthenticationSession>` | Parses the `Authorization` header and returns the resolved session, or `invalidAuthenticationSession` |
 
 Returns `invalidAuthenticationSession` when the header is absent, malformed, or no handler is registered for the scheme.
@@ -1080,55 +1088,55 @@ Abstract base class. Implement `verify(username: string, password: string): Prom
 
 ### `AuthenticationSessionService`
 
-| Method                                                              | Returns                                           | Description                                                |
-| ------------------------------------------------------------------- | ------------------------------------------------- | ---------------------------------------------------------- |
-| `createSession(subject, claims, factors, expiration?)`              | `Promise<AuthenticationSession>`                  | Create and cache a new session                             |
-| `updateSession(token, subject, expiration?, claims?, factor?)`      | `Promise<AuthenticationSession>`                  | Merge claims/factors and reset `expiresAt` to `now + expiration` (absolute, not additive) |
-| `createOrUpdateSession(token?, subject, claims, factor, expiration?)` | `Promise<AuthenticationSession>`                | Create or update depending on whether the token resolves   |
-| `lookupSessionFromJwt(jwt, ignoreExpiration?)`                      | `Promise<{ session, jwtPayload }>`               | Validate a JWT and retrieve its session                    |
-| `getSession(token)`                                                 | `Promise<AuthenticationSession \| undefined>`    | Retrieve a session by token                                |
-| `getSessionsForSubject(subject)`                                    | `Promise<AuthenticationSession[]>`               | Get all active sessions for a subject                      |
-| `issueTokenForSession(sessionToken)`                                | `Promise<AuthenticationToken>`                   | Issue an access token AND a single-use refresh token       |
-| `refreshSession(refreshToken)`                                      | `Promise<AuthenticationToken>`                   | Rotate the refresh token's `jti`; revokes the family on replay |
-| `rotateSession(token, claimOverrides?, expiration?)`                | `Promise<{ session, accessToken, refreshToken, ... }>` | Mint a new session for a privilege change (e.g. MFA step-up) |
-| `deleteSession(token, reason?)`                                     | `Promise<void>`                                  | Revoke a session and clean up its refresh-token family entry |
+| Method                                                                | Returns                                                | Description                                                                               |
+| --------------------------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| `createSession(subject, claims, factors, expiration?)`                | `Promise<AuthenticationSession>`                       | Create and cache a new session                                                            |
+| `updateSession(token, subject, expiration?, claims?, factor?)`        | `Promise<AuthenticationSession>`                       | Merge claims/factors and reset `expiresAt` to `now + expiration` (absolute, not additive) |
+| `createOrUpdateSession(token?, subject, claims, factor, expiration?)` | `Promise<AuthenticationSession>`                       | Create or update depending on whether the token resolves                                  |
+| `lookupSessionFromJwt(jwt, ignoreExpiration?)`                        | `Promise<{ session, jwtPayload }>`                     | Validate a JWT and retrieve its session                                                   |
+| `getSession(token)`                                                   | `Promise<AuthenticationSession \| undefined>`          | Retrieve a session by token                                                               |
+| `getSessionsForSubject(subject)`                                      | `Promise<AuthenticationSession[]>`                     | Get all active sessions for a subject                                                     |
+| `issueTokenForSession(sessionToken)`                                  | `Promise<AuthenticationToken>`                         | Issue an access token AND a single-use refresh token                                      |
+| `refreshSession(refreshToken)`                                        | `Promise<AuthenticationToken>`                         | Rotate the refresh token's `jti`; revokes the family on replay                            |
+| `rotateSession(token, claimOverrides?, expiration?)`                  | `Promise<{ session, accessToken, refreshToken, ... }>` | Mint a new session for a privilege change (e.g. MFA step-up)                              |
+| `deleteSession(token, reason?)`                                       | `Promise<void>`                                        | Revoke a session and clean up its refresh-token family entry                              |
 
 ### `AuthenticationSession`
 
 Server-side session record stored in cache. Time fields are Luxon `DateTime` instances in your code; the service serializes them to Unix integers at the cache boundary.
 
-| Field            | Type                              | Description                                                              |
-| ---------------- | --------------------------------- | ------------------------------------------------------------------------ |
-| `sessionToken`   | `string`                          | Opaque session token, also embedded in issued JWTs as `sessionToken`.    |
-| `subject`        | `string`                          | Subject identifier (typically a user id).                                |
-| `issuedAt`       | `DateTime`                        | When the session was originally created.                                 |
-| `expiresAt`      | `DateTime`                        | When the session expires.                                                |
-| `lastAccessedAt` | `DateTime`                        | When the session was most recently accessed.                             |
-| `factors`        | `AuthenticationSessionFactor[]`   | Factors satisfied during this session.                                   |
-| `claims`         | `Record<string, unknown>`         | Arbitrary claims to embed in tokens issued from this session.            |
-| `familyId`       | `string \| undefined`             | Refresh-token family this session belongs to. Carried across `rotateSession`. |
+| Field            | Type                            | Description                                                                   |
+| ---------------- | ------------------------------- | ----------------------------------------------------------------------------- |
+| `sessionToken`   | `string`                        | Opaque session token, also embedded in issued JWTs as `sessionToken`.         |
+| `subject`        | `string`                        | Subject identifier (typically a user id).                                     |
+| `issuedAt`       | `DateTime`                      | When the session was originally created.                                      |
+| `expiresAt`      | `DateTime`                      | When the session expires.                                                     |
+| `lastAccessedAt` | `DateTime`                      | When the session was most recently accessed.                                  |
+| `factors`        | `AuthenticationSessionFactor[]` | Factors satisfied during this session.                                        |
+| `claims`         | `Record<string, unknown>`       | Arbitrary claims to embed in tokens issued from this session.                 |
+| `familyId`       | `string \| undefined`           | Refresh-token family this session belongs to. Carried across `rotateSession`. |
 
 ### `AuthenticationSessionFactor`
 
-| Field             | Type                                                            | Description                                            |
-| ----------------- | --------------------------------------------------------------- | ------------------------------------------------------ |
-| `issuedAt`        | `DateTime`                                                      | When this factor entry was first added to the session. |
-| `authenticatedAt` | `DateTime`                                                      | When the factor was most recently re-verified.         |
+| Field             | Type                                                                      | Description                                            |
+| ----------------- | ------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `issuedAt`        | `DateTime`                                                                | When this factor entry was first added to the session. |
+| `authenticatedAt` | `DateTime`                                                                | When the factor was most recently re-verified.         |
 | `method`          | `'phone' \| 'password' \| 'authenticator' \| 'email' \| 'fido' \| 'oidc'` | The verification method used.                          |
-| `methodId`        | `string`                                                        | Stable identifier for the specific factor record.      |
-| `kind`            | `AuthenticationFactorKind`                                      | MFA category.                                          |
+| `methodId`        | `string`                                                                  | Stable identifier for the specific factor record.      |
+| `kind`            | `AuthenticationFactorKind`                                                | MFA category.                                          |
 
 ### `AuthenticationToken`
 
 OAuth 2.0-style Bearer token response returned by `issueTokenForSession`.
 
-| Field          | Type     | Description                                                                                                                          |
-| -------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `accessToken`  | `string` | The signed JWT to send as a `Bearer` credential.                                                                                     |
-| `tokenType`    | `string` | Always `"Bearer"`.                                                                                                                   |
-| `expiresIn`    | `number` | Unix timestamp (seconds) at which the access token expires — taken directly from the JWT's `exp` claim, **not** seconds-from-now.    |
-| `refreshToken` | `string` (optional) | A refresh token, when issued.                                                                                             |
-| `scope`        | `string` | Space-separated list of granted scopes.                                                                                              |
+| Field          | Type                | Description                                                                                                                       |
+| -------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `accessToken`  | `string`            | The signed JWT to send as a `Bearer` credential.                                                                                  |
+| `tokenType`    | `string`            | Always `"Bearer"`.                                                                                                                |
+| `expiresIn`    | `number`            | Unix timestamp (seconds) at which the access token expires — taken directly from the JWT's `exp` claim, **not** seconds-from-now. |
+| `refreshToken` | `string` (optional) | A refresh token, when issued.                                                                                                     |
+| `scope`        | `string`            | Space-separated list of granted scopes.                                                                                           |
 
 ### `CacheProvider`
 
@@ -1138,19 +1146,19 @@ Abstract base class. Implement `get`, `set`, `update`, and `delete` to plug in a
 
 Constructed with `(logger, pemPrivateKey, pemPublicKey?)`. When `pemPublicKey` is omitted, the public half is derived from `pemPrivateKey` via `crypto.createPublicKey` — so verification never has to hold the signing key. Pass an explicit `pemPublicKey` (e.g. from JWKS) when sign and verify keys live in different places.
 
-| Method                                                 | Returns                       | Description                          |
-| ------------------------------------------------------ | ----------------------------- | ------------------------------------ |
-| `create(payload, subject, issuer, audience, expiresIn)` | `{ token, decoded }`         | Sign an RS256 JWT (uses the private key)    |
+| Method                                                          | Returns                   | Description                                                                                                                                                                                       |
+| --------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `create(payload, subject, issuer, audience, expiresIn)`         | `{ token, decoded }`      | Sign an RS256 JWT (uses the private key)                                                                                                                                                          |
 | `decode(token, issuer, ignoreExpiration?, reThrow?, audience?)` | `JwtPayload \| undefined` | Verify and decode an RS256 JWT (uses the public key). When `audience` is supplied, the token's `aud` claim must match it (string or array of allowed values); omit it to skip the audience check. |
 
 ### `OtpProvider`
 
-| Method                                                                     | Returns   | Description                                              |
-| -------------------------------------------------------------------------- | --------- | -------------------------------------------------------- |
-| `createSecret(numBytes?)`                                                  | `string`  | Generate a base32-encoded random secret                  |
-| `generate(secret, options)`                                                | `string`  | Generate an HOTP or TOTP value (RFC 4226/6238)           |
-| `validate(otp, secret, options, window?)`                                  | `boolean` | Validate an HOTP or TOTP value                           |
-| `generateURI(secret, options, urlOptions)`                                 | `string`  | Build an `otpauth://` provisioning URI                   |
+| Method                                     | Returns   | Description                                    |
+| ------------------------------------------ | --------- | ---------------------------------------------- |
+| `createSecret(numBytes?)`                  | `string`  | Generate a base32-encoded random secret        |
+| `generate(secret, options)`                | `string`  | Generate an HOTP or TOTP value (RFC 4226/6238) |
+| `validate(otp, secret, options, window?)`  | `boolean` | Validate an HOTP or TOTP value                 |
+| `generateURI(secret, options, urlOptions)` | `string`  | Build an `otpauth://` provisioning URI         |
 
 `options` is an `OtpOptions` object with `type: 'hotp' | 'totp'`, plus `algorithm`, `counter` (HOTP), `periodSeconds` (TOTP), and `tokenLength`. `urlOptions` accepts `issuer` and an optional `label`.
 
@@ -1162,10 +1170,10 @@ Drop-in replacement for `OtpProvider` for local development and integration test
 
 Evaluates password strength via zxcvbn-ts with the HaveIBeenPwned matcher enabled. Subclass and register your subclass in the DI container to override the policy.
 
-| Method                                      | Returns                                                                   | Description                                                                                                  |
-| ------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `checkStrength(password, ...userInputs)`    | `Promise<{ valid: boolean, score: 0–4, feedback: { warning, suggestions } }>` | Evaluate strength without throwing. `valid` is `true` when `score >= 3`                                      |
-| `ensureStrength(password, ...userInputs)`   | `Promise<void>`                                                           | Throw HTTP 400 with `{ password: warning, suggestions }` when `score < 3`                                    |
+| Method                                    | Returns                                                                       | Description                                                               |
+| ----------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `checkStrength(password, ...userInputs)`  | `Promise<{ valid: boolean, score: 0–4, feedback: { warning, suggestions } }>` | Evaluate strength without throwing. `valid` is `true` when `score >= 3`   |
+| `ensureStrength(password, ...userInputs)` | `Promise<void>`                                                               | Throw HTTP 400 with `{ password: warning, suggestions }` when `score < 3` |
 
 `userInputs` are extra strings or numbers (name, email, date of birth, etc.) that zxcvbn penalises if they appear in the password.
 
@@ -1173,14 +1181,14 @@ Evaluates password strength via zxcvbn-ts with the HaveIBeenPwned matcher enable
 
 Cache-backed storage for PKCE state (RFC 7636). Wraps an injected `CacheProvider`; entries are namespaced under the `pkce_` key prefix and expire on the cache TTL.
 
-| Method                                                       | Returns                  | Description                                                                  |
-| ------------------------------------------------------------ | ------------------------ | ---------------------------------------------------------------------------- |
-| `storeChallenge(codeChallenge, value, expiration: Duration)` | `Promise<void>`          | Bind `value` to a code challenge for `expiration`                            |
-| `storeVerifier(codeVerifier, value, expiration: Duration)`   | `Promise<void>`          | Same as `storeChallenge`, but derives the challenge from the verifier        |
+| Method                                                       | Returns                   | Description                                                                  |
+| ------------------------------------------------------------ | ------------------------- | ---------------------------------------------------------------------------- |
+| `storeChallenge(codeChallenge, value, expiration: Duration)` | `Promise<void>`           | Bind `value` to a code challenge for `expiration`                            |
+| `storeVerifier(codeVerifier, value, expiration: Duration)`   | `Promise<void>`           | Same as `storeChallenge`, but derives the challenge from the verifier        |
 | `getChallenge(codeChallenge)`                                | `Promise<string \| null>` | Look up the stored value for a challenge; `null` when missing/expired        |
 | `getVerifier(codeVerifier)`                                  | `Promise<string \| null>` | Look up the value for the verifier-derived challenge — the standard PKCE op  |
-| `deleteChallenge(codeChallenge)`                             | `Promise<void>`          | Remove the entry — call after a successful exchange for single-use semantics |
-| `deleteVerifier(codeVerifier)`                               | `Promise<void>`          | Same as `deleteChallenge`, but derives the challenge from the verifier       |
+| `deleteChallenge(codeChallenge)`                             | `Promise<void>`           | Remove the entry — call after a successful exchange for single-use semantics |
+| `deleteVerifier(codeVerifier)`                               | `Promise<void>`           | Same as `deleteChallenge`, but derives the challenge from the verifier       |
 
 ### Policies (`auth.factor.email.allowed`, `auth.factor.phone.allowed`)
 
@@ -1196,9 +1204,9 @@ Denial reasons: `'invalid_format'`, `'deny_list'`.
 
 `EmailAllowedPolicyOptions`:
 
-| Option                 | Type       | Default | Description                                                                                       |
-| ---------------------- | ---------- | ------- | ------------------------------------------------------------------------------------------------- |
-| `emailDomainDenyList`  | `string[]` | `[]`    | Sorted list of email domains to reject (checked via binary search; e.g. disposable mail providers) |
+| Option                | Type       | Default | Description                                                                                        |
+| --------------------- | ---------- | ------- | -------------------------------------------------------------------------------------------------- |
+| `emailDomainDenyList` | `string[]` | `[]`    | Sorted list of email domains to reject (checked via binary search; e.g. disposable mail providers) |
 
 #### `PhoneAllowedPolicy`
 
@@ -1207,17 +1215,8 @@ Rejects phone numbers that are not in E.164 format. Denial reason: `'invalid_for
 #### Wiring
 
 ```ts
-import {
-  BasePolicyService,
-  type PolicyEnvelope,
-  PolicyRegistryMap,
-  PolicyService,
-} from '@maroonedsoftware/policies';
-import {
-  EmailAllowedPolicy,
-  EmailAllowedPolicyOptions,
-  PhoneAllowedPolicy,
-} from '@maroonedsoftware/authentication';
+import { BasePolicyService, type PolicyEnvelope, PolicyRegistryMap, PolicyService } from '@maroonedsoftware/policies';
+import { EmailAllowedPolicy, EmailAllowedPolicyOptions, PhoneAllowedPolicy } from '@maroonedsoftware/authentication';
 
 type AuthPolicies = {
   'auth.factor.email.allowed': { value: string };
@@ -1247,53 +1246,53 @@ registry.register(PolicyService).useClass(AuthPolicyService).asSingleton();
 
 Manages password factors with PBKDF2-SHA512 hashing, password-reuse prevention, and rate-limited verification. Strength checks are delegated to an injected `PasswordStrengthProvider`. Requires that provider, a `RateLimiterCompatibleAbstract` (from `rate-limiter-flexible`), and a `CacheProvider` (used by the staged-registration flow) registered in the DI container.
 
-| Method                                                              | Returns                                                                              | Description                                                                                                                                  |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `createPasswordFactor(actorId, password, needsReset?)`              | `Promise<PasswordFactor>`                                                            | Validate strength via `PasswordStrengthProvider` and persist a new factor; throws HTTP 409 if one already exists. Returns the new factor     |
-| `registerPasswordFactor(password, registrationId?)`                 | `Promise<{ registrationId, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>` | Validate strength and stage a hashed registration in the cache for 10 minutes (idempotent — `alreadyRegistered` is `true` on a cache hit)    |
-| `createPasswordFactorFromRegistration(actorId, registrationId)`     | `Promise<PasswordFactor>`                                                            | Complete a staged registration; throws HTTP 404 when the registration is missing or expired                                                  |
-| `hasPendingRegistration(registrationId)`                            | `Promise<boolean>`                                                                   | Check whether a staged registration is still cached and unexpired                                                                            |
-| `updatePasswordFactor(actorId, password, needsReset?)`              | `Promise<PasswordFactor>`                                                            | Replace the password after strength check and reuse check against the last 10 passwords. Returns the updated factor                          |
-| `verifyPassword(actorId, password)`                                 | `Promise<PasswordFactor>`                                                            | Verify against the stored hash with rate limiting; throws HTTP 401 on bad credentials, HTTP 429 if rate-limited. Returns the verified factor |
-| `changePassword(actorId, password)`                                 | `Promise<PasswordFactor>`                                                            | Set a new password and clear the `needsReset` flag. Returns the updated factor                                                               |
-| `checkPasswordStrength(password, ...userInputs)`                    | `Promise<{ valid: boolean, score: number, feedback }>`                               | Pass-through to `PasswordStrengthProvider.checkStrength` for live strength feedback (e.g. a sign-up form meter)                              |
-| `ensurePasswordStrength(password, ...userInputs)`                   | `Promise<void>`                                                                      | Pass-through to `PasswordStrengthProvider.ensureStrength`; throws HTTP 400 when the password is below the strength threshold                 |
-| `clearRateLimit(actorId)`                                           | `Promise<void>`                                                                      | Reset the verify-password rate-limiter counter for an actor (e.g. after an out-of-band recovery)                                             |
-| `deleteFactor(actorId)`                                             | `Promise<void>`                                                                      | Permanently remove the actor's password factor                                                                                               |
+| Method                                                          | Returns                                                                                            | Description                                                                                                                                  |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `createPasswordFactor(actorId, password, needsReset?)`          | `Promise<PasswordFactor>`                                                                          | Validate strength via `PasswordStrengthProvider` and persist a new factor; throws HTTP 409 if one already exists. Returns the new factor     |
+| `registerPasswordFactor(password, registrationId?)`             | `Promise<{ registrationId, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>` | Validate strength and stage a hashed registration in the cache for 10 minutes (idempotent — `alreadyRegistered` is `true` on a cache hit)    |
+| `createPasswordFactorFromRegistration(actorId, registrationId)` | `Promise<PasswordFactor>`                                                                          | Complete a staged registration; throws HTTP 404 when the registration is missing or expired                                                  |
+| `hasPendingRegistration(registrationId)`                        | `Promise<boolean>`                                                                                 | Check whether a staged registration is still cached and unexpired                                                                            |
+| `updatePasswordFactor(actorId, password, needsReset?)`          | `Promise<PasswordFactor>`                                                                          | Replace the password after strength check and reuse check against the last 10 passwords. Returns the updated factor                          |
+| `verifyPassword(actorId, password)`                             | `Promise<PasswordFactor>`                                                                          | Verify against the stored hash with rate limiting; throws HTTP 401 on bad credentials, HTTP 429 if rate-limited. Returns the verified factor |
+| `changePassword(actorId, password)`                             | `Promise<PasswordFactor>`                                                                          | Set a new password and clear the `needsReset` flag. Returns the updated factor                                                               |
+| `checkPasswordStrength(password, ...userInputs)`                | `Promise<{ valid: boolean, score: number, feedback }>`                                             | Pass-through to `PasswordStrengthProvider.checkStrength` for live strength feedback (e.g. a sign-up form meter)                              |
+| `ensurePasswordStrength(password, ...userInputs)`               | `Promise<void>`                                                                                    | Pass-through to `PasswordStrengthProvider.ensureStrength`; throws HTTP 400 when the password is below the strength threshold                 |
+| `clearRateLimit(actorId)`                                       | `Promise<void>`                                                                                    | Reset the verify-password rate-limiter counter for an actor (e.g. after an out-of-band recovery)                                             |
+| `deleteFactor(actorId)`                                         | `Promise<void>`                                                                                    | Permanently remove the actor's password factor                                                                                               |
 
 ### `PasswordFactorRepository`
 
 Abstract base class. Extends `FactorRepository<PasswordFactor, PasswordValue>` from the shared factor base contract. Extend and register a concrete implementation so that `PasswordFactorService` can resolve it at runtime.
 
-| Method                                                  | Returns                          | Description                                              |
-| ------------------------------------------------------- | -------------------------------- | -------------------------------------------------------- |
-| `createFactor(actorId, value: PasswordValue)`           | `Promise<PasswordFactor>`        | Persist a new password factor (`value.needsReset` defaults to `false`) |
-| `updateFactor(actorId, value: PasswordValue)`           | `Promise<PasswordFactor>`        | Replace the actor's current password factor value        |
-| `getFactor(actorId, factorId)`                          | `Promise<PasswordFactor>`        | Retrieve the password factor — pass `actorId` for both args, since password factors are one-per-actor |
-| `listFactors(actorId, active?)`                         | `Promise<PasswordFactor[]>`      | List password factors for an actor (zero or one)         |
-| `listPreviousPasswords(actorId, limit)`                 | `Promise<PasswordValue[]>`       | Return the most recent `limit` historical password hashes |
-| `deleteFactor(actorId, factorId)`                       | `Promise<void>`                  | Permanently remove the actor's password factor (pass `actorId` for both args) |
+| Method                                        | Returns                     | Description                                                                                           |
+| --------------------------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `createFactor(actorId, value: PasswordValue)` | `Promise<PasswordFactor>`   | Persist a new password factor (`value.needsReset` defaults to `false`)                                |
+| `updateFactor(actorId, value: PasswordValue)` | `Promise<PasswordFactor>`   | Replace the actor's current password factor value                                                     |
+| `getFactor(actorId, factorId)`                | `Promise<PasswordFactor>`   | Retrieve the password factor — pass `actorId` for both args, since password factors are one-per-actor |
+| `listFactors(actorId, active?)`               | `Promise<PasswordFactor[]>` | List password factors for an actor (zero or one)                                                      |
+| `listPreviousPasswords(actorId, limit)`       | `Promise<PasswordValue[]>`  | Return the most recent `limit` historical password hashes                                             |
+| `deleteFactor(actorId, factorId)`             | `Promise<void>`             | Permanently remove the actor's password factor (pass `actorId` for both args)                         |
 
 `PasswordFactor`: `Factor & PasswordValue & { value: PasswordValue; needsReset: boolean }`. `PasswordValue`: `{ hash: string; salt: string; needsReset?: boolean }` — `hash` and `salt` are base64-encoded.
 
 ### `EmailFactorService`
 
-| Method                                                              | Returns                                                     | Description                             |
-| ------------------------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------- |
-| `registerEmailFactor(value, verificationMethod, registrationId?)`   | `Promise<{ registrationId, code, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>` | Initiate email factor registration (idempotent — `alreadyRegistered` is `true` on a cache hit) |
-| `createEmailFactorFromRegistration(actorId, registrationId, code)`  | `Promise<EmailFactor>`                                      | Complete registration                   |
-| `hasPendingRegistration(registrationId)`                            | `Promise<boolean>`                                          | Check whether a registration is still cached and unexpired |
-| `issueEmailChallenge(actorId, factorId, issueMethod)`               | `Promise<{ email, challengeId, code, expiresAt: DateTime, issuedAt: DateTime, alreadyIssued: boolean }>` | Initiate a sign-in challenge (idempotent — `alreadyIssued` is `true` on a cache hit) |
-| `verifyEmailChallenge(challengeId, code)`                           | `Promise<EmailFactor>`                                      | Complete a sign-in challenge; re-checks the factor is active and returns it (HTTP 401 if it has been deleted or deactivated since the challenge was issued) |
-| `hasPendingChallenge(challengeId)`                                  | `Promise<boolean>`                                          | Check whether a challenge is still cached and unexpired    |
+| Method                                                             | Returns                                                                                                  | Description                                                                                                                                                 |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `registerEmailFactor(value, verificationMethod, registrationId?)`  | `Promise<{ registrationId, code, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>` | Initiate email factor registration (idempotent — `alreadyRegistered` is `true` on a cache hit)                                                              |
+| `createEmailFactorFromRegistration(actorId, registrationId, code)` | `Promise<EmailFactor>`                                                                                   | Complete registration                                                                                                                                       |
+| `hasPendingRegistration(registrationId)`                           | `Promise<boolean>`                                                                                       | Check whether a registration is still cached and unexpired                                                                                                  |
+| `issueEmailChallenge(actorId, factorId, issueMethod)`              | `Promise<{ email, challengeId, code, expiresAt: DateTime, issuedAt: DateTime, alreadyIssued: boolean }>` | Initiate a sign-in challenge (idempotent — `alreadyIssued` is `true` on a cache hit)                                                                        |
+| `verifyEmailChallenge(challengeId, code)`                          | `Promise<EmailFactor>`                                                                                   | Complete a sign-in challenge; re-checks the factor is active and returns it (HTTP 401 if it has been deleted or deactivated since the challenge was issued) |
+| `hasPendingChallenge(challengeId)`                                 | `Promise<boolean>`                                                                                       | Check whether a challenge is still cached and unexpired                                                                                                     |
 
 `EmailFactorServiceOptions`:
 
-| Option                | Type       | Default    | Description                                                                              |
-| --------------------- | ---------- | ---------- | ---------------------------------------------------------------------------------------- |
-| `otpExpiration`       | `Duration` | 10 minutes | How long an OTP-code registration or sign-in challenge stays valid                       |
-| `magiclinkExpiration` | `Duration` | 30 minutes | How long a magic link token stays valid                                                  |
-| `tokenLength`         | `number`   | `6`        | Length, in digits, of the generated OTP code (ignored for the `magiclink` method)        |
+| Option                | Type       | Default    | Description                                                                       |
+| --------------------- | ---------- | ---------- | --------------------------------------------------------------------------------- |
+| `otpExpiration`       | `Duration` | 10 minutes | How long an OTP-code registration or sign-in challenge stays valid                |
+| `magiclinkExpiration` | `Duration` | 30 minutes | How long a magic link token stays valid                                           |
+| `tokenLength`         | `number`   | `6`        | Length, in digits, of the generated OTP code (ignored for the `magiclink` method) |
 
 Email format validation and the disposable-domain deny list are dispatched through `PolicyService` under the [`email.allowed` policy](#policies-emailallowed-phoneallowed) — configure them via `EmailAllowedPolicyOptions`.
 
@@ -1301,15 +1300,15 @@ Email format validation and the disposable-domain deny list are dispatched throu
 
 Abstract base class. Extends `FactorRepository<EmailFactor>` from the shared factor base contract and narrows the optional `findFactor` to required, since email-by-address is unique system-wide. Extend and register a concrete implementation so that `EmailFactorService` can resolve it at runtime.
 
-| Method                              | Returns                  | Description                                          |
-| ----------------------------------- | ------------------------ | ---------------------------------------------------- |
-| `createFactor(actorId, value)`      | `Promise<EmailFactor>`   | Persist a new email factor                           |
-| `findFactor(value)`                 | `Promise<EmailFactor \| undefined>` | Find an email factor globally by address — used by registration to detect existing accounts and by sign-in to resolve callbacks |
-| `lookupFactor(actorId, value)`      | `Promise<EmailFactor \| undefined>` | Per-actor scoped lookup ("does this actor have this email?")                            |
-| `isDomainInviteOnly(domain)`        | `Promise<boolean>`       | Check whether a domain is invite-only (gates registration) |
-| `getFactor(actorId, factorId)`      | `Promise<EmailFactor>`   | Retrieve a factor by id, scoped to the owning actor  |
-| `listFactors(actorId, active?)`     | `Promise<EmailFactor[]>` | List factors for an actor                            |
-| `deleteFactor(actorId, factorId)`   | `Promise<void>`          | Remove a factor                                      |
+| Method                            | Returns                             | Description                                                                                                                     |
+| --------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `createFactor(actorId, value)`    | `Promise<EmailFactor>`              | Persist a new email factor                                                                                                      |
+| `findFactor(value)`               | `Promise<EmailFactor \| undefined>` | Find an email factor globally by address — used by registration to detect existing accounts and by sign-in to resolve callbacks |
+| `lookupFactor(actorId, value)`    | `Promise<EmailFactor \| undefined>` | Per-actor scoped lookup ("does this actor have this email?")                                                                    |
+| `isDomainInviteOnly(domain)`      | `Promise<boolean>`                  | Check whether a domain is invite-only (gates registration)                                                                      |
+| `getFactor(actorId, factorId)`    | `Promise<EmailFactor>`              | Retrieve a factor by id, scoped to the owning actor                                                                             |
+| `listFactors(actorId, active?)`   | `Promise<EmailFactor[]>`            | List factors for an actor                                                                                                       |
+| `deleteFactor(actorId, factorId)` | `Promise<void>`                     | Remove a factor                                                                                                                 |
 
 `EmailFactor`: `Factor & { value: string }` where `value` is the verified email address.
 
@@ -1317,34 +1316,34 @@ Abstract base class. Extends `FactorRepository<EmailFactor>` from the shared fac
 
 Manages TOTP/HOTP authenticator app factors. Requires an `AuthenticatorFactorServiceOptions` object with at minimum an `issuer` string.
 
-| Method                                                                            | Returns                                                                                                                                       | Description                                                                                                              |
-| --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `registerAuthenticatorFactor(actorId, label?, options?, registrationId?)`         | `Promise<{ registrationId, secret, uri, qrCode, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>`                       | Generate a secret, QR code, and cache the pending registration (idempotent — `alreadyRegistered` is `true` on a cache hit). `label` is stored on the resulting factor. |
-| `createAuthenticatorFactorFromRegistration(actorId, registrationId, code)`        | `Promise<AuthenticatorFactor>`                                                                                                                | Verify the first OTP code and persist the factor                                                                          |
-| `hasPendingRegistration(registrationId)`                                          | `Promise<boolean>`                                                                                                                            | Check whether a registration is still cached and unexpired                                                                |
-| `validateFactor(actorId, factorId, code)`                                         | `Promise<AuthenticatorFactor>`                                                                                                                | Verify a TOTP/HOTP code and return the verified factor; throws HTTP 401 on failure                                        |
-| `deleteFactor(actorId, factorId)`                                                 | `Promise<void>`                                                                                                                               | Remove a factor                                                                                                          |
+| Method                                                                     | Returns                                                                                                                 | Description                                                                                                                                                            |
+| -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `registerAuthenticatorFactor(actorId, label?, options?, registrationId?)`  | `Promise<{ registrationId, secret, uri, qrCode, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>` | Generate a secret, QR code, and cache the pending registration (idempotent — `alreadyRegistered` is `true` on a cache hit). `label` is stored on the resulting factor. |
+| `createAuthenticatorFactorFromRegistration(actorId, registrationId, code)` | `Promise<AuthenticatorFactor>`                                                                                          | Verify the first OTP code and persist the factor                                                                                                                       |
+| `hasPendingRegistration(registrationId)`                                   | `Promise<boolean>`                                                                                                      | Check whether a registration is still cached and unexpired                                                                                                             |
+| `validateFactor(actorId, factorId, code)`                                  | `Promise<AuthenticatorFactor>`                                                                                          | Verify a TOTP/HOTP code and return the verified factor; throws HTTP 401 on failure                                                                                     |
+| `deleteFactor(actorId, factorId)`                                          | `Promise<void>`                                                                                                         | Remove a factor                                                                                                                                                        |
 
 `AuthenticatorFactorServiceOptions`:
 
-| Option                   | Type       | Default    | Description                                              |
-| ------------------------ | ---------- | ---------- | -------------------------------------------------------- |
-| `issuer`                 | `string`   | —          | Issuer name shown in the authenticator app               |
-| `registrationExpiration` | `Duration` | 30 minutes | How long a pending registration stays valid              |
-| `factorExpiration`       | `Duration` | 4 hours    | How long a validated factor session remains cached       |
+| Option                   | Type         | Default               | Description                                              |
+| ------------------------ | ------------ | --------------------- | -------------------------------------------------------- |
+| `issuer`                 | `string`     | —                     | Issuer name shown in the authenticator app               |
+| `registrationExpiration` | `Duration`   | 30 minutes            | How long a pending registration stays valid              |
+| `factorExpiration`       | `Duration`   | 4 hours               | How long a validated factor session remains cached       |
 | `defaults`               | `OtpOptions` | TOTP sha1 30s 6-digit | Default OTP options used when none are supplied per-call |
 
 ### `AuthenticatorFactorRepository`
 
 Abstract base class. Extends `FactorRepository<AuthenticatorFactor, AuthenticatorFactorOptions, string>` from the shared factor base contract. Extend and register a concrete implementation (e.g. backed by a PostgreSQL table) so that `AuthenticatorFactorService` can resolve it at runtime.
 
-| Method                                          | Returns                                      | Description                                 |
-| ----------------------------------------------- | -------------------------------------------- | ------------------------------------------- |
-| `createFactor(actorId, options)`                | `Promise<AuthenticatorFactor>`               | Persist a new factor for an actor           |
-| `getFactor(actorId, factorId)`                  | `Promise<AuthenticatorFactor \| undefined>`  | Retrieve a factor by id                     |
-| `listFactors(actorId, active?)`                 | `Promise<AuthenticatorFactor[]>`             | List factors for an actor                   |
-| `lookupFactor(actorId, label)`                  | `Promise<AuthenticatorFactor \| undefined>`  | Look up an actor's factor by its label      |
-| `deleteFactor(actorId, factorId)`               | `Promise<void>`                              | Remove a factor                             |
+| Method                            | Returns                                     | Description                            |
+| --------------------------------- | ------------------------------------------- | -------------------------------------- |
+| `createFactor(actorId, options)`  | `Promise<AuthenticatorFactor>`              | Persist a new factor for an actor      |
+| `getFactor(actorId, factorId)`    | `Promise<AuthenticatorFactor \| undefined>` | Retrieve a factor by id                |
+| `listFactors(actorId, active?)`   | `Promise<AuthenticatorFactor[]>`            | List factors for an actor              |
+| `lookupFactor(actorId, label)`    | `Promise<AuthenticatorFactor \| undefined>` | Look up an actor's factor by its label |
+| `deleteFactor(actorId, factorId)` | `Promise<void>`                             | Remove a factor                        |
 
 `AuthenticatorFactor`: `Factor & AuthenticatorFactorOptions` — `OtpOptions` with `id`, `actorId`, `active`, `secretHash` (the encrypted OTP secret), and an optional `label?: string`.
 
@@ -1352,21 +1351,21 @@ Abstract base class. Extends `FactorRepository<AuthenticatorFactor, Authenticato
 
 Manages phone number factor registration and sign-in challenges. Requires a `PhoneFactorServiceOptions` object.
 
-| Method                                                              | Returns                                                                                                       | Description                                                                                                                                                |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `registerPhoneFactor(value, registrationId?)`                       | `Promise<{ registrationId, code, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>`      | Validate the E.164 number, generate a code, and cache a pending registration (idempotent — `alreadyRegistered` is `true` on a cache hit)                   |
-| `createPhoneFactorFromRegistration(actorId, registrationId, code)`  | `Promise<PhoneFactor>`                                                                                        | Verify the code, bind the cached phone number to `actorId`, and persist the factor                                                                          |
-| `hasPendingRegistration(registrationId)`                            | `Promise<boolean>`                                                                                            | Check whether a registration is still cached and unexpired                                                                                                  |
-| `issuePhoneChallenge(actorId, factorId)`                            | `Promise<{ phone, challengeId, code, expiresAt: DateTime, issuedAt: DateTime, alreadyIssued: boolean }>`      | Initiate a sign-in challenge for an active factor (idempotent — `alreadyIssued` is `true` on a cache hit)                                                   |
-| `verifyPhoneChallenge(challengeId, code)`                           | `Promise<PhoneFactor>`                                                                                        | Complete a sign-in challenge; re-checks the factor is active and returns it (HTTP 401 if it has been deleted or deactivated since the challenge was issued) |
-| `hasPendingChallenge(challengeId)`                                  | `Promise<boolean>`                                                                                            | Check whether a challenge is still cached and unexpired                                                                                                     |
+| Method                                                             | Returns                                                                                                  | Description                                                                                                                                                 |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `registerPhoneFactor(value, registrationId?)`                      | `Promise<{ registrationId, code, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>` | Validate the E.164 number, generate a code, and cache a pending registration (idempotent — `alreadyRegistered` is `true` on a cache hit)                    |
+| `createPhoneFactorFromRegistration(actorId, registrationId, code)` | `Promise<PhoneFactor>`                                                                                   | Verify the code, bind the cached phone number to `actorId`, and persist the factor                                                                          |
+| `hasPendingRegistration(registrationId)`                           | `Promise<boolean>`                                                                                       | Check whether a registration is still cached and unexpired                                                                                                  |
+| `issuePhoneChallenge(actorId, factorId)`                           | `Promise<{ phone, challengeId, code, expiresAt: DateTime, issuedAt: DateTime, alreadyIssued: boolean }>` | Initiate a sign-in challenge for an active factor (idempotent — `alreadyIssued` is `true` on a cache hit)                                                   |
+| `verifyPhoneChallenge(challengeId, code)`                          | `Promise<PhoneFactor>`                                                                                   | Complete a sign-in challenge; re-checks the factor is active and returns it (HTTP 401 if it has been deleted or deactivated since the challenge was issued) |
+| `hasPendingChallenge(challengeId)`                                 | `Promise<boolean>`                                                                                       | Check whether a challenge is still cached and unexpired                                                                                                     |
 
 `PhoneFactorServiceOptions`:
 
-| Option          | Type       | Default    | Description                                                            |
-| --------------- | ---------- | ---------- | ---------------------------------------------------------------------- |
-| `otpExpiration` | `Duration` | 10 minutes | How long a pending registration or sign-in challenge stays valid       |
-| `tokenLength`   | `number`   | `6`        | Length, in digits, of the generated OTP code                           |
+| Option          | Type       | Default    | Description                                                      |
+| --------------- | ---------- | ---------- | ---------------------------------------------------------------- |
+| `otpExpiration` | `Duration` | 10 minutes | How long a pending registration or sign-in challenge stays valid |
+| `tokenLength`   | `number`   | `6`        | Length, in digits, of the generated OTP code                     |
 
 `registerPhoneFactor` rejects invalid phone numbers via the [`phone.allowed` policy](#policies-emailallowed-phoneallowed) on `PolicyService` (HTTP 400 for non-E.164 input). `createPhoneFactorFromRegistration` throws HTTP 404 when the registration has expired and HTTP 400 when the submitted code is invalid. `verifyPhoneChallenge` throws HTTP 404 for an expired/missing challenge, HTTP 401 (`WWW-Authenticate: Bearer error="invalid_factor"`) when the factor has been deactivated since the challenge was issued, and HTTP 400 for an invalid code. The actor is bound at registration completion time, so callers that need to enforce uniqueness against existing factors should do so themselves before calling `createPhoneFactorFromRegistration`.
 
@@ -1374,13 +1373,13 @@ Manages phone number factor registration and sign-in challenges. Requires a `Pho
 
 Abstract base class. Extends `FactorRepository<PhoneFactor>` from the shared factor base contract. Extend and register a concrete implementation so that `PhoneFactorService` can resolve it at runtime.
 
-| Method                              | Returns                               | Description                                       |
-| ----------------------------------- | ------------------------------------- | ------------------------------------------------- |
-| `createFactor(actorId, value)`      | `Promise<PhoneFactor>`                | Persist a new factor for an actor                 |
-| `lookupFactor(actorId, value)`      | `Promise<PhoneFactor \| undefined>`   | Look up a factor by actor and phone number        |
-| `getFactor(actorId, factorId)`      | `Promise<PhoneFactor \| undefined>`   | Look up a factor by id, scoped to the owning actor |
-| `listFactors(actorId, active?)`     | `Promise<PhoneFactor[]>`              | List factors for an actor                         |
-| `deleteFactor(actorId, factorId)`   | `Promise<void>`                       | Remove a factor                                   |
+| Method                            | Returns                             | Description                                        |
+| --------------------------------- | ----------------------------------- | -------------------------------------------------- |
+| `createFactor(actorId, value)`    | `Promise<PhoneFactor>`              | Persist a new factor for an actor                  |
+| `lookupFactor(actorId, value)`    | `Promise<PhoneFactor \| undefined>` | Look up a factor by actor and phone number         |
+| `getFactor(actorId, factorId)`    | `Promise<PhoneFactor \| undefined>` | Look up a factor by id, scoped to the owning actor |
+| `listFactors(actorId, active?)`   | `Promise<PhoneFactor[]>`            | List factors for an actor                          |
+| `deleteFactor(actorId, factorId)` | `Promise<void>`                     | Remove a factor                                    |
 
 `PhoneFactor`: `Factor & { value: string }` where `value` is the E.164-formatted phone number.
 
@@ -1388,24 +1387,24 @@ Abstract base class. Extends `FactorRepository<PhoneFactor>` from the shared fac
 
 Manages FIDO2/WebAuthn factors. Wraps `fido2-lib` and accepts relying party identifiers per call.
 
-| Method                                                                  | Returns                                                                                                                              | Description                                                                                                                  |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| `registerFidoFactor(actorId, options, registrationId?)`                 | `Promise<{ registrationId, attestation: { rp, user, challenge, pubKeyCredParams, timeout, attestation }, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>` | Generate an attestation challenge and cache the expectations (idempotent — `alreadyRegistered` is `true` on a cache hit). Forward `attestation` to `navigator.credentials.create`. |
-| `createFidoFactorFromRegistration(actorId, registrationId, credential)` | `Promise<FidoFactor>`                                                                                                                | Verify the attestation against the cached registration and persist the factor                                                |
-| `hasPendingRegistration(registrationId)`                                | `Promise<boolean>`                                                                                                                   | Check whether a registration is still cached and unexpired                                                                   |
-| `createFidoAuthorizationChallenge(actorId, factorId, options?)`         | `Promise<{ challengeId, assertion: { rpId, challenge, rawChallenge, allowCredentials, ... }, expiresAt: DateTime, issuedAt: DateTime, alreadyIssued: boolean }>` | Emit an assertion challenge — pass a `factorId` to scope to one factor, or `undefined` to allow any active factor (idempotent). Forward `assertion` to `navigator.credentials.get`. `rawChallenge` is the same value as `challenge` in raw `Buffer` form for callers that prefer bytes over base64. |
-| `verifyFidoAuthorizationChallenge(challengeId, credential)`             | `Promise<FidoFactor>`                                                                                                                | Verify the assertion signature, bump the stored counter, and return the factor                                               |
-| `hasPendingChallenge(challengeId)`                                      | `Promise<boolean>`                                                                                                                   | Check whether a challenge is still cached and unexpired                                                                      |
+| Method                                                                  | Returns                                                                                                                                                                          | Description                                                                                                                                                                                                                                                                                         |
+| ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `registerFidoFactor(actorId, options, registrationId?)`                 | `Promise<{ registrationId, attestation: { rp, user, challenge, pubKeyCredParams, timeout, attestation }, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>` | Generate an attestation challenge and cache the expectations (idempotent — `alreadyRegistered` is `true` on a cache hit). Forward `attestation` to `navigator.credentials.create`.                                                                                                                  |
+| `createFidoFactorFromRegistration(actorId, registrationId, credential)` | `Promise<FidoFactor>`                                                                                                                                                            | Verify the attestation against the cached registration and persist the factor                                                                                                                                                                                                                       |
+| `hasPendingRegistration(registrationId)`                                | `Promise<boolean>`                                                                                                                                                               | Check whether a registration is still cached and unexpired                                                                                                                                                                                                                                          |
+| `createFidoAuthorizationChallenge(actorId, factorId, options?)`         | `Promise<{ challengeId, assertion: { rpId, challenge, rawChallenge, allowCredentials, ... }, expiresAt: DateTime, issuedAt: DateTime, alreadyIssued: boolean }>`                 | Emit an assertion challenge — pass a `factorId` to scope to one factor, or `undefined` to allow any active factor (idempotent). Forward `assertion` to `navigator.credentials.get`. `rawChallenge` is the same value as `challenge` in raw `Buffer` form for callers that prefer bytes over base64. |
+| `verifyFidoAuthorizationChallenge(challengeId, credential)`             | `Promise<FidoFactor>`                                                                                                                                                            | Verify the assertion signature, bump the stored counter, and return the factor                                                                                                                                                                                                                      |
+| `hasPendingChallenge(challengeId)`                                      | `Promise<boolean>`                                                                                                                                                               | Check whether a challenge is still cached and unexpired                                                                                                                                                                                                                                             |
 
 `FidoFactorServiceOptions`:
 
-| Option      | Type       | Default                | Description                                                                                              |
-| ----------- | ---------- | ---------------------- | -------------------------------------------------------------------------------------------------------- |
-| `timeout`   | `Duration` | 5 minutes              | How long a pending registration or authorization challenge stays valid (also forwarded to the browser)   |
-| `rpId`      | `string`   | `'localhost'`          | Default relying party id when not overridden per call                                                    |
-| `rpName`    | `string`   | `'Localhost'`          | Default human-readable relying party name when not overridden per call                                   |
-| `rpOrigin`  | `string`   | `'http://localhost'`   | Default relying party origin when not overridden per call                                                |
-| `rpIcon`    | `string?`  | —                      | Default icon URL when not overridden per call                                                            |
+| Option     | Type       | Default              | Description                                                                                            |
+| ---------- | ---------- | -------------------- | ------------------------------------------------------------------------------------------------------ |
+| `timeout`  | `Duration` | 5 minutes            | How long a pending registration or authorization challenge stays valid (also forwarded to the browser) |
+| `rpId`     | `string`   | `'localhost'`        | Default relying party id when not overridden per call                                                  |
+| `rpName`   | `string`   | `'Localhost'`        | Default human-readable relying party name when not overridden per call                                 |
+| `rpOrigin` | `string`   | `'http://localhost'` | Default relying party origin when not overridden per call                                              |
+| `rpIcon`   | `string?`  | —                    | Default icon URL when not overridden per call                                                          |
 
 `RegisterFidoFactorOptions`: `{ label?, rpId?, rpName?, rpOrigin?, rpIcon?, userName, userDisplayName }`. The `rp*` fields all fall back to the corresponding `FidoFactorServiceOptions` defaults; `label` is stored on the resulting `FidoFactor`.
 
@@ -1417,14 +1416,14 @@ Manages FIDO2/WebAuthn factors. Wraps `fido2-lib` and accepts relying party iden
 
 Abstract base class. Extends `FactorRepository<FidoFactor, FidoFactorOptions, string>` from the shared factor base contract. Extend and register a concrete implementation so that `FidoFactorService` can resolve it at runtime.
 
-| Method                                                                | Returns                              | Description                                                                                       |
-| --------------------------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| `createFactor(actorId, options)`                                      | `Promise<FidoFactor>`                | Persist a new factor (`options: FidoFactorOptions` carries `publicKey`, `publicKeyId`, `counter`, and an optional `label`) |
-| `listFactors(actorId, active?)`                                       | `Promise<FidoFactor[]>`              | List the actor's factors, used to populate `allowCredentials`                                     |
-| `getFactor(actorId, factorId)`                                        | `Promise<FidoFactor \| undefined>`   | Retrieve a factor by row id                                                                       |
-| `lookupFactor(actorId, credentialId)`                                 | `Promise<FidoFactor \| undefined>`   | Look up a factor by credential id (the `id` field of `PublicKeyCredential`)                       |
-| `updateFactorCounter(actorId, factorId, counter)`                     | `Promise<void>`                      | Persist the latest signature counter; must be strictly increasing (regression = cloned authenticator) |
-| `deleteFactor(actorId, factorId)`                                     | `Promise<void>`                      | Remove a factor                                                                                   |
+| Method                                            | Returns                            | Description                                                                                                                |
+| ------------------------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `createFactor(actorId, options)`                  | `Promise<FidoFactor>`              | Persist a new factor (`options: FidoFactorOptions` carries `publicKey`, `publicKeyId`, `counter`, and an optional `label`) |
+| `listFactors(actorId, active?)`                   | `Promise<FidoFactor[]>`            | List the actor's factors, used to populate `allowCredentials`                                                              |
+| `getFactor(actorId, factorId)`                    | `Promise<FidoFactor \| undefined>` | Retrieve a factor by row id                                                                                                |
+| `lookupFactor(actorId, credentialId)`             | `Promise<FidoFactor \| undefined>` | Look up a factor by credential id (the `id` field of `PublicKeyCredential`)                                                |
+| `updateFactorCounter(actorId, factorId, counter)` | `Promise<void>`                    | Persist the latest signature counter; must be strictly increasing (regression = cloned authenticator)                      |
+| `deleteFactor(actorId, factorId)`                 | `Promise<void>`                    | Remove a factor                                                                                                            |
 
 `FidoFactor`: `Factor & FidoFactorOptions`.
 
@@ -1434,26 +1433,26 @@ Abstract base class. Extends `FactorRepository<FidoFactor, FidoFactorOptions, st
 
 Holds the configured OIDC providers and lazily resolves an `openid-client` `Configuration` per provider on first use. Constructed from an injected `OidcProviderRegistryConfig`.
 
-| Method                       | Returns                                | Description                                                                              |
-| ---------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `getConfig(name)`            | `OidcProviderConfig`                   | Look up the static config; throws HTTP 404 for unknown providers                         |
-| `isPublicClient(name)`       | `boolean`                              | `true` when the provider has no `clientSecret`                                           |
-| `getConfiguration(name)`     | `Promise<openid-client.Configuration>` | Lazy-resolve and cache the discovery-backed Configuration; deduplicates concurrent calls |
-| `listProviders()`            | `string[]`                             | Names of all registered providers                                                        |
+| Method                   | Returns                                | Description                                                                              |
+| ------------------------ | -------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `getConfig(name)`        | `OidcProviderConfig`                   | Look up the static config; throws HTTP 404 for unknown providers                         |
+| `isPublicClient(name)`   | `boolean`                              | `true` when the provider has no `clientSecret`                                           |
+| `getConfiguration(name)` | `Promise<openid-client.Configuration>` | Lazy-resolve and cache the discovery-backed Configuration; deduplicates concurrent calls |
+| `listProviders()`        | `string[]`                             | Names of all registered providers                                                        |
 
 `OidcProviderConfig`: `{ name; issuer: URL; clientId; clientSecret?; scopes: string[]; redirectUri: URL; authorizeParams?: Record<string, string>; persistRefreshToken?: boolean }`. Omit `clientSecret` for public (mobile/SPA) clients — the registry uses `openid-client.None()` and PKCE becomes mandatory.
 
 ### `OidcFactorService`
 
-| Method                                                  | Returns                                                          | Description                                                                                                       |
-| ------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `beginAuthorization({ provider, intent, actorId?, redirectAfter? })` | `Promise<{ url: URL; state; expiresAt: DateTime }>`                | Build the IdP authorize URL and cache the round-trip state record (state, nonce, PKCE verifier)                   |
-| `completeAuthorization({ callbackUrl })`                | `Promise<OidcAuthorizationResult>`                               | Exchange the auth code, validate the id_token, fetch userinfo, and resolve to a factor                            |
-| `createFactorFromAuthorization(actorId, authorizationId)` | `Promise<OidcFactor>`                                          | Complete the `new-user` branch by attaching the cached profile to a freshly created actor                         |
-| `refreshAccessToken(actorId, factorId)`                 | `Promise<{ accessToken; expiresAt: DateTime \| null; scope?; idToken? }>` | Rotate the access token using the persisted refresh token; re-encrypts a rotated refresh token automatically      |
-| `hasPendingAuthorization(authorizationId)`              | `Promise<boolean>`                                               | Check whether a `new-user` pending authorization is still cached and unconsumed                                   |
-| `stashAuthenticatedExchange({ actorId, factorId, isNewUser? })` | `Promise<string>`                                       | Stash a completed authorization under a one-time `exchangeId` so a follow-up route (e.g. an MFA gate) can pick the flow back up |
-| `redeemAuthenticatedExchange(exchangeId)`               | `Promise<OidcAuthenticatedExchange \| null>`                     | Single-use redeem of a stash from `stashAuthenticatedExchange`. Returns `null` if expired or already consumed     |
+| Method                                                               | Returns                                                                   | Description                                                                                                                     |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `beginAuthorization({ provider, intent, actorId?, redirectAfter? })` | `Promise<{ url: URL; state; expiresAt: DateTime }>`                       | Build the IdP authorize URL and cache the round-trip state record (state, nonce, PKCE verifier)                                 |
+| `completeAuthorization({ callbackUrl })`                             | `Promise<OidcAuthorizationResult>`                                        | Exchange the auth code, validate the id_token, fetch userinfo, and resolve to a factor                                          |
+| `createFactorFromAuthorization(actorId, authorizationId)`            | `Promise<OidcFactor>`                                                     | Complete the `new-user` branch by attaching the cached profile to a freshly created actor                                       |
+| `refreshAccessToken(actorId, factorId)`                              | `Promise<{ accessToken; expiresAt: DateTime \| null; scope?; idToken? }>` | Rotate the access token using the persisted refresh token; re-encrypts a rotated refresh token automatically                    |
+| `hasPendingAuthorization(authorizationId)`                           | `Promise<boolean>`                                                        | Check whether a `new-user` pending authorization is still cached and unconsumed                                                 |
+| `stashAuthenticatedExchange({ actorId, factorId, isNewUser? })`      | `Promise<string>`                                                         | Stash a completed authorization under a one-time `exchangeId` so a follow-up route (e.g. an MFA gate) can pick the flow back up |
+| `redeemAuthenticatedExchange(exchangeId)`                            | `Promise<OidcAuthenticatedExchange \| null>`                              | Single-use redeem of a stash from `stashAuthenticatedExchange`. Returns `null` if expired or already consumed                   |
 
 `OidcAuthorizationResult` is a discriminated union with `kind` ∈ `'signed-in' | 'linked' | 'new-user'`. The `'new-user'` branch carries `authorizationId` and an optional `emailConflict: { actorId; reason: 'unverified-email' }` when the IdP-claimed email matches an existing actor but is unverified.
 
@@ -1461,19 +1460,19 @@ Holds the configured OIDC providers and lazily resolves an `openid-client` `Conf
 
 `OidcFactorServiceOptions`:
 
-| Option                              | Type       | Default    | Description                                                                                          |
-| ----------------------------------- | ---------- | ---------- | ---------------------------------------------------------------------------------------------------- |
-| `stateExpiration`                   | `Duration` | 10 minutes | How long a state record (the round-trip between authorize and callback) lives                        |
-| `pendingAuthorizationExpiration`    | `Duration` | 30 minutes | How long a `new-user` pending authorization survives before the caller must complete it              |
-| `authenticatedExchangeExpiration`   | `Duration` | 2 minutes  | How long a `stashAuthenticatedExchange` entry lives before the caller must redeem it                 |
+| Option                            | Type       | Default    | Description                                                                             |
+| --------------------------------- | ---------- | ---------- | --------------------------------------------------------------------------------------- |
+| `stateExpiration`                 | `Duration` | 10 minutes | How long a state record (the round-trip between authorize and callback) lives           |
+| `pendingAuthorizationExpiration`  | `Duration` | 30 minutes | How long a `new-user` pending authorization survives before the caller must complete it |
+| `authenticatedExchangeExpiration` | `Duration` | 2 minutes  | How long a `stashAuthenticatedExchange` entry lives before the caller must redeem it    |
 
 ### `OidcActorEmailLookup`
 
 Abstract bridge from a verified email to an actor id. Used by the auto-link flow. Return `undefined` for ambiguity to force the caller through the explicit new-user / link path.
 
-| Method                       | Returns                          | Description                                                       |
-| ---------------------------- | -------------------------------- | ----------------------------------------------------------------- |
-| `findActorByEmail(email)`    | `Promise<string \| undefined>`   | Resolve an email to an actor id; `undefined` when no match exists |
+| Method                    | Returns                        | Description                                                       |
+| ------------------------- | ------------------------------ | ----------------------------------------------------------------- |
+| `findActorByEmail(email)` | `Promise<string \| undefined>` | Resolve an email to an actor id; `undefined` when no match exists |
 
 ### `OidcFactorRepository`
 
@@ -1481,18 +1480,18 @@ Abstract base class. Implementations should enforce uniqueness on `(provider, su
 
 Extends `FactorRepository<OidcFactor, OidcFactorValue, OidcFactorLookup>` from the shared factor base contract and narrows the optional `findFactor` to required, since `(provider, subject)` is unique system-wide.
 
-| Method                                              | Returns                                | Description                                                                                       |
-| --------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `createFactor(actorId, value: OidcFactorValue)`     | `Promise<OidcFactor>`                  | Persist a new factor                                                                              |
-| `findFactor({ provider, subject })`                 | `Promise<OidcFactor \| undefined>`     | Find a factor globally by its provider-side identity (sign-in callback resolution)                |
-| `lookupFactor(actorId, { provider, subject })`      | `Promise<OidcFactor \| undefined>`     | Per-actor scoped lookup ("does this actor have this provider+subject linked?")                    |
-| `lookupFactorsByEmail(email)`                       | `Promise<OidcFactor[]>`                | Look up by last-seen email — used by the auto-link flow                                           |
-| `getFactor(actorId, factorId)`                      | `Promise<OidcFactor>`                  | Retrieve a factor by id, scoped to the owning actor                                               |
-| `listFactors(actorId, active?)`                     | `Promise<OidcFactor[]>`                | List factors for an actor (account-settings UI)                                                   |
-| `updateRefreshToken(factorId, { encryptedRefreshToken, encryptedRefreshTokenDek, refreshTokenExpiresAt? })` | `Promise<void>`         | Update the persisted refresh token after rotation                                                 |
-| `updateEmail(factorId, email)`                      | `Promise<void>`                        | Update the last-seen email                                                                        |
-| `updatePicture(factorId, picture)`                  | `Promise<void>`                        | Update the last-seen avatar URL (requires a `picture` column)                                     |
-| `deleteFactor(actorId, factorId)`                   | `Promise<void>`                        | Remove a factor                                                                                   |
+| Method                                                                                                      | Returns                            | Description                                                                        |
+| ----------------------------------------------------------------------------------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------- |
+| `createFactor(actorId, value: OidcFactorValue)`                                                             | `Promise<OidcFactor>`              | Persist a new factor                                                               |
+| `findFactor({ provider, subject })`                                                                         | `Promise<OidcFactor \| undefined>` | Find a factor globally by its provider-side identity (sign-in callback resolution) |
+| `lookupFactor(actorId, { provider, subject })`                                                              | `Promise<OidcFactor \| undefined>` | Per-actor scoped lookup ("does this actor have this provider+subject linked?")     |
+| `lookupFactorsByEmail(email)`                                                                               | `Promise<OidcFactor[]>`            | Look up by last-seen email — used by the auto-link flow                            |
+| `getFactor(actorId, factorId)`                                                                              | `Promise<OidcFactor>`              | Retrieve a factor by id, scoped to the owning actor                                |
+| `listFactors(actorId, active?)`                                                                             | `Promise<OidcFactor[]>`            | List factors for an actor (account-settings UI)                                    |
+| `updateRefreshToken(factorId, { encryptedRefreshToken, encryptedRefreshTokenDek, refreshTokenExpiresAt? })` | `Promise<void>`                    | Update the persisted refresh token after rotation                                  |
+| `updateEmail(factorId, email)`                                                                              | `Promise<void>`                    | Update the last-seen email                                                         |
+| `updatePicture(factorId, picture)`                                                                          | `Promise<void>`                    | Update the last-seen avatar URL (requires a `picture` column)                      |
+| `deleteFactor(actorId, factorId)`                                                                           | `Promise<void>`                    | Remove a factor                                                                    |
 
 `OidcFactor`: `Factor & OidcFactorValue` — `{ id; actorId; active; provider; subject; email?; picture?; encryptedRefreshToken?; encryptedRefreshTokenDek?; refreshTokenExpiresAt?: DateTime }`.
 
@@ -1504,10 +1503,10 @@ Extends `FactorRepository<OidcFactor, OidcFactorValue, OidcFactorLookup>` from t
 
 Holds OAuth-2.0-only provider adapters. No discovery step — adapters are constructed at app boot and looked up by name.
 
-| Method                | Returns                  | Description                                          |
-| --------------------- | ------------------------ | ---------------------------------------------------- |
-| `getConfig(name)`     | `OAuth2ProviderConfig`   | Look up the config; throws HTTP 404 when unknown     |
-| `listProviders()`     | `string[]`               | Names of all registered providers                    |
+| Method            | Returns                | Description                                      |
+| ----------------- | ---------------------- | ------------------------------------------------ |
+| `getConfig(name)` | `OAuth2ProviderConfig` | Look up the config; throws HTTP 404 when unknown |
+| `listProviders()` | `string[]`             | Names of all registered providers                |
 
 `OAuth2ProviderConfig`: `{ name; client: OAuth2ProviderClient; scopes: string[]; usesPKCE: boolean; fetchProfile: (accessToken) => Promise<Omit<OAuth2Profile, 'provider'>>; persistRefreshToken?: boolean }`.
 
@@ -1517,13 +1516,13 @@ Holds OAuth-2.0-only provider adapters. No discovery step — adapters are const
 
 Mirrors `OidcFactorService`'s public surface. Same method names, same result shape (`OAuth2AuthorizationResult` with `'signed-in' | 'linked' | 'new-user'`), same `emailConflict` discriminant. See the [Usage section](#oauth-20-factors-non-oidc) for example wiring.
 
-| Method                                                  | Returns                                                          | Description                                                                                                       |
-| ------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `beginAuthorization({ provider, intent, actorId?, redirectAfter? })` | `Promise<{ url: URL; state; expiresAt: DateTime }>`                | Build the provider authorize URL and cache the round-trip state record                                            |
-| `completeAuthorization({ callbackUrl })`                | `Promise<OAuth2AuthorizationResult>`                             | Exchange the auth code, fetch the provider profile, and resolve to a factor                                       |
-| `createFactorFromAuthorization(actorId, authorizationId)` | `Promise<OAuth2Factor>`                                        | Complete the `new-user` branch                                                                                    |
-| `refreshAccessToken(actorId, factorId)`                 | `Promise<{ accessToken; expiresAt?: DateTime; scopes?; idToken? }>` | Rotate the access token via the adapter's `refreshAccessToken`; throws HTTP 400 when the adapter doesn't implement it |
-| `hasPendingAuthorization(authorizationId)`              | `Promise<boolean>`                                               | Check whether a pending authorization is still cached                                                             |
+| Method                                                               | Returns                                                             | Description                                                                                                           |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `beginAuthorization({ provider, intent, actorId?, redirectAfter? })` | `Promise<{ url: URL; state; expiresAt: DateTime }>`                 | Build the provider authorize URL and cache the round-trip state record                                                |
+| `completeAuthorization({ callbackUrl })`                             | `Promise<OAuth2AuthorizationResult>`                                | Exchange the auth code, fetch the provider profile, and resolve to a factor                                           |
+| `createFactorFromAuthorization(actorId, authorizationId)`            | `Promise<OAuth2Factor>`                                             | Complete the `new-user` branch                                                                                        |
+| `refreshAccessToken(actorId, factorId)`                              | `Promise<{ accessToken; expiresAt?: DateTime; scopes?; idToken? }>` | Rotate the access token via the adapter's `refreshAccessToken`; throws HTTP 400 when the adapter doesn't implement it |
+| `hasPendingAuthorization(authorizationId)`                           | `Promise<boolean>`                                                  | Check whether a pending authorization is still cached                                                                 |
 
 `OAuth2FactorServiceOptions`: same shape as `OidcFactorServiceOptions` (`stateExpiration` 10 min, `pendingAuthorizationExpiration` 30 min by default).
 

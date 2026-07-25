@@ -25,7 +25,11 @@ describe('slack /comms adapter', () => {
     const { client, postMessage } = makeClient();
 
     await dispatchSlackEvent(router, client, {
-      type: 'event_callback', team_id: 'T', api_app_id: 'A', event_id: 'E', event_time: 1,
+      type: 'event_callback',
+      team_id: 'T',
+      api_app_id: 'A',
+      event_id: 'E',
+      event_time: 1,
       event: { type: 'message', user: 'U1', channel: 'C9', text: 'yo' },
     } as never);
 
@@ -40,7 +44,11 @@ describe('slack /comms adapter', () => {
     router.message(handler);
     const { client } = makeClient();
     await dispatchSlackEvent(router, client, {
-      type: 'event_callback', team_id: 'T', api_app_id: 'A', event_id: 'E', event_time: 1,
+      type: 'event_callback',
+      team_id: 'T',
+      api_app_id: 'A',
+      event_id: 'E',
+      event_time: 1,
       event: { type: 'message', user: 'U1', channel: 'C9', text: 'echo', bot_id: 'B1' },
     } as never);
     expect(handler).not.toHaveBeenCalled();
@@ -49,12 +57,23 @@ describe('slack /comms adapter', () => {
   it('routes a slash command and replies via response_url', async () => {
     const router = new ChannelRouter();
     let got: unknown;
-    router.command('deploy', async (event, reply) => { got = event.command; await reply.send({ text: 'ok' }); });
+    router.command('deploy', async (event, reply) => {
+      got = event.command;
+      await reply.send({ text: 'ok' });
+    });
     const { client, postWebhook } = makeClient();
 
     await dispatchSlackCommand(router, client, {
-      command: '/deploy', text: 'staging', user_id: 'U1', user_name: 'ada', channel_id: 'C1',
-      response_url: 'https://hooks.slack.com/x', trigger_id: 't', token: '', team_id: 'T', team_domain: 'd',
+      command: '/deploy',
+      text: 'staging',
+      user_id: 'U1',
+      user_name: 'ada',
+      channel_id: 'C1',
+      response_url: 'https://hooks.slack.com/x',
+      trigger_id: 't',
+      token: '',
+      team_id: 'T',
+      team_domain: 'd',
     } as never);
 
     expect(got).toEqual({ name: '/deploy', args: 'staging' });
@@ -68,8 +87,11 @@ describe('slack /comms adapter', () => {
     const { client } = makeClient();
 
     await dispatchSlackInteraction(router, client, {
-      type: 'block_actions', user: { id: 'U1', name: 'ada' }, channel: { id: 'C1' },
-      response_url: 'https://hooks.slack.com/y', actions: [{ action_id: 'approve', value: 'v' }],
+      type: 'block_actions',
+      user: { id: 'U1', name: 'ada' },
+      channel: { id: 'C1' },
+      response_url: 'https://hooks.slack.com/y',
+      actions: [{ action_id: 'approve', value: 'v' }],
     } as never);
 
     expect(handler).toHaveBeenCalledOnce();
@@ -91,8 +113,16 @@ describe('slack /comms adapter', () => {
     const { client, postWebhook } = makeClient();
 
     await dispatchSlackCommand(router, client, {
-      command: '/say', text: '', user_id: 'U1', user_name: 'ada', channel_id: 'C1',
-      response_url: 'https://hooks.slack.com/x', trigger_id: 't', token: '', team_id: 'T', team_domain: 'd',
+      command: '/say',
+      text: '',
+      user_id: 'U1',
+      user_name: 'ada',
+      channel_id: 'C1',
+      response_url: 'https://hooks.slack.com/x',
+      trigger_id: 't',
+      token: '',
+      team_id: 'T',
+      team_domain: 'd',
     } as never);
 
     const payload = postWebhook.mock.calls[0]![0] as { text: string };

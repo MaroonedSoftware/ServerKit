@@ -588,8 +588,7 @@ export class AuthenticationSessionService {
    */
   async refreshSession(refreshToken: string): Promise<AuthenticationToken> {
     const decoded = this.jwtProvider.decode(refreshToken, this.options.issuer, undefined, false, this.options.audience) as
-      | (RefreshTokenPayload & { exp?: number })
-      | undefined;
+      (RefreshTokenPayload & { exp?: number }) | undefined;
     if (!decoded || decoded.kind !== 'refresh' || !decoded.jti || !decoded.familyId || !decoded.sessionToken) {
       await this.runHook('onValidationFailed', hook => hook('', { reason: 'refresh_token_invalid' }));
       throw unauthorizedError('Bearer error="invalid_token"');

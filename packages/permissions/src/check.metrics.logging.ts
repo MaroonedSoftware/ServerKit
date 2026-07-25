@@ -10,20 +10,20 @@ import { CheckMetricsSink, type CheckMetrics, type CheckMetricsTags } from './ch
  * one exists.
  */
 export class LoggingMetricsSink extends CheckMetricsSink {
-    record(metrics: CheckMetrics, tags: CheckMetricsTags): void {
-        console.log(
-            JSON.stringify({
-                event: 'permissions.check',
-                namespace: tags.namespace,
-                permission: tags.permission,
-                allowed: tags.allowed,
-                duration_ms: metrics.durationMs,
-                tuple_reads: metrics.tupleReads,
-                parent_lookups: metrics.parentLookups,
-                cache_hits: metrics.cacheHits,
-                max_depth: metrics.maxDepth,
-                hit_max_depth: metrics.hitMaxDepth,
-            }),
-        );
-    }
+  record(metrics: CheckMetrics, tags: CheckMetricsTags): void {
+    console.log(
+      JSON.stringify({
+        event: 'permissions.check',
+        namespace: tags.namespace,
+        permission: tags.permission,
+        allowed: tags.allowed,
+        duration_ms: metrics.durationMs,
+        tuple_reads: metrics.tupleReads,
+        parent_lookups: metrics.parentLookups,
+        cache_hits: metrics.cacheHits,
+        max_depth: metrics.maxDepth,
+        hit_max_depth: metrics.hitMaxDepth,
+      }),
+    );
+  }
 }

@@ -3,7 +3,16 @@
  * the channel-agnostic `@maroonedsoftware/comms` router. Importing this subpath
  * pulls in `@maroonedsoftware/comms` (an optional peer); the telegram core does not.
  */
-import { bindReply, CommsError, type ChannelRouter, type IncomingEvent, type Notifier, type OutgoingButton, type OutgoingMessage, type TemplateRegistry } from '@maroonedsoftware/comms';
+import {
+  bindReply,
+  CommsError,
+  type ChannelRouter,
+  type IncomingEvent,
+  type Notifier,
+  type OutgoingButton,
+  type OutgoingMessage,
+  type TemplateRegistry,
+} from '@maroonedsoftware/comms';
 import { TelegramClient } from './client/telegram.client.js';
 import { parseCommand, type TelegramUpdate } from './telegram.update.handler.js';
 
@@ -34,7 +43,9 @@ export const createTelegramNotifier = (client: TelegramClient, templates: Templa
   sendTemplate: async (to, name, data) => {
     const resolved = templates.render(name, 'telegram', data);
     if (!resolved) throw new CommsError(`No comms template registered for "${name}"`).withInternalDetails({ channel: 'telegram', name });
-    await client.sendMessage(resolved.kind === 'native' ? { chat_id: to, ...(resolved.payload as Record<string, unknown>) } : renderParams(to, resolved.message));
+    await client.sendMessage(
+      resolved.kind === 'native' ? { chat_id: to, ...(resolved.payload as Record<string, unknown>) } : renderParams(to, resolved.message),
+    );
   },
   sendNative: async (to, payload) => void (await client.sendMessage({ chat_id: to, ...(payload as Record<string, unknown>) })),
 });
@@ -46,7 +57,18 @@ const normalize = (update: TelegramUpdate): { event: IncomingEvent; to: string }
     const user = msg.from ? { id: String(msg.from.id), username: msg.from.username } : { id: to };
     const command = parseCommand(msg);
     if (command) {
-      return { event: { channel: 'telegram', kind: 'command', user, conversation: { id: to }, text: command.text, command: { name: command.name, args: command.args }, raw: update }, to };
+      return {
+        event: {
+          channel: 'telegram',
+          kind: 'command',
+          user,
+          conversation: { id: to },
+          text: command.text,
+          command: { name: command.name, args: command.args },
+          raw: update,
+        },
+        to,
+      };
     }
     return { event: { channel: 'telegram', kind: 'message', user, conversation: { id: to }, text: msg.text ?? msg.caption, raw: update }, to };
   }
@@ -54,7 +76,17 @@ const normalize = (update: TelegramUpdate): { event: IncomingEvent; to: string }
   const cq = update.callback_query;
   if (cq?.data) {
     const to = cq.message ? String(cq.message.chat.id) : String(cq.from.id);
-    return { event: { channel: 'telegram', kind: 'action', user: { id: String(cq.from.id), username: cq.from.username }, conversation: { id: to }, action: { id: cq.data }, raw: update }, to };
+    return {
+      event: {
+        channel: 'telegram',
+        kind: 'action',
+        user: { id: String(cq.from.id), username: cq.from.username },
+        conversation: { id: to },
+        action: { id: cq.data },
+        raw: update,
+      },
+      to,
+    };
   }
 
   return undefined;

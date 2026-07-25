@@ -176,7 +176,13 @@ describe('AuthenticatorFactorService', () => {
     });
 
     it('applies custom OTP options over defaults', async () => {
-      await service.registerAuthenticatorFactor('actor-1', undefined, { type: 'totp', algorithm: 'sha256', periodSeconds: 60, tokenLength: 8, counter: 0 });
+      await service.registerAuthenticatorFactor('actor-1', undefined, {
+        type: 'totp',
+        algorithm: 'sha256',
+        periodSeconds: 60,
+        tokenLength: 8,
+        counter: 0,
+      });
       expect(otpProvider.generateURI).toHaveBeenCalledWith(
         'TESTSECRET',
         expect.objectContaining({ algorithm: 'sha256', periodSeconds: 60, tokenLength: 8 }),

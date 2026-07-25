@@ -25,19 +25,19 @@ import { nodeVersion } from '@maroonedsoftware/johnny5/versions';
 import { postgresReachable } from '@maroonedsoftware/johnny5/postgres';
 
 const hello = defineCommand({
-    description: 'say hello',
-    options: [{ flags: '--name <name>', description: 'who to greet' }],
-    run: async (opts, ctx) => {
-        ctx.logger.success(`hi, ${opts['name'] ?? 'world'}`);
-    },
+  description: 'say hello',
+  options: [{ flags: '--name <name>', description: 'who to greet' }],
+  run: async (opts, ctx) => {
+    ctx.logger.success(`hi, ${opts['name'] ?? 'world'}`);
+  },
 });
 
 const app = await createCliApp({
-    name: 'my-cli',
-    description: 'example CLI',
-    version: '0.0.1',
-    commands: [{ path: ['hello'], module: hello }],
-    checks: [nodeVersion({ min: 22 }), postgresReachable()],
+  name: 'my-cli',
+  description: 'example CLI',
+  version: '0.0.1',
+  commands: [{ path: ['hello'], module: hello }],
+  checks: [nodeVersion({ min: 22 }), postgresReachable()],
 });
 
 process.exit(await app.run(process.argv));
@@ -72,17 +72,17 @@ await runTypescriptBin(import.meta.url); // registers swc, then imports ../src/i
 
 ```ts
 const greet = defineCommand({
-    description: 'greet a person',
-    args: [{ name: 'who', description: 'name', required: true }],
-    options: [
-        { flags: '--loud', description: 'shout', type: 'boolean' },
-        { flags: '--times <n>', description: 'repeat', type: 'number', default: 1, envVar: 'GREET_TIMES' },
-    ],
-    run: async (opts, ctx, args) => {
-        const [who] = args;
-        const message = opts.loud ? `HI, ${who?.toUpperCase()}!` : `hi, ${who}`;
-        for (let i = 0; i < Number(opts.times ?? 1); i++) ctx.logger.info(message);
-    },
+  description: 'greet a person',
+  args: [{ name: 'who', description: 'name', required: true }],
+  options: [
+    { flags: '--loud', description: 'shout', type: 'boolean' },
+    { flags: '--times <n>', description: 'repeat', type: 'number', default: 1, envVar: 'GREET_TIMES' },
+  ],
+  run: async (opts, ctx, args) => {
+    const [who] = args;
+    const message = opts.loud ? `HI, ${who?.toUpperCase()}!` : `hi, ${who}`;
+    for (let i = 0; i < Number(opts.times ?? 1); i++) ctx.logger.info(message);
+  },
 });
 ```
 
@@ -100,12 +100,12 @@ Two declarative fields on `CommandModule` let you fence in commands that shouldn
 
 ```ts
 const drop = defineCommand({
-    description: 'drop the database',
-    dangerous: true,                                // prompts Y/N in a TTY; refuses without --yes in CI
-    allowedEnvironments: ['development', 'staging'], // refuses unless NODE_ENV matches
-    run: async (_opts, ctx) => {
-        ctx.logger.success('dropped');
-    },
+  description: 'drop the database',
+  dangerous: true, // prompts Y/N in a TTY; refuses without --yes in CI
+  allowedEnvironments: ['development', 'staging'], // refuses unless NODE_ENV matches
+  run: async (_opts, ctx) => {
+    ctx.logger.success('dropped');
+  },
 });
 ```
 
@@ -117,16 +117,16 @@ const drop = defineCommand({
 
 Every command, check, and plugin hook receives the same `CliContext`:
 
-| Field | Description |
-| --- | --- |
-| `paths.cwd` | `process.cwd()` at startup. |
-| `paths.repoRoot` | Nearest ancestor containing `pnpm-workspace.yaml`, else `cwd`. |
-| `logger` | ANSI-coloured console logger (`info`/`warn`/`error`/`debug`/`success`). Override via `createCliApp({ logger })`. |
-| `shell` | `execa` wrapper bound to `repoRoot`; `run` returns the result promise, `runStreaming` inherits stdio and returns the exit code, `runDetached` spawns a detached background process. |
-| `daemons` | Project-scoped manager for long-running detached processes. See [Background daemons](#background-daemons). |
-| `config` | An `AppConfig` instance. Defaults to one with only the dotenv provider attached; pass `config` to `createCliApp` for the full builder. |
-| `env` | `process.env`. |
-| `isInteractive()` | True when both stdin and stdout are TTYs. |
+| Field             | Description                                                                                                                                                                         |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `paths.cwd`       | `process.cwd()` at startup.                                                                                                                                                         |
+| `paths.repoRoot`  | Nearest ancestor containing `pnpm-workspace.yaml`, else `cwd`.                                                                                                                      |
+| `logger`          | ANSI-coloured console logger (`info`/`warn`/`error`/`debug`/`success`). Override via `createCliApp({ logger })`.                                                                    |
+| `shell`           | `execa` wrapper bound to `repoRoot`; `run` returns the result promise, `runStreaming` inherits stdio and returns the exit code, `runDetached` spawns a detached background process. |
+| `daemons`         | Project-scoped manager for long-running detached processes. See [Background daemons](#background-daemons).                                                                          |
+| `config`          | An `AppConfig` instance. Defaults to one with only the dotenv provider attached; pass `config` to `createCliApp` for the full builder.                                              |
+| `env`             | `process.env`.                                                                                                                                                                      |
+| `isInteractive()` | True when both stdin and stdout are TTYs.                                                                                                                                           |
 
 `buildContext` automatically loads `.env` and `apps/api/.env` from the workspace root into `process.env` before building `AppConfig`. Override the list via `BuildContextOptions.envFiles` if you call `buildContext` directly. Existing env vars are never overwritten; `$VAR` and `${VAR}` references inside unquoted/double-quoted values are expanded.
 
@@ -160,17 +160,17 @@ import { kyselyTableExists } from '@maroonedsoftware/johnny5/kysely';
 import { permissionsSchemaCompiled, permissionsFixturesPass, permissionsModelLoads } from '@maroonedsoftware/johnny5/permissions';
 
 const checks = [
-    nodeVersion({ min: 22 }),
-    pnpmVersion({ expected: '10.24.0' }),
-    envFile({ path: '.env', required: ['DATABASE_URL', 'REDIS_HOST'] }),
-    portsFree({ ports: [{ port: 3000, label: 'api' }, 5432, 6379] }),
-    postgresReachable(),                       // reads DATABASE_URL from AppConfig, falling back to process.env
-    redisReachable(),                          // REDIS_HOST/REDIS_PORT from AppConfig / env, defaulting to localhost:6379
-    dockerServicesUp({ autoStart: true }),     // adds an autoFix that runs `docker compose up -d`
-    kyselyTableExists({ db, table: 'relation_tuples' }),    // verify a migration-managed table
-    permissionsSchemaCompiled(),                             // .perm files in sync with generated TS
-    permissionsFixturesPass({ patterns: ['permissions/**/*.perm.yaml'] }),
-    permissionsModelLoads({ loadModel: async () => (await import('./permissions/generated/index.js')).model }),
+  nodeVersion({ min: 22 }),
+  pnpmVersion({ expected: '10.24.0' }),
+  envFile({ path: '.env', required: ['DATABASE_URL', 'REDIS_HOST'] }),
+  portsFree({ ports: [{ port: 3000, label: 'api' }, 5432, 6379] }),
+  postgresReachable(), // reads DATABASE_URL from AppConfig, falling back to process.env
+  redisReachable(), // REDIS_HOST/REDIS_PORT from AppConfig / env, defaulting to localhost:6379
+  dockerServicesUp({ autoStart: true }), // adds an autoFix that runs `docker compose up -d`
+  kyselyTableExists({ db, table: 'relation_tuples' }), // verify a migration-managed table
+  permissionsSchemaCompiled(), // .perm files in sync with generated TS
+  permissionsFixturesPass({ patterns: ['permissions/**/*.perm.yaml'] }),
+  permissionsModelLoads({ loadModel: async () => (await import('./permissions/generated/index.js')).model }),
 ];
 ```
 
@@ -185,17 +185,17 @@ Custom checks are just `Check` objects — there's no registration step:
 
 ```ts
 const migrationsApplied: Check = {
-    name: 'db migrations',
-    run: async ctx => {
-        const result = await ctx.shell.run('dbmate', ['status']);
-        return String(result.stdout).includes('Pending: 0')
-            ? { ok: true, message: 'up to date' }
-            : { ok: false, message: 'pending migrations', fixHint: 'Run `pnpm db:migrate`.' };
-    },
-    autoFix: async ctx => {
-        const exit = await ctx.shell.runStreaming('dbmate', ['up']);
-        return exit === 0 ? { ok: true, message: 'migrated' } : { ok: false, message: `dbmate exited ${exit}` };
-    },
+  name: 'db migrations',
+  run: async ctx => {
+    const result = await ctx.shell.run('dbmate', ['status']);
+    return String(result.stdout).includes('Pending: 0')
+      ? { ok: true, message: 'up to date' }
+      : { ok: false, message: 'pending migrations', fixHint: 'Run `pnpm db:migrate`.' };
+  },
+  autoFix: async ctx => {
+    const exit = await ctx.shell.runStreaming('dbmate', ['up']);
+    return exit === 0 ? { ok: true, message: 'migrated' } : { ok: false, message: `dbmate exited ${exit}` };
+  },
 };
 ```
 
@@ -212,20 +212,20 @@ import { UserService } from './services/user.service.js';
 import { databaseModule, jobsModule } from './modules.js';
 
 const listUsers = defineCommand({
-    description: 'list active users',
-    run: requireContainer(async (_opts, ctx) => {
-        const users = await ctx.container.resolve(UserService).listActive();
-        for (const u of users) ctx.logger.info(`${u.id}\t${u.email}`);
-    }),
+  description: 'list active users',
+  run: requireContainer(async (_opts, ctx) => {
+    const users = await ctx.container.resolve(UserService).listActive();
+    for (const u of users) ctx.logger.info(`${u.id}\t${u.email}`);
+  }),
 });
 
 const app = await createCliApp({
-    name: 'my-cli',
-    description: 'example CLI',
-    version: '0.0.1',
-    config: () => loadAppConfig(),
-    modules: [databaseModule, jobsModule],
-    commands: [{ path: ['users', 'list'], module: listUsers }],
+  name: 'my-cli',
+  description: 'example CLI',
+  version: '0.0.1',
+  config: () => loadAppConfig(),
+  modules: [databaseModule, jobsModule],
+  commands: [{ path: ['users', 'list'], module: listUsers }],
 });
 ```
 
@@ -244,22 +244,22 @@ Commands often need to start a long-running dev process (Storybook, a watch-mode
 
 ```ts
 const start = defineCommand({
-    description: 'start storybook in the background',
-    run: async (_opts, ctx) => {
-        const status = ctx.daemons.start({
-            name: 'storybook',
-            command: 'pnpm',
-            args: ['--filter', '@acme/ui', 'exec', 'storybook', 'dev', '-p', '6006', '--no-open'],
-        });
-        ctx.logger.success(`storybook running (pid ${status.pid}) — log: ${status.logFile}`);
-    },
+  description: 'start storybook in the background',
+  run: async (_opts, ctx) => {
+    const status = ctx.daemons.start({
+      name: 'storybook',
+      command: 'pnpm',
+      args: ['--filter', '@acme/ui', 'exec', 'storybook', 'dev', '-p', '6006', '--no-open'],
+    });
+    ctx.logger.success(`storybook running (pid ${status.pid}) — log: ${status.logFile}`);
+  },
 });
 
 const stop = defineCommand({
-    description: 'stop storybook',
-    run: async (_opts, ctx) => {
-        ctx.daemons.stop('storybook') ? ctx.logger.success('stopped') : ctx.logger.warn('not running');
-    },
+  description: 'stop storybook',
+  run: async (_opts, ctx) => {
+    ctx.daemons.stop('storybook') ? ctx.logger.success('stopped') : ctx.logger.warn('not running');
+  },
 });
 ```
 
@@ -282,8 +282,8 @@ Workspace packages can contribute commands without the CLI entrypoint knowing ab
 
 ```json
 {
-    "name": "@acme/billing",
-    "johnny5": { "commands": "./dist/cli/commands.js" }
+  "name": "@acme/billing",
+  "johnny5": { "commands": "./dist/cli/commands.js" }
 }
 ```
 
@@ -295,8 +295,8 @@ import type { PluginManifest } from '@maroonedsoftware/johnny5';
 import { reconcile } from './commands/reconcile.js';
 
 const manifest: PluginManifest = {
-    name: '@acme/billing',
-    commands: [{ path: ['billing', 'reconcile'], module: reconcile }],
+  name: '@acme/billing',
+  commands: [{ path: ['billing', 'reconcile'], module: reconcile }],
 };
 
 export default manifest;
@@ -306,13 +306,13 @@ Enable discovery in the host CLI:
 
 ```ts
 await createCliApp({
-    /* … */
-    plugins: {
-        workspace: {
-            roots: ['apps', 'packages'],          // dirs to scan; default shown
-            excludePackages: ['@acme/cli'],       // skip the host CLI's own package
-        },
+  /* … */
+  plugins: {
+    workspace: {
+      roots: ['apps', 'packages'], // dirs to scan; default shown
+      excludePackages: ['@acme/cli'], // skip the host CLI's own package
     },
+  },
 });
 ```
 
@@ -326,14 +326,14 @@ Core commands are registered before plugin commands. If a plugin tries to claim 
 import { prompts, unwrap } from '@maroonedsoftware/johnny5';
 
 const create = defineCommand({
-    description: 'create a user',
-    options: [{ flags: '--email <email>', description: 'email address' }],
-    interactive: async (_ctx, partial) => ({
-        email: partial.email ?? unwrap(await prompts.text({ message: 'Email?' })),
-    }),
-    run: async (opts, ctx) => {
-        ctx.logger.success(`Creating ${opts.email}…`);
-    },
+  description: 'create a user',
+  options: [{ flags: '--email <email>', description: 'email address' }],
+  interactive: async (_ctx, partial) => ({
+    email: partial.email ?? unwrap(await prompts.text({ message: 'Email?' })),
+  }),
+  run: async (opts, ctx) => {
+    ctx.logger.success(`Creating ${opts.email}…`);
+  },
 });
 ```
 
@@ -347,20 +347,20 @@ Multi-step interactive flows pile up `clack.isCancel` / `clack.outro('aborted')`
 import { wizard } from '@maroonedsoftware/johnny5';
 
 const setup = defineCommand({
-    description: 'first-run wizard',
-    run: async (_opts, ctx) =>
-        wizard(ctx, { title: 'my-cli — local dev bootstrap' }, async w => {
-            if (await w.confirm({ message: 'Start docker compose services?', initialValue: true })) {
-                const exit = await ctx.shell.runStreaming('docker', ['compose', 'up', '-d'], { cwd: ctx.paths.repoRoot });
-                if (exit !== 0) {
-                    w.log.error(`docker compose up exited ${exit}`);
-                    return exit;
-                }
-            }
-            const email = await w.text({ message: 'Test user email' });
-            const password = await w.password({ message: 'Test user password' });
-            await ctx.shell.runStreaming('pnpm', ['seed', `--email=${email}`, `--password=${password}`]);
-        }),
+  description: 'first-run wizard',
+  run: async (_opts, ctx) =>
+    wizard(ctx, { title: 'my-cli — local dev bootstrap' }, async w => {
+      if (await w.confirm({ message: 'Start docker compose services?', initialValue: true })) {
+        const exit = await ctx.shell.runStreaming('docker', ['compose', 'up', '-d'], { cwd: ctx.paths.repoRoot });
+        if (exit !== 0) {
+          w.log.error(`docker compose up exited ${exit}`);
+          return exit;
+        }
+      }
+      const email = await w.text({ message: 'Test user email' });
+      const password = await w.password({ message: 'Test user password' });
+      await ctx.shell.runStreaming('pnpm', ['seed', `--email=${email}`, `--password=${password}`]);
+    }),
 });
 ```
 
@@ -387,26 +387,26 @@ import { keyringEntry, resolveSecret } from '@maroonedsoftware/johnny5/keyring';
 
 const apiKeyEntry = keyringEntry(ctx, { service: 'my-cli', account: 'anthropic.api.key' });
 
-await apiKeyEntry.write('sk-…');             // true on success, false otherwise
-const stored = await apiKeyEntry.read();     // string | null
-await apiKeyEntry.delete();                  // true if a value was removed
+await apiKeyEntry.write('sk-…'); // true on success, false otherwise
+const stored = await apiKeyEntry.read(); // string | null
+await apiKeyEntry.delete(); // true if a value was removed
 ```
 
 `resolveSecret` codifies the override → env → keyring → prompt chain that most CLIs end up writing by hand:
 
 ```ts
 const apiKey = await resolveSecret(ctx, {
-    override: opts.apiKey,                                    // wins over everything; never persisted
-    envKeys: ['ANTHROPIC_API_KEY'],                           // first non-empty wins
-    keyring: apiKeyEntry,
-    prompt: async () => unwrap(await prompts.password({ message: 'Paste your API key' })),
-    promptStore: 'ask',                                       // 'ask' (default) | 'always' | 'never'
-    label: 'API key',
+  override: opts.apiKey, // wins over everything; never persisted
+  envKeys: ['ANTHROPIC_API_KEY'], // first non-empty wins
+  keyring: apiKeyEntry,
+  prompt: async () => unwrap(await prompts.password({ message: 'Paste your API key' })),
+  promptStore: 'ask', // 'ask' (default) | 'always' | 'never'
+  label: 'API key',
 });
 
 if (!apiKey) {
-    ctx.logger.error('No credentials found. Set ANTHROPIC_API_KEY or run `my-cli login`.');
-    return 1;
+  ctx.logger.error('No credentials found. Set ANTHROPIC_API_KEY or run `my-cli login`.');
+  return 1;
 }
 ```
 
@@ -416,19 +416,19 @@ if (!apiKey) {
 
 ## Exports
 
-| Path | Provides |
-| --- | --- |
+| Path                        | Provides                                                                                                                                                                                                                                                                                                                                                       |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `@maroonedsoftware/johnny5` | `createCliApp`, `defineCommand`, `registerCommands`, `runChecks`, `buildContext`, `buildDefaultAppConfig`, `loadWorkspacePlugins`, `createShell`, `createDaemons`, `johnnyPaths`, `projectSlug`, `createDefaultLogger`, `prompts`, `unwrap`, `wizard`, `isInteractive`, plus the `Check` / `CommandModule` / `CliContext` / `Daemons` / `WizardSession` types. |
-| `/bin` | `runTypescriptBin`, `registerTypescriptLoader` — TypeScript bin shim (resolves `@swc-node/register` from the consumer). |
-| `/serverkit` | `bootstrapForCli`, `configureServerKitModules`, `getOrBootstrapContainer`, `requireContainer`. |
-| `/versions` | `nodeVersion`, `pnpmVersion`. |
-| `/filesystem` | `envFile`, `portsFree`. |
-| `/postgres` | `postgresReachable` (lazy-loads `pg`). |
-| `/redis` | `redisReachable` (lazy-loads `ioredis`). |
-| `/docker` | `dockerServicesUp`. |
-| `/kysely` | `kyselyTableExists` (lazy-loads `kysely`). |
-| `/permissions` | `permissionsSchemaCompiled`, `permissionsFixturesPass`, `permissionsModelLoads` (lazy-load `@maroonedsoftware/permissions[-dsl]`). |
-| `/keyring` | `keyringEntry`, `resolveSecret` (lazy-load `@napi-rs/keyring`). |
+| `/bin`                      | `runTypescriptBin`, `registerTypescriptLoader` — TypeScript bin shim (resolves `@swc-node/register` from the consumer).                                                                                                                                                                                                                                        |
+| `/serverkit`                | `bootstrapForCli`, `configureServerKitModules`, `getOrBootstrapContainer`, `requireContainer`.                                                                                                                                                                                                                                                                 |
+| `/versions`                 | `nodeVersion`, `pnpmVersion`.                                                                                                                                                                                                                                                                                                                                  |
+| `/filesystem`               | `envFile`, `portsFree`.                                                                                                                                                                                                                                                                                                                                        |
+| `/postgres`                 | `postgresReachable` (lazy-loads `pg`).                                                                                                                                                                                                                                                                                                                         |
+| `/redis`                    | `redisReachable` (lazy-loads `ioredis`).                                                                                                                                                                                                                                                                                                                       |
+| `/docker`                   | `dockerServicesUp`.                                                                                                                                                                                                                                                                                                                                            |
+| `/kysely`                   | `kyselyTableExists` (lazy-loads `kysely`).                                                                                                                                                                                                                                                                                                                     |
+| `/permissions`              | `permissionsSchemaCompiled`, `permissionsFixturesPass`, `permissionsModelLoads` (lazy-load `@maroonedsoftware/permissions[-dsl]`).                                                                                                                                                                                                                             |
+| `/keyring`                  | `keyringEntry`, `resolveSecret` (lazy-load `@napi-rs/keyring`).                                                                                                                                                                                                                                                                                                |
 
 ## License
 

@@ -10,13 +10,19 @@ const makeClient = () => {
   return { client: { sendMessage, answerCallbackQuery } as unknown as TelegramClient, sendMessage, answerCallbackQuery };
 };
 
-const message = (text: string): TelegramUpdate => ({ update_id: 1, message: { message_id: 1, chat: { id: 42, type: 'private' }, date: 1, from: { id: 7, username: 'ada' }, text } });
+const message = (text: string): TelegramUpdate => ({
+  update_id: 1,
+  message: { message_id: 1, chat: { id: 42, type: 'private' }, date: 1, from: { id: 7, username: 'ada' }, text },
+});
 
 describe('telegram /comms adapter', () => {
   it('routes a command and replies via sendMessage with the chat id', async () => {
     const router = new ChannelRouter();
     let got: unknown;
-    router.command('deploy', async (event, reply) => { got = event.command; await reply.send({ text: 'ok' }); });
+    router.command('deploy', async (event, reply) => {
+      got = event.command;
+      await reply.send({ text: 'ok' });
+    });
     const { client, sendMessage } = makeClient();
 
     await dispatchTelegram(router, client, message('/deploy staging'));
@@ -27,7 +33,15 @@ describe('telegram /comms adapter', () => {
 
   it('renders buttons as an inline keyboard', async () => {
     const router = new ChannelRouter();
-    router.message(async (_e, reply) => reply.send({ text: 'pick', buttons: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }] }));
+    router.message(async (_e, reply) =>
+      reply.send({
+        text: 'pick',
+        buttons: [
+          { id: 'a', label: 'A' },
+          { id: 'b', label: 'B' },
+        ],
+      }),
+    );
     const { client, sendMessage } = makeClient();
 
     await dispatchTelegram(router, client, message('hello'));
@@ -42,7 +56,10 @@ describe('telegram /comms adapter', () => {
     router.action('vote:yes', handler);
     const { client, answerCallbackQuery } = makeClient();
 
-    await dispatchTelegram(router, client, { update_id: 2, callback_query: { id: 'cq1', from: { id: 7 }, data: 'vote:yes', message: { message_id: 1, chat: { id: 42, type: 'private' }, date: 1 } } });
+    await dispatchTelegram(router, client, {
+      update_id: 2,
+      callback_query: { id: 'cq1', from: { id: 7 }, data: 'vote:yes', message: { message_id: 1, chat: { id: 42, type: 'private' }, date: 1 } },
+    });
 
     expect(handler.mock.calls[0]![0]).toMatchObject({ kind: 'action', action: { id: 'vote:yes' }, conversation: { id: '42' } });
     expect(answerCallbackQuery).toHaveBeenCalledWith({ callback_query_id: 'cq1' });
@@ -63,7 +80,10 @@ describe('telegram /comms adapter', () => {
     router.action('x', handler);
     const { client, answerCallbackQuery } = makeClient();
 
-    await dispatchTelegram(router, client, { update_id: 4, callback_query: { id: 'cq2', from: { id: 7 }, message: { message_id: 1, chat: { id: 42, type: 'private' }, date: 1 } } } as TelegramUpdate);
+    await dispatchTelegram(router, client, {
+      update_id: 4,
+      callback_query: { id: 'cq2', from: { id: 7 }, message: { message_id: 1, chat: { id: 42, type: 'private' }, date: 1 } },
+    } as TelegramUpdate);
 
     expect(handler).not.toHaveBeenCalled();
     expect(answerCallbackQuery).toHaveBeenCalledWith({ callback_query_id: 'cq2' });
@@ -71,11 +91,16 @@ describe('telegram /comms adapter', () => {
 
   it('answers the callback_query even when the handler throws', async () => {
     const router = new ChannelRouter();
-    router.action('boom', async () => { throw new Error('handler failed'); });
+    router.action('boom', async () => {
+      throw new Error('handler failed');
+    });
     const { client, answerCallbackQuery } = makeClient();
 
     await expect(
-      dispatchTelegram(router, client, { update_id: 5, callback_query: { id: 'cq3', from: { id: 7 }, data: 'boom', message: { message_id: 1, chat: { id: 42, type: 'private' }, date: 1 } } } as TelegramUpdate),
+      dispatchTelegram(router, client, {
+        update_id: 5,
+        callback_query: { id: 'cq3', from: { id: 7 }, data: 'boom', message: { message_id: 1, chat: { id: 42, type: 'private' }, date: 1 } },
+      } as TelegramUpdate),
     ).rejects.toThrow('handler failed');
 
     expect(answerCallbackQuery).toHaveBeenCalledWith({ callback_query_id: 'cq3' });

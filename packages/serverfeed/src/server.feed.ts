@@ -1,5 +1,12 @@
 import { DateTime } from 'luxon';
-import { matches, type ServerFeedEvent, type ServerFeedEventInput, type ServerFeedFilter, type ServerFeedLevel, type ServerFeedProgress } from './server.feed.event.js';
+import {
+  matches,
+  type ServerFeedEvent,
+  type ServerFeedEventInput,
+  type ServerFeedFilter,
+  type ServerFeedLevel,
+  type ServerFeedProgress,
+} from './server.feed.event.js';
 
 /** A live subscription: a filter plus the listener to invoke on matching events. */
 interface Subscription {

@@ -1,16 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import crypto from 'node:crypto';
 import { DateTime } from 'luxon';
-import {
-  OAuth2FactorService,
-  OAuth2FactorServiceOptions,
-  OAuth2ActorEmailLookup,
-} from '../../../src/factors/oauth2/oauth2.factor.service.js';
-import {
-  OAuth2FactorRepository,
-  OAuth2Factor,
-  OAuth2FactorValue,
-} from '../../../src/factors/oauth2/oauth2.factor.repository.js';
+import { OAuth2FactorService, OAuth2FactorServiceOptions, OAuth2ActorEmailLookup } from '../../../src/factors/oauth2/oauth2.factor.service.js';
+import { OAuth2FactorRepository, OAuth2Factor, OAuth2FactorValue } from '../../../src/factors/oauth2/oauth2.factor.repository.js';
 import {
   OAuth2ProviderRegistry,
   OAuth2ProviderRegistryConfig,
@@ -74,8 +66,7 @@ const makePolicyService = (result: PolicyResult = { allowed: true }) =>
     assert: vi.fn(async () => undefined),
   }) as unknown as PolicyService;
 
-const makeLogger = () =>
-  ({ error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn(), trace: vi.fn() }) as unknown as Logger;
+const makeLogger = () => ({ error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn(), trace: vi.fn() }) as unknown as Logger;
 
 const makeClient = (overrides: Partial<OAuth2ProviderClient> = {}): OAuth2ProviderClient => ({
   createAuthorizationURL: vi.fn(() => TEST_AUTHORIZE_URL),
@@ -97,16 +88,14 @@ const makeProviderConfig = (overrides: Partial<OAuth2ProviderConfig> = {}): OAut
   client: makeClient(),
   scopes: ['read:user', 'user:email'],
   usesPKCE: false,
-  fetchProfile: vi.fn(
-    async (): Promise<Omit<OAuth2Profile, 'provider'>> => ({
-      subject: 'gh-12345',
-      email: 'octocat@example.com',
-      emailVerified: true,
-      name: 'The Octocat',
-      picture: 'https://cdn.example/octocat.png',
-      rawProfile: { id: 12345, login: 'octocat' },
-    }),
-  ),
+  fetchProfile: vi.fn(async (): Promise<Omit<OAuth2Profile, 'provider'>> => ({
+    subject: 'gh-12345',
+    email: 'octocat@example.com',
+    emailVerified: true,
+    name: 'The Octocat',
+    picture: 'https://cdn.example/octocat.png',
+    rawProfile: { id: 12345, login: 'octocat' },
+  })),
   ...overrides,
 });
 
@@ -216,18 +205,14 @@ describe('OAuth2FactorService', () => {
     });
 
     it('throws 404 when the state has expired', async () => {
-      await expect(
-        service.completeAuthorization({ params: { code: 'abc', state: 'missing' } }),
-      ).rejects.toMatchObject({ statusCode: 404 });
+      await expect(service.completeAuthorization({ params: { code: 'abc', state: 'missing' } })).rejects.toMatchObject({ statusCode: 404 });
     });
 
     it('returns 502 when fetchProfile throws', async () => {
       const state = await seed();
       vi.mocked(providerConfig.fetchProfile).mockRejectedValueOnce(new Error('network down'));
 
-      await expect(
-        service.completeAuthorization({ params: { code: 'abc', state } }),
-      ).rejects.toMatchObject({ statusCode: 502 });
+      await expect(service.completeAuthorization({ params: { code: 'abc', state } })).rejects.toMatchObject({ statusCode: 502 });
     });
 
     it('returns signed-in for a known (provider, subject)', async () => {
@@ -372,7 +357,9 @@ describe('OAuth2FactorService', () => {
         statusCode: 403,
         details: { profile: 'not allowed' },
       });
-      expect(policyService.check).toHaveBeenCalledWith('auth.factor.oauth2.profile.allowed', { profile: expect.objectContaining({ provider: 'github' }) });
+      expect(policyService.check).toHaveBeenCalledWith('auth.factor.oauth2.profile.allowed', {
+        profile: expect.objectContaining({ provider: 'github' }),
+      });
     });
   });
 
@@ -454,7 +441,11 @@ describe('OAuth2FactorService', () => {
     it('does not re-persist when the refresh token is unchanged', async () => {
       providerConfig = makeProviderConfig({
         client: makeClient({
-          refreshAccessToken: vi.fn(async () => ({ accessToken: 'a', refreshToken: 'refresh-original', expiresAt: DateTime.utc().plus({ seconds: 1 }) })),
+          refreshAccessToken: vi.fn(async () => ({
+            accessToken: 'a',
+            refreshToken: 'refresh-original',
+            expiresAt: DateTime.utc().plus({ seconds: 1 }),
+          })),
         }),
       });
       ({ service, encryption } = makeService(providerConfig, repo, emailLookup, cache));

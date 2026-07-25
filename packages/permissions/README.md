@@ -43,18 +43,18 @@ subject = type ":" id            // concrete subject
 
 Examples:
 
-| Form     | Example                                | Reading                                                       |
-| -------- | -------------------------------------- | ------------------------------------------------------------- |
-| concrete | `doc:readme.viewer@user:alice`         | alice can `viewer` the `readme` doc                           |
-| wildcard | `doc:readme.viewer@user.*`             | every user can `viewer` the `readme` doc (public grant)       |
-| userset  | `doc:readme.viewer@org:42.admin`       | every admin of org 42 can `viewer` the `readme` doc           |
+| Form     | Example                          | Reading                                                 |
+| -------- | -------------------------------- | ------------------------------------------------------- |
+| concrete | `doc:readme.viewer@user:alice`   | alice can `viewer` the `readme` doc                     |
+| wildcard | `doc:readme.viewer@user.*`       | every user can `viewer` the `readme` doc (public grant) |
+| userset  | `doc:readme.viewer@org:42.admin` | every admin of org 42 can `viewer` the `readme` doc     |
 
 The two separators do conceptually different jobs:
 
 - `:` is for **runtime identity** — binds a concrete id to a type
   (`user:alice`, `doc:readme`). Anything between `:` and the next `.`/`@`
   is the id.
-- `.` is for **schema-level scoping** — names a relation or wildcard *on*
+- `.` is for **schema-level scoping** — names a relation or wildcard _on_
   a type (`user.*`, `org:42.admin`, `doc:readme.viewer`).
 
 Because the two separators are distinct, object ids may contain dots
@@ -85,15 +85,7 @@ nothing on a resource can be made world-readable.
 ### Define an authorization model
 
 ```ts
-import {
-  AuthorizationModel,
-  computed,
-  defineNamespace,
-  direct,
-  exclusion,
-  tupleToUserset,
-  union,
-} from '@maroonedsoftware/permissions';
+import { AuthorizationModel, computed, defineNamespace, direct, exclusion, tupleToUserset, union } from '@maroonedsoftware/permissions';
 
 const user = defineNamespace('user', { relations: {}, permissions: {} });
 
@@ -155,13 +147,7 @@ class KyselyTupleRepository extends PermissionsTupleRepository {
 ```ts
 import { check } from '@maroonedsoftware/permissions';
 
-const allowed = await check(
-  model,
-  repo,
-  { namespace: 'doc', id: 'doc-42' },
-  'view',
-  { kind: 'concrete', namespace: 'user', id: 'alice' },
-);
+const allowed = await check(model, repo, { namespace: 'doc', id: 'doc-42' }, 'view', { kind: 'concrete', namespace: 'user', id: 'alice' });
 ```
 
 `check` walks the userset rewrite for `view`, short-circuiting on the first allow, and returns `true`/`false`. Each call has its own per-request memo and cycle guard; recursion is capped at depth 32.
@@ -197,42 +183,42 @@ class DataDogMetricsSink extends CheckMetricsSink {
 
 ### Userset expressions
 
-| Constructor                              | Meaning                                                                |
-| ---------------------------------------- | ---------------------------------------------------------------------- |
-| `direct()`                               | Resolves through directly stored tuples on the relation being checked  |
-| `computed(relation)`                     | Delegates to another relation/permission on the same object            |
-| `tupleToUserset(tupleRel, computedRel)`  | Walks `tupleRel` to parent objects and evaluates `computedRel` on each |
-| `union(...children)`                     | Logical OR — first allow wins                                          |
-| `intersection(...children)`              | Logical AND — first deny wins                                          |
-| `exclusion(base, subtract)`              | Subjects allowed by `base` but not by `subtract`                       |
+| Constructor                             | Meaning                                                                |
+| --------------------------------------- | ---------------------------------------------------------------------- |
+| `direct()`                              | Resolves through directly stored tuples on the relation being checked  |
+| `computed(relation)`                    | Delegates to another relation/permission on the same object            |
+| `tupleToUserset(tupleRel, computedRel)` | Walks `tupleRel` to parent objects and evaluates `computedRel` on each |
+| `union(...children)`                    | Logical OR — first allow wins                                          |
+| `intersection(...children)`             | Logical AND — first deny wins                                          |
+| `exclusion(base, subtract)`             | Subjects allowed by `base` but not by `subtract`                       |
 
 ### Subject types
 
 Allowed subjects on a relation are declared as strings:
 
-| String form           | Meaning                                                |
-| --------------------- | ------------------------------------------------------ |
-| `user`                | Any concrete subject from the `user` namespace         |
-| `user.*`              | Wildcard — every subject of that namespace allowed     |
-| `org.admin`           | Userset — every subject satisfying `admin` on any `org`|
+| String form | Meaning                                                 |
+| ----------- | ------------------------------------------------------- |
+| `user`      | Any concrete subject from the `user` namespace          |
+| `user.*`    | Wildcard — every subject of that namespace allowed      |
+| `org.admin` | Userset — every subject satisfying `admin` on any `org` |
 
 ### `AuthorizationModel`
 
-| Method               | Description                                                          |
-| -------------------- | -------------------------------------------------------------------- |
-| `new (namespaces)`   | Validates names and cross-references; throws on any inconsistency    |
-| `namespaces()`       | All registered namespaces, in insertion order                        |
-| `get(name)`          | Look up a namespace by name; `undefined` for unknown                 |
-| `resolve(ns, name)`  | Returns the userset expression to evaluate (relations are `direct`)  |
+| Method              | Description                                                         |
+| ------------------- | ------------------------------------------------------------------- |
+| `new (namespaces)`  | Validates names and cross-references; throws on any inconsistency   |
+| `namespaces()`      | All registered namespaces, in insertion order                       |
+| `get(name)`         | Look up a namespace by name; `undefined` for unknown                |
+| `resolve(ns, name)` | Returns the userset expression to evaluate (relations are `direct`) |
 
 ### `PermissionsTupleRepository`
 
-| Method                                              | Description                                                              |
-| --------------------------------------------------- | ------------------------------------------------------------------------ |
-| `write(tuples, createdBy?)`                         | Insert idempotently                                                      |
-| `delete(tuples)`                                    | Remove by exact shape; missing rows are a no-op                          |
-| `listByObjectRelation(namespace, objectId, rel)`    | All tuples for a `(object, relation)` pair — feeds the `direct` step     |
-| `listObjectsRelatedBy(namespace, objectId, rel)`    | Concrete-subject parents for a `tupleToUserset` walk                     |
+| Method                                           | Description                                                          |
+| ------------------------------------------------ | -------------------------------------------------------------------- |
+| `write(tuples, createdBy?)`                      | Insert idempotently                                                  |
+| `delete(tuples)`                                 | Remove by exact shape; missing rows are a no-op                      |
+| `listByObjectRelation(namespace, objectId, rel)` | All tuples for a `(object, relation)` pair — feeds the `direct` step |
+| `listObjectsRelatedBy(namespace, objectId, rel)` | Concrete-subject parents for a `tupleToUserset` walk                 |
 
 ### `check(model, repo, object, relationOrPermission, subject, sink?)`
 
@@ -245,7 +231,7 @@ boolean outcome and a hierarchical `CheckTrace`. Unlike `check`, the
 explainer does not short-circuit child evaluation — every branch of a
 union/intersection runs so the resulting trace is fully debuggable.
 Use for `--explain` CLI output, the VSCode playground, or any tooling
-that needs to surface *why* a check decision came out the way it did.
+that needs to surface _why_ a check decision came out the way it did.
 Not for the hot request path.
 
 ```ts
@@ -271,10 +257,7 @@ playground both build on it).
 ```ts
 import { InMemoryTupleRepository, parseTuple } from '@maroonedsoftware/permissions';
 
-const repo = new InMemoryTupleRepository([
-  parseTuple('doc:readme.owner@user:alice'),
-  parseTuple('folder:eng.viewer@user:bob'),
-]);
+const repo = new InMemoryTupleRepository([parseTuple('doc:readme.owner@user:alice'), parseTuple('folder:eng.viewer@user:bob')]);
 ```
 
 ### Tuple string helpers
@@ -285,14 +268,14 @@ string form. Useful for logs, fixtures, and serialising over the wire.
 
 ### `CheckMetrics`
 
-| Field            | Description                                           |
-| ---------------- | ----------------------------------------------------- |
-| `durationMs`     | Total wall-clock time of the Check                    |
-| `tupleReads`     | Count of `repo.listByObjectRelation` calls            |
-| `parentLookups`  | Count of `repo.listObjectsRelatedBy` calls            |
-| `cacheHits`      | Per-request memo hits                                 |
-| `maxDepth`       | Greatest recursion depth reached                      |
-| `hitMaxDepth`    | True if the evaluator hit the max-depth guard (32)    |
+| Field           | Description                                        |
+| --------------- | -------------------------------------------------- |
+| `durationMs`    | Total wall-clock time of the Check                 |
+| `tupleReads`    | Count of `repo.listByObjectRelation` calls         |
+| `parentLookups` | Count of `repo.listObjectsRelatedBy` calls         |
+| `cacheHits`     | Per-request memo hits                              |
+| `maxDepth`      | Greatest recursion depth reached                   |
+| `hitMaxDepth`   | True if the evaluator hit the max-depth guard (32) |
 
 ## Doctor checks
 
@@ -305,8 +288,8 @@ import { permissionsModelLoads } from '@maroonedsoftware/johnny5/permissions';
 import { kyselyTableExists } from '@maroonedsoftware/johnny5/kysely';
 
 const checks = [
-    permissionsModelLoads({ loadModel: async () => (await import('./permissions/generated/index.js')).model }),
-    kyselyTableExists({ db, table: 'relation_tuples' }),
+  permissionsModelLoads({ loadModel: async () => (await import('./permissions/generated/index.js')).model }),
+  kyselyTableExists({ db, table: 'relation_tuples' }),
 ];
 ```
 

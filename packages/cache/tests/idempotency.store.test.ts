@@ -117,10 +117,7 @@ describe('deduplicate', () => {
   });
 
   it('resets the attempt counter after an eventual success', async () => {
-    const flaky = vi
-      .fn()
-      .mockRejectedValueOnce(new Error('boom'))
-      .mockResolvedValueOnce('ok');
+    const flaky = vi.fn().mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce('ok');
 
     await expect(store.deduplicate('evt-1', flaky, { maxAttempts: 5 })).rejects.toThrow('boom');
     const outcome = await store.deduplicate('evt-1', flaky, { maxAttempts: 5 });

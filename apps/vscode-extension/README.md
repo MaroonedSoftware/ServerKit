@@ -18,7 +18,7 @@ Editor support for ServerKit `.perm` files — the surface syntax for
 ## Permissions Playground
 
 Run **ServerKit Permissions: Open Playground** from the command palette
-(or click the *Open in Playground* CodeLens above any `namespace` /
+(or click the _Open in Playground_ CodeLens above any `namespace` /
 `permission` declaration) to open an interactive webview bound to the
 active `.perm` file.
 

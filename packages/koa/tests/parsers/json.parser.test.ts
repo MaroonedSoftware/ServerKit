@@ -101,8 +101,7 @@ describe('JsonParser', () => {
 
   describe('reviver option', () => {
     it('applies the reviver to parsed values', async () => {
-      const reviver = (_key: string, value: unknown) =>
-        typeof value === 'string' ? value.toUpperCase() : value;
+      const reviver = (_key: string, value: unknown) => (typeof value === 'string' ? value.toUpperCase() : value);
       const parser = new JsonParser({ reviver });
       const body = '{"name":"test"}';
 

@@ -390,13 +390,13 @@ The server builder's graceful shutdown closes idle connections immediately and f
 builder.setupRoutes([serverFeedRouter({ signal: builder.lifecycleSignal })]);
 ```
 
-| Export                                        | Description                                                                                                                                         |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `openSseStream(ctx, options?)`                | Opens the stream. Options: `heartbeatMs` (default 15000, `0` disables), `maxBufferedBytes` (default 1000000), `headers` (merged over the defaults), `signal` (closes the stream on abort — pass `builder.lifecycleSignal`). |
-| `SseStream`                                   | The handle: `write(chunk)`, `event(frame)`, `comment(text)`, `onClose(listener)`, `close()`, `closed`.                                              |
-| `frameEvent(frame)` / `frameComment(text)`    | Frame formatting: `id` / `event` / `data` / `retry`, and comment lines. Non-string `data` is JSON-encoded.                                           |
-| `resolveLastEventId(header, queryLastEventId)` | Resume point for a reconnecting client: the `Last-Event-ID` header wins, then `?lastEventId=`, else `0`.                                             |
-| `firstQueryValue(value)`                      | First string value of a Koa query field, which may be a string or a repeated list.                                                                   |
+| Export                                         | Description                                                                                                                                                                                                                 |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `openSseStream(ctx, options?)`                 | Opens the stream. Options: `heartbeatMs` (default 15000, `0` disables), `maxBufferedBytes` (default 1000000), `headers` (merged over the defaults), `signal` (closes the stream on abort — pass `builder.lifecycleSignal`). |
+| `SseStream`                                    | The handle: `write(chunk)`, `event(frame)`, `comment(text)`, `onClose(listener)`, `close()`, `closed`.                                                                                                                      |
+| `frameEvent(frame)` / `frameComment(text)`     | Frame formatting: `id` / `event` / `data` / `retry`, and comment lines. Non-string `data` is JSON-encoded.                                                                                                                  |
+| `resolveLastEventId(header, queryLastEventId)` | Resume point for a reconnecting client: the `Last-Event-ID` header wins, then `?lastEventId=`, else `0`.                                                                                                                    |
+| `firstQueryValue(value)`                       | First string value of a Koa query field, which may be a string or a repeated list.                                                                                                                                          |
 
 ## Server feed SSE endpoint
 
@@ -422,11 +422,11 @@ builder.setupRoutes([serverFeedRouter()]);
 
 Clients filter with `?source=render,llm&kind=progress,status&level=warn&correlationId=…` and drive their own reconnection with `Last-Event-ID`.
 
-| Export                                                                        | Description                                                                                                                                                                                                                                                                 |
-| ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `serverFeedRouter(options?)`               | Router with `GET /server/feed` (configurable `path`) guarded by `requirePolicy`. Options: `path`, `policy` (passed to `requirePolicy`; `false` for session-only), `resolveFeed` (defaults to `ctx.container.get(ServerFeed)`), plus the `openSseStream` options. |
-| `handleServerFeed(ctx, feed, options?)` | The lower-level handler, if you mount the route yourself.                                                                                                                                                                                                                 |
-| `serverFeedFilterFromQuery(query)`               | Zero-dependency query→`ServerFeedFilter` parsing (shared with a JSON polling fallback).                                                                                                                                                                                      |
+| Export                                  | Description                                                                                                                                                                                                                                                      |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `serverFeedRouter(options?)`            | Router with `GET /server/feed` (configurable `path`) guarded by `requirePolicy`. Options: `path`, `policy` (passed to `requirePolicy`; `false` for session-only), `resolveFeed` (defaults to `ctx.container.get(ServerFeed)`), plus the `openSseStream` options. |
+| `handleServerFeed(ctx, feed, options?)` | The lower-level handler, if you mount the route yourself.                                                                                                                                                                                                        |
+| `serverFeedFilterFromQuery(query)`      | Zero-dependency query→`ServerFeedFilter` parsing (shared with a JSON polling fallback).                                                                                                                                                                          |
 
 ## License
 

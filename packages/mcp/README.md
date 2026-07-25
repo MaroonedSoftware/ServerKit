@@ -16,19 +16,19 @@ pnpm add @maroonedsoftware/mcp @modelcontextprotocol/sdk
 
 ## Exports
 
-| Symbol | Purpose |
-|--------|---------|
-| `McpConfig` | Abstract `@Injectable()` token; carries `serverName`, `version`, optional `sessionMode`, `bearerToken`, `requestTimeoutMs`. Consumer registers a concrete value. |
-| `McpDispatcher` | Entry point. `dispatch(message, context)` for stateless mode; `dispatchStateful(exchange, context)` for stateful. Selects the mode from `McpConfig.sessionMode`. |
-| `McpServerFactory` | Builds SDK `Server` instances wired to the handler maps — memoizes the `tools/list` payload and uses stable, ALS-backed request handlers. |
-| `McpToolHandler` / `McpToolHandlerMap` | One-method tool handler interface (`handle(args, context)`) + its `Map<toolName, handler>` DI token. |
-| `McpResourceHandler` / `McpResourceHandlerMap` | Resource handler interface (`read(uri, context)`) + its `Map<uri, handler>` DI token. |
-| `McpSessionRegistry` | Stateful-mode registry: one SDK `Server` + `StreamableHTTPServerTransport` per `Mcp-Session-Id`, reused across the session. |
-| `KoaMcpTransport` | Minimal single-exchange `Transport` for stateless mode (one JSON-RPC message in, one response out). |
-| `McpRequestContext` / `createMcpRequestContext` | Request-scoped context threaded to handlers, plus the factory that builds one from your `ctx`. |
-| `verifyMcpBearer(input)` | Pure bearer-token verifier. Returns `McpAuthInfo` or throws `McpError`. **Scaffold-grade** — swap for OAuth resource-server JWT validation. |
-| `McpAuthPolicy` | `@maroonedsoftware/policies` form of `verifyMcpBearer` (registered under `MCP_AUTH_POLICY`). Slots into koa's `requireSignature`. |
-| `McpError` / `IsMcpError` | `ServerkitError` subclass for non-HTTP domain failures, plus its type guard. |
+| Symbol                                          | Purpose                                                                                                                                                          |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `McpConfig`                                     | Abstract `@Injectable()` token; carries `serverName`, `version`, optional `sessionMode`, `bearerToken`, `requestTimeoutMs`. Consumer registers a concrete value. |
+| `McpDispatcher`                                 | Entry point. `dispatch(message, context)` for stateless mode; `dispatchStateful(exchange, context)` for stateful. Selects the mode from `McpConfig.sessionMode`. |
+| `McpServerFactory`                              | Builds SDK `Server` instances wired to the handler maps — memoizes the `tools/list` payload and uses stable, ALS-backed request handlers.                        |
+| `McpToolHandler` / `McpToolHandlerMap`          | One-method tool handler interface (`handle(args, context)`) + its `Map<toolName, handler>` DI token.                                                             |
+| `McpResourceHandler` / `McpResourceHandlerMap`  | Resource handler interface (`read(uri, context)`) + its `Map<uri, handler>` DI token.                                                                            |
+| `McpSessionRegistry`                            | Stateful-mode registry: one SDK `Server` + `StreamableHTTPServerTransport` per `Mcp-Session-Id`, reused across the session.                                      |
+| `KoaMcpTransport`                               | Minimal single-exchange `Transport` for stateless mode (one JSON-RPC message in, one response out).                                                              |
+| `McpRequestContext` / `createMcpRequestContext` | Request-scoped context threaded to handlers, plus the factory that builds one from your `ctx`.                                                                   |
+| `verifyMcpBearer(input)`                        | Pure bearer-token verifier. Returns `McpAuthInfo` or throws `McpError`. **Scaffold-grade** — swap for OAuth resource-server JWT validation.                      |
+| `McpAuthPolicy`                                 | `@maroonedsoftware/policies` form of `verifyMcpBearer` (registered under `MCP_AUTH_POLICY`). Slots into koa's `requireSignature`.                                |
+| `McpError` / `IsMcpError`                       | `ServerkitError` subclass for non-HTTP domain failures, plus its type guard.                                                                                     |
 
 ## Configuration
 
@@ -52,18 +52,18 @@ container.register(McpConfig, { useValue: mcpConfig });
     "version": "1.0.0",
     "sessionMode": "stateless", // optional; "stateless" (default) or "stateful"
     "bearerToken": "${env:MCP_BEARER_TOKEN}", // optional; enables the bundled auth policy
-    "requestTimeoutMs": 30000 // optional
-  }
+    "requestTimeoutMs": 30000, // optional
+  },
 }
 ```
 
-| Field | Required | Used by |
-|-------|----------|---------|
-| `serverName` | yes | Advertised to clients as `serverInfo.name` during `initialize`. |
-| `version` | yes | Advertised as `serverInfo.version`. |
-| `sessionMode` | no | `'stateless'` (default) or `'stateful'` — see [session modes](#session-modes). |
-| `bearerToken` | no | Shared token accepted by `McpAuthPolicy`. Unset ⇒ the endpoint is open (development only). |
-| `requestTimeoutMs` | no | Per-request handler timeout. Defaults to `MCP_DEFAULT_REQUEST_TIMEOUT_MS` (30s). |
+| Field              | Required | Used by                                                                                    |
+| ------------------ | -------- | ------------------------------------------------------------------------------------------ |
+| `serverName`       | yes      | Advertised to clients as `serverInfo.name` during `initialize`.                            |
+| `version`          | yes      | Advertised as `serverInfo.version`.                                                        |
+| `sessionMode`      | no       | `'stateless'` (default) or `'stateful'` — see [session modes](#session-modes).             |
+| `bearerToken`      | no       | Shared token accepted by `McpAuthPolicy`. Unset ⇒ the endpoint is open (development only). |
+| `requestTimeoutMs` | no       | Per-request handler timeout. Defaults to `MCP_DEFAULT_REQUEST_TIMEOUT_MS` (30s).           |
 
 ## Defining tools
 
@@ -106,7 +106,7 @@ You own the route. Gate it with the auth policy, build an `McpRequestContext` fr
 import { requireSignature } from '@maroonedsoftware/koa';
 import { McpDispatcher, createMcpRequestContext, MCP_AUTH_POLICY, type McpAuthOptions } from '@maroonedsoftware/mcp';
 
-router.post('/mcp', requireSignature<McpAuthOptions>('mcp', { policy: MCP_AUTH_POLICY }), async (ctx) => {
+router.post('/mcp', requireSignature<McpAuthOptions>('mcp', { policy: MCP_AUTH_POLICY }), async ctx => {
   const dispatcher = ctx.container.get(McpDispatcher);
   const context = createMcpRequestContext({ requestId: ctx.requestId, logger: ctx.logger });
 
@@ -129,12 +129,12 @@ router.post('/mcp', requireSignature<McpAuthOptions>('mcp', { policy: MCP_AUTH_P
 
 `McpConfig.sessionMode` selects the transport strategy over one shared core (the same handler maps, factory, auth, and request context back both):
 
-| | `'stateless'` (default) | `'stateful'` |
-|-|-------------------------|--------------|
-| Per request | fresh `Server` via `KoaMcpTransport`, one JSON response | reuses a `Server` + `StreamableHTTPServerTransport` per `Mcp-Session-Id` |
-| `initialize` | independent per request | once per session |
-| Server→client push (progress, notifications, sampling, SSE) | not available | available |
-| Scaling | trivial — no session affinity, any node serves any request | requires session affinity (sticky routing or externalized session state) |
+|                                                             | `'stateless'` (default)                                    | `'stateful'`                                                             |
+| ----------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Per request                                                 | fresh `Server` via `KoaMcpTransport`, one JSON response    | reuses a `Server` + `StreamableHTTPServerTransport` per `Mcp-Session-Id` |
+| `initialize`                                                | independent per request                                    | once per session                                                         |
+| Server→client push (progress, notifications, sampling, SSE) | not available                                              | available                                                                |
+| Scaling                                                     | trivial — no session affinity, any node serves any request | requires session affinity (sticky routing or externalized session state) |
 
 Start stateless; it covers request/response tool servers and scales horizontally. Switch to stateful when you need streaming or server-initiated messages. For multi-node stateful deployments, front `McpSessionRegistry` with sticky routing or externalize session/event state (the SDK's `eventStore`, backed by the optional [`@maroonedsoftware/cache`](../cache) peer).
 

@@ -65,7 +65,9 @@ export class McpSessionRegistry {
         // No session and not an initialize handshake → the client must initialize first.
         res.statusCode = 400;
         res.setHeader('content-type', 'application/json');
-        res.end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32000, message: 'No valid session; send an initialize request first.' }, id: null }));
+        res.end(
+          JSON.stringify({ jsonrpc: '2.0', error: { code: -32000, message: 'No valid session; send an initialize request first.' }, id: null }),
+        );
         return;
       }
       session = await this.open();
@@ -79,7 +81,7 @@ export class McpSessionRegistry {
     const server = this.factory.create();
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
-      onsessioninitialized: (id) => {
+      onsessioninitialized: id => {
         this.sessions.set(id, { server, transport });
         this.logger.debug('MCP session opened', { sessionId: id });
       },

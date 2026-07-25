@@ -10,12 +10,7 @@ export const SLACK_SIGNATURE_DEFAULT_MAX_AGE_SECONDS = 300;
  * fails. Useful for callers that want to log structured reasons without
  * pattern-matching on error messages.
  */
-export type SlackSignatureFailureReason =
-  | 'missing_timestamp'
-  | 'invalid_timestamp'
-  | 'stale_timestamp'
-  | 'missing_signature'
-  | 'invalid_signature';
+export type SlackSignatureFailureReason = 'missing_timestamp' | 'invalid_timestamp' | 'stale_timestamp' | 'missing_signature' | 'invalid_signature';
 
 /**
  * Inputs to {@link verifySlackSignature}. All values are taken verbatim from

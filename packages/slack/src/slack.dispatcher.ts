@@ -17,9 +17,7 @@ import {
  * traffic is `event_callback` envelopes (or other future top-level types).
  */
 export type SlackEventsRequest =
-  | { type: 'url_verification'; challenge: string; token?: string }
-  | SlackEventCallback
-  | { type: string; [key: string]: unknown };
+  { type: 'url_verification'; challenge: string; token?: string } | SlackEventCallback | { type: string; [key: string]: unknown };
 
 /**
  * Response Slack expects for the `url_verification` handshake. For

@@ -68,10 +68,7 @@ describe('ServerkitError', () => {
   describe('chaining', () => {
     it('allows chaining all setters together', () => {
       const root = new Error('root');
-      const error = new ServerkitError('wrapped')
-        .withDetails({ field: 'invalid' })
-        .withCause(root)
-        .withInternalDetails({ trace: 'abc-123' });
+      const error = new ServerkitError('wrapped').withDetails({ field: 'invalid' }).withCause(root).withInternalDetails({ trace: 'abc-123' });
 
       expect(error.details).toEqual({ field: 'invalid' });
       expect(error.cause).toBe(root);

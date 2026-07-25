@@ -52,8 +52,8 @@ export class McpServerFactory {
     private readonly config: McpConfig,
     private readonly logger: Logger,
   ) {
-    this.toolList = { tools: [...tools.values()].map((handler) => handler.definition) };
-    this.resourceList = { resources: [...resources.values()].map((handler) => handler.definition) };
+    this.toolList = { tools: [...tools.values()].map(handler => handler.definition) };
+    this.resourceList = { resources: [...resources.values()].map(handler => handler.definition) };
   }
 
   private readonly onListTools = async (): Promise<ListToolsResult> => this.toolList;

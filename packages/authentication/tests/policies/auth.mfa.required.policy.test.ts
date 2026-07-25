@@ -112,12 +112,7 @@ describe('DefaultMfaRequiredPolicy', () => {
     const result = await evaluate({
       actor,
       primaryFactor: makePrimary('password'),
-      availableFactors: [
-        factor('password', 'knowledge', 'pw-backup'),
-        email,
-        phone,
-        fido,
-      ],
+      availableFactors: [factor('password', 'knowledge', 'pw-backup'), email, phone, fido],
     });
     expect(result.allowed).toBe(false);
     // password (knowledge) is filtered; email, phone, fido all survive because primary is password.

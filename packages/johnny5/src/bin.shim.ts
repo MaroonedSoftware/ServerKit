@@ -3,22 +3,22 @@ import { fileURLToPath } from 'node:url';
 
 /** Options for `registerTypescriptLoader`. */
 export interface RegisterTypescriptLoaderOptions {
-    /**
-     * Path to the tsconfig swc-node should compile with, resolved against
-     * `binUrl`. Defaults to `'../tsconfig.json'` — a bin living in
-     * `<pkg>/bin/` next to `<pkg>/tsconfig.json`. Ignored when
-     * `SWC_NODE_PROJECT` is already set in the environment.
-     */
-    tsconfig?: string;
+  /**
+   * Path to the tsconfig swc-node should compile with, resolved against
+   * `binUrl`. Defaults to `'../tsconfig.json'` — a bin living in
+   * `<pkg>/bin/` next to `<pkg>/tsconfig.json`. Ignored when
+   * `SWC_NODE_PROJECT` is already set in the environment.
+   */
+  tsconfig?: string;
 }
 
 /** Options for `runTypescriptBin`. */
 export interface RunTypescriptBinOptions extends RegisterTypescriptLoaderOptions {
-    /**
-     * The TypeScript entry module to import once the loader is registered,
-     * resolved against `binUrl`. Defaults to `'../src/index.ts'`.
-     */
-    entry?: string;
+  /**
+   * The TypeScript entry module to import once the loader is registered,
+   * resolved against `binUrl`. Defaults to `'../src/index.ts'`.
+   */
+  entry?: string;
 }
 
 /**
@@ -40,19 +40,22 @@ export interface RunTypescriptBinOptions extends RegisterTypescriptLoaderOptions
  * @param binUrl - `import.meta.url` of the calling bin file.
  */
 export const registerTypescriptLoader = (binUrl: string, options: RegisterTypescriptLoaderOptions = {}): void => {
-    process.env['SWC_NODE_PROJECT'] ??= fileURLToPath(new URL(options.tsconfig ?? '../tsconfig.json', binUrl));
+  process.env['SWC_NODE_PROJECT'] ??= fileURLToPath(new URL(options.tsconfig ?? '../tsconfig.json', binUrl));
 
-    const previousNoDeprecation = process.noDeprecation;
-    process.noDeprecation = true;
-    try {
-        register('@swc-node/register/esm', binUrl);
-    } catch (err) {
-        throw new Error(`could not register '@swc-node/register/esm' (resolved from ${binUrl}); is @swc-node/register installed in the package that owns this bin?`, {
-            cause: err,
-        });
-    } finally {
-        process.noDeprecation = previousNoDeprecation;
-    }
+  const previousNoDeprecation = process.noDeprecation;
+  process.noDeprecation = true;
+  try {
+    register('@swc-node/register/esm', binUrl);
+  } catch (err) {
+    throw new Error(
+      `could not register '@swc-node/register/esm' (resolved from ${binUrl}); is @swc-node/register installed in the package that owns this bin?`,
+      {
+        cause: err,
+      },
+    );
+  } finally {
+    process.noDeprecation = previousNoDeprecation;
+  }
 };
 
 /**
@@ -69,6 +72,6 @@ export const registerTypescriptLoader = (binUrl: string, options: RegisterTypesc
  * @returns The module namespace of the imported entry point.
  */
 export const runTypescriptBin = async (binUrl: string, options: RunTypescriptBinOptions = {}): Promise<unknown> => {
-    registerTypescriptLoader(binUrl, options);
-    return import(new URL(options.entry ?? '../src/index.ts', binUrl).href);
+  registerTypescriptLoader(binUrl, options);
+  return import(new URL(options.entry ?? '../src/index.ts', binUrl).href);
 };

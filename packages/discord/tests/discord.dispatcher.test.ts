@@ -40,7 +40,9 @@ describe('DiscordDispatcher.dispatchInteraction', () => {
 
   it('routes an application command by name and forwards the response', async () => {
     const { dispatcher, interactions } = makeDispatcher();
-    interactions.set('command:deploy', { handle: vi.fn().mockResolvedValue({ type: InteractionCallbackType.CHANNEL_MESSAGE_WITH_SOURCE, data: { content: 'ok' } }) });
+    interactions.set('command:deploy', {
+      handle: vi.fn().mockResolvedValue({ type: InteractionCallbackType.CHANNEL_MESSAGE_WITH_SOURCE, data: { content: 'ok' } }),
+    });
     const result = await dispatcher.dispatchInteraction({ ...base, type: InteractionType.APPLICATION_COMMAND, data: { name: 'deploy' } });
     expect(result).toEqual({ type: InteractionCallbackType.CHANNEL_MESSAGE_WITH_SOURCE, data: { content: 'ok' } });
   });
@@ -62,7 +64,14 @@ describe('DiscordDispatcher.dispatchInteraction', () => {
     expect(handler.handle).toHaveBeenCalledOnce();
     const [passedInteraction, ctx] = handler.handle.mock.calls[0]!;
     expect(passedInteraction).toBe(interaction);
-    expect(ctx).toMatchObject({ applicationId: 'app1', interactionId: 'i1', token: 'tok', guildId: 'G1', channelId: 'C1', user: { id: 'U1', username: 'alice' } });
+    expect(ctx).toMatchObject({
+      applicationId: 'app1',
+      interactionId: 'i1',
+      token: 'tok',
+      guildId: 'G1',
+      channelId: 'C1',
+      user: { id: 'U1', username: 'alice' },
+    });
     expect(ctx.interaction).toBe(interaction);
   });
 
@@ -70,7 +79,12 @@ describe('DiscordDispatcher.dispatchInteraction', () => {
     const { dispatcher, interactions } = makeDispatcher();
     const handler = { handle: vi.fn().mockResolvedValue(undefined) };
     interactions.set('component:vote', handler);
-    await dispatcher.dispatchInteraction({ ...base, type: InteractionType.MESSAGE_COMPONENT, user: { id: 'U9', username: 'bob' }, data: { custom_id: 'vote' } });
+    await dispatcher.dispatchInteraction({
+      ...base,
+      type: InteractionType.MESSAGE_COMPONENT,
+      user: { id: 'U9', username: 'bob' },
+      data: { custom_id: 'vote' },
+    });
     const [, ctx] = handler.handle.mock.calls[0]!;
     expect(ctx.user).toEqual({ id: 'U9', username: 'bob' });
   });
@@ -85,9 +99,15 @@ describe('DiscordDispatcher.dispatchInteraction', () => {
 
   it('routes an autocomplete by name', async () => {
     const { dispatcher, interactions } = makeDispatcher();
-    const handler = { handle: vi.fn().mockResolvedValue({ type: InteractionCallbackType.APPLICATION_COMMAND_AUTOCOMPLETE_RESULT, data: { choices: [] } }) };
+    const handler = {
+      handle: vi.fn().mockResolvedValue({ type: InteractionCallbackType.APPLICATION_COMMAND_AUTOCOMPLETE_RESULT, data: { choices: [] } }),
+    };
     interactions.set('autocomplete:search', handler);
-    const result = await dispatcher.dispatchInteraction({ ...base, type: InteractionType.APPLICATION_COMMAND_AUTOCOMPLETE, data: { name: 'search' } });
+    const result = await dispatcher.dispatchInteraction({
+      ...base,
+      type: InteractionType.APPLICATION_COMMAND_AUTOCOMPLETE,
+      data: { name: 'search' },
+    });
     expect(result).toMatchObject({ type: InteractionCallbackType.APPLICATION_COMMAND_AUTOCOMPLETE_RESULT });
   });
 
@@ -147,7 +167,10 @@ describe('DiscordDispatcher.dispatchInteraction', () => {
           return { status: 'dropped', attempts: 5 };
         },
       };
-      const result = await dispatcher.dispatchInteraction({ ...base, type: InteractionType.APPLICATION_COMMAND, data: { name: 'deploy' } }, { idempotency });
+      const result = await dispatcher.dispatchInteraction(
+        { ...base, type: InteractionType.APPLICATION_COMMAND, data: { name: 'deploy' } },
+        { idempotency },
+      );
       expect(result).toBeUndefined();
       expect(handler.handle).not.toHaveBeenCalled();
       expect(logger.warn).toHaveBeenCalled();

@@ -21,7 +21,9 @@ const base = { id: 'i1', token: 'tok', application_id: 'app1' };
 describe('discord /comms adapter', () => {
   it('answers PING with PONG', async () => {
     const { client } = makeClient();
-    expect(await dispatchDiscord(new ChannelRouter(), client, { ...base, type: InteractionType.PING } as never)).toEqual({ type: InteractionCallbackType.PONG });
+    expect(await dispatchDiscord(new ChannelRouter(), client, { ...base, type: InteractionType.PING } as never)).toEqual({
+      type: InteractionCallbackType.PONG,
+    });
   });
 
   it('routes an application command (joining option values into args) and returns the first reply as the callback', async () => {
@@ -34,7 +36,9 @@ describe('discord /comms adapter', () => {
     const { client, createFollowupMessage } = makeClient();
 
     const result = await dispatchDiscord(router, client, {
-      ...base, type: InteractionType.APPLICATION_COMMAND, channel_id: 'C1',
+      ...base,
+      type: InteractionType.APPLICATION_COMMAND,
+      channel_id: 'C1',
       member: { user: { id: 'U1', username: 'ada' } },
       data: { name: 'deploy', options: [{ name: 'env', value: 'staging' }] },
     } as never);
@@ -90,7 +94,9 @@ describe('discord /comms adapter', () => {
     const { client } = makeClient();
 
     await dispatchDiscord(router, client, {
-      ...base, type: InteractionType.MESSAGE_COMPONENT, user: { id: 'U2', username: 'bob' },
+      ...base,
+      type: InteractionType.MESSAGE_COMPONENT,
+      user: { id: 'U2', username: 'bob' },
       data: { custom_id: 'deploy:confirm', component_type: 2 },
     } as never);
 
@@ -100,7 +106,11 @@ describe('discord /comms adapter', () => {
 
   it('returns undefined for an unrouted interaction', async () => {
     const { client } = makeClient();
-    const result = await dispatchDiscord(new ChannelRouter(), client, { ...base, type: InteractionType.MODAL_SUBMIT, data: { custom_id: 'x' } } as never);
+    const result = await dispatchDiscord(new ChannelRouter(), client, {
+      ...base,
+      type: InteractionType.MODAL_SUBMIT,
+      data: { custom_id: 'x' },
+    } as never);
     expect(result).toBeUndefined();
   });
 

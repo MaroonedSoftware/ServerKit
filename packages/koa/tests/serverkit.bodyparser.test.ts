@@ -26,11 +26,13 @@ describe('ServerKitBodyParser', () => {
       const bodyParser = new ServerKitBodyParser(mappings);
       vi.mocked(mockCtx.request.is).mockReturnValue(false);
 
-      try { await bodyParser.parse(mockCtx); } catch { /* expected */ }
+      try {
+        await bodyParser.parse(mockCtx);
+      } catch {
+        /* expected */
+      }
 
-      expect(mockCtx.request.is).toHaveBeenCalledWith(
-        expect.arrayContaining(['application/json', 'text/plain']),
-      );
+      expect(mockCtx.request.is).toHaveBeenCalledWith(expect.arrayContaining(['application/json', 'text/plain']));
     });
 
     it('deduplicates mime types passed to ctx.request.is', async () => {
@@ -39,7 +41,11 @@ describe('ServerKitBodyParser', () => {
       const bodyParser = new ServerKitBodyParser(mappings);
       vi.mocked(mockCtx.request.is).mockReturnValue(false);
 
-      try { await bodyParser.parse(mockCtx); } catch { /* expected */ }
+      try {
+        await bodyParser.parse(mockCtx);
+      } catch {
+        /* expected */
+      }
 
       const [calledWith] = vi.mocked(mockCtx.request.is).mock.calls[0] as [string[]];
       const count = calledWith.filter(t => t === 'application/json').length;

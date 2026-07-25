@@ -37,9 +37,7 @@ export interface AppConfigSourcePostgresConnection {
  *   so they are not part of this variant. Use this when the app already has a pool and the
  *   Postgres connection details are not themselves part of the config being loaded.
  */
-export type AppConfigSourcePostgresSource =
-  | { connection: AppConfigSourcePostgresConnection; resolvers?: AppConfigResolver[] }
-  | { pool: Pool };
+export type AppConfigSourcePostgresSource = { connection: AppConfigSourcePostgresConnection; resolvers?: AppConfigResolver[] } | { pool: Pool };
 
 /**
  * Options for {@link AppConfigSourcePostgres}.

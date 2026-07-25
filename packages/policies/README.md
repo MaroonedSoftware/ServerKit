@@ -123,20 +123,20 @@ return this.denyStepUp('aal2_required', { within: Duration.fromObject({ minutes:
 
 Abstract base class. Subclass and implement `evaluate(context, envelope): Promise<PolicyResult>`.
 
-| Helper                                            | Returns                                                                     | Description                                                                                                                                                                              |
-| ------------------------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `allow()`                                         | `{ allowed: true }`                                                         | Allow the request                                                                                                                                                                        |
-| `deny(reason, details?, internalDetails?)`        | `PolicyDenialBuilder` (implements `PolicyResultDenied`)                     | Deny with a machine-readable reason. `details` is rendered to the HTTP response by `assert`; `internalDetails` lands in the thrown error's `internalDetails` (logs only, never on the wire). Chain `.withHeaders({...})` to attach HTTP headers (e.g. `WWW-Authenticate`). |
-| `denyStepUp(reason, requirement)`                 | `PolicyDenialBuilder`                                                       | Deny and attach a `StepUpRequirement` clients can use to drive a re-auth challenge. Chain `.withHeaders({...})` to attach response headers.                                                                                                              |
+| Helper                                     | Returns                                                 | Description                                                                                                                                                                                                                                                                |
+| ------------------------------------------ | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `allow()`                                  | `{ allowed: true }`                                     | Allow the request                                                                                                                                                                                                                                                          |
+| `deny(reason, details?, internalDetails?)` | `PolicyDenialBuilder` (implements `PolicyResultDenied`) | Deny with a machine-readable reason. `details` is rendered to the HTTP response by `assert`; `internalDetails` lands in the thrown error's `internalDetails` (logs only, never on the wire). Chain `.withHeaders({...})` to attach HTTP headers (e.g. `WWW-Authenticate`). |
+| `denyStepUp(reason, requirement)`          | `PolicyDenialBuilder`                                   | Deny and attach a `StepUpRequirement` clients can use to drive a re-auth challenge. Chain `.withHeaders({...})` to attach response headers.                                                                                                                                |
 
 ### `PolicyService`
 
 Abstract DI handle. Implementations supply a per-evaluation envelope.
 
-| Method                                   | Returns                  | Description                                                                                              |
-| ---------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------- |
-| `check(policyName, context)`             | `Promise<PolicyResult>`  | Resolve the registered policy and return its result. Throws when `policyName` is not registered.         |
-| `assert(policyName, context)`            | `Promise<void>`          | Same as `check`, but throws HTTP 403 on deny. `result.details` is surfaced under `HttpError.details`; `result.internalDetails` is merged with framework context (`policyName`, `reason`, `kind: 'policy_violation'`) under `HttpError.internalDetails`; `result.headers` is forwarded to `HttpError.withHeaders`. |
+| Method                        | Returns                 | Description                                                                                                                                                                                                                                                                                                       |
+| ----------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `check(policyName, context)`  | `Promise<PolicyResult>` | Resolve the registered policy and return its result. Throws when `policyName` is not registered.                                                                                                                                                                                                                  |
+| `assert(policyName, context)` | `Promise<void>`         | Same as `check`, but throws HTTP 403 on deny. `result.details` is surfaced under `HttpError.details`; `result.internalDetails` is merged with framework context (`policyName`, `reason`, `kind: 'policy_violation'`) under `HttpError.internalDetails`; `result.headers` is forwarded to `HttpError.withHeaders`. |
 
 ### `BasePolicyService<TPolicies, TEnvelope>`
 
@@ -148,15 +148,15 @@ Default `PolicyService`. Subclass and implement `buildEnvelope(): Promise<TEnvel
 
 ### Types
 
-| Type                  | Shape                                                                                                  |
-| --------------------- | ------------------------------------------------------------------------------------------------------ |
-| `PolicyResultAllowed` | `{ allowed: true }`                                                                                    |
+| Type                  | Shape                                                                                                                                                |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PolicyResultAllowed` | `{ allowed: true }`                                                                                                                                  |
 | `PolicyResultDenied`  | `{ allowed: false; reason: string; details?: Record<string, unknown>; internalDetails?: Record<string, unknown>; headers?: Record<string, string> }` |
-| `PolicyResult`        | `PolicyResultAllowed \| PolicyResultDenied`                                                            |
-| `PolicyEnvelope`      | `{ now: DateTime }` (extend in subclasses)                                                             |
-| `StepUpRequirement`   | `{ within: Duration; acceptableMethods?; acceptableKinds?; excludeMethods? }`                          |
+| `PolicyResult`        | `PolicyResultAllowed \| PolicyResultDenied`                                                                                                          |
+| `PolicyEnvelope`      | `{ now: DateTime }` (extend in subclasses)                                                                                                           |
+| `StepUpRequirement`   | `{ within: Duration; acceptableMethods?; acceptableKinds?; excludeMethods? }`                                                                        |
 
-| Guard                       | Description                                  |
-| --------------------------- | -------------------------------------------- |
-| `isPolicyResultAllowed(r)`  | Narrows `r` to the allowed branch.           |
-| `isPolicyResultDenied(r)`   | Narrows `r` to the denied branch.            |
+| Guard                      | Description                        |
+| -------------------------- | ---------------------------------- |
+| `isPolicyResultAllowed(r)` | Narrows `r` to the allowed branch. |
+| `isPolicyResultDenied(r)`  | Narrows `r` to the denied branch.  |

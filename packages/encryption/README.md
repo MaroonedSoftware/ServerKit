@@ -35,10 +35,13 @@ const enc = new EncryptionProvider(masterKey);
 With an injectkit DI container:
 
 ```typescript
-registry.register(EncryptionProvider).useFactory(() => {
-  const key = Buffer.from(process.env.ENCRYPTION_KEY!, 'hex');
-  return new EncryptionProvider(key);
-}).asSingleton();
+registry
+  .register(EncryptionProvider)
+  .useFactory(() => {
+    const key = Buffer.from(process.env.ENCRYPTION_KEY!, 'hex');
+    return new EncryptionProvider(key);
+  })
+  .asSingleton();
 ```
 
 #### Deriving a key from a passphrase
@@ -106,11 +109,11 @@ All ciphertexts use the format:
 
 All three segments are lowercase hex strings, separated by colons:
 
-| Segment      | Length    | Description                                  |
-| ------------ | --------- | -------------------------------------------- |
-| `iv`         | 24 chars  | 12-byte random initialisation vector (hex)   |
-| `authTag`    | 32 chars  | 16-byte GCM authentication tag (hex)         |
-| `ciphertext` | variable  | AES-256-GCM encrypted payload (hex)          |
+| Segment      | Length   | Description                                |
+| ------------ | -------- | ------------------------------------------ |
+| `iv`         | 24 chars | 12-byte random initialisation vector (hex) |
+| `authTag`    | 32 chars | 16-byte GCM authentication tag (hex)       |
+| `ciphertext` | variable | AES-256-GCM encrypted payload (hex)        |
 
 The auth tag ensures that any modification to the ciphertext — however small — causes decryption to throw. Tampered values can never be silently decrypted.
 
@@ -122,8 +125,8 @@ The auth tag ensures that any modification to the ciphertext — however small �
 
 Constructs the provider with a 256-bit master key.
 
-| Parameter | Type     | Description                           |
-| --------- | -------- | ------------------------------------- |
+| Parameter | Type     | Description                               |
+| --------- | -------- | ----------------------------------------- |
 | `key`     | `Buffer` | A 32-byte (256-bit) master encryption key |
 
 Throws HTTP 400 when the key is not exactly 32 bytes.
@@ -134,9 +137,9 @@ Throws HTTP 400 when the key is not exactly 32 bytes.
 
 Static helper that derives a 32-byte master key from a passphrase using Argon2id with the shared `ARGON2ID_DEFAULTS` parameters (m=19 MiB, t=2, p=1; OWASP 2024). Async because the underlying `@node-rs/argon2` call runs in a native worker.
 
-| Parameter | Type     | Description                                                                                                            |
-| --------- | -------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `secret`  | `string` | The passphrase to stretch.                                                                                             |
+| Parameter | Type     | Description                                                                                                                |
+| --------- | -------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `secret`  | `string` | The passphrase to stretch.                                                                                                 |
 | `salt`    | `Buffer` | Optional 16-byte salt. Omit to generate a fresh random salt; pass the previously-persisted salt to re-derive the same key. |
 
 Returns `{ key, salt }`. **Persist the salt** when generated — without it you cannot re-derive the same key on the next boot, and existing ciphertext becomes unrecoverable. The salt is not secret; store it alongside the ciphertext or in plain config.
@@ -286,7 +289,7 @@ Stateless helpers for the OAuth 2.0 [Proof Key for Code Exchange](https://datatr
 import { pkceCreateChallenge, pkceCreateVerifier } from '@maroonedsoftware/encryption';
 
 // Authorization request: generate a verifier, derive the challenge
-const codeVerifier = pkceCreateVerifier();             // 43-char base64url, 256 bits
+const codeVerifier = pkceCreateVerifier(); // 43-char base64url, 256 bits
 const codeChallenge = pkceCreateChallenge(codeVerifier); // SHA-256, base64url
 // → redirect user with `code_challenge` + `code_challenge_method=S256`
 
@@ -294,10 +297,10 @@ const codeChallenge = pkceCreateChallenge(codeVerifier); // SHA-256, base64url
 // pkceCreateChallenge(verifier) and compares it to the stored challenge
 ```
 
-| Function                              | Returns  | Description                                                                |
-| ------------------------------------- | -------- | -------------------------------------------------------------------------- |
-| `pkceCreateVerifier()`                | `string` | Fresh 43-character base64url verifier (256 bits of entropy).               |
-| `pkceCreateChallenge(codeVerifier)`   | `string` | `S256` challenge — `SHA256(verifier)` base64url-encoded, no padding.       |
+| Function                            | Returns  | Description                                                          |
+| ----------------------------------- | -------- | -------------------------------------------------------------------- |
+| `pkceCreateVerifier()`              | `string` | Fresh 43-character base64url verifier (256 bits of entropy).         |
+| `pkceCreateChallenge(codeVerifier)` | `string` | `S256` challenge — `SHA256(verifier)` base64url-encoded, no padding. |
 
 For server-side PKCE state storage (binding a value to a challenge for the duration of an auth flow), see `PkceProvider` in [`@maroonedsoftware/authentication`](../authentication/README.md).
 

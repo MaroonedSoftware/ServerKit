@@ -133,7 +133,10 @@ describe('AppConfig', () => {
 
   describe('getAs()', () => {
     it('should cast the value to the specified type', () => {
-      interface DbConfig { host: string; port: number }
+      interface DbConfig {
+        host: string;
+        port: number;
+      }
       const config = new AppConfig({ database: { host: 'localhost', port: 5432 } });
       const db = config.getAs<DbConfig>('database');
       expect(db.host).toBe('localhost');

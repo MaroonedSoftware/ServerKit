@@ -15,18 +15,18 @@ pnpm add @maroonedsoftware/discord
 
 ## Exports
 
-| Symbol                            | Purpose                                                                                                       |
-|-----------------------------------|---------------------------------------------------------------------------------------------------------------|
-| `DiscordConfig`                   | Abstract `@Injectable()` token; carries `botToken`, `publicKey`, `applicationId`, optional `signatureMaxAgeSeconds`. Consumer registers a concrete value. |
-| `DiscordClient`                   | `fetch`-based REST wrapper. Methods: `createMessage`, `createFollowupMessage`, `editOriginalInteractionResponse`, `deleteOriginalInteractionResponse`, `bulkOverwriteGlobalCommands`, `bulkOverwriteGuildCommands`, plus a generic `request`. |
-| `DiscordDispatcher`               | Single-method service: `dispatchInteraction`.                                                                  |
-| `DiscordInteractionHandlerMap`    | `Map<routingKey, DiscordInteractionHandler>` — keys are `${kind}:${identifier}`; see [interaction routing](#interaction-routing). |
-| `DiscordError`                    | `ServerkitError` subclass for non-HTTP domain failures (signature mismatch, REST call failed, …).             |
-| `verifyDiscordSignature(input)`   | Pure helper that validates Discord's Ed25519 signature (with optional replay window). No request/context coupling. |
-| `DiscordSignaturePolicy`          | `@maroonedsoftware/policies` form of `verifyDiscordSignature` (registered under `DISCORD_SIGNATURE_POLICY`). Delegates to the helper but answers as a `PolicyResult`, so it slots into ServerKit's policy pipeline. |
-| `interactionRouteKey(interaction)`| Helper that produces the `DiscordInteractionHandlerMap` key for a given interaction.                          |
-| `discordInteractionIdempotencyKey(interaction)` | Pure helper → `discord:interaction:{interaction.id}`. Stable key for optional [side-effect de-duplication](#de-duplicating-side-effects). |
-| `InteractionType` / `InteractionCallbackType` | Numeric enums for Discord's interaction and callback `type` values.                              |
+| Symbol                                          | Purpose                                                                                                                                                                                                                                       |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DiscordConfig`                                 | Abstract `@Injectable()` token; carries `botToken`, `publicKey`, `applicationId`, optional `signatureMaxAgeSeconds`. Consumer registers a concrete value.                                                                                     |
+| `DiscordClient`                                 | `fetch`-based REST wrapper. Methods: `createMessage`, `createFollowupMessage`, `editOriginalInteractionResponse`, `deleteOriginalInteractionResponse`, `bulkOverwriteGlobalCommands`, `bulkOverwriteGuildCommands`, plus a generic `request`. |
+| `DiscordDispatcher`                             | Single-method service: `dispatchInteraction`.                                                                                                                                                                                                 |
+| `DiscordInteractionHandlerMap`                  | `Map<routingKey, DiscordInteractionHandler>` — keys are `${kind}:${identifier}`; see [interaction routing](#interaction-routing).                                                                                                             |
+| `DiscordError`                                  | `ServerkitError` subclass for non-HTTP domain failures (signature mismatch, REST call failed, …).                                                                                                                                             |
+| `verifyDiscordSignature(input)`                 | Pure helper that validates Discord's Ed25519 signature (with optional replay window). No request/context coupling.                                                                                                                            |
+| `DiscordSignaturePolicy`                        | `@maroonedsoftware/policies` form of `verifyDiscordSignature` (registered under `DISCORD_SIGNATURE_POLICY`). Delegates to the helper but answers as a `PolicyResult`, so it slots into ServerKit's policy pipeline.                           |
+| `interactionRouteKey(interaction)`              | Helper that produces the `DiscordInteractionHandlerMap` key for a given interaction.                                                                                                                                                          |
+| `discordInteractionIdempotencyKey(interaction)` | Pure helper → `discord:interaction:{interaction.id}`. Stable key for optional [side-effect de-duplication](#de-duplicating-side-effects).                                                                                                     |
+| `InteractionType` / `InteractionCallbackType`   | Numeric enums for Discord's interaction and callback `type` values.                                                                                                                                                                           |
 
 ## Configuration
 
@@ -36,9 +36,7 @@ The package does not read `AppConfig` itself — services take `DiscordConfig` d
 import { AppConfigBuilder, AppConfigSourceJson } from '@maroonedsoftware/appconfig';
 import { DiscordConfig } from '@maroonedsoftware/discord';
 
-const appConfig = await new AppConfigBuilder()
-  .addSource(new AppConfigSourceJson('./config.json'))
-  .build();
+const appConfig = await new AppConfigBuilder().addSource(new AppConfigSourceJson('./config.json')).build();
 
 const discordConfig = appConfig.getAs<DiscordConfig>('discord');
 container.register(DiscordConfig, { useValue: discordConfig });
@@ -48,20 +46,20 @@ container.register(DiscordConfig, { useValue: discordConfig });
 // config.json
 {
   "discord": {
-    "botToken": "...",         // bot token for REST calls
-    "publicKey": "abc123...",  // application Ed25519 public key (hex)
-    "applicationId": "...",    // application (client) id
-    "signatureMaxAgeSeconds": 300 // optional; off by default
-  }
+    "botToken": "...", // bot token for REST calls
+    "publicKey": "abc123...", // application Ed25519 public key (hex)
+    "applicationId": "...", // application (client) id
+    "signatureMaxAgeSeconds": 300, // optional; off by default
+  },
 }
 ```
 
-| Field                     | Required | Used by                                                                          |
-|---------------------------|----------|----------------------------------------------------------------------------------|
-| `botToken`                | yes      | `DiscordClient` — sent as `Authorization: Bot <token>` on bot-scoped routes.      |
-| `publicKey`               | yes      | Signature verification (Discord signs requests with the matching private key).    |
-| `applicationId`           | yes      | `DiscordClient` interaction-followup and command-registration routes.             |
-| `signatureMaxAgeSeconds`  | no       | Optional replay-protection window. **Off by default** (Discord mandates no window). |
+| Field                    | Required | Used by                                                                             |
+| ------------------------ | -------- | ----------------------------------------------------------------------------------- |
+| `botToken`               | yes      | `DiscordClient` — sent as `Authorization: Bot <token>` on bot-scoped routes.        |
+| `publicKey`              | yes      | Signature verification (Discord signs requests with the matching private key).      |
+| `applicationId`          | yes      | `DiscordClient` interaction-followup and command-registration routes.               |
+| `signatureMaxAgeSeconds` | no       | Optional replay-protection window. **Off by default** (Discord mandates no window). |
 
 ## Sending messages
 
@@ -119,7 +117,7 @@ interactions.set('modal:create_ticket', container.get(CreateTicketModal));
 container.register(DiscordInteractionHandlerMap, { useValue: interactions });
 
 // Route
-router.post('/discord/interactions', async (ctx) => {
+router.post('/discord/interactions', async ctx => {
   const raw = await rawBody(ctx.req, { encoding: 'utf8' });
   verifyDiscordSignature({
     publicKey: ctx.container.get(DiscordConfig).publicKey,
@@ -128,8 +126,9 @@ router.post('/discord/interactions', async (ctx) => {
     signature: ctx.get('x-signature-ed25519'),
   });
   const result = await ctx.container.get(DiscordDispatcher).dispatchInteraction(JSON.parse(raw));
-  if (result) ctx.body = result;   // PONG, message callback, etc.
-  else ctx.status = 404;           // no handler matched
+  if (result)
+    ctx.body = result; // PONG, message callback, etc.
+  else ctx.status = 404; // no handler matched
 });
 ```
 
@@ -157,21 +156,23 @@ Because the ~3s ack window is tight, dedup here protects fast, in-request side e
 
 `DiscordInteractionHandlerMap` is keyed by `${kind}:${identifier}`:
 
-| Interaction type                       | Key                              |
-|----------------------------------------|----------------------------------|
-| `APPLICATION_COMMAND` (2)              | `command:<data.name>`            |
-| `MESSAGE_COMPONENT` (3)                | `component:<data.custom_id>`     |
-| `APPLICATION_COMMAND_AUTOCOMPLETE` (4) | `autocomplete:<data.name>`       |
-| `MODAL_SUBMIT` (5)                     | `modal:<data.custom_id>`         |
+| Interaction type                       | Key                          |
+| -------------------------------------- | ---------------------------- |
+| `APPLICATION_COMMAND` (2)              | `command:<data.name>`        |
+| `MESSAGE_COMPONENT` (3)                | `component:<data.custom_id>` |
+| `APPLICATION_COMMAND_AUTOCOMPLETE` (4) | `autocomplete:<data.name>`   |
+| `MODAL_SUBMIT` (5)                     | `modal:<data.custom_id>`     |
 
 `PING` (1) is answered by the dispatcher and never routed. `interactionRouteKey(interaction)` is exported in case you want to compute the key yourself (e.g. to register handlers dynamically). Each handler receives a `DiscordInteractionContext` with the resolved invoking `user`, `guildId`, `channelId`, interaction `token`, and the raw `interaction`.
 
 ## Registering slash commands
 
 ```ts
-await container.get(DiscordClient).bulkOverwriteGlobalCommands([
-  { name: 'deploy', description: 'Deploy a service', options: [{ type: 3, name: 'target', description: 'Environment', required: true }] },
-]);
+await container
+  .get(DiscordClient)
+  .bulkOverwriteGlobalCommands([
+    { name: 'deploy', description: 'Deploy a service', options: [{ type: 3, name: 'target', description: 'Environment', required: true }] },
+  ]);
 
 // Or scoped to a single guild (updates instantly — handy in development):
 await container.get(DiscordClient).bulkOverwriteGuildCommands('123', [/* … */]);
@@ -187,7 +188,7 @@ import { verifyDiscordSignature, DiscordError } from '@maroonedsoftware/discord'
 try {
   verifyDiscordSignature({
     publicKey: discordConfig.publicKey,
-    rawBody,                                       // exactly what Discord sent
+    rawBody, // exactly what Discord sent
     timestamp: req.headers['x-signature-timestamp'] as string,
     signature: req.headers['x-signature-ed25519'] as string,
     maxAgeSeconds: discordConfig.signatureMaxAgeSeconds, // optional; off by default
@@ -248,12 +249,17 @@ import { DiscordClient, DiscordConfig, verifyDiscordSignature } from '@marooneds
 import { dispatchDiscord, createDiscordNotifier } from '@maroonedsoftware/discord/comms';
 import { router } from './router.js'; // a shared ChannelRouter
 
-http.post('/discord/interactions', async (ctx) => {
+http.post('/discord/interactions', async ctx => {
   const raw = await rawBody(ctx.req, { encoding: 'utf8' });
-  verifyDiscordSignature({ publicKey: ctx.container.get(DiscordConfig).publicKey, rawBody: raw,
-    timestamp: ctx.get('x-signature-timestamp'), signature: ctx.get('x-signature-ed25519') });
+  verifyDiscordSignature({
+    publicKey: ctx.container.get(DiscordConfig).publicKey,
+    rawBody: raw,
+    timestamp: ctx.get('x-signature-timestamp'),
+    signature: ctx.get('x-signature-ed25519'),
+  });
   const result = await dispatchDiscord(router, ctx.container.get(DiscordClient), JSON.parse(raw));
-  if (result) ctx.body = result; else ctx.status = 200; // 200: matched-and-acked or nothing to reply
+  if (result) ctx.body = result;
+  else ctx.status = 200; // 200: matched-and-acked or nothing to reply
 });
 ```
 

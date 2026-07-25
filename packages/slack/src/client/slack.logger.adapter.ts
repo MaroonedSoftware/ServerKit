@@ -20,10 +20,12 @@ import { Logger } from '@maroonedsoftware/logger';
  */
 export const adaptLogger = (logger: Logger, name = 'slack-web-api'): SlackLogger => {
   const state = { name, level: 'info' as LogLevel };
-  const forward = (fn: (message: unknown, ...optionalParams: unknown[]) => void) => (...msg: unknown[]) => {
-    const [first, ...rest] = msg;
-    fn(first ?? '', ...rest);
-  };
+  const forward =
+    (fn: (message: unknown, ...optionalParams: unknown[]) => void) =>
+    (...msg: unknown[]) => {
+      const [first, ...rest] = msg;
+      fn(first ?? '', ...rest);
+    };
   return {
     debug: forward(logger.debug.bind(logger)),
     info: forward(logger.info.bind(logger)),

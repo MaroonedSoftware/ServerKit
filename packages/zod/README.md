@@ -23,10 +23,13 @@ Parses and validates `data` against a Zod schema, returning the typed result on 
 On failure, throws an `HttpError` with status `400` whose `details` map field paths to human-readable error messages. Field paths use dot notation (e.g. `"user.email"`). Root-level errors are keyed as `"_root"`. When a field has multiple violations, the value is a string array.
 
 ```typescript
-const body = await parseAndValidate(ctx.request.body, z.object({
-  email: z.string().email(),
-  age: z.number().min(0),
-}));
+const body = await parseAndValidate(
+  ctx.request.body,
+  z.object({
+    email: z.string().email(),
+    age: z.number().min(0),
+  }),
+);
 // body is typed as { email: string; age: number }
 ```
 
@@ -34,16 +37,24 @@ const body = await parseAndValidate(ctx.request.body, z.object({
 
 ```typescript
 // Single violation
-{ email: 'Invalid email' }
+{
+  email: 'Invalid email';
+}
 
 // Multiple violations on one field
-{ password: ['Must be at least 8', 'Invalid string: must match pattern /\\d/'] }
+{
+  password: ['Must be at least 8', 'Invalid string: must match pattern /\\d/'];
+}
 
 // Unrecognized key (z.strictObject)
-{ extra: 'Unrecognized key' }
+{
+  extra: 'Unrecognized key';
+}
 
 // Root-level error (non-object schema)
-{ _root: 'Expected string' }
+{
+  _root: 'Expected string';
+}
 ```
 
 **Parameters:**

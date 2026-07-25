@@ -47,7 +47,7 @@ describe('McpAuthPolicy', () => {
   const envelope = {} as PolicyEnvelope; // bearer auth never reads envelope.now
   const evaluate = (authorization: string | undefined, bearerToken?: string) => {
     const context: McpAuthPolicyContext = {
-      getHeader: (name) => (name === MCP_AUTHORIZATION_HEADER && authorization ? authorization : ''),
+      getHeader: name => (name === MCP_AUTHORIZATION_HEADER && authorization ? authorization : ''),
       options: { bearerToken },
     };
     return new McpAuthPolicy().evaluate(context, envelope);

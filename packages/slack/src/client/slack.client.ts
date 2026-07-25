@@ -1,6 +1,15 @@
 import { Injectable } from 'injectkit';
 import { WebClient } from '@slack/web-api';
-import type { ChatPostMessageArguments, ChatPostMessageResponse, ChatUpdateArguments, ChatUpdateResponse, ChatDeleteArguments, ChatDeleteResponse, ViewsOpenArguments, ViewsOpenResponse } from '@slack/web-api';
+import type {
+  ChatPostMessageArguments,
+  ChatPostMessageResponse,
+  ChatUpdateArguments,
+  ChatUpdateResponse,
+  ChatDeleteArguments,
+  ChatDeleteResponse,
+  ViewsOpenArguments,
+  ViewsOpenResponse,
+} from '@slack/web-api';
 import { Logger } from '@maroonedsoftware/logger';
 import { SlackConfig } from '../slack.config.js';
 import { SlackError } from '../slack.error.js';

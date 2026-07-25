@@ -178,9 +178,9 @@ describe('RecoveryOrchestrator', () => {
       const { orchestrator } = makeOrchestrator();
       const initiated = await orchestrator.initiateRecovery({ actorId: actor.actorId, reason: 'password_reset' });
 
-      await expect(
-        orchestrator.issueChannelChallenge(initiated.challengeId, { channel: 'email', methodId: 'email-other' }),
-      ).rejects.toMatchObject({ statusCode: 400 });
+      await expect(orchestrator.issueChannelChallenge(initiated.challengeId, { channel: 'email', methodId: 'email-other' })).rejects.toMatchObject({
+        statusCode: 400,
+      });
     });
 
     it('issues an email challenge via the email factor service', async () => {
@@ -260,9 +260,9 @@ describe('RecoveryOrchestrator', () => {
 
     it('throws 404 when the recovery challenge has expired', async () => {
       const { orchestrator } = makeOrchestrator();
-      await expect(
-        orchestrator.verifyChannel('does-not-exist', { channel: 'email', channelChallengeId: 'x', code: '000000' }),
-      ).rejects.toMatchObject({ statusCode: 404 });
+      await expect(orchestrator.verifyChannel('does-not-exist', { channel: 'email', channelChallengeId: 'x', code: '000000' })).rejects.toMatchObject(
+        { statusCode: 404 },
+      );
     });
 
     it('rejects when the proof channel does not match the selected channel', async () => {

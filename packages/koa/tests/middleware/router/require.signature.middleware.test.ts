@@ -1,7 +1,11 @@
 import { createHmac } from 'node:crypto';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { requireSignature, type SignatureOptions } from '../../../src/middleware/router/require.signature.middleware.js';
-import { DefaultSignaturePolicy, REQUIRE_SIGNATURE_POLICY, type SignaturePolicyContext } from '../../../src/policies/request.signature.valid.policy.js';
+import {
+  DefaultSignaturePolicy,
+  REQUIRE_SIGNATURE_POLICY,
+  type SignaturePolicyContext,
+} from '../../../src/policies/request.signature.valid.policy.js';
 import { AppConfig } from '@maroonedsoftware/appconfig';
 import { isPolicyResultDenied, PolicyService } from '@maroonedsoftware/policies';
 import { httpError, HttpError } from '@maroonedsoftware/errors';
@@ -16,15 +20,16 @@ const DEFAULT_OPTIONS: SignatureOptions = {
   digest: 'hex',
 };
 
-const computeSignature = (opts: SignatureOptions, body: Buffer): string =>
-  createHmac(opts.algorithm, opts.secret).update(body).digest(opts.digest);
+const computeSignature = (opts: SignatureOptions, body: Buffer): string => createHmac(opts.algorithm, opts.secret).update(body).digest(opts.digest);
 
 // The middleware asserts the verification rule through `PolicyService`, so the stub's
 // `assert` mirrors `BasePolicyService.assert`: it evaluates the real
 // `DefaultSignaturePolicy` and throws an `httpError(statusCode)` on denial — exercising
 // the genuine HMAC/constant-time logic end-to-end through the middleware.
 const makePolicyService = (): PolicyService => {
-  const check = vi.fn((_name: string, context: SignaturePolicyContext) => new DefaultSignaturePolicy().evaluate(context, { now: undefined as never }));
+  const check = vi.fn((_name: string, context: SignaturePolicyContext) =>
+    new DefaultSignaturePolicy().evaluate(context, { now: undefined as never }),
+  );
   const assert = vi.fn(async (name: string, context: SignaturePolicyContext, statusCode = 403) => {
     const result = await check(name, context);
     if (isPolicyResultDenied(result)) {

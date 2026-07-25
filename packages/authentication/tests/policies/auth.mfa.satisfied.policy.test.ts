@@ -1,12 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { DateTime } from 'luxon';
 import { DefaultMfaSatisfiedPolicy, AuthMfaSatisfiedPolicyContext } from '../../src/policies/auth.mfa.satisfied.policy.js';
-import {
-  AuthenticationFactorKind,
-  AuthenticationFactorMethod,
-  AuthenticationSession,
-  AuthenticationSessionFactor,
-} from '../../src/types.js';
+import { AuthenticationFactorKind, AuthenticationFactorMethod, AuthenticationSession, AuthenticationSessionFactor } from '../../src/types.js';
 
 const envelope = { now: DateTime.utc() };
 const policy = new DefaultMfaSatisfiedPolicy();

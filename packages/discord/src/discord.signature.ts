@@ -8,12 +8,7 @@ import { DiscordError } from './discord.error.js';
  * without pattern-matching on error messages.
  */
 export type DiscordSignatureFailureReason =
-  | 'missing_timestamp'
-  | 'invalid_timestamp'
-  | 'stale_timestamp'
-  | 'missing_signature'
-  | 'invalid_signature'
-  | 'invalid_public_key';
+  'missing_timestamp' | 'invalid_timestamp' | 'stale_timestamp' | 'missing_signature' | 'invalid_signature' | 'invalid_public_key';
 
 /**
  * Fixed SPKI (`SubjectPublicKeyInfo`) DER prefix for an Ed25519 public key. The

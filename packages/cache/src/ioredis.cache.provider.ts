@@ -45,9 +45,7 @@ export class IoRedisCacheProvider implements CacheProvider {
    *   untouched (Redis returns `null` for a `NX` set that did not apply).
    */
   async add(key: string, value: string, options?: { ttl?: Duration }): Promise<boolean> {
-    const result = options?.ttl
-      ? await this.redis.set(key, value, 'EX', toExpirySeconds(options.ttl), 'NX')
-      : await this.redis.set(key, value, 'NX');
+    const result = options?.ttl ? await this.redis.set(key, value, 'EX', toExpirySeconds(options.ttl), 'NX') : await this.redis.set(key, value, 'NX');
     return result === 'OK';
   }
 

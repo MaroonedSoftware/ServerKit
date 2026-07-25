@@ -25,9 +25,7 @@ The base class for all ServerKit-aware errors. Use it directly when an error isn
 ```ts
 import { ServerkitError } from '@maroonedsoftware/errors';
 
-throw new ServerkitError('Quota exceeded')
-  .withDetails({ resource: 'invoices', limit: 100 })
-  .withInternalDetails({ accountId: 'acct_42' });
+throw new ServerkitError('Quota exceeded').withDetails({ resource: 'invoices', limit: 100 }).withInternalDetails({ accountId: 'acct_42' });
 ```
 
 To build your own:
@@ -203,15 +201,15 @@ Methods (all return the instance for chaining):
 
 Extends `ServerkitError`. Inherits all of the above and adds:
 
-| Property      | Type                     | Description                         |
-| ------------- | ------------------------ | ----------------------------------- |
-| `statusCode`  | `HttpStatusCodes`        | The HTTP status code                |
-| `headers`     | `Record<string, string>` | HTTP headers to include in response |
+| Property     | Type                     | Description                         |
+| ------------ | ------------------------ | ----------------------------------- |
+| `statusCode` | `HttpStatusCodes`        | The HTTP status code                |
+| `headers`    | `Record<string, string>` | HTTP headers to include in response |
 
-| Method                          | Description                                 |
-| ------------------------------- | ------------------------------------------- |
-| `withHeaders(headers)`          | Replace the headers map                     |
-| `addHeader(key, value)`         | Set or overwrite a single header (chainable)|
+| Method                  | Description                                  |
+| ----------------------- | -------------------------------------------- |
+| `withHeaders(headers)`  | Replace the headers map                      |
+| `addHeader(key, value)` | Set or overwrite a single header (chainable) |
 
 `IsHttpError(value)` — type guard for `HttpError` instances specifically.
 

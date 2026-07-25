@@ -25,14 +25,23 @@ describe('verifyWhatsAppWebhook', () => {
   });
 
   it('rejects when the verify token does not match', () => {
-    expectFailure(() => verifyWhatsAppWebhook({ verifyToken: VERIFY_TOKEN, mode: 'subscribe', token: 'wrong', challenge: 'c' }), 'invalid_verify_token');
+    expectFailure(
+      () => verifyWhatsAppWebhook({ verifyToken: VERIFY_TOKEN, mode: 'subscribe', token: 'wrong', challenge: 'c' }),
+      'invalid_verify_token',
+    );
   });
 
   it('rejects when the verify token is missing', () => {
-    expectFailure(() => verifyWhatsAppWebhook({ verifyToken: VERIFY_TOKEN, mode: 'subscribe', token: undefined, challenge: 'c' }), 'invalid_verify_token');
+    expectFailure(
+      () => verifyWhatsAppWebhook({ verifyToken: VERIFY_TOKEN, mode: 'subscribe', token: undefined, challenge: 'c' }),
+      'invalid_verify_token',
+    );
   });
 
   it('rejects when the challenge is missing', () => {
-    expectFailure(() => verifyWhatsAppWebhook({ verifyToken: VERIFY_TOKEN, mode: 'subscribe', token: VERIFY_TOKEN, challenge: undefined }), 'missing_challenge');
+    expectFailure(
+      () => verifyWhatsAppWebhook({ verifyToken: VERIFY_TOKEN, mode: 'subscribe', token: VERIFY_TOKEN, challenge: undefined }),
+      'missing_challenge',
+    );
   });
 });

@@ -15,19 +15,19 @@ pnpm add @maroonedsoftware/slack
 
 ## Exports
 
-| Symbol                          | Purpose                                                                                                       |
-|---------------------------------|---------------------------------------------------------------------------------------------------------------|
-| `SlackConfig`                   | Abstract `@Injectable()` token; carries `botToken`, `signingSecret`, optional `incomingWebhookUrl`, optional `signatureMaxAgeSeconds`. Consumer registers a concrete value. |
-| `SlackClient`                   | Wraps `@slack/web-api`'s `WebClient`; routes its diagnostics through ServerKit's `Logger`. Methods: `postMessage`, `updateMessage`, `deleteMessage`, `openView`, `postWebhook`. Underlying SDK reachable at `.web`. |
-| `SlackDispatcher`               | Three-method service: `dispatchEvent`, `dispatchCommand`, `dispatchInteraction`.                              |
-| `SlackEventHandlerMap`          | `Map<eventType, SlackEventHandler>` — register one handler per Slack event type (`app_mention`, `message`, …). |
-| `SlackCommandHandlerMap`        | `Map<commandKeyword, SlackCommandHandler>` — register one handler per slash command (`/deploy`, …).            |
-| `SlackInteractionHandlerMap`    | `Map<routingKey, SlackInteractionHandler>` — keys are `${type}:${identifier}`; see [interaction routing](#interaction-routing). |
-| `SlackError`                    | `ServerkitError` subclass for non-HTTP domain failures (signature mismatch, webhook POST failed, …).          |
-| `verifySlackSignature(input)`   | Pure helper that validates Slack's v0 HMAC scheme + replay window. No request/context coupling.               |
-| `SlackSignaturePolicy`          | `@maroonedsoftware/policies` form of `verifySlackSignature` (registered under `SLACK_SIGNATURE_POLICY`). Delegates to the helper but answers as a `PolicyResult`, so it slots into ServerKit's policy pipeline. |
-| `interactionRouteKey(payload)`  | Helper that produces the `SlackInteractionHandlerMap` key for a given payload.                                |
-| `slackEventIdempotencyKey(envelope)` | Pure helper that derives a stable de-dup key (`slack:event:{team_id}:{event_id}`) for an `event_callback` envelope. |
+| Symbol                               | Purpose                                                                                                                                                                                                             |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SlackConfig`                        | Abstract `@Injectable()` token; carries `botToken`, `signingSecret`, optional `incomingWebhookUrl`, optional `signatureMaxAgeSeconds`. Consumer registers a concrete value.                                         |
+| `SlackClient`                        | Wraps `@slack/web-api`'s `WebClient`; routes its diagnostics through ServerKit's `Logger`. Methods: `postMessage`, `updateMessage`, `deleteMessage`, `openView`, `postWebhook`. Underlying SDK reachable at `.web`. |
+| `SlackDispatcher`                    | Three-method service: `dispatchEvent`, `dispatchCommand`, `dispatchInteraction`.                                                                                                                                    |
+| `SlackEventHandlerMap`               | `Map<eventType, SlackEventHandler>` — register one handler per Slack event type (`app_mention`, `message`, …).                                                                                                      |
+| `SlackCommandHandlerMap`             | `Map<commandKeyword, SlackCommandHandler>` — register one handler per slash command (`/deploy`, …).                                                                                                                 |
+| `SlackInteractionHandlerMap`         | `Map<routingKey, SlackInteractionHandler>` — keys are `${type}:${identifier}`; see [interaction routing](#interaction-routing).                                                                                     |
+| `SlackError`                         | `ServerkitError` subclass for non-HTTP domain failures (signature mismatch, webhook POST failed, …).                                                                                                                |
+| `verifySlackSignature(input)`        | Pure helper that validates Slack's v0 HMAC scheme + replay window. No request/context coupling.                                                                                                                     |
+| `SlackSignaturePolicy`               | `@maroonedsoftware/policies` form of `verifySlackSignature` (registered under `SLACK_SIGNATURE_POLICY`). Delegates to the helper but answers as a `PolicyResult`, so it slots into ServerKit's policy pipeline.     |
+| `interactionRouteKey(payload)`       | Helper that produces the `SlackInteractionHandlerMap` key for a given payload.                                                                                                                                      |
+| `slackEventIdempotencyKey(envelope)` | Pure helper that derives a stable de-dup key (`slack:event:{team_id}:{event_id}`) for an `event_callback` envelope.                                                                                                 |
 
 ## Configuration
 
@@ -37,9 +37,7 @@ The package does not read `AppConfig` itself — services take `SlackConfig` dir
 import { AppConfigBuilder, AppConfigSourceJson } from '@maroonedsoftware/appconfig';
 import { SlackConfig } from '@maroonedsoftware/slack';
 
-const appConfig = await new AppConfigBuilder()
-  .addSource(new AppConfigSourceJson('./config.json'))
-  .build();
+const appConfig = await new AppConfigBuilder().addSource(new AppConfigSourceJson('./config.json')).build();
 
 const slackConfig = appConfig.getAs<SlackConfig>('slack');
 container.register(SlackConfig, { useValue: slackConfig });
@@ -52,17 +50,17 @@ container.register(SlackConfig, { useValue: slackConfig });
     "botToken": "xoxb-...",
     "signingSecret": "...",
     "incomingWebhookUrl": "https://hooks.slack.com/services/...", // optional
-    "signatureMaxAgeSeconds": 300                                  // optional
-  }
+    "signatureMaxAgeSeconds": 300, // optional
+  },
 }
 ```
 
-| Field                     | Required | Used by                                                                 |
-|---------------------------|----------|-------------------------------------------------------------------------|
-| `botToken`                | yes      | `SlackClient` constructor — passed to `WebClient`.                       |
-| `signingSecret`           | yes      | Your signature verifier (Slack signs requests with this secret).         |
-| `incomingWebhookUrl`      | no       | `SlackClient.postWebhook` default URL when no per-call URL is supplied.  |
-| `signatureMaxAgeSeconds`  | no       | Replay-protection window for your signature verifier (default `300`).    |
+| Field                    | Required | Used by                                                                 |
+| ------------------------ | -------- | ----------------------------------------------------------------------- |
+| `botToken`               | yes      | `SlackClient` constructor — passed to `WebClient`.                      |
+| `signingSecret`          | yes      | Your signature verifier (Slack signs requests with this secret).        |
+| `incomingWebhookUrl`     | no       | `SlackClient.postWebhook` default URL when no per-call URL is supplied. |
+| `signatureMaxAgeSeconds` | no       | Replay-protection window for your signature verifier (default `300`).   |
 
 ## Sending messages
 
@@ -98,13 +96,7 @@ Examples below use Koa, but any HTTP framework works.
 ### Events API
 
 ```ts
-import {
-  SlackConfig,
-  SlackDispatcher,
-  SlackEventHandlerMap,
-  verifySlackSignature,
-  type SlackEventHandler,
-} from '@maroonedsoftware/slack';
+import { SlackConfig, SlackDispatcher, SlackEventHandlerMap, verifySlackSignature, type SlackEventHandler } from '@maroonedsoftware/slack';
 import rawBody from 'raw-body';
 
 class AppMentionHandler implements SlackEventHandler {
@@ -120,7 +112,7 @@ events.set('app_mention', container.get(AppMentionHandler));
 container.register(SlackEventHandlerMap, { useValue: events });
 
 // Route
-router.post('/slack/events', async (ctx) => {
+router.post('/slack/events', async ctx => {
   const raw = await rawBody(ctx.req, { encoding: 'utf8' });
   verifySlackSignature({
     signingSecret: ctx.container.get(SlackConfig).signingSecret,
@@ -129,8 +121,12 @@ router.post('/slack/events', async (ctx) => {
     signature: ctx.get('x-slack-signature'),
   });
   const result = await ctx.container.get(SlackDispatcher).dispatchEvent(JSON.parse(raw));
-  if (result) ctx.body = result;          // url_verification challenge
-  else { ctx.status = 200; ctx.body = ''; }
+  if (result)
+    ctx.body = result; // url_verification challenge
+  else {
+    ctx.status = 200;
+    ctx.body = '';
+  }
 });
 ```
 
@@ -145,11 +141,15 @@ Slack redelivers an `event_callback` (with an `X-Slack-Retry-Num` header) whenev
 ```ts
 // Inside the route, after verifying the signature and parsing the body:
 const body = JSON.parse(raw);
-if (body.type === 'url_verification') { ctx.body = { challenge: body.challenge }; return; }
+if (body.type === 'url_verification') {
+  ctx.body = { challenge: body.challenge };
+  return;
+}
 if (body.type === 'event_callback') {
   await jobBroker.send('slack.event', body, { singletonKey: slackEventIdempotencyKey(body) });
 }
-ctx.status = 200; ctx.body = ''; // ack fast; a worker calls dispatchEvent later
+ctx.status = 200;
+ctx.body = ''; // ack fast; a worker calls dispatchEvent later
 ```
 
 **Edge dedup — one store, one arg.** When you'd rather handle events inline, pass an `IdempotencyStore` and `dispatchEvent` runs the handler at most once per `event_id` (keyed by `slackEventIdempotencyKey`). A duplicate/dropped redelivery skips the handler and acks. Omit the option and behaviour is unchanged. The `url_verification` handshake is never de-duplicated.
@@ -185,7 +185,7 @@ const commands = new SlackCommandHandlerMap();
 commands.set('/deploy', container.get(DeployCommand));
 container.register(SlackCommandHandlerMap, { useValue: commands });
 
-router.post('/slack/commands', async (ctx) => {
+router.post('/slack/commands', async ctx => {
   const raw = await rawBody(ctx.req, { encoding: 'utf8' });
   verifySlackSignature({
     signingSecret: ctx.container.get(SlackConfig).signingSecret,
@@ -209,7 +209,10 @@ router.post('/slack/commands', async (ctx) => {
   } satisfies SlackCommandPayload;
   const result = await ctx.container.get(SlackDispatcher).dispatchCommand(payload);
   if (result) ctx.body = result;
-  else { ctx.status = 200; ctx.body = ''; }
+  else {
+    ctx.status = 200;
+    ctx.body = '';
+  }
 });
 ```
 
@@ -232,7 +235,7 @@ interactions.set('block_actions:approve', container.get(ApproveButton));
 interactions.set('view_submission:create_ticket_modal', container.get(CreateTicketModal));
 container.register(SlackInteractionHandlerMap, { useValue: interactions });
 
-router.post('/slack/interactions', async (ctx) => {
+router.post('/slack/interactions', async ctx => {
   const raw = await rawBody(ctx.req, { encoding: 'utf8' });
   verifySlackSignature({
     signingSecret: ctx.container.get(SlackConfig).signingSecret,
@@ -243,7 +246,10 @@ router.post('/slack/interactions', async (ctx) => {
   const payload = JSON.parse(new URLSearchParams(raw).get('payload') ?? '{}');
   const result = await ctx.container.get(SlackDispatcher).dispatchInteraction(payload);
   if (result) ctx.body = result;
-  else { ctx.status = 200; ctx.body = ''; }
+  else {
+    ctx.status = 200;
+    ctx.body = '';
+  }
 });
 ```
 
@@ -254,7 +260,7 @@ Slack POSTs interactive payloads as `application/x-www-form-urlencoded` with a s
 `SlackInteractionHandlerMap` is keyed by `${type}:${identifier}`:
 
 | Payload type      | Key                                    |
-|-------------------|----------------------------------------|
+| ----------------- | -------------------------------------- |
 | `block_actions`   | `block_actions:<actions[0].action_id>` |
 | `view_submission` | `view_submission:<view.callback_id>`   |
 | `view_closed`     | `view_closed:<view.callback_id>`       |
@@ -273,7 +279,7 @@ import { verifySlackSignature, SlackError } from '@maroonedsoftware/slack';
 try {
   verifySlackSignature({
     signingSecret: slackConfig.signingSecret,
-    rawBody,                                  // exactly what Slack sent
+    rawBody, // exactly what Slack sent
     timestamp: req.headers['x-slack-request-timestamp'] as string,
     signature: req.headers['x-slack-signature'] as string,
     maxAgeSeconds: slackConfig.signatureMaxAgeSeconds, // optional, default 300
@@ -334,12 +340,17 @@ import { SlackClient, SlackConfig, verifySlackSignature } from '@maroonedsoftwar
 import { dispatchSlackCommand, dispatchSlackInteraction, dispatchSlackEvent, createSlackNotifier } from '@maroonedsoftware/slack/comms';
 import { router } from './router.js'; // a shared ChannelRouter
 
-router.post('/slack/commands', async (ctx) => {
+router.post('/slack/commands', async ctx => {
   const raw = await rawBody(ctx.req, { encoding: 'utf8' });
-  verifySlackSignature({ signingSecret: ctx.container.get(SlackConfig).signingSecret, rawBody: raw,
-    timestamp: ctx.get('x-slack-request-timestamp'), signature: ctx.get('x-slack-signature') });
+  verifySlackSignature({
+    signingSecret: ctx.container.get(SlackConfig).signingSecret,
+    rawBody: raw,
+    timestamp: ctx.get('x-slack-request-timestamp'),
+    signature: ctx.get('x-slack-signature'),
+  });
   await dispatchSlackCommand(router, ctx.container.get(SlackClient), Object.fromEntries(new URLSearchParams(raw)) as never);
-  ctx.status = 200; ctx.body = '';
+  ctx.status = 200;
+  ctx.body = '';
 });
 ```
 

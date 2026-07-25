@@ -71,7 +71,9 @@ export class PasswordFactorService {
     if (result.reason === 'reused_password') {
       throw httpError(400).withDetails({ password: 'Password is the same as a previous one' });
     }
-    throw httpError(400).withDetails({ password: result.reason }).withInternalDetails(result.details ?? {});
+    throw httpError(400)
+      .withDetails({ password: result.reason })
+      .withInternalDetails(result.details ?? {});
   }
 
   private async cacheRegistration(value: string, payload: RegistrationPayload, expiration: Duration) {

@@ -23,9 +23,9 @@ pnpm add @maroonedsoftware/jobbroker injectkit pg-boss reflect-metadata
 
 `pg-boss` is an optional peer dependency. The pg-boss backend lives behind a subpath export so importing the core (`@maroonedsoftware/jobbroker`) never loads it:
 
-| Import                               | Contents                                                                                 | Pulls in      |
-| ------------------------------------ | ---------------------------------------------------------------------------------------- | ------------- |
-| `@maroonedsoftware/jobbroker`        | `Job`, `JobBroker`, `JobRunner`, `JobMonitor`, `JobInfo`, `JobState`, `JobQueuePolicy`, `NotSupportedError` | nothing extra |
+| Import                               | Contents                                                                                                     | Pulls in      |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------ | ------------- |
+| `@maroonedsoftware/jobbroker`        | `Job`, `JobBroker`, `JobRunner`, `JobMonitor`, `JobInfo`, `JobState`, `JobQueuePolicy`, `NotSupportedError`  | nothing extra |
 | `@maroonedsoftware/jobbroker/pgboss` | `PgBossJobBroker`, `PgBossJobRunner`, `PgBossJobMonitor`, `PgBossJobRegistryMap`, `PgBossConnectionProvider` | `pg-boss`     |
 
 ## Quick Start
@@ -97,7 +97,13 @@ import { PgBoss } from 'pg-boss';
 import { InjectKitRegistry } from 'injectkit';
 import { ConsoleLogger, Logger } from '@maroonedsoftware/logger';
 import { JobBroker, JobRunner, JobMonitor } from '@maroonedsoftware/jobbroker';
-import { PgBossJobBroker, PgBossJobRunner, PgBossJobMonitor, PgBossJobRegistryMap, PgBossConnectionProvider } from '@maroonedsoftware/jobbroker/pgboss';
+import {
+  PgBossJobBroker,
+  PgBossJobRunner,
+  PgBossJobMonitor,
+  PgBossJobRegistryMap,
+  PgBossConnectionProvider,
+} from '@maroonedsoftware/jobbroker/pgboss';
 
 // Initialize pg-boss
 const pgboss = new PgBoss('postgres://user:pass@localhost/mydb');
@@ -198,7 +204,7 @@ registry.set('deliver-webhook', {
 
 The policy is applied to the queue when `runner.start()` runs: an absent queue is **created** with these options, and an existing queue is **updated** to match, so changing a policy and restarting reconciles it. When a registration declares no policy, its queue is created exactly as before — this feature is fully backward-compatible.
 
-**Dead-letter queues are auto-created.** If `deadLetter` names a queue that does not yet exist, the runner creates it (as a plain queue) before the source queue that references it, so you don't have to register a placeholder. A DLQ you actually want to *drain* is just another registered job whose name matches — give it its own handler (and, if you like, its own policy). A DLQ you only want to inspect can be left unregistered; jobs simply accumulate there for manual review or redrive.
+**Dead-letter queues are auto-created.** If `deadLetter` names a queue that does not yet exist, the runner creates it (as a plain queue) before the source queue that references it, so you don't have to register a placeholder. A DLQ you actually want to _drain_ is just another registered job whose name matches — give it its own handler (and, if you like, its own policy). A DLQ you only want to inspect can be left unregistered; jobs simply accumulate there for manual review or redrive.
 
 To apply the same defaults to **every** queue without repeating them, set `defaultQueuePolicy` on the runner. Each queue's own policy is layered on top, so a field a queue sets wins over the default:
 
@@ -238,13 +244,13 @@ if (stats && stats.total > 0) {
 }
 ```
 
-| Method                                                              | Description                                                                                     |
-| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `getQueueStats(name)`                                               | Point-in-time `{ name, queued, active, failed, total }`, or `null` if the queue does not exist. |
-| `listJobs<P>(name, options?)`                                       | List retained jobs as `JobInfo<P>[]`; filter by `id`, partial `data`, or `queuedOnly`.          |
-| `redrive(name, options?)`                                           | Move dead-lettered jobs back to their source (or a `destination`), oldest first; returns count. |
-| `deleteJob(name, id)`                                               | Permanently discard one or more jobs (no registry check, so DLQ sinks are serviceable).         |
-| `retryJob(name, id)`                                                | Re-attempt failed jobs **in place**; for a DLQ sink prefer `redrive`, which moves them to a worker. |
+| Method                        | Description                                                                                         |
+| ----------------------------- | --------------------------------------------------------------------------------------------------- |
+| `getQueueStats(name)`         | Point-in-time `{ name, queued, active, failed, total }`, or `null` if the queue does not exist.     |
+| `listJobs<P>(name, options?)` | List retained jobs as `JobInfo<P>[]`; filter by `id`, partial `data`, or `queuedOnly`.              |
+| `redrive(name, options?)`     | Move dead-lettered jobs back to their source (or a `destination`), oldest first; returns count.     |
+| `deleteJob(name, id)`         | Permanently discard one or more jobs (no registry check, so DLQ sinks are serviceable).             |
+| `retryJob(name, id)`          | Re-attempt failed jobs **in place**; for a DLQ sink prefer `redrive`, which moves them to a worker. |
 
 `redrive` returns each job to the queue it was dead-lettered from by default, so a worker can process it again. Pass `destination` to funnel everything into one queue, `sourceName` to drain just one source's jobs from a shared DLQ, and `limit` to move in controlled batches. All operations source their pg-boss `db` executor from `PgBossConnectionProvider`, so a remediation can run inside a transaction when you override the provider (see [Transactional enqueue](#transactional-enqueue)).
 
@@ -252,7 +258,7 @@ if (stats && stats.total > 0) {
 
 `cancel`, `resume`, `deleteJob`, and `getJob` are best-effort by contract: a backend that cannot honor an operation throws `NotSupportedError` rather than silently doing nothing. `JobState` (`created | retry | active | completed | cancelled | failed`) is the normalized, lowest-common-denominator lifecycle; alternative backends map their native states to the nearest value. The bundled pg-boss backend supports every operation.
 
-`send`'s `startAfter` is deliberately expressed as *intent* (a relative `Duration` or an absolute `DateTime`), not a wire format, so it maps cleanly onto each backend's native deferral mechanism — pg-boss `startAfter` (unbounded), SQS `DelaySeconds` (max 15 minutes), Cloud Tasks `scheduleTime` (up to 30 days). A backend that cannot honor a requested delay (e.g. an SQS backend asked for a 1-hour delay) throws `NotSupportedError` rather than clamping silently.
+`send`'s `startAfter` is deliberately expressed as _intent_ (a relative `Duration` or an absolute `DateTime`), not a wire format, so it maps cleanly onto each backend's native deferral mechanism — pg-boss `startAfter` (unbounded), SQS `DelaySeconds` (max 15 minutes), Cloud Tasks `scheduleTime` (up to 30 days). A backend that cannot honor a requested delay (e.g. an SQS backend asked for a 1-hour delay) throws `NotSupportedError` rather than clamping silently.
 
 ## API Reference
 
@@ -268,15 +274,15 @@ Abstract base class for job handlers.
 
 Abstract base class for sending, cancelling, and inspecting jobs. Operations a backend cannot honor throw `NotSupportedError`.
 
-| Method                                                                | Description                                                        |
-| --------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| Method                                                                         | Description                                                                                                         |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
 | `send<P>(name: string, payload: P, options?: JobSendOptions): Promise<string>` | Queue a job; resolves with the new job id. Pass `options.startAfter` (a Luxon `Duration` or `DateTime`) to defer it |
-| `schedule<P>(name: string, cron: string, payload?: P): Promise<void>` | Create a recurring job schedule                                    |
-| `unschedule(name: string): Promise<void>`                             | Remove a recurring job schedule                                    |
-| `cancel(name: string, id: string \| string[]): Promise<void>`         | Request cancellation of queued or running jobs (cooperative)       |
-| `resume(name: string, id: string \| string[]): Promise<void>`         | Re-queue previously cancelled jobs                                 |
-| `deleteJob(name: string, id: string \| string[]): Promise<void>`      | Permanently delete jobs                                            |
-| `getJob<P>(name: string, id: string): Promise<JobInfo<P> \| null>`    | Look up a job's current state, or `null` if it does not exist      |
+| `schedule<P>(name: string, cron: string, payload?: P): Promise<void>`          | Create a recurring job schedule                                                                                     |
+| `unschedule(name: string): Promise<void>`                                      | Remove a recurring job schedule                                                                                     |
+| `cancel(name: string, id: string \| string[]): Promise<void>`                  | Request cancellation of queued or running jobs (cooperative)                                                        |
+| `resume(name: string, id: string \| string[]): Promise<void>`                  | Re-queue previously cancelled jobs                                                                                  |
+| `deleteJob(name: string, id: string \| string[]): Promise<void>`               | Permanently delete jobs                                                                                             |
+| `getJob<P>(name: string, id: string): Promise<JobInfo<P> \| null>`             | Look up a job's current state, or `null` if it does not exist                                                       |
 
 ### `JobInfo<Payload>` / `JobState`
 
@@ -295,13 +301,13 @@ Abstract base class for processing jobs from the queue.
 
 Abstract base class for observing queues and remediating dead-letter queues. Operates on raw queue names (no registry check). Operations a backend cannot honor throw `NotSupportedError`. See [Monitoring & draining dead-letter queues](#monitoring--draining-dead-letter-queues).
 
-| Method                                                                     | Description                                                                     |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `getQueueStats(name: string): Promise<JobQueueStats \| null>`              | Queue depth/health counts, or `null` if the queue does not exist                |
-| `listJobs<P>(name: string, options?: JobQueryOptions): Promise<JobInfo<P>[]>` | List retained jobs, optionally filtered by `id`, `data`, or `queuedOnly`      |
-| `redrive(name: string, options?: JobRedriveOptions): Promise<number>`      | Move dead-lettered jobs back to source (or a `destination`); returns count moved |
-| `deleteJob(name: string, id: string \| string[]): Promise<void>`           | Permanently discard jobs                                                        |
-| `retryJob(name: string, id: string \| string[]): Promise<void>`            | Re-attempt failed jobs in place                                                 |
+| Method                                                                        | Description                                                                      |
+| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `getQueueStats(name: string): Promise<JobQueueStats \| null>`                 | Queue depth/health counts, or `null` if the queue does not exist                 |
+| `listJobs<P>(name: string, options?: JobQueryOptions): Promise<JobInfo<P>[]>` | List retained jobs, optionally filtered by `id`, `data`, or `queuedOnly`         |
+| `redrive(name: string, options?: JobRedriveOptions): Promise<number>`         | Move dead-lettered jobs back to source (or a `destination`); returns count moved |
+| `deleteJob(name: string, id: string \| string[]): Promise<void>`              | Permanently discard jobs                                                         |
+| `retryJob(name: string, id: string \| string[]): Promise<void>`               | Re-attempt failed jobs in place                                                  |
 
 `JobQueueStats` is `{ name, queued, active, failed, total }`. `JobQueryOptions` is `{ id?, data?, queuedOnly? }`. `JobRedriveOptions` is `{ destination?, sourceName?, limit? }`.
 
@@ -319,23 +325,23 @@ Entries can be either:
 Configuration object for a job. Only `job` is required, so it covers on-demand jobs (`{ job }`), scheduled jobs (`{ job, cron }`), and either with a retry/dead-letter policy attached.
 
 | Property | Type              | Description                                                          |
-| -------- | ----------------- | ------------------------------------------------------------------- |
-| `job`    | `Identifier<Job>` | The job class identifier to instantiate when the job runs.          |
-| `cron`   | `string`          | Optional cron expression defining when the job should run.          |
+| -------- | ----------------- | -------------------------------------------------------------------- |
+| `job`    | `Identifier<Job>` | The job class identifier to instantiate when the job runs.           |
+| `cron`   | `string`          | Optional cron expression defining when the job should run.           |
 | `policy` | `JobQueuePolicy`  | Optional per-queue retry and dead-letter policy for the job's queue. |
 
 ### `JobQueuePolicy`
 
 Backend-agnostic per-queue retry and dead-letter policy (see [Retry & dead-letter policy](#retry--dead-letter-policy)). Every field is optional; durations are Luxon `Duration`s.
 
-| Property        | Type       | Description                                                                             |
-| --------------- | ---------- | --------------------------------------------------------------------------------------- |
-| `retryLimit`    | `number`   | Attempts before a job is failed (and dead-lettered, if `deadLetter` is set).            |
-| `retryDelay`    | `Duration` | Delay before retrying; the base of the curve when `retryBackoff` is on.                 |
-| `retryBackoff`  | `boolean`  | Grow the retry delay exponentially (with jitter) from `retryDelay` instead of fixed.    |
-| `retryDelayMax` | `Duration` | Upper bound on the backoff delay. Only used when `retryBackoff` is on.                  |
-| `expiresIn`     | `Duration` | How long a run may take before it is considered stuck and made eligible for retry.      |
-| `deadLetter`    | `string`   | Name of the dead-letter queue that receives jobs which exhaust their retries.           |
+| Property        | Type       | Description                                                                          |
+| --------------- | ---------- | ------------------------------------------------------------------------------------ |
+| `retryLimit`    | `number`   | Attempts before a job is failed (and dead-lettered, if `deadLetter` is set).         |
+| `retryDelay`    | `Duration` | Delay before retrying; the base of the curve when `retryBackoff` is on.              |
+| `retryBackoff`  | `boolean`  | Grow the retry delay exponentially (with jitter) from `retryDelay` instead of fixed. |
+| `retryDelayMax` | `Duration` | Upper bound on the backoff delay. Only used when `retryBackoff` is on.               |
+| `expiresIn`     | `Duration` | How long a run may take before it is considered stuck and made eligible for retry.   |
+| `deadLetter`    | `string`   | Name of the dead-letter queue that receives jobs which exhaust their retries.        |
 
 ### `PgBossJobBroker`
 

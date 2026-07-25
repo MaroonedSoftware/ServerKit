@@ -8,8 +8,7 @@ import { PasswordStrengthProvider } from '../../src/providers/password.strength.
 // then reset per-test.
 const fetchMock = vi.fn<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>();
 
-const emptyHibpResponse = () =>
-  new Response('', { status: 200, headers: { 'content-type': 'text/plain' } });
+const emptyHibpResponse = () => new Response('', { status: 200, headers: { 'content-type': 'text/plain' } });
 
 const hibpResponseFor = (matches: { sha1: string; count: number }[]) => {
   const body = matches.map(m => `${m.sha1.slice(5).toUpperCase()}:${m.count}`).join('\r\n');
@@ -97,9 +96,7 @@ describe('PasswordStrengthProvider', () => {
 
   describe('ensureStrength', () => {
     it('resolves for a strong passphrase', async () => {
-      await expect(
-        provider.ensureStrength('correct horse battery staple plus 7 unrelated tokens'),
-      ).resolves.toBeUndefined();
+      await expect(provider.ensureStrength('correct horse battery staple plus 7 unrelated tokens')).resolves.toBeUndefined();
     });
 
     it('throws HTTP 400 with feedback details for a weak password', async () => {

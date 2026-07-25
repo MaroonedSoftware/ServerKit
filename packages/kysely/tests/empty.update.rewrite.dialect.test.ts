@@ -36,12 +36,7 @@ describe('EmptyUpdateRewriteDialect', () => {
 
   it('treats an all-undefined set as empty (Kysely drops undefined keys)', () => {
     const db = makeDb();
-    const compiled = db
-      .updateTable('persons')
-      .set({ displayName: undefined, locale: undefined })
-      .where('id', '=', 'abc')
-      .returningAll()
-      .compile();
+    const compiled = db.updateTable('persons').set({ displayName: undefined, locale: undefined }).where('id', '=', 'abc').returningAll().compile();
 
     expect(compiled.sql).toMatch(/^select/i);
     expect(compiled.sql).not.toMatch(/\bupdate\b/i);

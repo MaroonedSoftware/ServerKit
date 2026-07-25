@@ -99,16 +99,16 @@ type FileHandler = (fieldname: string, stream: Readable, filename: string, encod
 
 Configuration options for limiting request sizes:
 
-| Option          | Type     | Default  | Description                      |
-| --------------- | -------- | -------- | -------------------------------- |
-| `fieldNameSize` | `number` | 100      | Max field name size in bytes     |
-| `fieldSize`     | `number` | 1 MB     | Max field value size in bytes    |
-| `fields`        | `number` | Infinity | Max number of non-file fields    |
+| Option          | Type     | Default  | Description                                                                      |
+| --------------- | -------- | -------- | -------------------------------------------------------------------------------- |
+| `fieldNameSize` | `number` | 100      | Max field name size in bytes                                                     |
+| `fieldSize`     | `number` | 1 MB     | Max field value size in bytes                                                    |
+| `fields`        | `number` | Infinity | Max number of non-file fields                                                    |
 | `fileSize`      | `number` | Infinity | Max file size in bytes (exceeding it rejects with 413 `Reached file size limit`) |
-| `files`         | `number` | Infinity | Max number of file fields        |
-| `parts`         | `number` | Infinity | Max total parts (fields + files) |
-| `headerPairs`   | `number` | 2000     | Max header key-value pairs       |
-| `headerSize`    | `number` | 81920    | Max header part size in bytes    |
+| `files`         | `number` | Infinity | Max number of file fields                                                        |
+| `parts`         | `number` | Infinity | Max total parts (fields + files)                                                 |
+| `headerPairs`   | `number` | 2000     | Max header key-value pairs                                                       |
+| `headerSize`    | `number` | 81920    | Max header part size in bytes                                                    |
 
 ### Type Guards
 

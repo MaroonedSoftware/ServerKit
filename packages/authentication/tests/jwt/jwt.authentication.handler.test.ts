@@ -9,8 +9,7 @@ import { DateTime } from 'luxon';
 
 const SECRET = 'test-secret-for-handler-decode-only';
 
-const signToken = (payload: Record<string, unknown>) =>
-  jsonwebtoken.sign(payload, SECRET, { algorithm: 'HS256' });
+const signToken = (payload: Record<string, unknown>) => jsonwebtoken.sign(payload, SECRET, { algorithm: 'HS256' });
 
 const makeLogger = (): Logger => ({
   error: vi.fn(),
@@ -95,10 +94,7 @@ describe('JwtAuthenticationHandler', () => {
 
       const result = await handler.authenticate('bearer', token);
 
-      expect(issuer.parse).toHaveBeenCalledWith(
-        token,
-        expect.objectContaining({ iss: 'https://auth.example.com', sub: 'user-1', custom: 'claim' }),
-      );
+      expect(issuer.parse).toHaveBeenCalledWith(token, expect.objectContaining({ iss: 'https://auth.example.com', sub: 'user-1', custom: 'claim' }));
       expect(result).toBe(validSession);
     });
 
@@ -120,11 +116,9 @@ describe('JwtAuthenticationHandler', () => {
     it('decodes a token without verifying its signature (delegation contract)', async () => {
       // The handler intentionally does not verify — that's the issuer's responsibility.
       // A token signed with a key the handler doesn't know should still reach the issuer.
-      const foreignToken = jsonwebtoken.sign(
-        { iss: 'https://auth.example.com', sub: 'user-1' },
-        'completely-different-secret',
-        { algorithm: 'HS256' },
-      );
+      const foreignToken = jsonwebtoken.sign({ iss: 'https://auth.example.com', sub: 'user-1' }, 'completely-different-secret', {
+        algorithm: 'HS256',
+      });
       const issuer: JwtAuthenticationIssuer = { parse: vi.fn().mockResolvedValue(makeValidSession()) };
       issuerMap.set('https://auth.example.com', issuer);
 

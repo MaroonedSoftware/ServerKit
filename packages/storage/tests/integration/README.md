@@ -31,15 +31,15 @@ STORAGE_INTEGRATION=1 pnpm test:integration
 
 Defaults target the docker commands above; override via env vars if needed:
 
-| Variable               | Default                  | Used by |
-| ---------------------- | ------------------------ | ------- |
-| `STORAGE_INTEGRATION`  | _(unset → all skipped)_  | both    |
-| `S3_ENDPOINT`          | `http://127.0.0.1:4566`  | S3      |
-| `S3_BUCKET`            | `serverkit-storage-test` | S3      |
-| `AWS_REGION`           | `us-east-1`              | S3      |
-| `GCS_ENDPOINT`         | `http://127.0.0.1:4443`  | GCS     |
-| `GCS_BUCKET`           | `serverkit-storage-test` | GCS     |
-| `GCS_PROJECT_ID`       | `test`                   | GCS     |
+| Variable              | Default                  | Used by |
+| --------------------- | ------------------------ | ------- |
+| `STORAGE_INTEGRATION` | _(unset → all skipped)_  | both    |
+| `S3_ENDPOINT`         | `http://127.0.0.1:4566`  | S3      |
+| `S3_BUCKET`           | `serverkit-storage-test` | S3      |
+| `AWS_REGION`          | `us-east-1`              | S3      |
+| `GCS_ENDPOINT`        | `http://127.0.0.1:4443`  | GCS     |
+| `GCS_BUCKET`          | `serverkit-storage-test` | GCS     |
+| `GCS_PROJECT_ID`      | `test`                   | GCS     |
 
 Each run namespaces its objects under a unique `it/<uuid>/` prefix, so the suites
 are safe to run repeatedly against a persistent bucket.

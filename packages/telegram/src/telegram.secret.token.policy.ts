@@ -67,7 +67,8 @@ export class TelegramSecretTokenPolicy extends Policy<TelegramSecretTokenPolicyC
       if (!IsTelegramError(error)) throw error;
 
       const internalDetails = error.internalDetails ?? {};
-      const reason = typeof internalDetails.reason === 'string' ? internalDetails.reason : ('invalid_secret_token' satisfies TelegramSecretTokenFailureReason);
+      const reason =
+        typeof internalDetails.reason === 'string' ? internalDetails.reason : ('invalid_secret_token' satisfies TelegramSecretTokenFailureReason);
       return this.deny(reason, undefined, { message: error.message, ...internalDetails });
     }
   }

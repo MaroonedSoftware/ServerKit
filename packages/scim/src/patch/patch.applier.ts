@@ -95,11 +95,17 @@ const findMatchingBracket = (input: string, openIndex: number): number => {
   for (let i = openIndex; i < input.length; i += 1) {
     const ch = input[i]!;
     if (inString) {
-      if (ch === '\\') { i += 1; continue; }
+      if (ch === '\\') {
+        i += 1;
+        continue;
+      }
       if (ch === '"') inString = false;
       continue;
     }
-    if (ch === '"') { inString = true; continue; }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
     if (ch === '[') depth += 1;
     else if (ch === ']') {
       depth -= 1;

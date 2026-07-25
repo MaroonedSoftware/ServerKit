@@ -39,26 +39,22 @@ describe('buildConfigObject', () => {
   });
 
   it('replaces nested arrays while still deep-merging their sibling objects', async () => {
-    const result = await buildConfigObject([{ cors: { origins: ['*'], creds: { a: 1 } } }, { cors: { origins: ['x.com'], creds: { b: 2 } } }], [], false);
+    const result = await buildConfigObject(
+      [{ cors: { origins: ['*'], creds: { a: 1 } } }, { cors: { origins: ['x.com'], creds: { b: 2 } } }],
+      [],
+      false,
+    );
     expect(result).toEqual({ cors: { origins: ['x.com'], creds: { a: 1, b: 2 } } });
   });
 
   it('applies resolvers across the merged tree, including nested values', async () => {
-    const result = await buildConfigObject(
-      [{ name: '${upper:hello}', db: { user: '${upper:admin}' } }, { plain: 'kept' }],
-      [upperResolver],
-      false,
-    );
+    const result = await buildConfigObject([{ name: '${upper:hello}', db: { user: '${upper:admin}' } }, { plain: 'kept' }], [upperResolver], false);
     expect(result).toEqual({ name: 'HELLO', db: { user: 'ADMIN' }, plain: 'kept' });
   });
 
   it('resolves resolver tokens before merge-derived values are reference-resolved', async () => {
     // Resolver runs first, then references can point at the resolved value.
-    const result = await buildConfigObject(
-      [{ raw: '${upper:host}', url: '${ref:raw}/api' }],
-      [upperResolver],
-      true,
-    );
+    const result = await buildConfigObject([{ raw: '${upper:host}', url: '${ref:raw}/api' }], [upperResolver], true);
     expect(result).toEqual({ raw: 'HOST', url: 'HOST/api' });
   });
 

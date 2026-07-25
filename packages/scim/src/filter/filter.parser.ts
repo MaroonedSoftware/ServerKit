@@ -99,7 +99,13 @@ class Parser {
     }
     this.consume();
 
-    if (valueToken.kind === 'string' || valueToken.kind === 'number' || valueToken.kind === 'true' || valueToken.kind === 'false' || valueToken.kind === 'null') {
+    if (
+      valueToken.kind === 'string' ||
+      valueToken.kind === 'number' ||
+      valueToken.kind === 'true' ||
+      valueToken.kind === 'false' ||
+      valueToken.kind === 'null'
+    ) {
       return { kind: 'comparison', attribute, operator, value: valueToken.value as string | number | boolean | null };
     }
     throw this.error(valueToken, `Expected literal value after operator "${operator}"`);

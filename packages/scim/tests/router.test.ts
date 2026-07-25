@@ -4,7 +4,13 @@ import request from 'supertest';
 import { InjectKitRegistry } from 'injectkit';
 import type { IncomingMessage } from 'node:http';
 import { Logger } from '@maroonedsoftware/logger';
-import { ServerKitBodyParser, ServerKitParser, ServerKitParserMappings, type ServerKitParserResult, serverKitContextMiddleware } from '@maroonedsoftware/koa';
+import {
+  ServerKitBodyParser,
+  ServerKitParser,
+  ServerKitParserMappings,
+  type ServerKitParserResult,
+  serverKitContextMiddleware,
+} from '@maroonedsoftware/koa';
 import { type AuthenticationSession, invalidAuthenticationSession } from '@maroonedsoftware/authentication';
 import { createScimRouter } from '../src/router/scim.router.js';
 import { ScimUserService } from '../src/services/scim.user.service.js';
@@ -123,10 +129,7 @@ describe('createScimRouter — integration', () => {
     it('POST /Users/.search accepts the filter in the body', async () => {
       const { app } = buildApp();
       await request(app.callback()).post('/Users').set('Content-Type', SCIM_MEDIA_TYPE).send({ userName: 'alice' });
-      const res = await request(app.callback())
-        .post('/Users/.search')
-        .set('Content-Type', SCIM_MEDIA_TYPE)
-        .send({ filter: 'userName eq "alice"' });
+      const res = await request(app.callback()).post('/Users/.search').set('Content-Type', SCIM_MEDIA_TYPE).send({ filter: 'userName eq "alice"' });
       expect(res.status).toBe(200);
       expect(res.body.totalResults).toBe(1);
     });
@@ -223,10 +226,7 @@ describe('createScimRouter — integration', () => {
 
     it('unsupported content type returns 415 SCIM envelope', async () => {
       const { app } = buildApp();
-      const res = await request(app.callback())
-        .post('/Users')
-        .set('Content-Type', 'text/plain')
-        .send('not json');
+      const res = await request(app.callback()).post('/Users').set('Content-Type', 'text/plain').send('not json');
       expect(res.status).toBe(415);
       expect(res.body.schemas).toEqual([ScimErrorSchema]);
     });
@@ -239,4 +239,3 @@ describe('createScimRouter — integration', () => {
     });
   });
 });
-

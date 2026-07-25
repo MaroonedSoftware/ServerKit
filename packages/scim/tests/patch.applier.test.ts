@@ -9,26 +9,19 @@ describe('applyScimPatch', () => {
     });
 
     it('appends to a multi-valued attribute', () => {
-      const out = applyScimPatch(
-        { emails: [{ value: 'a@example.com' }] },
-        [{ op: 'add', path: 'emails', value: [{ value: 'b@example.com' }] }],
-      );
+      const out = applyScimPatch({ emails: [{ value: 'a@example.com' }] }, [{ op: 'add', path: 'emails', value: [{ value: 'b@example.com' }] }]);
       expect(out.emails).toEqual([{ value: 'a@example.com' }, { value: 'b@example.com' }]);
     });
 
     it('shallow-merges sub-attributes via dotted path', () => {
-      const out = applyScimPatch(
-        { name: { givenName: 'Bob' } },
-        [{ op: 'add', path: 'name.familyName', value: 'Builder' }],
-      );
+      const out = applyScimPatch({ name: { givenName: 'Bob' } }, [{ op: 'add', path: 'name.familyName', value: 'Builder' }]);
       expect(out.name).toEqual({ givenName: 'Bob', familyName: 'Builder' });
     });
 
     it('pathless add deep-merges nested objects', () => {
-      const out = applyScimPatch(
-        { name: { givenName: 'Bob' }, displayName: 'Bob' },
-        [{ op: 'add', value: { name: { familyName: 'Builder' }, active: true } }],
-      );
+      const out = applyScimPatch({ name: { givenName: 'Bob' }, displayName: 'Bob' }, [
+        { op: 'add', value: { name: { familyName: 'Builder' }, active: true } },
+      ]);
       expect(out).toEqual({
         name: { givenName: 'Bob', familyName: 'Builder' },
         displayName: 'Bob',
@@ -44,16 +37,18 @@ describe('applyScimPatch', () => {
     });
 
     it('overwrites a sub-attribute via dotted path', () => {
-      const out = applyScimPatch(
-        { name: { givenName: 'Bob', familyName: 'Builder' } },
-        [{ op: 'replace', path: 'name.givenName', value: 'Robert' }],
-      );
+      const out = applyScimPatch({ name: { givenName: 'Bob', familyName: 'Builder' } }, [{ op: 'replace', path: 'name.givenName', value: 'Robert' }]);
       expect(out.name).toEqual({ givenName: 'Robert', familyName: 'Builder' });
     });
 
     it('replaces a matched value-path item', () => {
       const out = applyScimPatch(
-        { emails: [{ value: 'old@example.com', type: 'work' }, { value: 'home@example.com', type: 'home' }] },
+        {
+          emails: [
+            { value: 'old@example.com', type: 'work' },
+            { value: 'home@example.com', type: 'home' },
+          ],
+        },
         [{ op: 'replace', path: 'emails[type eq "work"].value', value: 'new@example.com' }],
       );
       expect(out.emails).toEqual([
@@ -76,7 +71,12 @@ describe('applyScimPatch', () => {
 
     it('removes a matched value-path item', () => {
       const out = applyScimPatch(
-        { emails: [{ value: 'work@x.com', type: 'work' }, { value: 'home@x.com', type: 'home' }] },
+        {
+          emails: [
+            { value: 'work@x.com', type: 'work' },
+            { value: 'home@x.com', type: 'home' },
+          ],
+        },
         [{ op: 'remove', path: 'emails[type eq "home"]' }],
       );
       expect(out.emails).toEqual([{ value: 'work@x.com', type: 'work' }]);
@@ -84,10 +84,7 @@ describe('applyScimPatch', () => {
 
     it('throws noTarget if no items match', () => {
       try {
-        applyScimPatch(
-          { emails: [{ value: 'work@x.com', type: 'work' }] },
-          [{ op: 'remove', path: 'emails[type eq "home"]' }],
-        );
+        applyScimPatch({ emails: [{ value: 'work@x.com', type: 'work' }] }, [{ op: 'remove', path: 'emails[type eq "home"]' }]);
         expect.fail('expected throw');
       } catch (error) {
         expect(error).toMatchObject({

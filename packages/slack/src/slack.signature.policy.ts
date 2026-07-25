@@ -95,7 +95,8 @@ export class SlackSignaturePolicy extends Policy<SlackSignaturePolicyContext> {
       if (!IsSlackError(error)) throw error;
 
       const internalDetails = error.internalDetails ?? {};
-      const reason = typeof internalDetails.reason === 'string' ? internalDetails.reason : ('invalid_signature' satisfies SlackSignatureFailureReason);
+      const reason =
+        typeof internalDetails.reason === 'string' ? internalDetails.reason : ('invalid_signature' satisfies SlackSignatureFailureReason);
       return this.deny(reason, undefined, { message: error.message, ...internalDetails });
     }
   }

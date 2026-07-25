@@ -81,14 +81,7 @@ const makeOrchestrator = (overrides: { policy: PolicyResult }) => {
 
   const policyService = makePolicyService(() => overrides.policy);
 
-  const orchestrator = new MfaOrchestrator(
-    challengeService,
-    policyService,
-    phoneFactor,
-    fidoFactor,
-    authenticatorFactor,
-    emailFactor,
-  );
+  const orchestrator = new MfaOrchestrator(challengeService, policyService, phoneFactor, fidoFactor, authenticatorFactor, emailFactor);
 
   return { orchestrator, challengeService, phoneFactor, policyService };
 };
@@ -183,7 +176,11 @@ describe('MfaOrchestrator', () => {
         eligibleFactors: [{ method: 'phone', methodId: 'phone-1', kind: 'possession' }],
       });
 
-      const response = await orchestrator.issueFactorChallenge(challenge.challengeId, { method: 'phone', methodId: 'phone-1', transport: 'whatsapp' });
+      const response = await orchestrator.issueFactorChallenge(challenge.challengeId, {
+        method: 'phone',
+        methodId: 'phone-1',
+        transport: 'whatsapp',
+      });
 
       expect(response.method).toBe('phone');
       if (response.method === 'phone') {

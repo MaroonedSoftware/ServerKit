@@ -5,14 +5,8 @@ import type { Logger } from '@maroonedsoftware/logger';
 import { PolicyResult, PolicyService } from '@maroonedsoftware/policies';
 import type { RateLimiterCompatibleAbstract } from 'rate-limiter-flexible';
 import { OtpProvider, TotpOptions } from '../../src/providers/otp.provider.js';
-import {
-  SupportVerificationCodeService,
-  SupportVerificationCodeServiceOptions,
-} from '../../src/support/support.verification.code.service.js';
-import type {
-  SupportVerificationSecret,
-  SupportVerificationSecretRepository,
-} from '../../src/support/support.verification.secret.repository.js';
+import { SupportVerificationCodeService, SupportVerificationCodeServiceOptions } from '../../src/support/support.verification.code.service.js';
+import type { SupportVerificationSecret, SupportVerificationSecretRepository } from '../../src/support/support.verification.secret.repository.js';
 
 const actor = { kind: 'user', actorId: 'user-1' };
 

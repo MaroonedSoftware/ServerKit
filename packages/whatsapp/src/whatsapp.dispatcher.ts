@@ -172,7 +172,12 @@ export class WhatsAppDispatcher {
         this.logger.debug('No WhatsApp status handler registered', { status: status.status });
         return;
       }
-      await handler.handle(status, { phoneNumberId: value.metadata.phone_number_id, displayPhoneNumber: value.metadata.display_phone_number, wabaId, value });
+      await handler.handle(status, {
+        phoneNumberId: value.metadata.phone_number_id,
+        displayPhoneNumber: value.metadata.display_phone_number,
+        wabaId,
+        value,
+      });
     };
 
     if (options?.idempotency) {

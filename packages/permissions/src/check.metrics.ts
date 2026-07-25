@@ -4,18 +4,18 @@
  * {@link CheckMetricsSink}.
  */
 export interface CheckMetrics {
-    /** Total wall-clock time of the Check in milliseconds. */
-    durationMs: number;
-    /** Count of `repo.listByObjectRelation` calls made during this Check. */
-    tupleReads: number;
-    /** Count of `repo.listObjectsRelatedBy` calls made during this Check. */
-    parentLookups: number;
-    /** Count of memo (per-request cache) hits. */
-    cacheHits: number;
-    /** Greatest recursion depth reached during evaluation. */
-    maxDepth: number;
-    /** True if the evaluator hit the configured max-depth guard. */
-    hitMaxDepth: boolean;
+  /** Total wall-clock time of the Check in milliseconds. */
+  durationMs: number;
+  /** Count of `repo.listByObjectRelation` calls made during this Check. */
+  tupleReads: number;
+  /** Count of `repo.listObjectsRelatedBy` calls made during this Check. */
+  parentLookups: number;
+  /** Count of memo (per-request cache) hits. */
+  cacheHits: number;
+  /** Greatest recursion depth reached during evaluation. */
+  maxDepth: number;
+  /** True if the evaluator hit the configured max-depth guard. */
+  hitMaxDepth: boolean;
 }
 
 /**
@@ -23,12 +23,12 @@ export interface CheckMetrics {
  * creates one per request; sinks should not need to call this directly.
  */
 export const newCheckMetrics = (): CheckMetrics => ({
-    durationMs: 0,
-    tupleReads: 0,
-    parentLookups: 0,
-    cacheHits: 0,
-    maxDepth: 0,
-    hitMaxDepth: false,
+  durationMs: 0,
+  tupleReads: 0,
+  parentLookups: 0,
+  cacheHits: 0,
+  maxDepth: 0,
+  hitMaxDepth: false,
 });
 
 /**
@@ -36,9 +36,9 @@ export const newCheckMetrics = (): CheckMetrics => ({
  * dimensions when forwarding to a metrics backend.
  */
 export interface CheckMetricsTags {
-    namespace: string;
-    permission: string;
-    allowed: boolean;
+  namespace: string;
+  permission: string;
+  allowed: boolean;
 }
 
 /**
@@ -50,7 +50,7 @@ export interface CheckMetricsTags {
  * token (interfaces aren't preserved at runtime).
  */
 export abstract class CheckMetricsSink {
-    abstract record(metrics: CheckMetrics, tags: CheckMetricsTags): void;
+  abstract record(metrics: CheckMetrics, tags: CheckMetricsTags): void;
 }
 
 /**
@@ -58,7 +58,7 @@ export abstract class CheckMetricsSink {
  * caller doesn't pass a sink.
  */
 export class NoopMetricsSink extends CheckMetricsSink {
-    record(): void {}
+  record(): void {}
 }
 
 /**

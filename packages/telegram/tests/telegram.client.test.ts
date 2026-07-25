@@ -53,7 +53,9 @@ describe('TelegramClient', () => {
   });
 
   it('throws TelegramError on an ok:false envelope (even with HTTP 200)', async () => {
-    fetchMock().mockResolvedValueOnce(new Response(JSON.stringify({ ok: false, error_code: 400, description: 'Bad Request: chat not found' }), { status: 200 }));
+    fetchMock().mockResolvedValueOnce(
+      new Response(JSON.stringify({ ok: false, error_code: 400, description: 'Bad Request: chat not found' }), { status: 200 }),
+    );
     const client = new TelegramClient(cfg, makeLogger());
     await expect(client.sendMessage({ chat_id: 1, text: 'x' })).rejects.toBeInstanceOf(TelegramError);
   });

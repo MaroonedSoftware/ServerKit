@@ -150,11 +150,7 @@ export abstract class Policy<Context extends PolicyContext = PolicyContext, Enve
    * - `internalDetails` — operator/log-only context that should never reach
    *   the client. Surfaced under the thrown error's `internalDetails`.
    */
-  protected deny(
-    reason: string,
-    details?: Record<string, unknown>,
-    internalDetails?: Record<string, unknown>,
-  ): PolicyDenialBuilder {
+  protected deny(reason: string, details?: Record<string, unknown>, internalDetails?: Record<string, unknown>): PolicyDenialBuilder {
     return new PolicyDenialBuilder(reason, details, internalDetails);
   }
 

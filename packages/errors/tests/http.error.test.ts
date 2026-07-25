@@ -193,9 +193,7 @@ describe('addHeader', () => {
   });
 
   it('should allow chaining', () => {
-    const error = new HttpError(401)
-      .addHeader('WWW-Authenticate', 'Bearer')
-      .addHeader('X-Custom', 'value');
+    const error = new HttpError(401).addHeader('WWW-Authenticate', 'Bearer').addHeader('X-Custom', 'value');
 
     expect(error.headers).toEqual({
       'WWW-Authenticate': 'Bearer',

@@ -45,14 +45,14 @@ const readBody = (req: import('node:http').IncomingMessage): Promise<string> =>
   });
 
 const listen = (server: HttpServer): Promise<string> =>
-  new Promise((resolve) => {
+  new Promise(resolve => {
     server.listen(0, '127.0.0.1', () => {
       const { port } = server.address() as AddressInfo;
       resolve(`http://127.0.0.1:${port}/mcp`);
     });
   });
 
-const close = (server: HttpServer): Promise<void> => new Promise((resolve) => server.close(() => resolve()));
+const close = (server: HttpServer): Promise<void> => new Promise(resolve => server.close(() => resolve()));
 
 describe('MCP e2e over real HTTP', () => {
   describe('stateless (raw JSON-RPC over the wire)', () => {
@@ -85,7 +85,12 @@ describe('MCP e2e over real HTTP', () => {
     };
 
     it('answers initialize with server info + capabilities', async () => {
-      const result = await post({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'c', version: '1' } } });
+      const result = await post({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'c', version: '1' } },
+      });
       expect(result).toMatchObject({ id: 1, result: { serverInfo: { name: 'e2e-server' }, capabilities: { tools: {} } } });
     });
 
@@ -123,7 +128,7 @@ describe('MCP e2e over real HTTP', () => {
       await client.connect(transport); // performs the initialize handshake + opens the session
 
       const tools = await client.listTools();
-      expect(tools.tools.map((t) => t.name)).toContain('shout');
+      expect(tools.tools.map(t => t.name)).toContain('shout');
 
       const result = (await client.callTool({ name: 'shout', arguments: { message: 'over sse' } })) as CallToolResult;
       expect(result.content).toEqual([{ type: 'text', text: 'OVER SSE' }]);

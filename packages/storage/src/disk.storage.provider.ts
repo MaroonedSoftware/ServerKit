@@ -175,11 +175,7 @@ export class DiskStorageProvider extends StorageProvider {
     // Normalise the key against the root for traversal safety, then join to the base URL.
     this.resolveKey(key);
     // Encode each path segment so keys with spaces or reserved characters yield a valid URL.
-    const encodedPath = key
-      .replace(/^\/+/, '')
-      .split('/')
-      .map(encodeURIComponent)
-      .join('/');
+    const encodedPath = key.replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/');
     return `${this.options.publicBaseUrl.replace(/\/+$/, '')}/${encodedPath}`;
   }
 

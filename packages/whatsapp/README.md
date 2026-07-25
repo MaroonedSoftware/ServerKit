@@ -15,21 +15,21 @@ pnpm add @maroonedsoftware/whatsapp
 
 ## Exports
 
-| Symbol                            | Purpose                                                                                                       |
-|-----------------------------------|---------------------------------------------------------------------------------------------------------------|
-| `WhatsAppConfig`                  | Abstract `@Injectable()` token; carries `accessToken`, `phoneNumberId`, `appSecret`, `verifyToken`, optional `graphApiVersion`. |
-| `WhatsAppClient`                  | `fetch`-based Graph API wrapper. Methods: `sendMessage`, `sendText`, `sendInteractive`, `markAsRead`, plus a generic `request`. |
-| `WhatsAppDispatcher`              | Single-method service: `dispatchWebhook` (walks the batched body).                                             |
-| `WhatsAppMessageHandlerMap`       | `Map<messageType, WhatsAppMessageHandler>` — register one handler per message `type` (`text`, `image`, …).     |
-| `WhatsAppInteractiveHandlerMap`   | `Map<replyId, WhatsAppInteractiveHandler>` — register handlers for interactive button/list replies by id.      |
-| `WhatsAppStatusHandlerMap`        | `Map<status, WhatsAppStatusHandler>` — register handlers per delivery status (`sent`/`delivered`/`read`/`failed`). |
-| `WhatsAppError`                   | `ServerkitError` subclass for non-HTTP domain failures (signature mismatch, Graph API call failed, …).         |
-| `verifyWhatsAppSignature(input)`  | Pure helper that validates Meta's `X-Hub-Signature-256` HMAC. No request/context coupling.                     |
-| `verifyWhatsAppWebhook(input)`    | Pure helper for the subscription verification (`GET`) handshake; returns the challenge to echo.                |
-| `WhatsAppSignaturePolicy`         | `@maroonedsoftware/policies` form of `verifyWhatsAppSignature` (registered under `WHATSAPP_SIGNATURE_POLICY`). |
-| `interactiveReplyId(message)`     | Helper that produces the `WhatsAppInteractiveHandlerMap` key for an interactive/quick-reply message.           |
-| `whatsappMessageIdempotencyKey(message)` | Pure helper: `whatsapp:message:{message.id}` — the de-duplication key for an inbound message.            |
-| `whatsappStatusIdempotencyKey(status)`   | Pure helper: `whatsapp:status:{status.id}:{status.status}` — keyed by status VALUE so `sent`/`delivered`/`read` don't collide. |
+| Symbol                                   | Purpose                                                                                                                         |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `WhatsAppConfig`                         | Abstract `@Injectable()` token; carries `accessToken`, `phoneNumberId`, `appSecret`, `verifyToken`, optional `graphApiVersion`. |
+| `WhatsAppClient`                         | `fetch`-based Graph API wrapper. Methods: `sendMessage`, `sendText`, `sendInteractive`, `markAsRead`, plus a generic `request`. |
+| `WhatsAppDispatcher`                     | Single-method service: `dispatchWebhook` (walks the batched body).                                                              |
+| `WhatsAppMessageHandlerMap`              | `Map<messageType, WhatsAppMessageHandler>` — register one handler per message `type` (`text`, `image`, …).                      |
+| `WhatsAppInteractiveHandlerMap`          | `Map<replyId, WhatsAppInteractiveHandler>` — register handlers for interactive button/list replies by id.                       |
+| `WhatsAppStatusHandlerMap`               | `Map<status, WhatsAppStatusHandler>` — register handlers per delivery status (`sent`/`delivered`/`read`/`failed`).              |
+| `WhatsAppError`                          | `ServerkitError` subclass for non-HTTP domain failures (signature mismatch, Graph API call failed, …).                          |
+| `verifyWhatsAppSignature(input)`         | Pure helper that validates Meta's `X-Hub-Signature-256` HMAC. No request/context coupling.                                      |
+| `verifyWhatsAppWebhook(input)`           | Pure helper for the subscription verification (`GET`) handshake; returns the challenge to echo.                                 |
+| `WhatsAppSignaturePolicy`                | `@maroonedsoftware/policies` form of `verifyWhatsAppSignature` (registered under `WHATSAPP_SIGNATURE_POLICY`).                  |
+| `interactiveReplyId(message)`            | Helper that produces the `WhatsAppInteractiveHandlerMap` key for an interactive/quick-reply message.                            |
+| `whatsappMessageIdempotencyKey(message)` | Pure helper: `whatsapp:message:{message.id}` — the de-duplication key for an inbound message.                                   |
+| `whatsappStatusIdempotencyKey(status)`   | Pure helper: `whatsapp:status:{status.id}:{status.status}` — keyed by status VALUE so `sent`/`delivered`/`read` don't collide.  |
 
 ## Configuration
 
@@ -46,22 +46,22 @@ container.register(WhatsAppConfig, { useValue: whatsappConfig });
 // config.json
 {
   "whatsapp": {
-    "accessToken": "EAAG...",     // Graph API token (Bearer)
+    "accessToken": "EAAG...", // Graph API token (Bearer)
     "phoneNumberId": "123456789", // sends from this number
-    "appSecret": "...",           // verifies X-Hub-Signature-256
-    "verifyToken": "...",         // echoed during the GET handshake
-    "graphApiVersion": "v21.0"    // optional, defaults to v21.0
-  }
+    "appSecret": "...", // verifies X-Hub-Signature-256
+    "verifyToken": "...", // echoed during the GET handshake
+    "graphApiVersion": "v21.0", // optional, defaults to v21.0
+  },
 }
 ```
 
-| Field             | Required | Used by                                                              |
-|-------------------|----------|----------------------------------------------------------------------|
-| `accessToken`     | yes      | `WhatsAppClient` — sent as `Authorization: Bearer`.                  |
-| `phoneNumberId`   | yes      | `WhatsAppClient` send endpoint (`/{phoneNumberId}/messages`).         |
-| `appSecret`       | yes      | Webhook signature verification (`X-Hub-Signature-256`).               |
-| `verifyToken`     | yes      | Subscription verification (`GET`) handshake.                         |
-| `graphApiVersion` | no       | Graph API version segment. Defaults to `v21.0`.                       |
+| Field             | Required | Used by                                                       |
+| ----------------- | -------- | ------------------------------------------------------------- |
+| `accessToken`     | yes      | `WhatsAppClient` — sent as `Authorization: Bearer`.           |
+| `phoneNumberId`   | yes      | `WhatsAppClient` send endpoint (`/{phoneNumberId}/messages`). |
+| `appSecret`       | yes      | Webhook signature verification (`X-Hub-Signature-256`).       |
+| `verifyToken`     | yes      | Subscription verification (`GET`) handshake.                  |
+| `graphApiVersion` | no       | Graph API version segment. Defaults to `v21.0`.               |
 
 ## Sending messages
 
@@ -75,7 +75,7 @@ await whatsapp.markAsRead(message.id);
 
 // Interactive (buttons / list), templates, media — pass the raw payload
 await whatsapp.sendInteractive('15551234567', { type: 'button', body: { text: 'Confirm?' }, action: { buttons: [/* … */] } });
-await whatsapp.sendMessage({ messaging_product: 'whatsapp', to: '15551234567', type: 'template', template: { /* … */ } });
+await whatsapp.sendMessage({ messaging_product: 'whatsapp', to: '15551234567', type: 'template', template: {/* … */} });
 ```
 
 Every method throws `WhatsAppError` (with `{ status, body, url }` on `internalDetails`) on a non-2xx response.
@@ -89,7 +89,7 @@ WhatsApp uses two HTTP exchanges on the same path: a one-off `GET` to verify the
 ```ts
 import { WhatsAppConfig, verifyWhatsAppWebhook, WhatsAppError } from '@maroonedsoftware/whatsapp';
 
-router.get('/whatsapp/webhook', (ctx) => {
+router.get('/whatsapp/webhook', ctx => {
   try {
     ctx.body = verifyWhatsAppWebhook({
       verifyToken: ctx.container.get(WhatsAppConfig).verifyToken,
@@ -98,7 +98,10 @@ router.get('/whatsapp/webhook', (ctx) => {
       challenge: ctx.query['hub.challenge'],
     });
   } catch (err) {
-    if (err instanceof WhatsAppError) { ctx.status = 403; return; }
+    if (err instanceof WhatsAppError) {
+      ctx.status = 403;
+      return;
+    }
     throw err;
   }
 });
@@ -126,7 +129,7 @@ const messages = new WhatsAppMessageHandlerMap();
 messages.set('text', container.get(TextHandler));
 container.register(WhatsAppMessageHandlerMap, { useValue: messages });
 
-router.post('/whatsapp/webhook', async (ctx) => {
+router.post('/whatsapp/webhook', async ctx => {
   const raw = await rawBody(ctx.req, { encoding: 'utf8' });
   verifyWhatsAppSignature({
     appSecret: ctx.container.get(WhatsAppConfig).appSecret,
@@ -142,7 +145,7 @@ router.post('/whatsapp/webhook', async (ctx) => {
 
 WhatsApp is at-least-once: any non-2xx ack (or a slow one) makes Meta resend the **whole** webhook, so the same `message.id` / `status` can arrive more than once. There are two ways to make processing exactly-once, and they compose.
 
-**(a) Durable — enqueue then ack (recommended for real work).** Handlers should ack in milliseconds, so offload the actual work to a job and let the queue own idempotency. Key the job by the message id (or `status.id:status.status`) so a redelivery enqueues the *same* job identity and the broker collapses it. With `@maroonedsoftware/jobbroker` (pg-boss) that is the job's `singletonKey` — a second insert with the same key is a no-op:
+**(a) Durable — enqueue then ack (recommended for real work).** Handlers should ack in milliseconds, so offload the actual work to a job and let the queue own idempotency. Key the job by the message id (or `status.id:status.status`) so a redelivery enqueues the _same_ job identity and the broker collapses it. With `@maroonedsoftware/jobbroker` (pg-boss) that is the job's `singletonKey` — a second insert with the same key is a no-op:
 
 ```ts
 class TextHandler implements WhatsAppMessageHandler {
@@ -172,11 +175,11 @@ De-dup is per item (not per batch) because WhatsApp resends the entire webhook o
 
 A webhook body is a **batch** — `dispatchWebhook` walks every `entry → change → value` and dispatches each message and status:
 
-| Inbound                         | Map                              | Key                                        |
-|---------------------------------|----------------------------------|--------------------------------------------|
-| message (by type)               | `WhatsAppMessageHandlerMap`      | `message.type` (`text`, `image`, …)        |
-| interactive / quick-reply       | `WhatsAppInteractiveHandlerMap`  | reply id (`interactiveReplyId(message)`)   |
-| delivery status                 | `WhatsAppStatusHandlerMap`       | `status.status` (`delivered`, `read`, …)   |
+| Inbound                   | Map                             | Key                                      |
+| ------------------------- | ------------------------------- | ---------------------------------------- |
+| message (by type)         | `WhatsAppMessageHandlerMap`     | `message.type` (`text`, `image`, …)      |
+| interactive / quick-reply | `WhatsAppInteractiveHandlerMap` | reply id (`interactiveReplyId(message)`) |
+| delivery status           | `WhatsAppStatusHandlerMap`      | `status.status` (`delivered`, `read`, …) |
 
 For `interactive` and `button` messages the dispatcher tries the interactive map (by reply id) **first**, then falls back to the message-type map. Each handler receives a context with the resolved `phoneNumberId`, `displayPhoneNumber`, `wabaId`, the sender `contact`, and the raw `value`.
 
@@ -190,7 +193,7 @@ import { verifyWhatsAppSignature, WhatsAppError } from '@maroonedsoftware/whatsa
 try {
   verifyWhatsAppSignature({
     appSecret: whatsappConfig.appSecret,
-    rawBody,                                   // exactly what Meta sent
+    rawBody, // exactly what Meta sent
     signature: req.headers['x-hub-signature-256'] as string,
   });
 } catch (err) {
@@ -238,7 +241,7 @@ import { WhatsAppClient, WhatsAppConfig, verifyWhatsAppSignature } from '@maroon
 import { dispatchWhatsApp, createWhatsAppNotifier } from '@maroonedsoftware/whatsapp/comms';
 import { router } from './router.js'; // a shared ChannelRouter
 
-http.post('/whatsapp/webhook', async (ctx) => {
+http.post('/whatsapp/webhook', async ctx => {
   const raw = await rawBody(ctx.req, { encoding: 'utf8' });
   verifyWhatsAppSignature({ appSecret: ctx.container.get(WhatsAppConfig).appSecret, rawBody: raw, signature: ctx.get('x-hub-signature-256') });
   await dispatchWhatsApp(router, ctx.container.get(WhatsAppClient), JSON.parse(raw));

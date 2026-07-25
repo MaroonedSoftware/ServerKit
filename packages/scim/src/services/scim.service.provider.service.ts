@@ -1,5 +1,9 @@
 import { Injectable } from 'injectkit';
-import { buildServiceProviderConfig, type ScimServiceProviderConfig, type ScimServiceProviderConfigOptions } from '../schemas/service.provider.config.schema.js';
+import {
+  buildServiceProviderConfig,
+  type ScimServiceProviderConfig,
+  type ScimServiceProviderConfigOptions,
+} from '../schemas/service.provider.config.schema.js';
 import { coreSchemas } from '../schemas/index.js';
 import { userResourceType, groupResourceType, type ScimResourceType } from '../schemas/resource.type.schema.js';
 import type { ScimSchema } from '../schemas/schema.types.js';

@@ -33,7 +33,7 @@ export class InMemoryUserRepository extends ScimUserRepository {
   async list(query: ScimListQuery): Promise<ScimListResult<ScimUser>> {
     const all = Array.from(this.users.values());
     const filtered = applyTrivialFilter(all, query);
-    const start = (query.startIndex - 1);
+    const start = query.startIndex - 1;
     const page = filtered.slice(start, start + query.count);
     return { resources: page, totalResults: filtered.length };
   }
@@ -76,7 +76,7 @@ export class InMemoryGroupRepository extends ScimGroupRepository {
 
   async list(query: ScimListQuery): Promise<ScimListResult<ScimGroup>> {
     const all = Array.from(this.groups.values());
-    const start = (query.startIndex - 1);
+    const start = query.startIndex - 1;
     const page = all.slice(start, start + query.count);
     return { resources: page, totalResults: all.length };
   }

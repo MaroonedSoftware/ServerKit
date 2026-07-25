@@ -12,10 +12,10 @@ pnpm add @maroonedsoftware/cache ioredis
 backend. The `ioredis` backend lives behind a subpath export so importing the core
 (`@maroonedsoftware/cache`) never loads it:
 
-| Import | Contents | Pulls in |
-|--------|----------|----------|
-| `@maroonedsoftware/cache` | `CacheProvider` | nothing extra |
-| `@maroonedsoftware/cache/ioredis` | `IoRedisCacheProvider` | `ioredis` |
+| Import                            | Contents               | Pulls in      |
+| --------------------------------- | ---------------------- | ------------- |
+| `@maroonedsoftware/cache`         | `CacheProvider`        | nothing extra |
+| `@maroonedsoftware/cache/ioredis` | `IoRedisCacheProvider` | `ioredis`     |
 
 ## Usage
 
@@ -66,13 +66,13 @@ class SessionService {
 
 Base class to extend when implementing a custom cache backend.
 
-| Method | Signature | Description |
-|--------|-----------|-------------|
-| `get` | `(key: string) => Promise<string \| null>` | Returns the stored value or `null` if absent/expired. |
-| `set` | `(key: string, value: string, ttl: Duration) => Promise<void>` | Stores a value with an explicit TTL. |
-| `add` | `(key: string, value: string, options?: { ttl?: Duration }) => Promise<boolean>` | Atomic set-if-absent claim primitive; returns `true` if the key was created, `false` if it already existed. |
-| `update` | `(key: string, value: string, ttl?: Duration) => Promise<void>` | Overwrites an existing value; omit `ttl` to preserve the original expiry. Will not resurrect an expired key. |
-| `delete` | `(key: string) => Promise<string \| null>` | Removes the entry and returns the key, or `null` if it didn't exist. |
+| Method   | Signature                                                                        | Description                                                                                                  |
+| -------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `get`    | `(key: string) => Promise<string \| null>`                                       | Returns the stored value or `null` if absent/expired.                                                        |
+| `set`    | `(key: string, value: string, ttl: Duration) => Promise<void>`                   | Stores a value with an explicit TTL.                                                                         |
+| `add`    | `(key: string, value: string, options?: { ttl?: Duration }) => Promise<boolean>` | Atomic set-if-absent claim primitive; returns `true` if the key was created, `false` if it already existed.  |
+| `update` | `(key: string, value: string, ttl?: Duration) => Promise<void>`                  | Overwrites an existing value; omit `ttl` to preserve the original expiry. Will not resurrect an expired key. |
+| `delete` | `(key: string) => Promise<string \| null>`                                       | Removes the entry and returns the key, or `null` if it didn't exist.                                         |
 
 ### `IoRedisCacheProvider`
 
@@ -98,19 +98,22 @@ const outcome = await store.deduplicate(`slack:event:${eventId}`, async () => {
 });
 
 switch (outcome.status) {
-  case 'processed': /* ran; outcome.result holds the return value */ break;
-  case 'duplicate': /* already claimed elsewhere — skip, still ack the source */ break;
-  case 'dropped':   /* dead-lettered after repeated failures — ack + alert */ break;
+  case 'processed':
+    /* ran; outcome.result holds the return value */ break;
+  case 'duplicate':
+    /* already claimed elsewhere — skip, still ack the source */ break;
+  case 'dropped':
+    /* dead-lettered after repeated failures — ack + alert */ break;
 }
 ```
 
 `deduplicate(key, work, options?)` claims the key (short-lived in-flight marker via `add`), runs `work`, then records a completed marker retained for `retentionTtl`. If `work` throws, the claim is released so the source's next redelivery can retry — until the failure count reaches `maxAttempts`, at which point the key is dead-lettered (`dropped`) rather than reprocessed forever.
 
-| Option | Default | Purpose |
-|--------|---------|---------|
-| `inFlightTtl` | 5 minutes | Lifetime of the in-flight claim; must exceed the slowest `work`. |
-| `retentionTtl` | 24 hours | How long the completed/dead marker is kept; size to the source's redelivery window. |
-| `maxAttempts` | 5 | Failures before an event is dead-lettered. |
+| Option         | Default   | Purpose                                                                             |
+| -------------- | --------- | ----------------------------------------------------------------------------------- |
+| `inFlightTtl`  | 5 minutes | Lifetime of the in-flight claim; must exceed the slowest `work`.                    |
+| `retentionTtl` | 24 hours  | How long the completed/dead marker is kept; size to the source's redelivery window. |
+| `maxAttempts`  | 5         | Failures before an event is dead-lettered.                                          |
 
 ## Custom implementations
 
@@ -137,9 +140,7 @@ export class InMemoryCacheProvider extends CacheProvider {
 
   async update(key: string, value: string, ttl?: Duration) {
     const existing = this.store.get(key);
-    const expiresAt = ttl
-      ? Date.now() + ttl.as('milliseconds')
-      : (existing?.expiresAt ?? Date.now());
+    const expiresAt = ttl ? Date.now() + ttl.as('milliseconds') : (existing?.expiresAt ?? Date.now());
     this.store.set(key, { value, expiresAt });
   }
 

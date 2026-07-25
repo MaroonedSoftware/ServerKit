@@ -3,7 +3,15 @@
  * channel-agnostic `@maroonedsoftware/comms` router. Importing this subpath pulls
  * in `@maroonedsoftware/comms` (an optional peer); the discord core does not.
  */
-import { CommsError, type ChannelRouter, type IncomingEvent, type Notifier, type OutgoingMessage, type Reply, type TemplateRegistry } from '@maroonedsoftware/comms';
+import {
+  CommsError,
+  type ChannelRouter,
+  type IncomingEvent,
+  type Notifier,
+  type OutgoingMessage,
+  type Reply,
+  type TemplateRegistry,
+} from '@maroonedsoftware/comms';
 import { DiscordClient } from './client/discord.client.js';
 import { InteractionType, InteractionCallbackType, type DiscordInteraction, type DiscordInteractionResponse } from './discord.interaction.handler.js';
 
@@ -62,7 +70,11 @@ export const createDiscordNotifier = (client: DiscordClient, templates: Template
  * and this and every later reply then go out as valid followups. Once acked,
  * `getCallback()` returns `undefined` so the route does not double-acknowledge.
  */
-const interactionReply = (client: DiscordClient, templates: TemplateRegistry, interaction: DiscordInteraction): Reply & { getCallback(): DiscordInteractionResponse | undefined } => {
+const interactionReply = (
+  client: DiscordClient,
+  templates: TemplateRegistry,
+  interaction: DiscordInteraction,
+): Reply & { getCallback(): DiscordInteractionResponse | undefined } => {
   let callback: DiscordInteractionResponse | undefined;
   let acknowledged = false;
   const deliver = async (data: DiscordData) => {
@@ -110,7 +122,11 @@ const invokingUser = (interaction: DiscordInteraction): { id: string; username?:
  * and delivered every reply as a followup, so the route should respond with an
  * empty 2xx rather than treating `undefined` as "no handler".
  */
-export const dispatchDiscord = async (router: ChannelRouter, client: DiscordClient, interaction: DiscordInteraction): Promise<DiscordInteractionResponse | undefined> => {
+export const dispatchDiscord = async (
+  router: ChannelRouter,
+  client: DiscordClient,
+  interaction: DiscordInteraction,
+): Promise<DiscordInteractionResponse | undefined> => {
   if (interaction.type === InteractionType.PING) return { type: InteractionCallbackType.PONG };
 
   const conversationId = interaction.channel_id ?? interaction.guild_id ?? '';
@@ -122,10 +138,24 @@ export const dispatchDiscord = async (router: ChannelRouter, client: DiscordClie
       .filter(o => o.value !== undefined)
       .map(o => String(o.value))
       .join(' ');
-    event = { channel: 'discord', kind: 'command', user: invokingUser(interaction), conversation: { id: conversationId }, command: { name: interaction.data.name, args }, raw: interaction };
+    event = {
+      channel: 'discord',
+      kind: 'command',
+      user: invokingUser(interaction),
+      conversation: { id: conversationId },
+      command: { name: interaction.data.name, args },
+      raw: interaction,
+    };
   } else if (interaction.type === InteractionType.MESSAGE_COMPONENT && interaction.data?.custom_id) {
     const value = (interaction.data.values as string[] | undefined)?.[0];
-    event = { channel: 'discord', kind: 'action', user: invokingUser(interaction), conversation: { id: conversationId }, action: { id: interaction.data.custom_id, value }, raw: interaction };
+    event = {
+      channel: 'discord',
+      kind: 'action',
+      user: invokingUser(interaction),
+      conversation: { id: conversationId },
+      action: { id: interaction.data.custom_id, value },
+      raw: interaction,
+    };
   }
 
   if (!event) return undefined;

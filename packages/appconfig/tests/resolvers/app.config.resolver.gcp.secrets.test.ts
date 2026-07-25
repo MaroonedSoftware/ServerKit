@@ -33,8 +33,18 @@ describe('AppConfigResolverGcpSecrets', () => {
     });
 
     it('honours a string prefix and a custom regex', () => {
-      expect(new AppConfigResolverGcpSecrets(fakeSource(async () => null), 'gcp:').canResolve('gcp:X')).toBe(true);
-      expect(new AppConfigResolverGcpSecrets(fakeSource(async () => null), /^gcp:(.+)$/).canResolve('env:X')).toBe(false);
+      expect(
+        new AppConfigResolverGcpSecrets(
+          fakeSource(async () => null),
+          'gcp:',
+        ).canResolve('gcp:X'),
+      ).toBe(true);
+      expect(
+        new AppConfigResolverGcpSecrets(
+          fakeSource(async () => null),
+          /^gcp:(.+)$/,
+        ).canResolve('env:X'),
+      ).toBe(false);
     });
   });
 
@@ -70,7 +80,10 @@ describe('AppConfigResolverGcpSecrets', () => {
     });
 
     it('upgrades a non-global regex to global so matchAll does not throw', async () => {
-      const resolver = new AppConfigResolverGcpSecrets(fakeSource(async () => 'x'), /^\$\{gcp:(.+)\}$/);
+      const resolver = new AppConfigResolverGcpSecrets(
+        fakeSource(async () => 'x'),
+        /^\$\{gcp:(.+)\}$/,
+      );
       const owner: Record<string, unknown> = { value: '${gcp:SECRET}' };
       await resolver.resolve('${gcp:SECRET}', meta(owner, 'value'));
       expect(owner.value).toBe('x');

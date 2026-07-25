@@ -21,7 +21,7 @@ namespace document {
 ```
 
 Identifiers are lowercase `[a-z][a-z0-9_]*`. `//` line comments. Subject
-lists use commas — a list of *allowed* subject types, not a union.
+lists use commas — a list of _allowed_ subject types, not a union.
 
 ## Subject types
 
@@ -33,31 +33,31 @@ Each `relation` declares which kinds of subjects may receive it. Three forms:
 - **Wildcard** — `user.*`. Permits the public "all of them" grant. A single
   tuple `document:readme.viewer@user.*` grants `viewer` to **every** user at
   once. Omit this form to prevent world-readable tuples for the relation.
-- **Userset** — `document.editor`. Permits a *group* defined by another
+- **Userset** — `document.editor`. Permits a _group_ defined by another
   relation. A tuple like `document:readme.viewer@document:other.editor`
   grants `viewer` on `readme` to everyone who is `editor` on `other`. Common
   for layering: `viewer ← editor ← owner`.
 
 Listing `user` and `user.*` in the same subject list is normal — they
-authorize two different *kinds* of tuples (per-user and public).
+authorize two different _kinds_ of tuples (per-user and public).
 
 ## Permission expressions
 
 Permissions are computed sets, defined with set-algebra over relation
 references and parent walks:
 
-| Symbol | Meaning        | Arity        | Example                |
-| ------ | -------------- | ------------ | ---------------------- |
-| `\|`   | union          | n-ary        | `owner \| editor`      |
-| `&`    | intersection   | n-ary        | `viewer & paid`        |
-| `-`    | exclusion      | binary, left | `edit - banned`        |
-| `->`   | tupleToUserset | binary       | `parent->viewer`       |
-| `( )`  | grouping       | —            | `(a \| b) & c`         |
+| Symbol | Meaning        | Arity        | Example           |
+| ------ | -------------- | ------------ | ----------------- |
+| `\|`   | union          | n-ary        | `owner \| editor` |
+| `&`    | intersection   | n-ary        | `viewer & paid`   |
+| `-`    | exclusion      | binary, left | `edit - banned`   |
+| `->`   | tupleToUserset | binary       | `parent->viewer`  |
+| `( )`  | grouping       | —            | `(a \| b) & c`    |
 
 Precedence (low → high): `-`, `\|`, `&`, atom (`(...)` / `a->b` / `name`).
 
 `parent->viewer` walks the `parent` relation to the related object (e.g.
-the folder a document lives in) and evaluates `viewer` *there*. So
+the folder a document lives in) and evaluates `viewer` _there_. So
 "viewers of a doc include viewers of its parent folder" becomes
 `permission view = viewer | parent->viewer`.
 
@@ -86,7 +86,7 @@ Two separators with distinct jobs:
 - `:` is for **runtime identity** — binds a concrete id to a type
   (`user:alice`, `doc:d1`), and inside the DSL introduces a relation's
   subject-type list (`relation editor: user, ...`).
-- `.` is for **schema-level scoping** — names a relation or wildcard *on* a
+- `.` is for **schema-level scoping** — names a relation or wildcard _on_ a
   type (`user.*`, `document.editor`, `doc:d1.owner`).
 
 This matches the rest of the codebase's dot-notation convention. Coming
@@ -170,8 +170,8 @@ assertions:
 
 validation:
   doc:readme.view:
-    - "[user:alice] is <doc:readme.owner>"
-    - "[user:carol] is <folder:docs.viewer>"
+    - '[user:alice] is <doc:readme.owner>'
+    - '[user:carol] is <folder:docs.viewer>'
 ```
 
 - `schemaFile` (or inline `schema:` source) — the `.perm` schema to compile

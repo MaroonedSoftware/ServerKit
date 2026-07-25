@@ -75,11 +75,31 @@ export const tokenizeScimFilter = (input: string): ScimToken[] => {
             i += 2;
             continue;
           }
-          if (next === 'n') { value += '\n'; i += 2; continue; }
-          if (next === 't') { value += '\t'; i += 2; continue; }
-          if (next === 'r') { value += '\r'; i += 2; continue; }
-          if (next === 'b') { value += '\b'; i += 2; continue; }
-          if (next === 'f') { value += '\f'; i += 2; continue; }
+          if (next === 'n') {
+            value += '\n';
+            i += 2;
+            continue;
+          }
+          if (next === 't') {
+            value += '\t';
+            i += 2;
+            continue;
+          }
+          if (next === 'r') {
+            value += '\r';
+            i += 2;
+            continue;
+          }
+          if (next === 'b') {
+            value += '\b';
+            i += 2;
+            continue;
+          }
+          if (next === 'f') {
+            value += '\f';
+            i += 2;
+            continue;
+          }
           throw scimError(400, 'invalidFilter', 'Bad Request').withDetails({ position: i, message: `Unsupported escape sequence \\${next}` });
         }
         value += input[i];

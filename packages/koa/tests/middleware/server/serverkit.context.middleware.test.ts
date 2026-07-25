@@ -80,9 +80,7 @@ describe('serverKitContextMiddleware', () => {
   });
 
   it('should set ctx.userAgent from user-agent header when present', async () => {
-    vi.mocked(mockCtx.get).mockImplementation((name: string) =>
-      name === 'user-agent' ? 'Mozilla/5.0' : '',
-    );
+    vi.mocked(mockCtx.get).mockImplementation((name: string) => (name === 'user-agent' ? 'Mozilla/5.0' : ''));
     const middleware = serverKitContextMiddleware(mockContainer as unknown as Container);
 
     await middleware(mockCtx, mockNext);
@@ -117,9 +115,7 @@ describe('serverKitContextMiddleware', () => {
     await middleware(mockCtx, mockNext);
 
     expect(mockCtx.correlationId).toBeDefined();
-    expect(mockCtx.correlationId).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-    );
+    expect(mockCtx.correlationId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
   });
 
   it('should preserve an inbound x-request-id header', async () => {
@@ -150,9 +146,7 @@ describe('serverKitContextMiddleware', () => {
     await middleware(mockCtx, mockNext);
 
     expect(mockCtx.requestId).toBeDefined();
-    expect(mockCtx.requestId).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-    );
+    expect(mockCtx.requestId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
   });
 
   it('should set x-correlation-id header on response', async () => {
@@ -171,9 +165,7 @@ describe('serverKitContextMiddleware', () => {
 
     await middleware(mockCtx, mockNext);
 
-    expect(mockCtx.headers['x-request-id']).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-    );
+    expect(mockCtx.headers['x-request-id']).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
     expect(mockCtx.set).toHaveBeenCalledWith('x-request-id', mockCtx.headers['x-request-id']);
   });
 

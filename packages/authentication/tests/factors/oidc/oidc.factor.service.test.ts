@@ -199,10 +199,7 @@ describe('OidcFactorService', () => {
 
       await service.beginAuthorization({ provider: 'google', intent: 'sign-in' });
 
-      expect(openidClient.buildAuthorizationUrl).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({ scope: 'openid profile email' }),
-      );
+      expect(openidClient.buildAuthorizationUrl).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ scope: 'openid profile email' }));
     });
   });
 
@@ -248,9 +245,7 @@ describe('OidcFactorService', () => {
     });
 
     it('throws 404 when the cached state record has expired', async () => {
-      await expect(
-        service.completeAuthorization({ params: { code: 'xyz', state: 'missing' } }),
-      ).rejects.toMatchObject({
+      await expect(service.completeAuthorization({ params: { code: 'xyz', state: 'missing' } })).rejects.toMatchObject({
         statusCode: 404,
         details: { state: 'not found or expired' },
       });
@@ -284,7 +279,14 @@ describe('OidcFactorService', () => {
     it('returns signed-in with the existing actor when (provider, subject) is mapped', async () => {
       await seedState();
       seedTokens();
-      const existing: OidcFactor = { id: 'factor-1', actorId: 'actor-1', active: true, provider: 'google', subject: 'subject-1', email: 'user@example.com' };
+      const existing: OidcFactor = {
+        id: 'factor-1',
+        actorId: 'actor-1',
+        active: true,
+        provider: 'google',
+        subject: 'subject-1',
+        email: 'user@example.com',
+      };
       vi.mocked(repo.findFactor).mockResolvedValue(existing);
 
       const result = await service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } });
@@ -331,7 +333,14 @@ describe('OidcFactorService', () => {
     it('updates the stored email when the IdP reports a different one', async () => {
       await seedState();
       seedTokens({ email: 'new@example.com' });
-      const existing: OidcFactor = { id: 'factor-1', actorId: 'actor-1', active: true, provider: 'google', subject: 'subject-1', email: 'old@example.com' };
+      const existing: OidcFactor = {
+        id: 'factor-1',
+        actorId: 'actor-1',
+        active: true,
+        provider: 'google',
+        subject: 'subject-1',
+        email: 'old@example.com',
+      };
       vi.mocked(repo.findFactor).mockResolvedValue(existing);
 
       await service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } });
@@ -466,13 +475,13 @@ describe('OidcFactorService', () => {
       await seedState();
       seedTokens();
 
-      await expect(
-        service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } }),
-      ).rejects.toMatchObject({ statusCode: 403, details: { profile: 'not allowed' } });
-      expect(policyService.check).toHaveBeenCalledWith(
-        'auth.factor.oidc.profile.allowed',
-        { profile: expect.objectContaining({ provider: 'google', subject: 'subject-1' }) },
-      );
+      await expect(service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } })).rejects.toMatchObject({
+        statusCode: 403,
+        details: { profile: 'not allowed' },
+      });
+      expect(policyService.check).toHaveBeenCalledWith('auth.factor.oidc.profile.allowed', {
+        profile: expect.objectContaining({ provider: 'google', subject: 'subject-1' }),
+      });
     });
   });
 
@@ -721,10 +730,7 @@ describe('OidcProviderRegistry', () => {
 
     it('omits the execute hook on https issuers even when the flag is set', async () => {
       vi.mocked(openidClient.discovery).mockResolvedValue(makeConfiguration());
-      const registry = new OidcProviderRegistry(
-        new OidcProviderRegistryConfig([{ ...PROVIDER, allowInsecureIssuer: true }]),
-        makeLogger(),
-      );
+      const registry = new OidcProviderRegistry(new OidcProviderRegistryConfig([{ ...PROVIDER, allowInsecureIssuer: true }]), makeLogger());
 
       await registry.getConfiguration('google');
 
@@ -735,10 +741,7 @@ describe('OidcProviderRegistry', () => {
     it('warns whenever allowInsecureIssuer is set (even on https) so it is not left enabled by accident', async () => {
       vi.mocked(openidClient.discovery).mockResolvedValue(makeConfiguration());
       const logger = makeLogger();
-      const registry = new OidcProviderRegistry(
-        new OidcProviderRegistryConfig([{ ...PROVIDER, allowInsecureIssuer: true }]),
-        logger,
-      );
+      const registry = new OidcProviderRegistry(new OidcProviderRegistryConfig([{ ...PROVIDER, allowInsecureIssuer: true }]), logger);
 
       await registry.getConfiguration('google');
 

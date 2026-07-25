@@ -15,16 +15,16 @@ pnpm add @maroonedsoftware/comms @maroonedsoftware/slack   # + any other channel
 
 ## Exports
 
-| Symbol                         | Purpose                                                                                          |
-|--------------------------------|--------------------------------------------------------------------------------------------------|
-| `ChannelRouter`                | Registers `command`/`action`/`message`/`fallback` handlers and `dispatch`es normalized events. Holds `.templates`. |
-| `IncomingEvent`                | Normalized inbound event (`channel`, `kind`, `user`, `conversation`, `text?`, `command?`, `action?`, `raw`). |
-| `OutgoingMessage` / `OutgoingButton` | Portable outbound message (`text`, optional `subject`, optional `buttons`).                 |
-| `Reply`                        | A `Notifier` bound to one recipient — what handlers use: `send` / `sendTemplate` / `sendNative`.  |
-| `Notifier`                     | Send-to-recipient interface each channel adapter implements (the seam for future push/email).     |
-| `bindReply(notifier, to)`      | Builds a `Reply` from a `Notifier` + recipient.                                                   |
-| `TemplateRegistry`             | Named rich templates: `register(name, channel, fn)`, `registerDefault(name, fn)`, `render(...)`.  |
-| `CommsError`                   | `ServerkitError` subclass (e.g. `sendTemplate` for an unknown template).                          |
+| Symbol                               | Purpose                                                                                                            |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `ChannelRouter`                      | Registers `command`/`action`/`message`/`fallback` handlers and `dispatch`es normalized events. Holds `.templates`. |
+| `IncomingEvent`                      | Normalized inbound event (`channel`, `kind`, `user`, `conversation`, `text?`, `command?`, `action?`, `raw`).       |
+| `OutgoingMessage` / `OutgoingButton` | Portable outbound message (`text`, optional `subject`, optional `buttons`).                                        |
+| `Reply`                              | A `Notifier` bound to one recipient — what handlers use: `send` / `sendTemplate` / `sendNative`.                   |
+| `Notifier`                           | Send-to-recipient interface each channel adapter implements (the seam for future push/email).                      |
+| `bindReply(notifier, to)`            | Builds a `Reply` from a `Notifier` + recipient.                                                                    |
+| `TemplateRegistry`                   | Named rich templates: `register(name, channel, fn)`, `registerDefault(name, fn)`, `render(...)`.                   |
+| `CommsError`                         | `ServerkitError` subclass (e.g. `sendTemplate` for an unknown template).                                           |
 
 ## Defining handlers (channel-agnostic)
 
@@ -36,7 +36,10 @@ export const router = new ChannelRouter();
 router.command('deploy', async (event, reply) => {
   await reply.send({
     text: `Deploying ${event.command!.args || 'production'}…`,
-    buttons: [{ id: 'deploy:confirm', label: 'Confirm' }, { id: 'deploy:cancel', label: 'Cancel' }],
+    buttons: [
+      { id: 'deploy:confirm', label: 'Confirm' },
+      { id: 'deploy:cancel', label: 'Cancel' },
+    ],
   });
 });
 
@@ -62,12 +65,17 @@ import { SlackClient, SlackConfig, verifySlackSignature } from '@maroonedsoftwar
 import { dispatchSlackCommand } from '@maroonedsoftware/slack/comms';
 import { router } from './router.js';
 
-http.post('/slack/commands', async (ctx) => {
+http.post('/slack/commands', async ctx => {
   const raw = await rawBody(ctx.req, { encoding: 'utf8' });
-  verifySlackSignature({ signingSecret: ctx.container.get(SlackConfig).signingSecret, rawBody: raw,
-    timestamp: ctx.get('x-slack-request-timestamp'), signature: ctx.get('x-slack-signature') });
+  verifySlackSignature({
+    signingSecret: ctx.container.get(SlackConfig).signingSecret,
+    rawBody: raw,
+    timestamp: ctx.get('x-slack-request-timestamp'),
+    signature: ctx.get('x-slack-signature'),
+  });
   await dispatchSlackCommand(router, ctx.container.get(SlackClient), Object.fromEntries(new URLSearchParams(raw)) as any);
-  ctx.status = 200; ctx.body = '';
+  ctx.status = 200;
+  ctx.body = '';
 });
 ```
 
@@ -85,7 +93,7 @@ router.templates.register('order.card', 'slack', (d: { id: string }) => ({ block
 router.templates.registerDefault('order.card', (d: { id: string }) => ({ text: `Order ${d.id} ✅` }));
 
 router.action('order:confirm', async (event, reply) => {
-  await reply.sendTemplate('order.card', { id: event.action!.value });   // native on Slack, fallback elsewhere
+  await reply.sendTemplate('order.card', { id: event.action!.value }); // native on Slack, fallback elsewhere
 });
 ```
 

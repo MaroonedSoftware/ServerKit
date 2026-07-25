@@ -30,9 +30,7 @@ describe('EventBus', () => {
     it('throws when no subscribers are registered for the event type', async () => {
       const bus = new EventBus(registry, container);
 
-      await expect(bus.publish({ type: 'test.event', value: 'x' })).rejects.toThrow(
-        'No subscribers registered for event type test.event',
-      );
+      await expect(bus.publish({ type: 'test.event', value: 'x' })).rejects.toThrow('No subscribers registered for event type test.event');
       expect(container.get).not.toHaveBeenCalled();
     });
 

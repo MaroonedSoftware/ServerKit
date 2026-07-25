@@ -33,7 +33,13 @@ const makeDispatcher = () => {
   return { dispatcher: new TelegramDispatcher(commands, callbackQueries, updates, logger), commands, callbackQueries, updates, logger };
 };
 
-const message = (text: string): TelegramMessage => ({ message_id: 1, chat: { id: 42, type: 'private' }, date: 1, from: { id: 7, username: 'ada' }, text });
+const message = (text: string): TelegramMessage => ({
+  message_id: 1,
+  chat: { id: 42, type: 'private' },
+  date: 1,
+  from: { id: 7, username: 'ada' },
+  text,
+});
 
 describe('TelegramDispatcher.dispatchUpdate', () => {
   it('routes a command message to the command map and parses args', async () => {

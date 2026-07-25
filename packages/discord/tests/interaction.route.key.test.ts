@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { interactionRouteKey, discordInteractionIdempotencyKey, InteractionType, type DiscordInteraction } from '../src/discord.interaction.handler.js';
+import {
+  interactionRouteKey,
+  discordInteractionIdempotencyKey,
+  InteractionType,
+  type DiscordInteraction,
+} from '../src/discord.interaction.handler.js';
 
 const base = { id: 'i1', token: 'tok', application_id: 'app1' };
 

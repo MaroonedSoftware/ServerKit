@@ -35,7 +35,11 @@ const evaluate = (
   signature: string | undefined,
   options = OPTIONS,
   env = envelope,
-) => new DiscordSignaturePolicy().evaluate(makeContext(rawBody, { [DISCORD_SIGNATURE_TIMESTAMP_HEADER]: ts, [DISCORD_SIGNATURE_HEADER]: signature }, options), env);
+) =>
+  new DiscordSignaturePolicy().evaluate(
+    makeContext(rawBody, { [DISCORD_SIGNATURE_TIMESTAMP_HEADER]: ts, [DISCORD_SIGNATURE_HEADER]: signature }, options),
+    env,
+  );
 
 const expectDenied = async (result: Awaited<ReturnType<typeof evaluate>>, reason: DiscordSignatureFailureReason) => {
   expect(isPolicyResultDenied(result)).toBe(true);

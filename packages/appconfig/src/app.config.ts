@@ -104,10 +104,7 @@ export class AppConfig<T = Record<string, unknown>> {
    * ```
    */
   get<K extends keyof T>(key: K): T[K];
-  get<K extends keyof T, D extends NonNullable<T[K]> = NonNullable<T[K]>>(
-    key: K,
-    defaultValue: D,
-  ): unknown extends T[K] ? D : NonNullable<T[K]> | D;
+  get<K extends keyof T, D extends NonNullable<T[K]> = NonNullable<T[K]>>(key: K, defaultValue: D): unknown extends T[K] ? D : NonNullable<T[K]> | D;
   get<K extends keyof T>(key: K, defaultValue?: unknown): unknown {
     const value = this.read()[key];
     if (arguments.length < 2) {

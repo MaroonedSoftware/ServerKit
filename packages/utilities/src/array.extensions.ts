@@ -127,11 +127,11 @@ installArrayMethod('takeWhile', function <T>(this: Array<T>, predicate: (value: 
 });
 
 // Adapted from a C# Enumerable extension derived from a Reactive Extensions operator.
-installArrayMethod('takeWhileAggregate', function <T, TAccumulate, TDest>(
-  this: Array<T>,
-  seed: TAccumulate,
-  step: (accumulator: TAccumulate, element: T) => TakeWhileAggregateFunRetVal<TAccumulate, TDest>,
-): Array<TDest> {
+installArrayMethod('takeWhileAggregate', function <
+  T,
+  TAccumulate,
+  TDest,
+>(this: Array<T>, seed: TAccumulate, step: (accumulator: TAccumulate, element: T) => TakeWhileAggregateFunRetVal<TAccumulate, TDest>): Array<TDest> {
   const result: TDest[] = [];
   let accumulator = seed;
 

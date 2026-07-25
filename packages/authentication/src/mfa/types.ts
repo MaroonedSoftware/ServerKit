@@ -62,8 +62,7 @@ export interface MfaChallengePayload<K extends string = string> {
  * for shaping the wire response in both branches.
  */
 export type IssueOrChallengeResult<K extends string = string> =
-  | { kind: 'allow'; actor: TargetActor<K>; primaryFactor: AuthenticationSessionFactor }
-  | { kind: 'challenge'; challenge: MfaChallengePayload<K> };
+  { kind: 'allow'; actor: TargetActor<K>; primaryFactor: AuthenticationSessionFactor } | { kind: 'challenge'; challenge: MfaChallengePayload<K> };
 
 /**
  * Outcome of {@link MfaOrchestrator.completeMfa}. The MFA challenge has been

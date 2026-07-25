@@ -76,9 +76,7 @@ export class S3StorageProvider extends StorageProvider {
 
   async read(key: string, options?: StorageReadOptions): Promise<Readable> {
     try {
-      const response = await this.client.send(
-        new GetObjectCommand({ Bucket: this.options.bucket, Key: key, Range: toRangeHeader(options?.range) }),
-      );
+      const response = await this.client.send(new GetObjectCommand({ Bucket: this.options.bucket, Key: key, Range: toRangeHeader(options?.range) }));
       return response.Body as Readable;
     } catch (error) {
       throw this.mapError(key, error);

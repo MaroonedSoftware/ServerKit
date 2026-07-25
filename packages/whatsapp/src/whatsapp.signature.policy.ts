@@ -73,7 +73,8 @@ export class WhatsAppSignaturePolicy extends Policy<WhatsAppSignaturePolicyConte
       if (!IsWhatsAppError(error)) throw error;
 
       const internalDetails = error.internalDetails ?? {};
-      const reason = typeof internalDetails.reason === 'string' ? internalDetails.reason : ('invalid_signature' satisfies WhatsAppSignatureFailureReason);
+      const reason =
+        typeof internalDetails.reason === 'string' ? internalDetails.reason : ('invalid_signature' satisfies WhatsAppSignatureFailureReason);
       return this.deny(reason, undefined, { message: error.message, ...internalDetails });
     }
   }

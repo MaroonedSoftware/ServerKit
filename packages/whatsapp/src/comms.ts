@@ -3,7 +3,15 @@
  * the channel-agnostic `@maroonedsoftware/comms` router. Importing this subpath
  * pulls in `@maroonedsoftware/comms` (an optional peer); the whatsapp core does not.
  */
-import { bindReply, CommsError, type ChannelRouter, type IncomingEvent, type Notifier, type OutgoingMessage, type TemplateRegistry } from '@maroonedsoftware/comms';
+import {
+  bindReply,
+  CommsError,
+  type ChannelRouter,
+  type IncomingEvent,
+  type Notifier,
+  type OutgoingMessage,
+  type TemplateRegistry,
+} from '@maroonedsoftware/comms';
 import { WhatsAppClient } from './client/whatsapp.client.js';
 import { interactiveReplyId, type WhatsAppMessage, type WhatsAppValue, type WhatsAppWebhookBody } from './whatsapp.message.handler.js';
 

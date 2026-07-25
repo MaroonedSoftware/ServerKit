@@ -12,8 +12,7 @@ const OPTIONS: SignatureOptions = {
   digest: 'hex',
 };
 
-const computeSignature = (opts: SignatureOptions, body: Buffer): string =>
-  createHmac(opts.algorithm, opts.secret).update(body).digest(opts.digest);
+const computeSignature = (opts: SignatureOptions, body: Buffer): string => createHmac(opts.algorithm, opts.secret).update(body).digest(opts.digest);
 
 // The policy ignores the envelope; a minimal stub keeps the call type-correct.
 const envelope = { now: undefined as never } satisfies PolicyEnvelope;

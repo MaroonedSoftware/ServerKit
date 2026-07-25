@@ -16,9 +16,7 @@ describe('AppConfigBuilder', () => {
     });
 
     it('leaves ${ref:…} untouched when not enabled', async () => {
-      const config = await new AppConfigBuilder()
-        .addSource({ load: async () => ({ host: 'db', url: '${ref:host}/api' }) })
-        .buildSnapshot();
+      const config = await new AppConfigBuilder().addSource({ load: async () => ({ host: 'db', url: '${ref:host}/api' }) }).buildSnapshot();
 
       expect(config.get('url')).toBe('${ref:host}/api');
     });

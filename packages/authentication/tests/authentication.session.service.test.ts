@@ -676,7 +676,13 @@ describe('AuthenticationSessionService', () => {
       await svc.refreshSession(tokens.refreshToken!);
 
       // audience is the trailing decode() argument; the refresh path keeps the default (falsy) ignoreExpiration.
-      expect(harness.jwtProvider.decode).toHaveBeenCalledWith(tokens.refreshToken, 'https://auth.example.com', undefined, false, 'https://api.example.com');
+      expect(harness.jwtProvider.decode).toHaveBeenCalledWith(
+        tokens.refreshToken,
+        'https://auth.example.com',
+        undefined,
+        false,
+        'https://api.example.com',
+      );
     });
 
     it('rejects a refresh token with a missing/wrong kind claim', async () => {

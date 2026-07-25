@@ -103,9 +103,7 @@ export interface InitiateRecoveryResult {
 
 /** Request to issue a per-channel recovery challenge. */
 export type RecoveryChannelChallengeRequest =
-  | { channel: 'email'; methodId: string; issueMethod?: 'code' | 'magiclink' }
-  | { channel: 'phone'; methodId: string }
-  | { channel: 'recoveryCode' };
+  { channel: 'email'; methodId: string; issueMethod?: 'code' | 'magiclink' } | { channel: 'phone'; methodId: string } | { channel: 'recoveryCode' };
 
 /** Response from {@link RecoveryOrchestrator.issueChannelChallenge}. */
 export type RecoveryChannelChallengeResponse =

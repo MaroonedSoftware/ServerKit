@@ -38,5 +38,5 @@ assertions:
 
 validation:
   doc:readme.view:
-    - "[user:alice] is <doc:readme.owner>"
-    - "[user:carol] is <doc:readme.viewer>"
+    - '[user:alice] is <doc:readme.owner>'
+    - '[user:carol] is <doc:readme.viewer>'

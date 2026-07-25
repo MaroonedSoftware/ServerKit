@@ -12,10 +12,7 @@ import { CacheProvider } from './cache.provider.js';
  *   will be treated as a `duplicate` on any future redelivery. `work` will not run again.
  *   The caller should ack success (stop the retry storm) and surface `dropped` for alerting.
  */
-export type IdempotencyOutcome<T> =
-  | { status: 'processed'; result: T }
-  | { status: 'duplicate' }
-  | { status: 'dropped'; attempts: number };
+export type IdempotencyOutcome<T> = { status: 'processed'; result: T } | { status: 'duplicate' } | { status: 'dropped'; attempts: number };
 
 /**
  * Per-call tuning for {@link IdempotencyStore.deduplicate}.

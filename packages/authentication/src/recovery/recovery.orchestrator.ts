@@ -183,7 +183,9 @@ export class RecoveryOrchestrator {
       eligibleChannels,
     });
     if (isPolicyResultDenied(policyResult)) {
-      throw httpError(403).withDetails({ reason: policyResult.reason }).withInternalDetails(policyResult.details ?? {});
+      throw httpError(403)
+        .withDetails({ reason: policyResult.reason })
+        .withInternalDetails(policyResult.details ?? {});
     }
 
     const challenge = await this.challengeService.issue({

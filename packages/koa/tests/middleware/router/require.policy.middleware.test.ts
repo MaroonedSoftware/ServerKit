@@ -82,9 +82,7 @@ describe('requirePolicy', () => {
     });
 
     it('propagates the 403 thrown by PolicyService.assert with policy-supplied headers', async () => {
-      const denialError = httpError(403)
-        .withDetails({ reason: 'mfa_required' })
-        .withHeaders({ 'WWW-Authenticate': 'Bearer error="mfa_required"' });
+      const denialError = httpError(403).withDetails({ reason: 'mfa_required' }).withHeaders({ 'WWW-Authenticate': 'Bearer error="mfa_required"' });
       const policyService = makePolicyService(async () => {
         throw denialError;
       });

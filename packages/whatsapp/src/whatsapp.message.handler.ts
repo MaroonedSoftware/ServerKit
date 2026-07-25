@@ -169,4 +169,5 @@ export const whatsappMessageIdempotencyKey = (message: Pick<WhatsAppMessage, 'id
  * @param status - The delivery status (only `id` and `status` are read).
  * @returns `whatsapp:status:{status.id}:{status.status}`.
  */
-export const whatsappStatusIdempotencyKey = (status: Pick<WhatsAppStatus, 'id' | 'status'>): string => `whatsapp:status:${status.id}:${status.status}`;
+export const whatsappStatusIdempotencyKey = (status: Pick<WhatsAppStatus, 'id' | 'status'>): string =>
+  `whatsapp:status:${status.id}:${status.status}`;

@@ -4,7 +4,7 @@
  * stdout/stdin isn't a TTY.
  */
 export const isInteractive = (): boolean => {
-    if (process.env['CI'] === 'true' || process.env['CI'] === '1') return false;
-    if (process.env['JOHNNY5_NON_INTERACTIVE'] === '1') return false;
-    return Boolean(process.stdout.isTTY && process.stdin.isTTY);
+  if (process.env['CI'] === 'true' || process.env['CI'] === '1') return false;
+  if (process.env['JOHNNY5_NON_INTERACTIVE'] === '1') return false;
+  return Boolean(process.stdout.isTTY && process.stdin.isTTY);
 };

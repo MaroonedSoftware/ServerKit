@@ -2,7 +2,11 @@ import crypto from 'node:crypto';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { RateLimiterCompatibleAbstract } from 'rate-limiter-flexible';
 import { RecoveryFactorService, RecoveryFactorServiceOptions } from '../../../src/factors/recovery/recovery.factor.service.js';
-import type { RecoveryCodeFactor, RecoveryCodeFactorRepository, RecoveryCodeValue } from '../../../src/factors/recovery/recovery.factor.repository.js';
+import type {
+  RecoveryCodeFactor,
+  RecoveryCodeFactorRepository,
+  RecoveryCodeValue,
+} from '../../../src/factors/recovery/recovery.factor.repository.js';
 import type { PasswordHashProvider } from '../../../src/providers/password.hash.provider.js';
 
 const hashCode = (code: string, salt?: Buffer): RecoveryCodeValue => {

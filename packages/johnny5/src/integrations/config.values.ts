@@ -10,29 +10,29 @@ import type { CliContext } from '../types.js';
 
 /** Read a config key as a non-empty string, or `undefined` when the key is absent, empty, non-string, or the getter throws. */
 export const readConfigString = (ctx: CliContext, key: string): string | undefined => {
-    let value: unknown;
-    try {
-        value = ctx.config.getAs<unknown>(key);
-    } catch {
-        return undefined;
-    }
-    return typeof value === 'string' && value.length > 0 ? value : undefined;
+  let value: unknown;
+  try {
+    value = ctx.config.getAs<unknown>(key);
+  } catch {
+    return undefined;
+  }
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
 };
 
 /** Read a config key as a finite number (numeric strings are coerced), or `undefined` when absent/unusable or the getter throws. */
 export const readConfigNumber = (ctx: CliContext, key: string): number | undefined => {
-    let value: unknown;
-    try {
-        value = ctx.config.getAs<unknown>(key);
-    } catch {
-        return undefined;
-    }
-    const parsed = typeof value === 'number' ? value : typeof value === 'string' && value.length > 0 ? Number(value) : NaN;
-    return Number.isFinite(parsed) ? parsed : undefined;
+  let value: unknown;
+  try {
+    value = ctx.config.getAs<unknown>(key);
+  } catch {
+    return undefined;
+  }
+  const parsed = typeof value === 'number' ? value : typeof value === 'string' && value.length > 0 ? Number(value) : NaN;
+  return Number.isFinite(parsed) ? parsed : undefined;
 };
 
 /** Parse an env var into a finite number, or `undefined` when unset, empty, or not numeric. */
 export const envNumber = (raw: string | undefined): number | undefined => {
-    const parsed = raw ? Number(raw) : NaN;
-    return Number.isFinite(parsed) ? parsed : undefined;
+  const parsed = raw ? Number(raw) : NaN;
+  return Number.isFinite(parsed) ? parsed : undefined;
 };

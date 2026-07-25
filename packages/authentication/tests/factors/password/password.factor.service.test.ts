@@ -2,11 +2,7 @@ import crypto from 'node:crypto';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { RateLimiterCompatibleAbstract } from 'rate-limiter-flexible';
 import { PasswordFactorService } from '../../../src/factors/password/password.factor.service.js';
-import type {
-  PasswordFactor,
-  PasswordFactorRepository,
-  PasswordValue,
-} from '../../../src/factors/password/password.factor.repository.js';
+import type { PasswordFactor, PasswordFactorRepository, PasswordValue } from '../../../src/factors/password/password.factor.repository.js';
 import type { PasswordStrengthProvider } from '../../../src/providers/password.strength.provider.js';
 import type { PasswordHashProvider } from '../../../src/providers/password.hash.provider.js';
 import type { PolicyService } from '@maroonedsoftware/policies';
@@ -107,7 +103,9 @@ describe('PasswordFactorService', () => {
 
   describe('createPasswordFactor', () => {
     it("throws 400 when the password.allowed policy denies with reason 'weak_password'", async () => {
-      policyService.check = vi.fn().mockResolvedValue({ allowed: false, reason: 'weak_password', details: { warning: 'too common', suggestions: ['add symbols'] } });
+      policyService.check = vi
+        .fn()
+        .mockResolvedValue({ allowed: false, reason: 'weak_password', details: { warning: 'too common', suggestions: ['add symbols'] } });
 
       await expect(service.createPasswordFactor('actor-1', 'weak')).rejects.toMatchObject({
         statusCode: 400,

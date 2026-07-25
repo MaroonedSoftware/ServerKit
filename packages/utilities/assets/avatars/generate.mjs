@@ -22,7 +22,8 @@ import { writeFileSync } from 'node:fs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dist = resolve(here, '../../dist/index.js');
-const { generateFaceAvatarSvg, generateIdenticonSvg, generateGeometricSvg, generateGradientSwirlSvg, generateSmileyAvatarSvg, generateCityscapeSvg } = await import(dist);
+const { generateFaceAvatarSvg, generateIdenticonSvg, generateGeometricSvg, generateGradientSwirlSvg, generateSmileyAvatarSvg, generateCityscapeSvg } =
+  await import(dist);
 
 const seeds = ['Ada Lovelace', 'Grace Hopper', 'Alan Turing', 'Katherine Johnson', 'Linus Torvalds', 'Margaret Hamilton'];
 

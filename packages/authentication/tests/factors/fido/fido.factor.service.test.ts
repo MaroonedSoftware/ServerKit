@@ -164,11 +164,7 @@ const buildAssertionCredential = (params: {
 }): PublicKeyCredentialWithAssertion => {
   const authData = buildAuthData({ rpId: params.rpId, signCount: params.signCount, flags: 0x01 });
   const clientDataJSON = buildClientDataJSON({ type: 'webauthn.get', challenge: params.challenge, origin: params.origin });
-  const signature = crypto.sign(
-    'sha256',
-    Buffer.concat([authData, sha256(clientDataJSON)]),
-    params.authenticator.privateKey,
-  );
+  const signature = crypto.sign('sha256', Buffer.concat([authData, sha256(clientDataJSON)]), params.authenticator.privateKey);
   const credentialIdBase64 = params.authenticator.credentialId.toString('base64');
   return {
     id: credentialIdBase64,
@@ -220,9 +216,7 @@ const makeStatefulRepo = () => {
       factors.set(factor.id, factor);
       return factor;
     }),
-    listFactors: vi.fn(async (actorId: string, active: boolean) =>
-      [...factors.values()].filter(f => f.actorId === actorId && f.active === active),
-    ),
+    listFactors: vi.fn(async (actorId: string, active: boolean) => [...factors.values()].filter(f => f.actorId === actorId && f.active === active)),
     getFactor: vi.fn(async (actorId: string, factorId: string) => {
       const factor = factors.get(factorId);
       return factor && factor.actorId === actorId ? factor : undefined;
@@ -345,7 +339,12 @@ describe('FidoFactorService', () => {
   describe('createFidoFactorFromRegistration', () => {
     it('throws 404 when the registration does not exist', async () => {
       const authenticator = createAuthenticator();
-      const credential = buildAttestationCredential({ authenticator, rpId: RP_ID, origin: RP_ORIGIN, challenge: Buffer.alloc(128).toString('base64') });
+      const credential = buildAttestationCredential({
+        authenticator,
+        rpId: RP_ID,
+        origin: RP_ORIGIN,
+        challenge: Buffer.alloc(128).toString('base64'),
+      });
 
       await expect(service.createFidoFactorFromRegistration('actor-1', 'missing-reg', credential)).rejects.toMatchObject({
         statusCode: 404,

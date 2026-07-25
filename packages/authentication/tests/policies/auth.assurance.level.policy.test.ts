@@ -71,10 +71,7 @@ describe('DefaultAssuranceLevelPolicy', () => {
   describe('aal2', () => {
     it('allows the classic knowledge + possession combo', async () => {
       const result = await evaluate({
-        factors: [
-          factor('password', 'knowledge', now.minus({ minutes: 1 })),
-          factor('phone', 'possession', now.minus({ minutes: 1 })),
-        ],
+        factors: [factor('password', 'knowledge', now.minus({ minutes: 1 })), factor('phone', 'possession', now.minus({ minutes: 1 }))],
         minLevel: 'aal2',
         within: fiveMinutes,
       });
@@ -83,10 +80,7 @@ describe('DefaultAssuranceLevelPolicy', () => {
 
     it('allows the knowledge + biometric combo', async () => {
       const result = await evaluate({
-        factors: [
-          factor('password', 'knowledge', now.minus({ minutes: 1 })),
-          factor('fido', 'biometric', now.minus({ minutes: 1 })),
-        ],
+        factors: [factor('password', 'knowledge', now.minus({ minutes: 1 })), factor('fido', 'biometric', now.minus({ minutes: 1 }))],
         minLevel: 'aal2',
         within: fiveMinutes,
       });
@@ -155,10 +149,7 @@ describe('DefaultAssuranceLevelPolicy', () => {
     it('ignores stale factors when computing aal2', async () => {
       // Knowledge factor is fresh, possession factor is stale — aal2 should deny.
       const result = await evaluate({
-        factors: [
-          factor('password', 'knowledge', now.minus({ minutes: 1 })),
-          factor('phone', 'possession', now.minus({ minutes: 30 })),
-        ],
+        factors: [factor('password', 'knowledge', now.minus({ minutes: 1 })), factor('phone', 'possession', now.minus({ minutes: 30 }))],
         minLevel: 'aal2',
         within: fiveMinutes,
       });

@@ -22,11 +22,11 @@ pnpm add @google-cloud/storage
 
 The cloud backends live behind subpath exports so importing the core never loads an SDK you didn't install:
 
-| Import | Contents | Pulls in |
-|--------|----------|----------|
-| `@maroonedsoftware/storage` | `StorageProvider`, the errors, `DiskStorageProvider` | nothing extra |
-| `@maroonedsoftware/storage/s3` | `S3StorageProvider`, `S3StorageProviderOptions` | `@aws-sdk/*` |
-| `@maroonedsoftware/storage/gcs` | `GcsStorageProvider`, `GcsStorageProviderOptions` | `@google-cloud/storage` |
+| Import                          | Contents                                             | Pulls in                |
+| ------------------------------- | ---------------------------------------------------- | ----------------------- |
+| `@maroonedsoftware/storage`     | `StorageProvider`, the errors, `DiskStorageProvider` | nothing extra           |
+| `@maroonedsoftware/storage/s3`  | `S3StorageProvider`, `S3StorageProviderOptions`      | `@aws-sdk/*`            |
+| `@maroonedsoftware/storage/gcs` | `GcsStorageProvider`, `GcsStorageProviderOptions`    | `@google-cloud/storage` |
 
 ## Usage
 
@@ -99,17 +99,17 @@ class AvatarService {
 
 Base class to extend when implementing a custom backend. Keys are hierarchical, `/`-separated paths (e.g. `users/42/avatar.png`).
 
-| Method | Signature | Description |
-|--------|-----------|-------------|
-| `write` | `(key, body: Readable \| Buffer \| string, options?: StorageWriteOptions) => Promise<void>` | Writes `key`, overwriting any existing object. |
-| `read` | `(key, options?: StorageReadOptions) => Promise<Readable>` | Opens a stream, optionally for an inclusive byte range. Throws if absent. |
-| `stat` | `(key) => Promise<StorageObjectMetadata>` | Fetches metadata without reading the body. Throws if absent. |
-| `exists` | `(key) => Promise<boolean>` | `true` / `false` — never throws for absence. |
-| `delete` | `(key) => Promise<void>` | Idempotent — deleting a missing key is a no-op. |
-| `copy` | `(sourceKey, destinationKey) => Promise<void>` | Server-side copy within the backend. Throws if the source is missing. |
-| `move` | `(sourceKey, destinationKey) => Promise<void>` | Move/rename within the backend. Throws if the source is missing. |
-| `list` | `(options?: StorageListOptions) => Promise<StorageListResult>` | One page of objects, optionally filtered by `prefix`, with a `cursor` for the next page. |
-| `getSignedUrl` | `(key, options: SignedUrlOptions) => Promise<string>` | Time-limited URL for direct client read/write. |
+| Method         | Signature                                                                                   | Description                                                                              |
+| -------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `write`        | `(key, body: Readable \| Buffer \| string, options?: StorageWriteOptions) => Promise<void>` | Writes `key`, overwriting any existing object.                                           |
+| `read`         | `(key, options?: StorageReadOptions) => Promise<Readable>`                                  | Opens a stream, optionally for an inclusive byte range. Throws if absent.                |
+| `stat`         | `(key) => Promise<StorageObjectMetadata>`                                                   | Fetches metadata without reading the body. Throws if absent.                             |
+| `exists`       | `(key) => Promise<boolean>`                                                                 | `true` / `false` — never throws for absence.                                             |
+| `delete`       | `(key) => Promise<void>`                                                                    | Idempotent — deleting a missing key is a no-op.                                          |
+| `copy`         | `(sourceKey, destinationKey) => Promise<void>`                                              | Server-side copy within the backend. Throws if the source is missing.                    |
+| `move`         | `(sourceKey, destinationKey) => Promise<void>`                                              | Move/rename within the backend. Throws if the source is missing.                         |
+| `list`         | `(options?: StorageListOptions) => Promise<StorageListResult>`                              | One page of objects, optionally filtered by `prefix`, with a `cursor` for the next page. |
+| `getSignedUrl` | `(key, options: SignedUrlOptions) => Promise<string>`                                       | Time-limited URL for direct client read/write.                                           |
 
 #### Behaviour contract
 

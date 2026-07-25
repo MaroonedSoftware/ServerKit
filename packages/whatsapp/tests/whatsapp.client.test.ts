@@ -27,7 +27,12 @@ describe('WhatsAppClient', () => {
     expect(url).toBe(`${WHATSAPP_GRAPH_API_HOST}/v21.0/PN1/messages`);
     expect(init.method).toBe('POST');
     expect((init.headers as Record<string, string>).authorization).toBe('Bearer tok');
-    expect(JSON.parse(init.body as string)).toMatchObject({ messaging_product: 'whatsapp', to: '15551234567', type: 'text', text: { body: 'hello', preview_url: false } });
+    expect(JSON.parse(init.body as string)).toMatchObject({
+      messaging_product: 'whatsapp',
+      to: '15551234567',
+      type: 'text',
+      text: { body: 'hello', preview_url: false },
+    });
     expect(res).toEqual({ messages: [{ id: 'wamid.1' }] });
   });
 

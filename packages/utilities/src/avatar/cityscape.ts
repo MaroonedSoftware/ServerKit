@@ -20,7 +20,8 @@ export type CityscapeTimeOfDay = 'day' | 'dusk' | 'night';
 export type CityscapeView = 'flat' | 'perspective';
 
 /** Lunar phase for the night sky's moon. */
-export type CityscapeMoonPhase = 'new' | 'waxingCrescent' | 'firstQuarter' | 'waxingGibbous' | 'full' | 'waningGibbous' | 'lastQuarter' | 'waningCrescent';
+export type CityscapeMoonPhase =
+  'new' | 'waxingCrescent' | 'firstQuarter' | 'waxingGibbous' | 'full' | 'waningGibbous' | 'lastQuarter' | 'waningCrescent';
 
 /** Softness of the sun/moon: edge blur plus halo size. */
 export type CityscapeCelestialGlow = 'sharp' | 'soft' | 'hazy';
@@ -96,7 +97,15 @@ const MOON_PHASE_FRACTION: Record<CityscapeMoonPhase, number> = {
 };
 
 // Phases used when seeding (every phase except `new`, which is all but invisible).
-const SEEDED_MOON_PHASES: CityscapeMoonPhase[] = ['waxingCrescent', 'firstQuarter', 'waxingGibbous', 'full', 'waningGibbous', 'lastQuarter', 'waningCrescent'];
+const SEEDED_MOON_PHASES: CityscapeMoonPhase[] = [
+  'waxingCrescent',
+  'firstQuarter',
+  'waxingGibbous',
+  'full',
+  'waningGibbous',
+  'lastQuarter',
+  'waningCrescent',
+];
 
 /** Per-mood palette and window-lighting tuning. */
 interface CityscapePreset {
@@ -266,7 +275,9 @@ export const generateCityscapeSvg = (seed: string, options: CityscapeAvatarOptio
   const showClouds = options.clouds ?? true;
   const showStars = options.stars ?? preset.stars;
   const glow = CELESTIAL_GLOW[options.celestialGlow ?? 'soft'];
-  const moonPhase = options.moonPhase ? MOON_PHASE_FRACTION[options.moonPhase] : MOON_PHASE_FRACTION[SEEDED_MOON_PHASES[h[5]! % SEEDED_MOON_PHASES.length]!];
+  const moonPhase = options.moonPhase
+    ? MOON_PHASE_FRACTION[options.moonPhase]
+    : MOON_PHASE_FRACTION[SEEDED_MOON_PHASES[h[5]! % SEEDED_MOON_PHASES.length]!];
   const id = gradientId(h);
 
   // Deterministic, well-mixed pseudo-random stream in [0, 1) from the digest.
@@ -296,7 +307,10 @@ export const generateCityscapeSvg = (seed: string, options: CityscapeAvatarOptio
     if (forcedStyle !== 'mixed') return Array.from({ length: n }, () => forcedStyle);
     const result: ActiveStyle[] = Array.from({ length: n }, () => 'plain');
     const landmarks = shuffle(FEATURED_STYLES, 311);
-    const slots = shuffle(Array.from({ length: n }, (_, i) => i), 401);
+    const slots = shuffle(
+      Array.from({ length: n }, (_, i) => i),
+      401,
+    );
     const nFeature = Math.min(landmarks.length, Math.max(1, Math.round(n * 0.55)));
     for (let k = 0; k < nFeature; k++) result[slots[k]!] = landmarks[k]!;
     return result;
@@ -346,7 +360,8 @@ export const generateCityscapeSvg = (seed: string, options: CityscapeAvatarOptio
   // gentle blur softens the edge. The `celestialGlow` option scales both.
   const celestial = (cx: number, cy: number, r: number): string => {
     if (!showCelestial) return '';
-    const halo = (rr: number, op: number): string => `<circle cx="${f(cx)}" cy="${f(cy)}" r="${f(rr)}" fill="url(#${id}h)" opacity="${op.toFixed(2)}"/>`;
+    const halo = (rr: number, op: number): string =>
+      `<circle cx="${f(cx)}" cy="${f(cy)}" r="${f(rr)}" fill="url(#${id}h)" opacity="${op.toFixed(2)}"/>`;
     if (preset.moon) {
       const illum = (1 - Math.cos(2 * Math.PI * moonPhase)) / 2;
       const moonGlow = illum > 0.03 ? halo(r * glow.haloScale * 0.9, illum) : '';
@@ -394,7 +409,19 @@ export const generateCityscapeSvg = (seed: string, options: CityscapeAvatarOptio
 
   // A generic lit/unlit window grid filling [x, x+w] × [top, bottom], centered.
   // `litFill` overrides the lit color (used for the Radiator's gold windows).
-  const windowGrid = (seedN: number, x: number, w: number, top: number, bottom: number, cellW: number, cellH: number, winW: number, winH: number, rx: number, litFill?: (b: number) => string): string => {
+  const windowGrid = (
+    seedN: number,
+    x: number,
+    w: number,
+    top: number,
+    bottom: number,
+    cellW: number,
+    cellH: number,
+    winW: number,
+    winH: number,
+    rx: number,
+    litFill?: (b: number) => string,
+  ): string => {
     const availH = bottom - top;
     if (availH < winH || w < winW) return '';
     const cols = Math.max(1, Math.floor(w / cellW));
@@ -412,7 +439,8 @@ export const generateCityscapeSvg = (seed: string, options: CityscapeAvatarOptio
     return s;
   };
 
-  const rect = (x: number, y: number, w: number, hh: number, fill: string): string => `<rect x="${f(x)}" y="${f(y)}" width="${f(w)}" height="${f(hh)}" fill="${fill}"/>`;
+  const rect = (x: number, y: number, w: number, hh: number, fill: string): string =>
+    `<rect x="${f(x)}" y="${f(y)}" width="${f(w)}" height="${f(hh)}" fill="${fill}"/>`;
   const redLight = (cx: number, cy: number): string => (preset.glow ? `<circle cx="${f(cx)}" cy="${f(cy)}" r="0.9" fill="hsl(2 85% 60%)"/>` : '');
 
   const body = view === 'perspective' ? renderPerspective() : renderFlat();
@@ -513,7 +541,9 @@ export const generateCityscapeSvg = (seed: string, options: CityscapeAvatarOptio
       }
     } else {
       // Rooftop water tank on legs.
-      const tw = Math.min(7, bw * 0.42), tx = cx - bw * 0.22, ty = top - 5;
+      const tw = Math.min(7, bw * 0.42),
+        tx = cx - bw * 0.22,
+        ty = top - 5;
       const leg = darken(light, 16);
       s += `<rect x="${f(tx)}" y="${f(ty)}" width="0.7" height="5" fill="${leg}"/><rect x="${f(tx + tw - 0.7)}" y="${f(ty)}" width="0.7" height="5" fill="${leg}"/>`;
       s += rect(tx, ty - 5, tw, 5.5, darken(light, 8));
@@ -563,7 +593,9 @@ export const generateCityscapeSvg = (seed: string, options: CityscapeAvatarOptio
       const y0 = lerp(yShaft, crownTop, k / tiers);
       const y1 = lerp(yShaft, crownTop, (k + 1) / tiers);
       const arch = tW * 0.5;
-      const lx = cx - tW / 2, rx2 = cx + tW / 2, springY = y1 + arch;
+      const lx = cx - tW / 2,
+        rx2 = cx + tW / 2,
+        springY = y1 + arch;
       s += `<path d="M ${f(lx)} ${f(y0)} V ${f(springY)} A ${f(tW / 2)} ${f(arch)} 0 0 1 ${f(rx2)} ${f(springY)} V ${f(y0)} Z" fill="${steel}"/>`;
       // Triangular sunburst windows along the arch.
       const nt = Math.max(2, Math.floor(tW / 2.4));
@@ -583,7 +615,9 @@ export const generateCityscapeSvg = (seed: string, options: CityscapeAvatarOptio
   function flatiron(i: number, cx: number, bw: number, base: number, H: number, light: number): string {
     const fill = hsl(buildingHue, preset.buildingSat, light);
     const w = Math.min(bw * 0.64, bw - 2.5);
-    const lx = cx - w / 2, rx2 = cx + w / 2, top = base - H;
+    const lx = cx - w / 2,
+      rx2 = cx + w / 2,
+      top = base - H;
     const r = w * 0.46;
     // Body with a rounded top (the prow).
     let s = `<path d="M ${f(lx)} ${f(base)} V ${f(top + r)} Q ${f(lx)} ${f(top)} ${f(lx + r)} ${f(top)} H ${f(rx2 - r)} Q ${f(rx2)} ${f(top)} ${f(rx2)} ${f(top + r)} V ${f(base)} Z" fill="${fill}"/>`;
@@ -600,8 +634,13 @@ export const generateCityscapeSvg = (seed: string, options: CityscapeAvatarOptio
 
   // modern (Shanghai Tower): a tapered, twisting glass supertall with a smooth crown.
   function modern(i: number, cx: number, bw: number, base: number, H: number): string {
-    const baseW = bw * 0.86, topW = baseW * 0.56, top = base - H;
-    const blx = cx - baseW / 2, brx = cx + baseW / 2, tlx = cx - topW / 2, trx = cx + topW / 2;
+    const baseW = bw * 0.86,
+      topW = baseW * 0.56,
+      top = base - H;
+    const blx = cx - baseW / 2,
+      brx = cx + baseW / 2,
+      tlx = cx - topW / 2,
+      trx = cx + topW / 2;
     const bow = baseW * 0.12;
     const glassL = isDay ? 60 : 30;
     const glass = `hsl(196 32% ${glassL}%)`;
@@ -651,8 +690,10 @@ export const generateCityscapeSvg = (seed: string, options: CityscapeAvatarOptio
       }
     }
     // Two Gothic setbacks with gold copings.
-    const s1w = bw * 0.7, s1y = base - H * 0.85;
-    const s2w = bw * 0.46, s2y = base - H * 0.94;
+    const s1w = bw * 0.7,
+      s1y = base - H * 0.85;
+    const s2w = bw * 0.46,
+      s2y = base - H * 0.94;
     s += rect(cx - s1w / 2, s1y, s1w, yBody - s1y, dark) + rect(cx - s1w / 2, s1y, s1w, 0.8, GOLD_DIM);
     s += rect(cx - s2w / 2, s2y, s2w, s1y - s2y, dark) + rect(cx - s2w / 2, s2y, s2w, 0.8, GOLD_DIM);
     // Stepped gold pinnacle crown.
@@ -697,13 +738,16 @@ export const generateCityscapeSvg = (seed: string, options: CityscapeAvatarOptio
     type P = { x: number; y: number };
     const lpt = (a: P, b: P, t: number): P => ({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) });
     const cross = (a: P, b: P, c: P, d: P): P => {
-      const d1x = b.x - a.x, d1y = b.y - a.y, d2x = d.x - c.x, d2y = d.y - c.y;
+      const d1x = b.x - a.x,
+        d1y = b.y - a.y,
+        d2x = d.x - c.x,
+        d2y = d.y - c.y;
       const den = d1x * d2y - d1y * d2x;
       if (Math.abs(den) < 1e-6) return a;
       const t = ((c.x - a.x) * d2y - (c.y - a.y) * d2x) / den;
       return { x: a.x + d1x * t, y: a.y + d1y * t };
     };
-    const poly = (pts: P[], fill: string): string => `<polygon points="${pts.map((p) => `${f(p.x)},${f(p.y)}`).join(' ')}" fill="${fill}"/>`;
+    const poly = (pts: P[], fill: string): string => `<polygon points="${pts.map(p => `${f(p.x)},${f(p.y)}`).join(' ')}" fill="${fill}"/>`;
 
     let s = '';
     s += stars(2, HZ - 2);
@@ -748,26 +792,62 @@ export const generateCityscapeSvg = (seed: string, options: CityscapeAvatarOptio
       const light = preset.buildingLightMin + rnd(w.salt * 13 + 7) * (preset.buildingLightMax - preset.buildingLightMin);
       s += drawBox(w.F, bh, (0.15 + rnd(w.salt * 9 + 5) * 0.08) * w.scale, (0.15 + rnd(w.salt * 11 + 6) * 0.08) * w.scale, light, w.style, w.scale);
     }
-    s += drawBox(Hc, 50 + rnd(3) * 16, 0.2, 0.2, preset.buildingLightMin + rnd(9) * (preset.buildingLightMax - preset.buildingLightMin), heroStyle, 1);
+    s += drawBox(
+      Hc,
+      50 + rnd(3) * 16,
+      0.2,
+      0.2,
+      preset.buildingLightMin + rnd(9) * (preset.buildingLightMax - preset.buildingLightMin),
+      heroStyle,
+      1,
+    );
     return s;
 
     // One two-point prism for the vertical span [baseY, topY], near vertical edge
     // at x = nearX. Footprint depth fractions may differ top vs. bottom, which
     // tapers the faces (used by the modern tower). The roof only shows when the
     // top sits below the horizon — above eye level you don't see a rooftop.
-    function tierBox(nearX: number, baseY: number, topY: number, sLb: number, sRb: number, sLt: number, sRt: number, leftFill: string, rightFill: string, roofFill: string): string {
-      const Fb = { x: nearX, y: baseY }, Ft = { x: nearX, y: topY };
-      const Lb = lpt(Fb, VPL, sLb), Lt = lpt(Ft, VPL, sLt);
-      const Rb = lpt(Fb, VPR, sRb), Rt = lpt(Ft, VPR, sRt);
+    function tierBox(
+      nearX: number,
+      baseY: number,
+      topY: number,
+      sLb: number,
+      sRb: number,
+      sLt: number,
+      sRt: number,
+      leftFill: string,
+      rightFill: string,
+      roofFill: string,
+    ): string {
+      const Fb = { x: nearX, y: baseY },
+        Ft = { x: nearX, y: topY };
+      const Lb = lpt(Fb, VPL, sLb),
+        Lt = lpt(Ft, VPL, sLt);
+      const Rb = lpt(Fb, VPR, sRb),
+        Rt = lpt(Ft, VPR, sRt);
       let r = '';
       if (topY > HZ) r = poly([Ft, Lt, cross(Lt, VPR, Rt, VPL), Rt], roofFill);
       return r + poly([Fb, Lb, Lt, Ft], leftFill) + poly([Fb, Rb, Rt, Ft], rightFill);
     }
 
     // Windows on both visible faces of a (possibly tapered) prism span.
-    function facesWindows(nearX: number, baseY: number, topY: number, sLb: number, sRb: number, sLt: number, sRt: number, salt: number, mode: WindowMode): string {
-      const Fb = { x: nearX, y: baseY }, Ft = { x: nearX, y: topY };
-      return faceWindows(Fb, lpt(Fb, VPL, sLb), Ft, lpt(Ft, VPL, sLt), salt, mode) + faceWindows(Fb, lpt(Fb, VPR, sRb), Ft, lpt(Ft, VPR, sRt), salt + 1, mode);
+    function facesWindows(
+      nearX: number,
+      baseY: number,
+      topY: number,
+      sLb: number,
+      sRb: number,
+      sLt: number,
+      sRt: number,
+      salt: number,
+      mode: WindowMode,
+    ): string {
+      const Fb = { x: nearX, y: baseY },
+        Ft = { x: nearX, y: topY };
+      return (
+        faceWindows(Fb, lpt(Fb, VPL, sLb), Ft, lpt(Ft, VPL, sLt), salt, mode) +
+        faceWindows(Fb, lpt(Fb, VPR, sRb), Ft, lpt(Ft, VPR, sRt), salt + 1, mode)
+      );
     }
 
     // A thin vertical mast/needle on the near edge, with an optional red light.
@@ -777,15 +857,23 @@ export const generateCityscapeSvg = (seed: string, options: CityscapeAvatarOptio
 
     // Draw a building in two-point perspective with landmark-appropriate massing.
     function drawBox(F: P, bh: number, sL: number, sR: number, light: number, style: ActiveStyle, scale: number): string {
-      const nearX = F.x, baseY = F.y, topY = F.y - bh;
-      const leftF = darken(light, 13), rightF = hsl(buildingHue, preset.buildingSat, light);
+      const nearX = F.x,
+        baseY = F.y,
+        topY = F.y - bh;
+      const leftF = darken(light, 13),
+        rightF = hsl(buildingHue, preset.buildingSat, light);
       const roofF = hsl(buildingHue, Math.max(5, preset.buildingSat - 4), Math.min(94, light + 16));
       const salt = Math.round(nearX * 7 + bh);
 
       if (style === 'setback') {
         // Telescoping wedding-cake tiers + mooring mast.
-        const segs = [{ s: 1, hf: 0.4 }, { s: 0.66, hf: 0.34 }, { s: 0.4, hf: 0.26 }];
-        let y = baseY, o = '';
+        const segs = [
+          { s: 1, hf: 0.4 },
+          { s: 0.66, hf: 0.34 },
+          { s: 0.4, hf: 0.26 },
+        ];
+        let y = baseY,
+          o = '';
         segs.forEach((seg, k) => {
           const yTop = y - bh * seg.hf;
           o += tierBox(nearX, y, yTop, sL * seg.s, sR * seg.s, sL * seg.s, sR * seg.s, leftF, rightF, roofF);
@@ -798,8 +886,11 @@ export const generateCityscapeSvg = (seed: string, options: CityscapeAvatarOptio
       if (style === 'modern') {
         // Tapered glass tower: footprint shrinks toward the top.
         const gL = isDay ? 60 : 30;
-        const body = `hsl(196 32% ${gL}%)`, side = `hsl(196 30% ${Math.max(8, gL - 14)}%)`, roof = `hsl(196 28% ${Math.min(92, gL + 10)}%)`;
-        const sLt = sL * 0.5, sRt = sR * 0.5;
+        const body = `hsl(196 32% ${gL}%)`,
+          side = `hsl(196 30% ${Math.max(8, gL - 14)}%)`,
+          roof = `hsl(196 28% ${Math.min(92, gL + 10)}%)`;
+        const sLt = sL * 0.5,
+          sRt = sR * 0.5;
         let o = tierBox(nearX, baseY, topY, sL, sR, sLt, sRt, side, body, roof);
         o += facesWindows(nearX, baseY, topY, sL, sR, sLt, sRt, salt, 'glass');
         return o + (bh > 32 * scale ? mast(nearX, topY, 4 * scale, scale, `hsl(196 28% ${Math.min(94, gL + 18)}%)`, false) : '');
@@ -807,7 +898,8 @@ export const generateCityscapeSvg = (seed: string, options: CityscapeAvatarOptio
 
       if (style === 'gothic') {
         // Black tower with gold windows and a stepped gold pinnacle crown.
-        const dark = hsl(buildingHue, 16, isDay ? 22 : 11), darkL = hsl(buildingHue, 16, isDay ? 16 : 8);
+        const dark = hsl(buildingHue, 16, isDay ? 22 : 11),
+          darkL = hsl(buildingHue, 16, isDay ? 16 : 8);
         let o = tierBox(nearX, baseY, topY, sL, sR, sL, sR, darkL, dark, dark);
         o += facesWindows(nearX, baseY, topY, sL, sR, sL, sR, salt, 'gothic');
         let y = topY;
@@ -816,7 +908,9 @@ export const generateCityscapeSvg = (seed: string, options: CityscapeAvatarOptio
           o += tierBox(nearX, y, y - sh, sL * sf, sR * sf, sL * sf, sR * sf, GOLD_DIM, GOLD, GOLD);
           y -= sh;
         }
-        return o + `<polygon points="${f(nearX - 1.6 * scale)},${f(y)} ${f(nearX + 1.6 * scale)},${f(y)} ${f(nearX)},${f(y - 6 * scale)}" fill="${GOLD}"/>`;
+        return (
+          o + `<polygon points="${f(nearX - 1.6 * scale)},${f(y)} ${f(nearX + 1.6 * scale)},${f(y)} ${f(nearX)},${f(y - 6 * scale)}" fill="${GOLD}"/>`
+        );
       }
 
       if (style === 'artdeco') {
@@ -824,7 +918,8 @@ export const generateCityscapeSvg = (seed: string, options: CityscapeAvatarOptio
         const shaftTop = baseY - bh * 0.64;
         let o = tierBox(nearX, baseY, shaftTop, sL, sR, sL, sR, leftF, rightF, roofF);
         o += facesWindows(nearX, baseY, shaftTop, sL, sR, sL, sR, salt, 'deco');
-        const n = 4, seg = (shaftTop - topY) / n;
+        const n = 4,
+          seg = (shaftTop - topY) / n;
         let y = shaftTop;
         for (let k = 0; k < n; k++) {
           const sf = 1 - (k + 1) * 0.19;
@@ -840,7 +935,10 @@ export const generateCityscapeSvg = (seed: string, options: CityscapeAvatarOptio
         o += facesWindows(nearX, baseY, topY, sL, sR, sL, sR, salt, 'classical');
         const ch = bh * 0.05;
         o += tierBox(nearX, topY + ch, topY, sL * 1.14, sR * 1.14, sL * 1.14, sR * 1.14, lighten(light, 8), lighten(light, 12), lighten(light, 14));
-        return o + `<rect x="${f(nearX - 0.3 * scale)}" y="${f(topY - 5 * scale)}" width="${f(0.6 * scale)}" height="${f(5 * scale)}" fill="${darken(light, 12)}"/>`;
+        return (
+          o +
+          `<rect x="${f(nearX - 0.3 * scale)}" y="${f(topY - 5 * scale)}" width="${f(0.6 * scale)}" height="${f(5 * scale)}" fill="${darken(light, 12)}"/>`
+        );
       }
 
       // plain: ordinary box, occasional antenna on tall ones.
@@ -859,12 +957,44 @@ export const generateCityscapeSvg = (seed: string, options: CityscapeAvatarOptio
       const faceH = Math.hypot(tf.x - bf.x, tf.y - bf.y);
       const spec =
         mode === 'deco'
-          ? { cols: Math.max(1, Math.min(3, Math.round(faceW / 5))), rows: Math.max(2, Math.min(10, Math.round(faceH / 3.6))), u0: 0.22, u1: 0.78, v0: 0.06, v1: 0.94, gold: false }
+          ? {
+              cols: Math.max(1, Math.min(3, Math.round(faceW / 5))),
+              rows: Math.max(2, Math.min(10, Math.round(faceH / 3.6))),
+              u0: 0.22,
+              u1: 0.78,
+              v0: 0.06,
+              v1: 0.94,
+              gold: false,
+            }
           : mode === 'gothic'
-            ? { cols: Math.max(1, Math.min(3, Math.round(faceW / 5))), rows: Math.max(2, Math.min(9, Math.round(faceH / 4))), u0: 0.2, u1: 0.8, v0: 0.08, v1: 0.92, gold: true }
+            ? {
+                cols: Math.max(1, Math.min(3, Math.round(faceW / 5))),
+                rows: Math.max(2, Math.min(9, Math.round(faceH / 4))),
+                u0: 0.2,
+                u1: 0.8,
+                v0: 0.08,
+                v1: 0.92,
+                gold: true,
+              }
             : mode === 'glass'
-              ? { cols: Math.max(2, Math.min(5, Math.round(faceW / 3.4))), rows: Math.max(2, Math.min(11, Math.round(faceH / 3.4))), u0: 0.1, u1: 0.9, v0: 0.06, v1: 0.94, gold: false }
-              : { cols: Math.max(2, Math.min(4, Math.round(faceW / 4))), rows: Math.max(2, Math.min(9, Math.round(faceH / 4.2))), u0: 0.16, u1: 0.84, v0: 0.14, v1: 0.86, gold: false };
+              ? {
+                  cols: Math.max(2, Math.min(5, Math.round(faceW / 3.4))),
+                  rows: Math.max(2, Math.min(11, Math.round(faceH / 3.4))),
+                  u0: 0.1,
+                  u1: 0.9,
+                  v0: 0.06,
+                  v1: 0.94,
+                  gold: false,
+                }
+              : {
+                  cols: Math.max(2, Math.min(4, Math.round(faceW / 4))),
+                  rows: Math.max(2, Math.min(9, Math.round(faceH / 4.2))),
+                  u0: 0.16,
+                  u1: 0.84,
+                  v0: 0.14,
+                  v1: 0.86,
+                  gold: false,
+                };
 
       const { cols, rows, u0, u1, v0, v1, gold } = spec;
       let out = '';

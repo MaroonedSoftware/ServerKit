@@ -93,7 +93,8 @@ export class DiscordSignaturePolicy extends Policy<DiscordSignaturePolicyContext
       if (!IsDiscordError(error)) throw error;
 
       const internalDetails = error.internalDetails ?? {};
-      const reason = typeof internalDetails.reason === 'string' ? internalDetails.reason : ('invalid_signature' satisfies DiscordSignatureFailureReason);
+      const reason =
+        typeof internalDetails.reason === 'string' ? internalDetails.reason : ('invalid_signature' satisfies DiscordSignatureFailureReason);
       return this.deny(reason, undefined, { message: error.message, ...internalDetails });
     }
   }

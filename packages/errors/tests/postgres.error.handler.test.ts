@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  PostgresErrorHandler,
-  PostgresError,
-  isPostgresError,
-} from '../src/postgres/postgres.error.handler.js';
+import { PostgresErrorHandler, PostgresError, isPostgresError } from '../src/postgres/postgres.error.handler.js';
 import { HttpError, IsHttpError } from '../src/http/http.error.js';
 
 const createPostgresError = (code: string, message = 'Postgres error'): PostgresError => {

@@ -38,13 +38,13 @@ The Postgres, YAML, and cloud secret-manager backends each need an optional peer
 dependency, and live behind subpath exports so importing the core never loads a
 backend SDK you aren't using. Install the peer for the backend(s) you use:
 
-| Import | Backend | Optional peer |
-|--------|---------|---------------|
-| `@maroonedsoftware/appconfig` | core (file/JSON/dotenv/fetch sources, env resolver, live config) | — |
-| `@maroonedsoftware/appconfig/postgres` | `AppConfigSourcePostgres`, `AppConfigResolverPostgres` | `pg` |
-| `@maroonedsoftware/appconfig/yaml` | `AppConfigSourceYaml` | `yaml` |
-| `@maroonedsoftware/appconfig/aws` | `AppConfigSourceAwsSecrets`, `AppConfigResolverAwsSecrets` | `@aws-sdk/client-secrets-manager` |
-| `@maroonedsoftware/appconfig/gcp` | `AppConfigSourceGcpSecrets`, `AppConfigResolverGcpSecrets` | `@google-cloud/secret-manager` |
+| Import                                 | Backend                                                          | Optional peer                     |
+| -------------------------------------- | ---------------------------------------------------------------- | --------------------------------- |
+| `@maroonedsoftware/appconfig`          | core (file/JSON/dotenv/fetch sources, env resolver, live config) | —                                 |
+| `@maroonedsoftware/appconfig/postgres` | `AppConfigSourcePostgres`, `AppConfigResolverPostgres`           | `pg`                              |
+| `@maroonedsoftware/appconfig/yaml`     | `AppConfigSourceYaml`                                            | `yaml`                            |
+| `@maroonedsoftware/appconfig/aws`      | `AppConfigSourceAwsSecrets`, `AppConfigResolverAwsSecrets`       | `@aws-sdk/client-secrets-manager` |
+| `@maroonedsoftware/appconfig/gcp`      | `AppConfigSourceGcpSecrets`, `AppConfigResolverGcpSecrets`       | `@google-cloud/secret-manager`    |
 
 ## Usage
 
@@ -59,9 +59,9 @@ const config = new AppConfig({
   port: '3000',
 });
 
-const database = config.get('database');                // Type-safe access
-const port = config.getNumber('port');                  // Returns 3000 as number
-const db = config.getAs<{ host: string }>('database');  // Cast to interface
+const database = config.get('database'); // Type-safe access
+const port = config.getNumber('port'); // Returns 3000 as number
+const db = config.getAs<{ host: string }>('database'); // Cast to interface
 ```
 
 ### Using the Builder
@@ -112,27 +112,27 @@ See [Resolvers](#resolvers) for each scheme and its options, and [Intra-config r
 
 The configuration container providing type-safe access to configuration values.
 
-| Method                   | Description                                                              |
-| ------------------------ | ------------------------------------------------------------------------ |
-| `has(key)`               | Returns `true` when the value is present (not `undefined` or `null`)     |
-| `get(key)`               | Returns the value for the key with full type safety                      |
-| `get(key, defaultValue)` | Returns `defaultValue` when the value is missing (`undefined`/`null`)    |
-| `getAs<U>(key)`          | Returns the value cast to the specified type `U`                         |
-| `getString(key)`         | Returns the value converted to a string                                  |
-| `getNumber(key)`         | Returns the value converted to a number                                  |
-| `getBoolean(key)`        | Returns the value converted to a boolean                                 |
-| `getObject(key)`         | Returns the value cast as an object                                      |
+| Method                   | Description                                                           |
+| ------------------------ | --------------------------------------------------------------------- |
+| `has(key)`               | Returns `true` when the value is present (not `undefined` or `null`)  |
+| `get(key)`               | Returns the value for the key with full type safety                   |
+| `get(key, defaultValue)` | Returns `defaultValue` when the value is missing (`undefined`/`null`) |
+| `getAs<U>(key)`          | Returns the value cast to the specified type `U`                      |
+| `getString(key)`         | Returns the value converted to a string                               |
+| `getNumber(key)`         | Returns the value converted to a number                               |
+| `getBoolean(key)`        | Returns the value converted to a boolean                              |
+| `getObject(key)`         | Returns the value cast as an object                                   |
 
 ### AppConfigBuilder
 
 Builder for constructing `AppConfig` instances from multiple sources.
 
-| Method                   | Description                                                                          |
-| ------------------------ | ------------------------------------------------------------------------------------ |
-| `addSource(source)`      | Adds a configuration source (later sources override earlier)                         |
-| `addResolver(resolver)`  | Adds a resolver to substitute `${…}` references in string values                     |
-| `resolveReferences(on?)` | Enables the intra-config `${ref:some.path}` resolution pass (default `true`)         |
-| `buildSnapshot<T>()`     | Builds and returns a one-shot, immutable `AppConfig` (no hot reload)                 |
+| Method                   | Description                                                                           |
+| ------------------------ | ------------------------------------------------------------------------------------- |
+| `addSource(source)`      | Adds a configuration source (later sources override earlier)                          |
+| `addResolver(resolver)`  | Adds a resolver to substitute `${…}` references in string values                      |
+| `resolveReferences(on?)` | Enables the intra-config `${ref:some.path}` resolution pass (default `true`)          |
+| `buildSnapshot<T>()`     | Builds and returns a one-shot, immutable `AppConfig` (no hot reload)                  |
 | `buildStore<T>(logger?)` | Builds a hot-reloadable [`AppConfigStore`](#appconfigstore) that owns/watches sources |
 
 ### Sources
@@ -263,11 +263,11 @@ const nested = nestKeys(process.env as Record<string, unknown>, '__');
 
 Extends `AppConfigSourceFileOptions` (`ignoreMissingFile`, `encoding`) with:
 
-| Option            | Type      | Description                                                                                             |
-| ----------------- | --------- | ------------------------------------------------------------------------------------------------------- |
-| `groupSeparator`  | `string`  | Optional. When set, keys containing this string are split into nested objects (e.g. `'__'`). |
-| `ignoreMissingFile` | `boolean` | Optional, defaults to `true`. Returns `{}` for a missing file instead of throwing. |
-| `encoding`        | `BufferEncoding` | Optional, defaults to `'utf8'`. |
+| Option              | Type             | Description                                                                                  |
+| ------------------- | ---------------- | -------------------------------------------------------------------------------------------- |
+| `groupSeparator`    | `string`         | Optional. When set, keys containing this string are split into nested objects (e.g. `'__'`). |
+| `ignoreMissingFile` | `boolean`        | Optional, defaults to `true`. Returns `{}` for a missing file instead of throwing.           |
+| `encoding`          | `BufferEncoding` | Optional, defaults to `'utf8'`.                                                              |
 
 #### AppConfigSourcePostgres
 
@@ -281,10 +281,10 @@ import { AppConfigSourcePostgres } from '@maroonedsoftware/appconfig/postgres';
 
 const source = new AppConfigSourcePostgres(logger, {
   connection: { host: 'db', port: 5432, user: 'app', password: 'secret', database: 'app' },
-  schema: 'config',      // optional, defaults to 'public'
+  schema: 'config', // optional, defaults to 'public'
   table: 'app_settings', // optional, defaults to 'settings'
-  keyColumn: 'name',     // optional, defaults to 'key'
-  valueColumn: 'val',    // optional, defaults to 'value'
+  keyColumn: 'name', // optional, defaults to 'key'
+  valueColumn: 'val', // optional, defaults to 'value'
 });
 
 const config = await new AppConfigBuilder().addSource(source).buildSnapshot();
@@ -323,15 +323,15 @@ const source = new AppConfigSourcePostgres(logger, {
 
 ##### AppConfigSourcePostgresOptions
 
-| Option        | Type                          | Description                                                                |
-| ------------- | ----------------------------- | ------------------------------------------------------------------------- |
-| `connection`  | `AppConfigSourcePostgresConnection` | Postgres connection parameters (host, port, user, password, database). Required. |
-| `schema`      | `string`                      | Schema holding the settings table. Optional, defaults to `public`.        |
-| `table`       | `string`                      | Table holding the key/value rows. Optional, defaults to `settings`.       |
-| `keyColumn`   | `string`                      | Column read as the config key. Optional, defaults to `key`.               |
-| `valueColumn` | `string`                      | Column read as the config value. Optional, defaults to `value`.           |
-| `resolvers`   | `AppConfigResolver[]`         | Resolvers used to resolve `${…}` references in `connection` before connecting. Optional, defaults to none (verbatim). |
-| `notifyChannel` | `string`                    | When set, the source is *watchable*: it `LISTEN`s on this Postgres channel and triggers a reload on every `NOTIFY`. Optional; without it, reload stays application-driven. |
+| Option          | Type                                | Description                                                                                                                                                                |
+| --------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `connection`    | `AppConfigSourcePostgresConnection` | Postgres connection parameters (host, port, user, password, database). Required.                                                                                           |
+| `schema`        | `string`                            | Schema holding the settings table. Optional, defaults to `public`.                                                                                                         |
+| `table`         | `string`                            | Table holding the key/value rows. Optional, defaults to `settings`.                                                                                                        |
+| `keyColumn`     | `string`                            | Column read as the config key. Optional, defaults to `key`.                                                                                                                |
+| `valueColumn`   | `string`                            | Column read as the config value. Optional, defaults to `value`.                                                                                                            |
+| `resolvers`     | `AppConfigResolver[]`               | Resolvers used to resolve `${…}` references in `connection` before connecting. Optional, defaults to none (verbatim).                                                      |
+| `notifyChannel` | `string`                            | When set, the source is _watchable_: it `LISTEN`s on this Postgres channel and triggers a reload on every `NOTIFY`. Optional; without it, reload stays application-driven. |
 
 > **Note:** `pg` is a peer dependency — install it alongside this package (`pnpm add pg`) when using the Postgres source.
 
@@ -384,15 +384,15 @@ const config = await new AppConfigBuilder().addSource(new AppConfigSourceJson('.
 
 ##### AppConfigSourceAwsSecretsOptions
 
-| Option                | Type       | Description                                                                                                  |
-| --------------------- | ---------- | ----------------------------------------------------------------------------------------------------------- |
-| `region`              | `string`   | AWS region. Optional; resolved from the AWS provider chain when omitted.                                    |
-| `ids`           | `string[]` | Explicit secret ids (names or ARNs) to load. Optional; omit to discover via `ListSecrets`.                  |
-| `filters`             | `Filter[]` | Filters passed to `ListSecrets` when discovering secrets. Optional; ignored when `ids` is set.        |
-| `stripPrefix`         | `string`   | Removed from each secret name before it becomes a config key. Optional.                                     |
-| `nameSeparator`       | `string`   | Splits derived keys into a nested object (e.g. `/`). Optional; flat keys when omitted.                       |
-| `ignoreMissing` | `boolean`  | Skip individual missing secrets instead of failing the load. Optional, defaults to `false`.                 |
-| `concurrency`         | `number`   | Caps concurrent batch calls during `load`. Optional; unbounded by default.                                  |
+| Option          | Type       | Description                                                                                    |
+| --------------- | ---------- | ---------------------------------------------------------------------------------------------- |
+| `region`        | `string`   | AWS region. Optional; resolved from the AWS provider chain when omitted.                       |
+| `ids`           | `string[]` | Explicit secret ids (names or ARNs) to load. Optional; omit to discover via `ListSecrets`.     |
+| `filters`       | `Filter[]` | Filters passed to `ListSecrets` when discovering secrets. Optional; ignored when `ids` is set. |
+| `stripPrefix`   | `string`   | Removed from each secret name before it becomes a config key. Optional.                        |
+| `nameSeparator` | `string`   | Splits derived keys into a nested object (e.g. `/`). Optional; flat keys when omitted.         |
+| `ignoreMissing` | `boolean`  | Skip individual missing secrets instead of failing the load. Optional, defaults to `false`.    |
+| `concurrency`   | `number`   | Caps concurrent batch calls during `load`. Optional; unbounded by default.                     |
 
 > **Cold boot:** `load()` fetches in bulk via `BatchGetSecretValue` (up to 20 secrets per call) rather than one `GetSecretValue` each, so a 100-secret boot is ~5 calls, not ~100. This requires the **`secretsmanager:BatchGetSecretValue`** IAM permission (in addition to `GetSecretValue`, which single `${aws:…}` resolution still uses). Set `concurrency` to bound the batch calls if you discover/load very many secrets.
 
@@ -421,14 +421,14 @@ const config = await new AppConfigBuilder().addSource(source).buildSnapshot();
 
 ##### AppConfigSourceGcpSecretsOptions
 
-| Option                | Type       | Description                                                                                  |
-| --------------------- | ---------- | -------------------------------------------------------------------------------------------- |
-| `ids`           | `string[]` | Explicit secret ids (short names) to load. Optional; omit to discover via `listSecrets`.     |
-| `filter`              | `string`   | Filter expression for `listSecrets` discovery. Optional; ignored when `ids` is set.    |
-| `stripPrefix`         | `string`   | Removed from each secret id before it becomes a config key. Optional.                        |
-| `nameSeparator`       | `string`   | Splits derived keys into a nested object (e.g. `.`). Optional; flat keys when omitted.        |
-| `ignoreMissing` | `boolean`  | Skip individual missing secrets instead of failing the load. Optional, defaults to `false`.  |
-| `concurrency`         | `number`   | Caps concurrent secret fetches during `load`. Optional; unbounded by default.                |
+| Option          | Type       | Description                                                                                 |
+| --------------- | ---------- | ------------------------------------------------------------------------------------------- |
+| `ids`           | `string[]` | Explicit secret ids (short names) to load. Optional; omit to discover via `listSecrets`.    |
+| `filter`        | `string`   | Filter expression for `listSecrets` discovery. Optional; ignored when `ids` is set.         |
+| `stripPrefix`   | `string`   | Removed from each secret id before it becomes a config key. Optional.                       |
+| `nameSeparator` | `string`   | Splits derived keys into a nested object (e.g. `.`). Optional; flat keys when omitted.      |
+| `ignoreMissing` | `boolean`  | Skip individual missing secrets instead of failing the load. Optional, defaults to `false`. |
+| `concurrency`   | `number`   | Caps concurrent secret fetches during `load`. Optional; unbounded by default.               |
 
 > The first constructor argument is the GCP project id. `@google-cloud/secret-manager` is a peer dependency. GCP has no batch API, so `load()` fetches secrets concurrently (one `accessSecretVersion` each) — already ~one round-trip of latency rather than N×; use `concurrency` to bound the fan-out if you load very many.
 
@@ -521,9 +521,9 @@ const config = await new AppConfigBuilder()
 // ${gcp:DB_PASSWORD} fetches projects/my-gcp-project-id/secrets/DB_PASSWORD/versions/latest
 ```
 
-| Parameter   | Type               | Description                                                                                  |
-| ----------- | ------------------ | -------------------------------------------------------------------------------------------- |
-| `projectId` | `string`           | The GCP project ID where secrets are stored                                                  |
+| Parameter   | Type               | Description                                                                                       |
+| ----------- | ------------------ | ------------------------------------------------------------------------------------------------- |
+| `projectId` | `string`           | The GCP project ID where secrets are stored                                                       |
 | `prefix`    | `string \| RegExp` | Optional pattern to match secret references. Default: `/\$\{gcp:(.+)\}/g` (matches `${gcp:NAME}`) |
 
 The resolver:
@@ -569,10 +569,10 @@ const config = await new AppConfigBuilder()
   .buildSnapshot();
 ```
 
-| Parameter | Type                                  | Description                                                                                       |
-| --------- | ------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Parameter | Type                                  | Description                                                                                         |
+| --------- | ------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | `source`  | `string \| AppConfigSourceAwsSecrets` | Optional AWS region, or a source to share. Region resolved from the AWS provider chain when omitted |
-| `prefix`  | `string \| RegExp`                    | Optional pattern to match secret references. Default: `/\$\{aws:(.+)\}/g` (matches `${aws:ID}`)   |
+| `prefix`  | `string \| RegExp`                    | Optional pattern to match secret references. Default: `/\$\{aws:(.+)\}/g` (matches `${aws:ID}`)     |
 
 The resolver:
 
@@ -594,7 +594,10 @@ Because the source needs a logger and connection options, pass a constructed `Ap
 import { AppConfigBuilder, AppConfigSourceJson, AppConfigResolverEnv } from '@maroonedsoftware/appconfig';
 import { AppConfigSourcePostgres, AppConfigResolverPostgres } from '@maroonedsoftware/appconfig/postgres';
 
-const pg = new AppConfigSourcePostgres(logger, { connection: { host: 'db', port: 5432, user: 'app', password: '${env:DB_PASSWORD}', database: 'app' }, resolvers: [new AppConfigResolverEnv()] });
+const pg = new AppConfigSourcePostgres(logger, {
+  connection: { host: 'db', port: 5432, user: 'app', password: '${env:DB_PASSWORD}', database: 'app' },
+  resolvers: [new AppConfigResolverEnv()],
+});
 
 const config = await new AppConfigBuilder()
   .addSource(new AppConfigSourceJson('./config.json'))
@@ -611,18 +614,20 @@ Configuration is always hot-reloadable. A section is injected through **one** DI
 the ServerKit analog of C#'s `IOptions<T>` / `IOptionsSnapshot<T>` / `IOptionsMonitor<T>`, collapsed
 into a single `AppConfigSection<T>` with three members:
 
-| Member               | Analog                          | Value                                                              |
-| -------------------- | ------------------------------- | ----------------------------------------------------------------- |
-| `.value`             | `IOptions` / `IOptionsSnapshot` | snapshot stable for the resolving scope (per request, boot at root) |
-| `.current`           | `IOptionsMonitor.CurrentValue`  | the latest value, always — read at use-time                       |
-| `.onChange(fn)`      | `IOptionsMonitor.OnChange`      | subscribe to changes; returns an unsubscribe function             |
+| Member          | Analog                          | Value                                                               |
+| --------------- | ------------------------------- | ------------------------------------------------------------------- |
+| `.value`        | `IOptions` / `IOptionsSnapshot` | snapshot stable for the resolving scope (per request, boot at root) |
+| `.current`      | `IOptionsMonitor.CurrentValue`  | the latest value, always — read at use-time                         |
+| `.onChange(fn)` | `IOptionsMonitor.OnChange`      | subscribe to changes; returns an unsubscribe function               |
 
 A configuration section mints its own DI token by subclassing — the same one-class-per-section shape
 used by `SlackConfig` and `Logger`:
 
 ```typescript
-@Injectable() export abstract class SlackOptions extends AppConfigSection<SlackConfig> {}
-@Injectable() export abstract class DbOptions extends AppConfigSection<DbConfig> {}
+@Injectable()
+export abstract class SlackOptions extends AppConfigSection<SlackConfig> {}
+@Injectable()
+export abstract class DbOptions extends AppConfigSection<DbConfig> {}
 ```
 
 ### Wiring with AppConfigModule
@@ -664,10 +669,7 @@ attach a handler — the process keeps serving the last-good config regardless.
 
 ```typescript
 // On a timer — re-resolve secrets every 10 minutes so a rotation is picked up.
-setInterval(
-  () => void config.reload().catch(err => logger.error('config reload failed', err)),
-  600_000,
-);
+setInterval(() => void config.reload().catch(err => logger.error('config reload failed', err)), 600_000);
 
 // On a Unix signal — `kill -HUP <pid>` (or a deploy hook) forces a refresh.
 process.on('SIGHUP', () => void config.reload().catch(err => logger.error('config reload failed', err)));
@@ -719,7 +721,9 @@ container.get(AppConfig).getString('FEATURE_FLAG');
 
 // 3. The store directly, for advanced wiring.
 store.current.get('database'); // snapshot in effect right now
-store.subscribe(cfg => { /* run on every successful swap */ });
+store.subscribe(cfg => {
+  /* run on every successful swap */
+});
 const live = store.toLiveConfig(); // a stable AppConfig whose reads always hit the latest
 ```
 
@@ -757,7 +761,7 @@ class DbPool {
 secret is ignored), the listener may be async, and a throwing/rejecting listener is reported via the
 module's logger without affecting the swap or other listeners. The returned function unsubscribes.
 
-> **Scope note.** A section token is registered as a *scoped* service, so inject it into request-scoped
+> **Scope note.** A section token is registered as a _scoped_ service, so inject it into request-scoped
 > or transient services — the common case in a Koa app, where `serverKitContextMiddleware` mints a
 > scoped container per request. A long-lived singleton should read `.current` / `.onChange` (which stay
 > correct in any scope) and not rely on `.value`, exactly as a C# singleton cannot consume
@@ -796,10 +800,10 @@ nestKeys(
 // }
 ```
 
-| Parameter   | Type                       | Description                                     |
-| ----------- | -------------------------- | ----------------------------------------------- |
-| `record`    | `Record<string, unknown>`  | The flat key/value record to transform           |
-| `separator` | `string`                   | The string used to delimit path segments         |
+| Parameter   | Type                      | Description                              |
+| ----------- | ------------------------- | ---------------------------------------- |
+| `record`    | `Record<string, unknown>` | The flat key/value record to transform   |
+| `separator` | `string`                  | The string used to delimit path segments |
 
 ## Custom Sources and Resolvers
 

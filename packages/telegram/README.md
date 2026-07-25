@@ -15,20 +15,20 @@ pnpm add @maroonedsoftware/telegram
 
 ## Exports
 
-| Symbol                              | Purpose                                                                                                       |
-|-------------------------------------|---------------------------------------------------------------------------------------------------------------|
-| `TelegramConfig`                    | Abstract `@Injectable()` token; carries `botToken`, optional `secretToken`, optional `apiBaseUrl`.             |
-| `TelegramClient`                    | `fetch`-based Bot API wrapper. Methods: `sendMessage`, `answerCallbackQuery`, `setWebhook`, `deleteWebhook`, plus a generic `callMethod`. |
-| `TelegramDispatcher`                | Single-method service: `dispatchUpdate`.                                                                       |
-| `TelegramCommandHandlerMap`         | `Map<command, TelegramCommandHandler>` — register one handler per command (`/start`, …).                       |
-| `TelegramCallbackQueryHandlerMap`   | `Map<callbackData, TelegramCallbackQueryHandler>` — register handlers for inline-keyboard button presses.      |
-| `TelegramUpdateHandlerMap`          | `Map<updateType, TelegramUpdateHandler>` — register handlers per update type (`message`, `edited_message`, …). |
-| `TelegramError`                     | `ServerkitError` subclass for non-HTTP domain failures (Bot API error, secret-token mismatch, …).             |
-| `verifyTelegramSecretToken(input)`  | Pure helper that validates the `X-Telegram-Bot-Api-Secret-Token` header. No request/context coupling.         |
-| `TelegramSecretTokenPolicy`         | `@maroonedsoftware/policies` form of the check (registered under `TELEGRAM_SECRET_TOKEN_POLICY`).              |
-| `parseCommand(message)`             | Helper that extracts a `/command` (and args) from a message, stripping any `@botname` suffix.                  |
-| `updateType(update)`                | Helper that returns an update's content type — the `TelegramUpdateHandlerMap` key.                             |
-| `telegramUpdateIdempotencyKey(update)` | Pure helper returning `telegram:update:{update_id}` — the de-duplication key for a redelivered update.       |
+| Symbol                                 | Purpose                                                                                                                                   |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `TelegramConfig`                       | Abstract `@Injectable()` token; carries `botToken`, optional `secretToken`, optional `apiBaseUrl`.                                        |
+| `TelegramClient`                       | `fetch`-based Bot API wrapper. Methods: `sendMessage`, `answerCallbackQuery`, `setWebhook`, `deleteWebhook`, plus a generic `callMethod`. |
+| `TelegramDispatcher`                   | Single-method service: `dispatchUpdate`.                                                                                                  |
+| `TelegramCommandHandlerMap`            | `Map<command, TelegramCommandHandler>` — register one handler per command (`/start`, …).                                                  |
+| `TelegramCallbackQueryHandlerMap`      | `Map<callbackData, TelegramCallbackQueryHandler>` — register handlers for inline-keyboard button presses.                                 |
+| `TelegramUpdateHandlerMap`             | `Map<updateType, TelegramUpdateHandler>` — register handlers per update type (`message`, `edited_message`, …).                            |
+| `TelegramError`                        | `ServerkitError` subclass for non-HTTP domain failures (Bot API error, secret-token mismatch, …).                                         |
+| `verifyTelegramSecretToken(input)`     | Pure helper that validates the `X-Telegram-Bot-Api-Secret-Token` header. No request/context coupling.                                     |
+| `TelegramSecretTokenPolicy`            | `@maroonedsoftware/policies` form of the check (registered under `TELEGRAM_SECRET_TOKEN_POLICY`).                                         |
+| `parseCommand(message)`                | Helper that extracts a `/command` (and args) from a message, stripping any `@botname` suffix.                                             |
+| `updateType(update)`                   | Helper that returns an update's content type — the `TelegramUpdateHandlerMap` key.                                                        |
+| `telegramUpdateIdempotencyKey(update)` | Pure helper returning `telegram:update:{update_id}` — the de-duplication key for a redelivered update.                                    |
 
 ## Configuration
 
@@ -45,18 +45,18 @@ container.register(TelegramConfig, { useValue: telegramConfig });
 // config.json
 {
   "telegram": {
-    "botToken": "123456:ABC-DEF...",       // from BotFather
+    "botToken": "123456:ABC-DEF...", // from BotFather
     "secretToken": "a-long-random-string", // optional but recommended
-    "apiBaseUrl": "https://api.telegram.org" // optional, override for a self-hosted Bot API server
-  }
+    "apiBaseUrl": "https://api.telegram.org", // optional, override for a self-hosted Bot API server
+  },
 }
 ```
 
-| Field         | Required | Used by                                                                              |
-|---------------|----------|--------------------------------------------------------------------------------------|
-| `botToken`    | yes      | `TelegramClient` — embedded in the Bot API URL (`/bot<token>/<method>`).             |
+| Field         | Required | Used by                                                                                              |
+| ------------- | -------- | ---------------------------------------------------------------------------------------------------- |
+| `botToken`    | yes      | `TelegramClient` — embedded in the Bot API URL (`/bot<token>/<method>`).                             |
 | `secretToken` | no\*     | Webhook authenticity check (`X-Telegram-Bot-Api-Secret-Token`). Set the same value via `setWebhook`. |
-| `apiBaseUrl`  | no       | Bot API host. Defaults to `https://api.telegram.org`.                                 |
+| `apiBaseUrl`  | no       | Bot API host. Defaults to `https://api.telegram.org`.                                                |
 
 \* Optional but strongly recommended — it's the only authenticity signal Telegram provides for webhooks.
 
@@ -114,7 +114,7 @@ const commands = new TelegramCommandHandlerMap();
 commands.set('/start', container.get(StartCommand));
 container.register(TelegramCommandHandlerMap, { useValue: commands });
 
-router.post('/telegram/webhook', async (ctx) => {
+router.post('/telegram/webhook', async ctx => {
   const raw = await rawBody(ctx.req, { encoding: 'utf8' });
   verifyTelegramSecretToken({
     secretToken: ctx.container.get(TelegramConfig).secretToken!,
@@ -129,11 +129,11 @@ router.post('/telegram/webhook', async (ctx) => {
 
 `dispatchUpdate` applies this precedence per update:
 
-| Update                                   | Map                                 | Key                                    |
-|------------------------------------------|-------------------------------------|----------------------------------------|
-| `message` whose text/caption is `/…`     | `TelegramCommandHandlerMap`         | command name, e.g. `/start`            |
-| `callback_query`                         | `TelegramCallbackQueryHandlerMap`   | `callback_query.data`                  |
-| anything else                            | `TelegramUpdateHandlerMap`          | update type (`updateType(update)`)     |
+| Update                               | Map                               | Key                                |
+| ------------------------------------ | --------------------------------- | ---------------------------------- |
+| `message` whose text/caption is `/…` | `TelegramCommandHandlerMap`       | command name, e.g. `/start`        |
+| `callback_query`                     | `TelegramCallbackQueryHandlerMap` | `callback_query.data`              |
+| anything else                        | `TelegramUpdateHandlerMap`        | update type (`updateType(update)`) |
 
 If a command or callback query has no matching handler, the dispatcher falls back to the update-type map (so a generic `message`/`callback_query` handler can still run). Each handler receives a context with the resolved `chatId`, `from`, `updateId`, and the raw `update`.
 
@@ -152,7 +152,7 @@ processed once. With `@maroonedsoftware/jobbroker` (pg-boss), pass the `update_i
 `singletonKey` so an identical redelivery is collapsed to a single queued job:
 
 ```ts
-router.post('/telegram/webhook', async (ctx) => {
+router.post('/telegram/webhook', async ctx => {
   const raw = await rawBody(ctx.req, { encoding: 'utf8' });
   verifyTelegramSecretToken({
     secretToken: ctx.container.get(TelegramConfig).secretToken!,
@@ -178,7 +178,7 @@ await ctx.container.get(TelegramDispatcher).dispatchUpdate(JSON.parse(raw), {
 });
 ```
 
-`telegramUpdateIdempotencyKey` keys on `update_id` alone, which is unique *per bot*. For a multi-bot
+`telegramUpdateIdempotencyKey` keys on `update_id` alone, which is unique _per bot_. For a multi-bot
 deployment sharing one store, prefix a bot id yourself.
 
 ## Secret-token verification
@@ -238,7 +238,7 @@ import { TelegramClient, TelegramConfig, verifyTelegramSecretToken } from '@maro
 import { dispatchTelegram, createTelegramNotifier } from '@maroonedsoftware/telegram/comms';
 import { router } from './router.js'; // a shared ChannelRouter
 
-http.post('/telegram/webhook', async (ctx) => {
+http.post('/telegram/webhook', async ctx => {
   const raw = await rawBody(ctx.req, { encoding: 'utf8' });
   verifyTelegramSecretToken({ secretToken: ctx.container.get(TelegramConfig).secretToken!, headerValue: ctx.get('x-telegram-bot-api-secret-token') });
   await dispatchTelegram(router, ctx.container.get(TelegramClient), JSON.parse(raw));

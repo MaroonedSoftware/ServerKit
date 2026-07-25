@@ -25,7 +25,7 @@ export class KoaMcpTransport implements Transport {
 
   private captured?: JSONRPCMessage;
   private resolveResponse!: (message: JSONRPCMessage) => void;
-  private readonly responsePromise = new Promise<JSONRPCMessage>((resolve) => {
+  private readonly responsePromise = new Promise<JSONRPCMessage>(resolve => {
     this.resolveResponse = resolve;
   });
 

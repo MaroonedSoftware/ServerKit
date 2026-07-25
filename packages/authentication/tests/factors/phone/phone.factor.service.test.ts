@@ -136,9 +136,7 @@ describe('PhoneFactorService', () => {
 
     it('returns the existing pending registration with alreadyRegistered=true when one is cached for the value', async () => {
       const payload = makeRegistrationPayload();
-      cache.get = vi.fn()
-        .mockResolvedValueOnce('reg-id-1')
-        .mockResolvedValueOnce(JSON.stringify(payload));
+      cache.get = vi.fn().mockResolvedValueOnce('reg-id-1').mockResolvedValueOnce(JSON.stringify(payload));
 
       const result = await service.registerPhoneFactor('+12025550123');
 
@@ -196,9 +194,7 @@ describe('PhoneFactorService', () => {
       expect(DateTime.isDateTime(result.expiresAt)).toBe(true);
       expect(DateTime.isDateTime(result.issuedAt)).toBe(true);
       // expiresAt should be otpExpiration after issuedAt.
-      expect(result.expiresAt.toUnixInteger() - result.issuedAt.toUnixInteger()).toBe(
-        Math.round(makeOptions().otpExpiration.as('seconds')),
-      );
+      expect(result.expiresAt.toUnixInteger() - result.issuedAt.toUnixInteger()).toBe(Math.round(makeOptions().otpExpiration.as('seconds')));
       expect(result.alreadyRegistered).toBe(false);
     });
   });

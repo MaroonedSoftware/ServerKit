@@ -105,7 +105,7 @@ export class OAuth2ProviderRegistry {
   private readonly configs: Map<string, OAuth2ProviderConfig>;
 
   constructor(registry: OAuth2ProviderRegistryConfig) {
-    this.configs = new Map(registry.providers.map((p) => [p.name, p]));
+    this.configs = new Map(registry.providers.map(p => [p.name, p]));
   }
 
   /**

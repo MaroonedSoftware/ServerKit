@@ -33,10 +33,7 @@ describe('scimError', () => {
 
   it('supports the chainable HttpError setters', () => {
     const cause = new Error('boom');
-    const err = scimError(500, undefined, 'Internal Server Error')
-      .withCause(cause)
-      .withDetails({ field: 'x' })
-      .addHeader('X-Test', 'yes');
+    const err = scimError(500, undefined, 'Internal Server Error').withCause(cause).withDetails({ field: 'x' }).addHeader('X-Test', 'yes');
     expect(err.cause).toBe(cause);
     expect(err.details).toEqual({ field: 'x' });
     expect(err.headers).toEqual({ 'X-Test': 'yes' });

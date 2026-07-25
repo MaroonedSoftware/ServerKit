@@ -53,7 +53,13 @@ describe('PasswordAllowedPolicy', () => {
     const policy = new PasswordAllowedPolicy(makeStrengthProvider(), makeHashProvider());
     await expect(
       policy.evaluate(
-        { password: 'correct-horse-battery-staple', previousPasswords: [{ hash: 'a', salt: 'a' }, { hash: 'b', salt: 'b' }] },
+        {
+          password: 'correct-horse-battery-staple',
+          previousPasswords: [
+            { hash: 'a', salt: 'a' },
+            { hash: 'b', salt: 'b' },
+          ],
+        },
         envelope,
       ),
     ).resolves.toEqual({ allowed: true });
@@ -69,10 +75,7 @@ describe('PasswordAllowedPolicy', () => {
   it('short-circuits on weak password without invoking the hash provider', async () => {
     const hashProvider = makeHashProvider();
     const policy = new PasswordAllowedPolicy(makeStrengthProvider({ valid: false }), hashProvider);
-    await policy.evaluate(
-      { password: 'password', previousPasswords: [{ hash: 'a', salt: 'a' }] },
-      envelope,
-    );
+    await policy.evaluate({ password: 'password', previousPasswords: [{ hash: 'a', salt: 'a' }] }, envelope);
     expect(hashProvider.verify).not.toHaveBeenCalled();
   });
 });

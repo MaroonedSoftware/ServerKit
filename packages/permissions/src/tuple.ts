@@ -1,17 +1,13 @@
 import { z } from 'zod';
 
-const NamespaceSchema = z
-    .string()
-    .regex(/^[a-z][a-z0-9_]*$/, 'namespace must match /^[a-z][a-z0-9_]*$/');
+const NamespaceSchema = z.string().regex(/^[a-z][a-z0-9_]*$/, 'namespace must match /^[a-z][a-z0-9_]*$/');
 
-const RelationNameSchema = z
-    .string()
-    .regex(/^[a-z][a-z0-9_]*$/, 'relation must match /^[a-z][a-z0-9_]*$/');
+const RelationNameSchema = z.string().regex(/^[a-z][a-z0-9_]*$/, 'relation must match /^[a-z][a-z0-9_]*$/');
 
 const IdSchema = z
-    .string()
-    .min(1)
-    .regex(/^[^.@:*]+$/, "id must not contain '.', '@', ':' or '*'");
+  .string()
+  .min(1)
+  .regex(/^[^.@:*]+$/, "id must not contain '.', '@', ':' or '*'");
 
 /**
  * Reference to a concrete object: `<namespace>:<id>`.
@@ -20,25 +16,25 @@ const IdSchema = z
  * exposed under the same name for use in TypeScript signatures.
  */
 export const ObjectRef = z.object({
-    namespace: NamespaceSchema,
-    id: IdSchema,
+  namespace: NamespaceSchema,
+  id: IdSchema,
 });
 export type ObjectRef = z.infer<typeof ObjectRef>;
 
 const ConcreteSubject = z.object({
-    kind: z.literal('concrete'),
-    namespace: NamespaceSchema,
-    id: IdSchema,
+  kind: z.literal('concrete'),
+  namespace: NamespaceSchema,
+  id: IdSchema,
 });
 const WildcardSubject = z.object({
-    kind: z.literal('wildcard'),
-    namespace: NamespaceSchema,
+  kind: z.literal('wildcard'),
+  namespace: NamespaceSchema,
 });
 const UsersetSubject = z.object({
-    kind: z.literal('userset'),
-    namespace: NamespaceSchema,
-    id: IdSchema,
-    relation: RelationNameSchema,
+  kind: z.literal('userset'),
+  namespace: NamespaceSchema,
+  id: IdSchema,
+  relation: RelationNameSchema,
 });
 
 /**
@@ -57,9 +53,9 @@ export type SubjectRef = z.infer<typeof SubjectRef>;
  * and the input shape the Check evaluator walks.
  */
 export const RelationTuple = z.object({
-    object: ObjectRef,
-    relation: RelationNameSchema,
-    subject: SubjectRef,
+  object: ObjectRef,
+  relation: RelationNameSchema,
+  subject: SubjectRef,
 });
 export type RelationTuple = z.infer<typeof RelationTuple>;
 
@@ -68,14 +64,14 @@ export type RelationTuple = z.infer<typeof RelationTuple>;
  * `user:alice` (concrete), `user.*` (wildcard), or `org:42.admin` (userset).
  */
 export const formatSubject = (s: SubjectRef): string => {
-    switch (s.kind) {
-        case 'concrete':
-            return `${s.namespace}:${s.id}`;
-        case 'wildcard':
-            return `${s.namespace}.*`;
-        case 'userset':
-            return `${s.namespace}:${s.id}.${s.relation}`;
-    }
+  switch (s.kind) {
+    case 'concrete':
+      return `${s.namespace}:${s.id}`;
+    case 'wildcard':
+      return `${s.namespace}.*`;
+    case 'userset':
+      return `${s.namespace}:${s.id}.${s.relation}`;
+  }
 };
 
 /**
@@ -85,7 +81,7 @@ export const formatSubject = (s: SubjectRef): string => {
 export const stringifyTuple = (t: RelationTuple): string => `${t.object.namespace}:${t.object.id}.${t.relation}@${formatSubject(t.subject)}`;
 
 const malformed = (input: string, reason: string): never => {
-    throw new Error(`malformed tuple "${input}": ${reason}`);
+  throw new Error(`malformed tuple "${input}": ${reason}`);
 };
 
 /**
@@ -100,25 +96,25 @@ const malformed = (input: string, reason: string): never => {
  * that isn't one of the three forms or that fails namespace/id/relation rules.
  */
 export const parseSubject = (input: string): SubjectRef => {
-    if (input.endsWith('.*')) {
-        const namespace = input.slice(0, -2);
-        if (namespace.includes(':')) return malformed(input, `wildcard cannot have an id`);
-        return SubjectRef.parse({ kind: 'wildcard', namespace });
-    }
-    const colon = input.indexOf(':');
-    if (colon === -1) return malformed(input, `subject missing ':'`);
-    const namespace = input.slice(0, colon);
-    const rest = input.slice(colon + 1);
-    const dot = rest.indexOf('.');
-    if (dot !== -1) {
-        return SubjectRef.parse({
-            kind: 'userset',
-            namespace,
-            id: rest.slice(0, dot),
-            relation: rest.slice(dot + 1),
-        });
-    }
-    return SubjectRef.parse({ kind: 'concrete', namespace, id: rest });
+  if (input.endsWith('.*')) {
+    const namespace = input.slice(0, -2);
+    if (namespace.includes(':')) return malformed(input, `wildcard cannot have an id`);
+    return SubjectRef.parse({ kind: 'wildcard', namespace });
+  }
+  const colon = input.indexOf(':');
+  if (colon === -1) return malformed(input, `subject missing ':'`);
+  const namespace = input.slice(0, colon);
+  const rest = input.slice(colon + 1);
+  const dot = rest.indexOf('.');
+  if (dot !== -1) {
+    return SubjectRef.parse({
+      kind: 'userset',
+      namespace,
+      id: rest.slice(0, dot),
+      relation: rest.slice(dot + 1),
+    });
+  }
+  return SubjectRef.parse({ kind: 'concrete', namespace, id: rest });
 };
 
 /**
@@ -128,19 +124,19 @@ export const parseSubject = (input: string): SubjectRef => {
  * the {@link RelationTuple} Zod schema.
  */
 export const parseTuple = (input: string): RelationTuple => {
-    const at = input.indexOf('@');
-    if (at === -1) return malformed(input, `missing '@'`);
-    const left = input.slice(0, at);
-    const right = input.slice(at + 1);
-    const colon = left.indexOf(':');
-    if (colon === -1) return malformed(input, `object missing ':' in "${left}"`);
-    const namespace = left.slice(0, colon);
-    const idAndRelation = left.slice(colon + 1);
-    const dot = idAndRelation.indexOf('.');
-    if (dot === -1) return malformed(input, `missing '.' between id and relation in "${left}"`);
-    return RelationTuple.parse({
-        object: { namespace, id: idAndRelation.slice(0, dot) },
-        relation: idAndRelation.slice(dot + 1),
-        subject: parseSubject(right),
-    });
+  const at = input.indexOf('@');
+  if (at === -1) return malformed(input, `missing '@'`);
+  const left = input.slice(0, at);
+  const right = input.slice(at + 1);
+  const colon = left.indexOf(':');
+  if (colon === -1) return malformed(input, `object missing ':' in "${left}"`);
+  const namespace = left.slice(0, colon);
+  const idAndRelation = left.slice(colon + 1);
+  const dot = idAndRelation.indexOf('.');
+  if (dot === -1) return malformed(input, `missing '.' between id and relation in "${left}"`);
+  return RelationTuple.parse({
+    object: { namespace, id: idAndRelation.slice(0, dot) },
+    relation: idAndRelation.slice(dot + 1),
+    subject: parseSubject(right),
+  });
 };

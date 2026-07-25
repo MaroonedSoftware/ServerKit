@@ -141,7 +141,10 @@ describe('AppConfigStore watch capability', () => {
   it('reloads only the source that signalled', async () => {
     const watched = watchableSource({ a: 1 });
     const staticLoad = vi.fn(() => Promise.resolve({ b: 1 }));
-    const store = await new AppConfigBuilder().addSource(watched.source).addSource({ load: staticLoad, watch: () => () => {} }).buildStore();
+    const store = await new AppConfigBuilder()
+      .addSource(watched.source)
+      .addSource({ load: staticLoad, watch: () => () => {} })
+      .buildStore();
 
     expect(staticLoad).toHaveBeenCalledTimes(1); // initial build
     watched.set({ a: 2 });

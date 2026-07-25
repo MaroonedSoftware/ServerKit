@@ -6,15 +6,15 @@ import type { CliContext, CommandModule } from '../../types.js';
 
 /** Options accepted by `bootstrapForCli`. */
 export interface BootstrapForCliOptions<ConfigT extends AppConfig = AppConfig> {
-    modules: ServerKitModule<ConfigT>[];
-    config: ConfigT;
-    logger?: Logger;
+  modules: ServerKitModule<ConfigT>[];
+  config: ConfigT;
+  logger?: Logger;
 }
 
 /** An InjectKit container and a `shutdown` hook that runs every module's `shutdown` in reverse order. */
 export interface CliContainer {
-    container: Container;
-    shutdown: () => Promise<void>;
+  container: Container;
+  shutdown: () => Promise<void>;
 }
 
 /**
@@ -23,39 +23,37 @@ export interface CliContainer {
  * (HTTP listeners, job pollers) spinning up. Module `shutdown` hooks are
  * invoked when the returned `shutdown` is called.
  */
-export const bootstrapForCli = async <ConfigT extends AppConfig = AppConfig>(
-    options: BootstrapForCliOptions<ConfigT>,
-): Promise<CliContainer> => {
-    const registry = new InjectKitRegistry();
+export const bootstrapForCli = async <ConfigT extends AppConfig = AppConfig>(options: BootstrapForCliOptions<ConfigT>): Promise<CliContainer> => {
+  const registry = new InjectKitRegistry();
 
-    registry.register(Logger).useInstance(options.logger ?? new ConsoleLogger());
-    registry.register(AppConfig).useInstance(options.config);
+  registry.register(Logger).useInstance(options.logger ?? new ConsoleLogger());
+  registry.register(AppConfig).useInstance(options.config);
 
-    for (const module of options.modules) {
-        if (module.setup) await module.setup(registry, options.config);
+  for (const module of options.modules) {
+    if (module.setup) await module.setup(registry, options.config);
+  }
+
+  const container = registry.build();
+
+  const shutdown = async (): Promise<void> => {
+    for (const module of [...options.modules].reverse()) {
+      if (!module.shutdown) continue;
+      try {
+        await module.shutdown(container);
+      } catch {
+        // Ignore individual module shutdown failures during teardown.
+      }
     }
+  };
 
-    const container = registry.build();
-
-    const shutdown = async (): Promise<void> => {
-        for (const module of [...options.modules].reverse()) {
-            if (!module.shutdown) continue;
-            try {
-                await module.shutdown(container);
-            } catch {
-                // Ignore individual module shutdown failures during teardown.
-            }
-        }
-    };
-
-    return { container, shutdown };
+  return { container, shutdown };
 };
 
 // Lazy, per-process bootstrap cache. Composite commands within a single
 // invocation reuse the same container; subsequent invocations bootstrap fresh.
 interface LazyBootstrap<ConfigT extends AppConfig> {
-    modules: ServerKitModule<ConfigT>[];
-    promise?: Promise<CliContainer>;
+  modules: ServerKitModule<ConfigT>[];
+  promise?: Promise<CliContainer>;
 }
 
 // State must live on globalThis under a Symbol.for key so that the main johnny5
@@ -67,15 +65,15 @@ interface LazyBootstrap<ConfigT extends AppConfig> {
 const STATE_KEY = Symbol.for('@maroonedsoftware/johnny5/serverkit/state.v1');
 
 interface Johnny5ServerkitState {
-    containerByContext: WeakMap<CliContext, LazyBootstrap<AppConfig>>;
+  containerByContext: WeakMap<CliContext, LazyBootstrap<AppConfig>>;
 }
 
 const getState = (): Johnny5ServerkitState => {
-    const g = globalThis as unknown as Record<symbol, Johnny5ServerkitState | undefined>;
-    if (!g[STATE_KEY]) {
-        g[STATE_KEY] = { containerByContext: new WeakMap() };
-    }
-    return g[STATE_KEY] as Johnny5ServerkitState;
+  const g = globalThis as unknown as Record<symbol, Johnny5ServerkitState | undefined>;
+  if (!g[STATE_KEY]) {
+    g[STATE_KEY] = { containerByContext: new WeakMap() };
+  }
+  return g[STATE_KEY] as Johnny5ServerkitState;
 };
 
 /**
@@ -84,7 +82,7 @@ const getState = (): Johnny5ServerkitState => {
  * hooks. `createCliApp` calls this automatically when `modules` is supplied.
  */
 export const configureServerKitModules = <ConfigT extends AppConfig>(ctx: CliContext, modules: ServerKitModule<ConfigT>[]): void => {
-    getState().containerByContext.set(ctx, { modules: modules as ServerKitModule<AppConfig>[] });
+  getState().containerByContext.set(ctx, { modules: modules as ServerKitModule<AppConfig>[] });
 };
 
 /**
@@ -93,20 +91,21 @@ export const configureServerKitModules = <ConfigT extends AppConfig>(ctx: CliCon
  * Throws if `configureServerKitModules` hasn't been called for this context.
  */
 export const getOrBootstrapContainer = async (ctx: CliContext): Promise<CliContainer> => {
-    const lazy = getState().containerByContext.get(ctx);
-    if (!lazy) throw new Error('ServerKit modules have not been configured on this CliContext — call configureServerKitModules() in createCliApp first.');
-    if (!lazy.promise) {
-        lazy.promise = bootstrapForCli({
-            modules: lazy.modules,
-            config: ctx.config,
-        });
-    }
-    return lazy.promise;
+  const lazy = getState().containerByContext.get(ctx);
+  if (!lazy)
+    throw new Error('ServerKit modules have not been configured on this CliContext — call configureServerKitModules() in createCliApp first.');
+  if (!lazy.promise) {
+    lazy.promise = bootstrapForCli({
+      modules: lazy.modules,
+      config: ctx.config,
+    });
+  }
+  return lazy.promise;
 };
 
 /** `CliContext` augmented with a scoped InjectKit container, handed to `requireContainer` handlers. */
 export interface RequireContainerCtx extends CliContext {
-    container: ScopedContainer;
+  container: ScopedContainer;
 }
 
 /**
@@ -116,12 +115,12 @@ export interface RequireContainerCtx extends CliContext {
  * directly when explicit teardown is required.
  */
 export const requireContainer = <Opts = Record<string, unknown>>(
-    handler: (opts: Opts, ctx: RequireContainerCtx, args: string[]) => Promise<number | void>,
+  handler: (opts: Opts, ctx: RequireContainerCtx, args: string[]) => Promise<number | void>,
 ): CommandModule<Opts>['run'] => {
-    return async (opts, ctx, args) => {
-        const { container } = await getOrBootstrapContainer(ctx);
-        const scoped = container.createScopedContainer() as ScopedContainer;
-        const enriched: RequireContainerCtx = Object.assign({}, ctx, { container: scoped });
-        return handler(opts, enriched, args);
-    };
+  return async (opts, ctx, args) => {
+    const { container } = await getOrBootstrapContainer(ctx);
+    const scoped = container.createScopedContainer() as ScopedContainer;
+    const enriched: RequireContainerCtx = Object.assign({}, ctx, { container: scoped });
+    return handler(opts, enriched, args);
+  };
 };

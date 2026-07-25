@@ -42,15 +42,29 @@ const makeDispatcher = () => {
 
 const webhook = (value: Record<string, unknown>): WhatsAppWebhookBody => ({
   object: 'whatsapp_business_account',
-  entry: [{ id: 'WABA1', changes: [{ field: 'messages', value: { messaging_product: 'whatsapp', metadata: { phone_number_id: 'PN1', display_phone_number: '15550000000' }, ...value } as never }] }],
+  entry: [
+    {
+      id: 'WABA1',
+      changes: [
+        {
+          field: 'messages',
+          value: { messaging_product: 'whatsapp', metadata: { phone_number_id: 'PN1', display_phone_number: '15550000000' }, ...value } as never,
+        },
+      ],
+    },
+  ],
 });
 
 describe('interactiveReplyId', () => {
   it('reads a button_reply id', () => {
-    expect(interactiveReplyId({ type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: 'confirm' } } } as WhatsAppMessage)).toBe('confirm');
+    expect(
+      interactiveReplyId({ type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: 'confirm' } } } as WhatsAppMessage),
+    ).toBe('confirm');
   });
   it('reads a list_reply id', () => {
-    expect(interactiveReplyId({ type: 'interactive', interactive: { type: 'list_reply', list_reply: { id: 'pick_1' } } } as WhatsAppMessage)).toBe('pick_1');
+    expect(interactiveReplyId({ type: 'interactive', interactive: { type: 'list_reply', list_reply: { id: 'pick_1' } } } as WhatsAppMessage)).toBe(
+      'pick_1',
+    );
   });
   it('reads a quick-reply button payload', () => {
     expect(interactiveReplyId({ type: 'button', button: { payload: 'yes' } } as WhatsAppMessage)).toBe('yes');
@@ -89,7 +103,15 @@ describe('WhatsAppDispatcher.dispatchWebhook', () => {
 
     await dispatcher.dispatchWebhook(
       webhook({
-        messages: [{ from: 'u', id: 'wamid.2', timestamp: '1', type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: 'confirm_order' } } }],
+        messages: [
+          {
+            from: 'u',
+            id: 'wamid.2',
+            timestamp: '1',
+            type: 'interactive',
+            interactive: { type: 'button_reply', button_reply: { id: 'confirm_order' } },
+          },
+        ],
       }),
     );
 
@@ -104,7 +126,15 @@ describe('WhatsAppDispatcher.dispatchWebhook', () => {
 
     await dispatcher.dispatchWebhook(
       webhook({
-        messages: [{ from: 'u', id: 'wamid.3', timestamp: '1', type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: 'unregistered' } } }],
+        messages: [
+          {
+            from: 'u',
+            id: 'wamid.3',
+            timestamp: '1',
+            type: 'interactive',
+            interactive: { type: 'button_reply', button_reply: { id: 'unregistered' } },
+          },
+        ],
       }),
     );
 
@@ -143,8 +173,32 @@ describe('WhatsAppDispatcher.dispatchWebhook', () => {
     await dispatcher.dispatchWebhook({
       object: 'whatsapp_business_account',
       entry: [
-        { id: 'W1', changes: [{ field: 'messages', value: { messaging_product: 'whatsapp', metadata: { phone_number_id: 'PN1' }, messages: [{ from: 'a', id: 'm1', timestamp: '1', type: 'text', text: { body: 'one' } }] } as never }] },
-        { id: 'W2', changes: [{ field: 'messages', value: { messaging_product: 'whatsapp', metadata: { phone_number_id: 'PN2' }, messages: [{ from: 'b', id: 'm2', timestamp: '1', type: 'text', text: { body: 'two' } }] } as never }] },
+        {
+          id: 'W1',
+          changes: [
+            {
+              field: 'messages',
+              value: {
+                messaging_product: 'whatsapp',
+                metadata: { phone_number_id: 'PN1' },
+                messages: [{ from: 'a', id: 'm1', timestamp: '1', type: 'text', text: { body: 'one' } }],
+              } as never,
+            },
+          ],
+        },
+        {
+          id: 'W2',
+          changes: [
+            {
+              field: 'messages',
+              value: {
+                messaging_product: 'whatsapp',
+                metadata: { phone_number_id: 'PN2' },
+                messages: [{ from: 'b', id: 'm2', timestamp: '1', type: 'text', text: { body: 'two' } }],
+              } as never,
+            },
+          ],
+        },
       ],
     });
 

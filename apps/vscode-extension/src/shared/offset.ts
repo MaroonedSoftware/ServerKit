@@ -7,10 +7,10 @@ import { offsetToPosition } from '@maroonedsoftware/permissions-dsl';
  * `offsetToPosition` returns 1-indexed line/column; LSP wants 0-indexed.
  */
 export const spanToRange = (source: string, span: SourceSpan): Range => {
-    const start = offsetToPosition(source, span.start);
-    const end = offsetToPosition(source, span.end);
-    return {
-        start: { line: start.line - 1, character: start.column - 1 },
-        end: { line: end.line - 1, character: end.column - 1 },
-    };
+  const start = offsetToPosition(source, span.start);
+  const end = offsetToPosition(source, span.end);
+  return {
+    start: { line: start.line - 1, character: start.column - 1 },
+    end: { line: end.line - 1, character: end.column - 1 },
+  };
 };

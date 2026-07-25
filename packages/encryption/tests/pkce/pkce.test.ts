@@ -52,12 +52,7 @@ describe('pkceCreateChallenge', () => {
 
   it('matches SHA-256(verifier) base64url-encoded — RFC 7636 S256', () => {
     const verifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
-    const expected = createHash('sha256')
-      .update(verifier, 'utf8')
-      .digest('base64')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=/g, '');
+    const expected = createHash('sha256').update(verifier, 'utf8').digest('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
     expect(pkceCreateChallenge(verifier)).toBe(expected);
   });
 
