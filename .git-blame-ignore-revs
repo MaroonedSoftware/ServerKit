@@ -1,0 +1,13 @@
+# Revisions listed here are skipped by `git blame`.
+#
+# Only bulk, mechanical, no-behavior-change commits belong here — repo-wide
+# reformats, mass renames, lint autofix sweeps. Never a commit that changes
+# behavior, or blame will quietly attribute real changes to the wrong author.
+#
+# Enabled locally with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# GitHub picks this file up automatically for its blame view.
+
+# style: apply prettier across the workspace
+a6c4ad9cd8de1e5c94244e1057491116821854a6
