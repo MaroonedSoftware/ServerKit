@@ -60,10 +60,11 @@ packages/
 ├── eventbus/        # In-process event bus (subscribers + registration)
 ├── jobbroker/       # Background job processing (pg-boss wrapper)
 ├── johnny5/         # CLI/tooling (commander, doctor, integrations keyring, plugin loader)
-├── koa/             # Koa middleware and utilities
+├── koa/             # Koa middleware, utilities, and the SSE streaming transport
 ├── kysely/          # Kysely repository base, transaction helpers, PG type overrides
 ├── logger/          # Logger interface and console implementation
 ├── mcp/             # MCP (Model Context Protocol) server dispatcher wrapping the official SDK
+├── serverfeed/      # Transport-free realtime feed of server activity (pub/sub, replay buffer, snapshot) + an optional `./logger` bridge
 ├── multipart/       # Multipart form-data parsing
 ├── permissions/     # Zanzibar-style relationship-based access control
 ├── permissions-dsl/ # DSL for the permissions language (grammar, parser, compiler, codegen, CLI)
@@ -90,7 +91,7 @@ apps/
 
 The monorepo uses workspace references (`workspace:*`). Key dependency relationships:
 
-- **koa** depends on: `appconfig`, `authentication`, `errors`, `logger`, `multipart`, `policies`, `utilities`
+- **koa** depends on: `appconfig`, `authentication`, `errors`, `logger`, `multipart`, `policies`, `utilities` (+ optional peer `serverfeed` for the `./serverfeed` SSE endpoint). Owns the SSE transport (`openSseStream`), which is dependency-free and exported from the main entry point.
 - **scim** depends on: `authentication`, `errors`, `koa`, `logger`, `utilities`
 - **authentication** depends on: `cache`, `encryption`, `errors`, `logger`, `policies`, `utilities`
 - **slack** depends on: `errors`, `logger`, `policies` (+ optional peers `comms` for the `./comms` adapter and `cache` for webhook de-duplication)
@@ -109,7 +110,9 @@ The monorepo uses workspace references (`workspace:*`). Key dependency relations
 - **multipart** depends on: `errors`
 - **storage** depends on: `errors` (+ optional peer AWS S3 / Google Cloud Storage SDKs for the `./s3` and `./gcs` backends)
 - **zod** depends on: `errors`
-- **errors**, **appconfig**, **logger**, **utilities**, **permissions**, **eventbus** are standalone (no internal deps)
+- **serverfeed** depends on: nothing internal at runtime (framework-agnostic, transport-free core; `luxon` for timestamps). It owns the event contract and the bus only — framing and connection handling belong to a transport, e.g. koa's SSE module. The `koa` `./serverfeed` endpoint consumes it as an optional peer. Its own `./logger` subpath ships `ServerFeedLogger` and takes `logger` as an optional peer, which keeps the arrow pointing this way and leaves `logger` standalone.
+- **logger** is standalone (no dependencies, internal or peer)
+- **errors**, **appconfig**, **utilities**, **permissions**, **eventbus** are standalone (no internal deps)
 - All packages use `config-eslint` and `config-typescript`
 
 ### Error Handling Pattern

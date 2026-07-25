@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { AddressInfo } from 'node:net';
-import type { Server } from 'node:http';
+import http, { type Server } from 'node:http';
 import { Settings } from 'luxon';
 import Koa from 'koa';
 import { InjectKitContainerNoop, type Container } from 'injectkit';
@@ -9,6 +9,7 @@ import { ServerKitServerBuilder } from '../src/serverkit.server.builder.js';
 import { ServerKitBodyParser, ServerKitParserMappings } from '../src/serverkit.bodyparser.js';
 import { BinaryParser } from '../src/parsers/binary.parser.js';
 import { RateLimiter } from '../src/middleware/server/rate.limiter.middleware.js';
+import { openSseStream, type SseContext } from '../src/sse/sse.stream.js';
 import { Logger } from '@maroonedsoftware/logger';
 import { AppConfig } from '@maroonedsoftware/appconfig';
 import { ServerkitError } from '@maroonedsoftware/errors';
@@ -258,8 +259,12 @@ describe('ServerKitServerBuilder', () => {
 
     afterEach(async () => {
       if (server?.listening) {
-        await new Promise<void>((resolve) => server!.close(() => resolve()));
+        await new Promise<void>(resolve => server!.close(() => resolve()));
       }
+      // Closing the socket fires the builder's *async* `close` handler, which runs the shutdown
+      // hooks and then calls process.exit(). Yield a macrotask so that finishes while the exit
+      // spy is still installed, instead of hitting the real process.exit after mockRestore.
+      await new Promise(resolve => setTimeout(resolve, 0));
       server = undefined;
       process.removeAllListeners('SIGINT');
       process.removeAllListeners('SIGTERM');
@@ -277,7 +282,7 @@ describe('ServerKitServerBuilder', () => {
       const builder = new ServerKitServerBuilder();
       await builder.setup(config, logger, [module]);
 
-      const started = new Promise<void>((resolve) => {
+      const started = new Promise<void>(resolve => {
         (module.start as ReturnType<typeof vi.fn>).mockImplementation(async () => resolve());
       });
 
@@ -285,7 +290,7 @@ describe('ServerKitServerBuilder', () => {
       await started;
 
       expect(server.listening).toBe(true);
-      expect(module.start).toHaveBeenCalledWith(internals(builder).container);
+      expect(module.start).toHaveBeenCalledWith(internals(builder).container, expect.any(AbortSignal));
       const address = server.address() as AddressInfo;
       expect(address.port).toBeGreaterThan(0);
     });
@@ -299,6 +304,256 @@ describe('ServerKitServerBuilder', () => {
       internals(builder).server.emit('error', error);
 
       expect(logger.error).toHaveBeenCalledWith(error);
+    });
+
+    it('runs every ready hook after every start hook and after the ready log', async () => {
+      const calls: string[] = [];
+      const first = createModule({
+        name: 'first',
+        start: vi.fn(async () => void calls.push('start:first')),
+        ready: vi.fn(async () => void calls.push('ready:first')),
+      });
+      const second = createModule({
+        name: 'second',
+        start: vi.fn(async () => void calls.push('start:second')),
+        ready: vi.fn(async () => void calls.push('ready:second')),
+      });
+      const builder = new ServerKitServerBuilder();
+      await builder.setup(config, logger, [first, second]);
+
+      server = await builder.start(0);
+      await builder.whenReady();
+
+      expect(calls).toEqual(['start:first', 'start:second', 'ready:first', 'ready:second']);
+      expect(first.ready).toHaveBeenCalledWith(internals(builder).container, expect.any(AbortSignal));
+
+      const infos = (logger.info as ReturnType<typeof vi.fn>).mock.calls.map(([message]) => message as string);
+      const listening = infos.findIndex(message => message.startsWith('Server is running on port'));
+      expect(listening).toBeGreaterThan(-1);
+      expect(infos.indexOf('Ready first')).toBeGreaterThan(listening);
+      expect(infos.at(-1)).toBe('Boot complete');
+    });
+
+    it('logs a failing ready hook and still runs the remaining modules', async () => {
+      const error = new Error('ready boom');
+      const failing = createModule({ name: 'failing', ready: vi.fn(async () => Promise.reject(error)) });
+      const second = createModule({ name: 'second', ready: vi.fn(async () => {}) });
+      const builder = new ServerKitServerBuilder();
+      await builder.setup(config, logger, [failing, second]);
+
+      server = await builder.start(0);
+      await builder.whenReady();
+
+      expect(logger.error).toHaveBeenCalledWith(error);
+      expect(second.ready).toHaveBeenCalledTimes(1);
+      expect(logger.info).toHaveBeenCalledWith('Boot complete');
+    });
+
+    it('resolves whenReady only after the last ready hook completes', async () => {
+      let finished = false;
+      const module = createModule({
+        ready: vi.fn(async () => {
+          await new Promise(resolve => setTimeout(resolve, 10));
+          finished = true;
+        }),
+      });
+      const builder = new ServerKitServerBuilder();
+      await builder.setup(config, logger, [module]);
+
+      server = await builder.start(0);
+      expect(finished).toBe(false);
+
+      await builder.whenReady();
+
+      expect(finished).toBe(true);
+    });
+
+    it('skips the remaining ready hooks once shutdown has begun', async () => {
+      let release!: () => void;
+      const inFlight = new Promise<void>(resolve => {
+        release = resolve;
+      });
+      const first = createModule({ name: 'first', ready: vi.fn(async () => inFlight) });
+      const second = createModule({ name: 'second', ready: vi.fn(async () => {}) });
+      const builder = new ServerKitServerBuilder();
+      await builder.setup(config, logger, [first, second]);
+
+      server = await builder.start(0);
+      await vi.waitFor(() => expect(first.ready).toHaveBeenCalled());
+
+      const shuttingDown = builder.shutdown();
+      release();
+      await shuttingDown;
+
+      expect(first.ready).toHaveBeenCalledTimes(1);
+      expect(second.ready).not.toHaveBeenCalled();
+      expect(logger.info).not.toHaveBeenCalledWith('Boot complete');
+    });
+
+    it('aborts the lifecycle signal handed to an in-flight ready hook', async () => {
+      let observed: AbortSignal | undefined;
+      let release!: () => void;
+      const inFlight = new Promise<void>(resolve => {
+        release = resolve;
+      });
+      const module = createModule({
+        ready: vi.fn(async (_container: Container, signal: AbortSignal) => {
+          observed = signal;
+          return inFlight;
+        }),
+      });
+      const builder = new ServerKitServerBuilder();
+      await builder.setup(config, logger, [module]);
+
+      server = await builder.start(0);
+      await vi.waitFor(() => expect(observed).toBeDefined());
+      expect(observed!.aborted).toBe(false);
+
+      // shutdown() aborts synchronously, before it awaits anything.
+      const shuttingDown = builder.shutdown();
+      expect(observed!.aborted).toBe(true);
+
+      release();
+      await shuttingDown;
+      expect(module.shutdown).toHaveBeenCalledTimes(1);
+    });
+
+    it('abandons a ready hook that ignores the signal once the grace period elapses', async () => {
+      const stuck = createModule({ name: 'stuck', ready: vi.fn(() => new Promise<void>(() => {})) });
+      const builder = new ServerKitServerBuilder();
+      await builder.setup(config, logger, [stuck]);
+
+      server = await builder.start(0, { shutdownGraceMs: 20 });
+      await vi.waitFor(() => expect(stuck.ready).toHaveBeenCalled());
+
+      await builder.shutdown();
+
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Ready phase did not unwind within 20ms'));
+      expect(stuck.shutdown).toHaveBeenCalledTimes(1);
+      expect(exitSpy).toHaveBeenCalled();
+    });
+
+    it('ignores a second shutdown so the hooks do not run twice', async () => {
+      const module = createModule();
+      const builder = new ServerKitServerBuilder();
+      await builder.setup(config, logger, [module]);
+
+      server = await builder.start(0);
+      await builder.whenReady();
+
+      await builder.shutdown();
+      await builder.shutdown();
+
+      expect(module.shutdown).toHaveBeenCalledTimes(1);
+    });
+
+    it('exposes a lifecycle signal that aborts on SIGTERM, before the socket has closed', async () => {
+      const builder = new ServerKitServerBuilder();
+      await builder.setup(config, logger, []);
+      // A request that never responds keeps a socket open, so the server's `close` event — and
+      // with it shutdown() — cannot fire yet. The signal must still abort.
+      builder.setupMiddleware(() => [() => new Promise<void>(() => {})]);
+
+      server = await builder.start(0, { shutdownGraceMs: 10_000 });
+      expect(builder.lifecycleSignal.aborted).toBe(false);
+
+      const address = server.address() as AddressInfo;
+      const req = http.get({ port: address.port, agent: new http.Agent({ keepAlive: true }) });
+      req.on('error', () => {});
+      await vi.waitFor(async () => {
+        const count = await new Promise<number>(resolve => server!.getConnections((_err, c) => resolve(c)));
+        expect(count).toBeGreaterThan(0);
+      });
+
+      process.emit('SIGTERM');
+
+      expect(builder.lifecycleSignal.aborted).toBe(true);
+      expect(server.listening).toBe(false);
+      expect(exitSpy).not.toHaveBeenCalled(); // shutdown hasn't run: the socket is still held open
+
+      req.destroy();
+    });
+
+    it('still runs the shutdown hooks after a signal handler aborted the lifecycle', async () => {
+      const module = createModule();
+      const builder = new ServerKitServerBuilder();
+      await builder.setup(config, logger, [module]);
+
+      server = await builder.start(0, { shutdownGraceMs: 0 });
+      await builder.whenReady();
+
+      const exited = new Promise<void>(resolve => {
+        exitSpy.mockImplementation((() => resolve()) as never);
+      });
+      process.emit('SIGTERM');
+      await exited;
+
+      expect(builder.lifecycleSignal.aborted).toBe(true);
+      expect(module.shutdown).toHaveBeenCalledTimes(1);
+    });
+
+    it('drains a live SSE stream on signal instead of waiting out the grace period', async () => {
+      const module = createModule();
+      const builder = new ServerKitServerBuilder();
+      await builder.setup(config, logger, [module]);
+      builder.setupMiddleware(() => [
+        async ctx => {
+          const stream = openSseStream(ctx as unknown as SseContext, { heartbeatMs: 0, signal: builder.lifecycleSignal });
+          stream.comment('open'); // flush the headers so the client sees a response, as a real feed does
+        },
+      ]);
+
+      // A 10s grace the test must never wait for: if the stream ignored the lifecycle signal it
+      // would hold close() open until the force-close timer, and this test would time out.
+      server = await builder.start(0, { shutdownGraceMs: 10_000 });
+      const address = server.address() as AddressInfo;
+
+      const req = http.get({ port: address.port, agent: new http.Agent({ keepAlive: true }) });
+      req.on('error', () => {});
+      await new Promise<void>(resolve => req.on('response', () => resolve()));
+
+      const exited = new Promise<void>(resolve => {
+        exitSpy.mockImplementation((() => resolve()) as never);
+      });
+
+      process.emit('SIGTERM');
+      await exited;
+
+      expect(module.shutdown).toHaveBeenCalledTimes(1);
+      expect(logger.info).toHaveBeenCalledWith('Server closed');
+    });
+
+    it('force-closes a lingering connection on signal so shutdown runs and exits', async () => {
+      const module = createModule();
+      const builder = new ServerKitServerBuilder();
+      await builder.setup(config, logger, [module]);
+      // A middleware that never responds keeps the request in-flight, so the socket
+      // stays *active* (closeIdleConnections won't reap it) — only the grace-period
+      // force-close can end it. This is exactly the SSE/long-poll hang scenario.
+      builder.setupMiddleware(() => [() => new Promise<void>(() => {})]);
+
+      server = await builder.start(0, { shutdownGraceMs: 50 });
+      const address = server.address() as AddressInfo;
+
+      // Fire a request we never wait to complete; its socket is destroyed on shutdown.
+      const req = http.get({ port: address.port, agent: new http.Agent({ keepAlive: true }) });
+      req.on('error', () => {});
+
+      // Wait until the server actually has the active connection open.
+      await vi.waitFor(async () => {
+        const count = await new Promise<number>(resolve => server!.getConnections((_err, c) => resolve(c)));
+        expect(count).toBeGreaterThan(0);
+      });
+
+      const exited = new Promise<void>(resolve => {
+        exitSpy.mockImplementation((() => resolve()) as never);
+      });
+
+      process.emit('SIGTERM');
+      await exited;
+
+      expect(module.shutdown).toHaveBeenCalledWith(internals(builder).container);
+      expect(exitSpy).toHaveBeenCalled();
     });
   });
 });

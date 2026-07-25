@@ -19,5 +19,8 @@ export * from './parsers/form.parser.js';
 export * from './parsers/multipart.parser.js';
 export * from './parsers/binary.parser.js';
 export * from './parsers/serverkit.default.parsers.js';
+export * from './sse/sse.frame.js';
+export * from './sse/sse.request.js';
+export * from './sse/sse.stream.js';
 export * from './serverkit.module.js';
 export * from './serverkit.server.builder.js';

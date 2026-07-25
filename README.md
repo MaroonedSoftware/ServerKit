@@ -134,11 +134,13 @@ A CLI framework for ServerKit-based applications.
 
 ### Koa
 
-Koa middleware, body parsing, and utilities for ServerKit.
+Koa middleware, body parsing, SSE streaming, and utilities for ServerKit.
 
 - Typed `ServerKitContext` with request-scoped DI container
 - Error, CORS, rate limiting, and context middleware
 - Type-safe router and middleware wrappers
+- Server-Sent Events transport with heartbeats, backpressure handling, and graceful-shutdown draining
+- Optional `./serverfeed` SSE endpoint over a `@maroonedsoftware/serverfeed` bus
 
 [View documentation →](./packages/koa/README.md)
 
@@ -244,6 +246,20 @@ SCIM 2.0 (RFC 7643/7644) server toolkit — schemas, filter parser, PATCH applie
 - Bearer-scope guard that integrates with `@maroonedsoftware/authentication`
 
 [View documentation →](./packages/scim/README.md)
+
+---
+
+### ServerFeed
+
+Framework-agnostic, transport-free in-process feed of realtime server activity.
+
+- Typed `ServerFeedEvent` contract shared by publisher, transport, and consumer
+- Publish helpers for progress, status, log, error, and heartbeat events
+- Filtered subscribe on source, correlation id, minimum level, and kind
+- Bounded replay buffer with `Last-Event-ID` resume and a gap flag
+- Latest-per-key snapshot, plus an optional `./logger` bridge
+
+[View documentation →](./packages/serverfeed/README.md)
 
 ---
 

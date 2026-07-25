@@ -513,6 +513,9 @@ importers:
       '@koa/router':
         specifier: ^15.6.0
         version: 15.6.0(koa@3.2.1)
+      '@maroonedsoftware/monitor':
+        specifier: workspace:*
+        version: link:../monitor
       '@repo/config-eslint':
         specifier: workspace:*
         version: link:../config-eslint
@@ -615,6 +618,25 @@ importers:
       '@repo/config-typescript':
         specifier: workspace:*
         version: link:../config-typescript
+
+  packages/monitor:
+    dependencies:
+      luxon:
+        specifier: ^3.7.2
+        version: 3.7.2
+    devDependencies:
+      '@maroonedsoftware/logger':
+        specifier: workspace:*
+        version: link:../logger
+      '@repo/config-eslint':
+        specifier: workspace:*
+        version: link:../config-eslint
+      '@repo/config-typescript':
+        specifier: workspace:*
+        version: link:../config-typescript
+      '@types/luxon':
+        specifier: ^3.7.2
+        version: 3.7.2
 
   packages/multipart:
     dependencies:
