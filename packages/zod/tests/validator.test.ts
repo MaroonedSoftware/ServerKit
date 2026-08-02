@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
 import { HttpError } from '@maroonedsoftware/errors';
-import { parseAndValidate } from '../src/validator.js';
+import { parseAndValidate, parseAndValidateArray } from '../src/validator.js';
 
 describe('parseAndValidate', () => {
   it('should return parsed data for valid input', async () => {
@@ -281,5 +281,202 @@ describe('parseAndValidate', () => {
     const schema = z.object({ id: z.string().transform(s => parseInt(s, 10)) });
     const result = await parseAndValidate({ id: '42' }, schema);
     expect(result.id).toBe(42);
+  });
+});
+
+describe('parseAndValidateArray', () => {
+  const userSchema = z.object({ email: z.string().email(), age: z.number().min(0) });
+
+  it('should return every parsed element for a valid array', async () => {
+    const result = await parseAndValidateArray(
+      [
+        { email: 'a@example.com', age: 30 },
+        { email: 'b@example.com', age: 40 },
+      ],
+      userSchema,
+    );
+    expect(result).toEqual([
+      { email: 'a@example.com', age: 30 },
+      { email: 'b@example.com', age: 40 },
+    ]);
+  });
+
+  it('should preserve input order', async () => {
+    const result = await parseAndValidateArray(['c', 'a', 'b'], z.string());
+    expect(result).toEqual(['c', 'a', 'b']);
+  });
+
+  it('should return an empty array for an empty input', async () => {
+    const result = await parseAndValidateArray([], userSchema);
+    expect(result).toEqual([]);
+  });
+
+  it('should validate each element against the schema, not the array itself', async () => {
+    const result = await parseAndValidateArray(['x', 'y'], z.string());
+    expect(result).toEqual(['x', 'y']);
+  });
+
+  it('should apply schema transforms to every element', async () => {
+    const schema = z.object({ id: z.string().transform(s => parseInt(s, 10)) });
+    const result = await parseAndValidateArray([{ id: '42' }, { id: '7' }], schema);
+    expect(result).toEqual([{ id: 42 }, { id: 7 }]);
+  });
+
+  it('should throw HttpError 400 when an element is invalid', async () => {
+    const promise = parseAndValidateArray([{ email: 'nope', age: 30 }], userSchema);
+    await expect(promise).rejects.toBeInstanceOf(HttpError);
+
+    try {
+      await parseAndValidateArray([{ email: 'nope', age: 30 }], userSchema);
+      expect.fail('should have thrown');
+    } catch (err) {
+      expect((err as HttpError).statusCode).toBe(400);
+    }
+  });
+
+  it('should prefix detail keys with the failing element index', async () => {
+    try {
+      await parseAndValidateArray(
+        [
+          { email: 'a@example.com', age: 30 },
+          { email: 'not-an-email', age: 40 },
+        ],
+        userSchema,
+      );
+      expect.fail('should have thrown');
+    } catch (err) {
+      const details = (err as HttpError).details!;
+      expect(details).toEqual({ '1.email': 'Invalid email' });
+    }
+  });
+
+  it('should report violations from every failing element, not just the first', async () => {
+    try {
+      await parseAndValidateArray(
+        [
+          { email: 'a@example.com', age: 30 },
+          { email: 'bad', age: 40 },
+          { email: 'c@example.com', age: -1 },
+        ],
+        userSchema,
+      );
+      expect.fail('should have thrown');
+    } catch (err) {
+      const details = (err as HttpError).details!;
+      expect(details['1.email']).toBe('Invalid email');
+      expect(details['2.age']).toBe('Must be at least 0');
+    }
+  });
+
+  it('should report every violation within a single element', async () => {
+    try {
+      await parseAndValidateArray([{ email: 'bad', age: -1 }], userSchema);
+      expect.fail('should have thrown');
+    } catch (err) {
+      const details = (err as HttpError).details!;
+      expect(details['0.email']).toBe('Invalid email');
+      expect(details['0.age']).toBe('Must be at least 0');
+    }
+  });
+
+  it('should key errors by bare index for a primitive element schema', async () => {
+    try {
+      await parseAndValidateArray(['ok', 123], z.string());
+      expect.fail('should have thrown');
+    } catch (err) {
+      const details = (err as HttpError).details!;
+      expect(details['1']).toBe('Expected string');
+    }
+  });
+
+  it('should accumulate multiple messages on one element field as an array', async () => {
+    const schema = z.object({
+      value: z.string().superRefine((_val, ctx) => {
+        ctx.addIssue({ code: 'custom', message: 'Error one' });
+        ctx.addIssue({ code: 'custom', message: 'Error two' });
+      }),
+    });
+    try {
+      await parseAndValidateArray([{ value: 'hi' }], schema);
+      expect.fail('should have thrown');
+    } catch (err) {
+      const details = (err as HttpError).details!;
+      expect(details['0.value']).toEqual(['Error one', 'Error two']);
+    }
+  });
+
+  it('should reject a non-array input as a 400 rather than throwing a TypeError', async () => {
+    try {
+      await parseAndValidateArray({ email: 'a@example.com', age: 30 }, userSchema);
+      expect.fail('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(HttpError);
+      expect((err as HttpError).statusCode).toBe(400);
+      expect((err as HttpError).details).toHaveProperty('_root', 'Expected array');
+    }
+  });
+
+  it.each([
+    ['null', null],
+    ['undefined', undefined],
+    ['a string', 'not-an-array'],
+    ['a number', 42],
+  ])('should reject %s as a 400', async (_label, input) => {
+    try {
+      await parseAndValidateArray(input, userSchema);
+      expect.fail('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(HttpError);
+      expect((err as HttpError).statusCode).toBe(400);
+      expect((err as HttpError).details).toHaveProperty('_root');
+    }
+  });
+
+  it('should report enum violations with the allowed values', async () => {
+    const schema = z.object({ role: z.enum(['admin', 'user']) });
+    try {
+      await parseAndValidateArray([{ role: 'admin' }, { role: 'guest' }], schema);
+      expect.fail('should have thrown');
+    } catch (err) {
+      const details = (err as HttpError).details!;
+      expect(details['1.role']).toBe("Expected one of 'admin, user'");
+    }
+  });
+
+  it('should report nested paths within an element', async () => {
+    const schema = z.object({ user: z.object({ email: z.string() }) });
+    try {
+      await parseAndValidateArray([{ user: { email: 123 } }], schema);
+      expect.fail('should have thrown');
+    } catch (err) {
+      const details = (err as HttpError).details!;
+      expect(details['0.user.email']).toBe('Expected string');
+    }
+  });
+
+  it('should support async refinements and report every element regardless of resolution order', async () => {
+    // A Promise.all-per-element implementation surfaces whichever element rejects first in wall
+    // clock time, silently dropping the others. The slow element must still be reported here.
+    const schema = z.string().superRefine(async (val, ctx) => {
+      await new Promise(resolve => setTimeout(resolve, val === 'slow' ? 30 : 1));
+      ctx.addIssue({ code: 'custom', message: `bad:${val}` });
+    });
+    try {
+      await parseAndValidateArray(['slow', 'fast'], schema);
+      expect.fail('should have thrown');
+    } catch (err) {
+      const details = (err as HttpError).details!;
+      expect(details['0']).toBe('bad:slow');
+      expect(details['1']).toBe('bad:fast');
+    }
+  });
+
+  it('should resolve async refinements that pass', async () => {
+    const schema = z.string().refine(async val => {
+      await new Promise(resolve => setTimeout(resolve, 1));
+      return val.length > 1;
+    });
+    const result = await parseAndValidateArray(['ok', 'fine'], schema);
+    expect(result).toEqual(['ok', 'fine']);
   });
 });

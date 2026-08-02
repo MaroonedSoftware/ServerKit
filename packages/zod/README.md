@@ -11,7 +11,7 @@ pnpm add @maroonedsoftware/zod
 ## Usage
 
 ```typescript
-import { parseAndValidate, zBigint } from '@maroonedsoftware/zod';
+import { parseAndValidate, parseAndValidateArray, zBigint } from '@maroonedsoftware/zod';
 ```
 
 ## API Reference
@@ -65,6 +65,54 @@ const body = await parseAndValidate(
 **Returns:** `Promise<z.infer<T>>` — the parsed and transformed output.
 
 **Throws:** `HttpError` 400 with field-level `details` when validation fails.
+
+---
+
+### `parseAndValidateArray(data, schema)`
+
+Parses and validates every element of `data` against a Zod schema, returning the typed array on success. `schema` describes a single **element**, not the array.
+
+Error handling matches `parseAndValidate`, with detail keys prefixed by the element index. A `data` that is not an array fails with a `400` keyed `"_root"`, so an unexpected request body shape stays a client error rather than becoming a 500.
+
+```typescript
+const users = await parseAndValidateArray(
+  ctx.request.body,
+  z.object({
+    email: z.string().email(),
+    age: z.number().min(0),
+  }),
+);
+// users is typed as { email: string; age: number }[]
+```
+
+**Error details shape:**
+
+```typescript
+// Violations are reported across every failing element, not just the first
+{
+  '1.email': 'Invalid email',
+  '2.age': 'Must be at least 0',
+}
+
+// Primitive element schema — keys are bare indices
+{
+  '1': 'Expected string';
+}
+
+// Input was not an array
+{
+  _root: 'Expected array';
+}
+```
+
+**Parameters:**
+
+- `data` - The unknown input to validate. Must be an array to pass.
+- `schema` - The Zod schema each element is validated against.
+
+**Returns:** `Promise<z.infer<T>[]>` — the parsed and transformed elements, in input order.
+
+**Throws:** `HttpError` 400 with index-prefixed `details` when validation fails.
 
 ---
 
