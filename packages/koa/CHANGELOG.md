@@ -1,5 +1,13 @@
 # @maroonedsoftware/koa
 
+## 3.0.1
+
+### Patch Changes
+
+- Updated dependencies [b7e1163]
+  - @maroonedsoftware/policies@0.6.0
+  - @maroonedsoftware/authentication@4.30.1
+
 ## 3.0.0
 
 ### Minor Changes

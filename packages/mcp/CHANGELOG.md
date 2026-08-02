@@ -1,5 +1,12 @@
 # @maroonedsoftware/mcp
 
+## 0.1.1
+
+### Patch Changes
+
+- Updated dependencies [b7e1163]
+  - @maroonedsoftware/policies@0.6.0
+
 ## 0.1.0
 
 ### Minor Changes
