@@ -118,3 +118,30 @@ export const parseAndValidate = async <T extends ZodType>(data: unknown, schema:
 
   return parsed.data;
 };
+
+/**
+ * Parses and validates every element of `data` against a Zod schema, returning the typed array
+ * on success. `schema` describes a single *element*, not the array.
+ *
+ * Behaves like {@link parseAndValidate} on an array schema: `data` that is not an array fails with
+ * a `400` keyed `"_root"` rather than throwing, and a failing element reports every violation
+ * across every element in one error. Detail keys are prefixed with the element index, so a bad
+ * `email` on the third entry is keyed `"2.email"`.
+ *
+ * @param data - The unknown input to validate. Must be an array to pass.
+ * @param schema - The Zod schema each element is validated against.
+ * @returns The parsed and transformed elements, in input order.
+ * @throws {HttpError} 400 with index-prefixed `details` when validation fails.
+ *
+ * @example
+ * ```typescript
+ * const users = await parseAndValidateArray(ctx.request.body, z.object({
+ *   email: z.string().email(),
+ *   age: z.number().min(0),
+ * }));
+ * // users is typed as { email: string; age: number }[]
+ * // a bad second entry throws 400 with details { '1.email': 'Invalid email' }
+ * ```
+ */
+export const parseAndValidateArray = async <T extends ZodType>(data: unknown, schema: T): Promise<z.infer<T>[]> =>
+  parseAndValidate(data, z.array(schema));
