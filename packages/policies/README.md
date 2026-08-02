@@ -16,6 +16,7 @@ pnpm add @maroonedsoftware/policies
 - **Type-safe call sites** — declare a `Policies` map (`{ <name>: <ContextShape> }`) and `BasePolicyService.check`/`assert` enforce the right context per name at compile time
 - **Per-evaluation envelope** — subclass `BasePolicyService` to attach request-scoped state (current time, session, request id, …) without each policy reaching for it
 - **Fluent step-up denials** — `denyStepUp(reason, { within, acceptableMethods, … })` bundles a `StepUpRequirement` into the response under `kind: 'step_up_required'`
+- **Built-in test doubles** — `AlwaysAllowPolicy` / `AlwaysDenyPolicy` swap in under any policy name to bypass or force a rule in tests without touching the code under test
 
 ## Concepts
 
@@ -117,6 +118,29 @@ return this.denyStepUp('aal2_required', { within: Duration.fromObject({ minutes:
 });
 ```
 
+### Bypassing a policy in tests
+
+Because every call site resolves policies by _name_ through `PolicyService`, rebinding the name in the registry overrides the rule everywhere it is evaluated — no seams needed in the code under test. `AlwaysAllowPolicy` and `AlwaysDenyPolicy` are shipped for exactly this:
+
+```ts
+import { AlwaysAllowPolicy, PolicyRegistryMap } from '@maroonedsoftware/policies';
+
+registry.register(AlwaysAllowPolicy).useClass(AlwaysAllowPolicy).asSingleton();
+registry.register(PolicyRegistryMap).useFactory(() => {
+  const map = new PolicyRegistryMap();
+  Object.entries(AuthenticationPolicyMappings).forEach(([name, policy]) => map.set(name, policy));
+
+  // Override after the defaults are spread — last write wins.
+  if (config.bypassMfa) map.set('auth.session.mfa.required', AlwaysAllowPolicy);
+  return map;
+});
+```
+
+Two things to keep in mind:
+
+- **"Allow" is not uniformly the permissive direction.** A denial from `'auth.session.mfa.required'` means _MFA is required_, so always-allow skips the challenge; an allow from `'auth.session.mfa.satisfied'` asserts the session has _already_ stepped up. Check which way the policy reads, and gate the binding behind a flag that cannot be set in production.
+- **`AlwaysDenyPolicy` carries no payload.** It denies with `reason: 'always_deny'` and no `details` / `internalDetails` / `headers`. That is exact for `assert` call sites, but callers that branch on the denial payload degrade instead of failing cleanly — write a purpose-built stub when the shape of the denial matters.
+
 ## API
 
 ### `Policy<Context, Envelope>`
@@ -145,6 +169,13 @@ Default `PolicyService`. Subclass and implement `buildEnvelope(): Promise<TEnvel
 ### `PolicyRegistryMap`
 
 `Map<string, Identifier<Policy>>`. Populate at bootstrap to bind each policy name to its DI identifier.
+
+### Test doubles
+
+| Policy              | Result                                      | Description                                                                                                                  |
+| ------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `AlwaysAllowPolicy` | `{ allowed: true }`                         | Allows every request. Bind under a policy name to bypass the real rule for every call site that resolves it.                 |
+| `AlwaysDenyPolicy`  | `{ allowed: false, reason: 'always_deny' }` | Denies every request with no `details` / `internalDetails` / `headers`. Bind under a policy name to force the denial branch. |
 
 ### Types
 
