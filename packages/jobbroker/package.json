@@ -62,6 +62,7 @@
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
     "@types/luxon": "^3.7.2",
+    "kysely": "^0.29.2",
     "pg-boss": "^12.24.1"
   },
   "peerDependencies": {

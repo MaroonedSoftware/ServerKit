@@ -23,9 +23,9 @@ pnpm add @maroonedsoftware/jobbroker injectkit pg-boss reflect-metadata
 
 `pg-boss` is an optional peer dependency. The pg-boss backend lives behind a subpath export so importing the core (`@maroonedsoftware/jobbroker`) never loads it:
 
-| Import                               | Contents                                                                                                     | Pulls in      |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------ | ------------- |
-| `@maroonedsoftware/jobbroker`        | `Job`, `JobBroker`, `JobRunner`, `JobMonitor`, `JobInfo`, `JobState`, `JobQueuePolicy`, `NotSupportedError`  | nothing extra |
+| Import                               | Contents                                                                                                                                            | Pulls in      |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| `@maroonedsoftware/jobbroker`        | `Job`, `JobBroker`, `JobRunner`, `JobMonitor`, `JobInfo`, `JobState`, `JobQueuePolicy`, `NotSupportedError`                                         | nothing extra |
 | `@maroonedsoftware/jobbroker/pgboss` | `PgBossJobBroker`, `PgBossJobRunner`, `PgBossJobMonitor`, `PgBossJobRegistryMap`, `PgBossConnectionProvider`, `KyselyTransactionConnectionProvider` | `pg-boss`     |
 
 ## Quick Start
