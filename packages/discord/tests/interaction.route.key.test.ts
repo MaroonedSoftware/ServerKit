@@ -10,7 +10,8 @@ const base = { id: 'i1', token: 'tok', application_id: 'app1' };
 
 describe('discordInteractionIdempotencyKey', () => {
   it('derives discord:interaction:{id} from the interaction id', () => {
-    expect(discordInteractionIdempotencyKey({ ...base, type: InteractionType.APPLICATION_COMMAND })).toBe('discord:interaction:i1');
+    const interaction: DiscordInteraction = { ...base, type: InteractionType.APPLICATION_COMMAND };
+    expect(discordInteractionIdempotencyKey(interaction)).toBe('discord:interaction:i1');
   });
 
   it('keys purely on interaction.id (independent of type or data)', () => {

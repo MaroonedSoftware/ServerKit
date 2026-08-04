@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js';
+import type { CallToolResult, JSONRPCMessage, Tool } from '@modelcontextprotocol/sdk/types.js';
 import { McpDispatcher } from '../src/mcp.dispatcher.js';
 import { McpServerFactory } from '../src/mcp.server.factory.js';
 import { McpSessionRegistry } from '../src/mcp.session.registry.js';
@@ -32,7 +32,12 @@ const buildDispatcher = (mode: McpConfig['sessionMode'] = 'stateless') => {
   return { dispatcher: new McpDispatcher(factory, registry, config, logger), tool };
 };
 
-const rpc = (id: number, method: string, params?: unknown) => ({ jsonrpc: '2.0' as const, id, method, ...(params ? { params } : {}) });
+const rpc = (id: number, method: string, params?: Record<string, unknown>): JSONRPCMessage => ({
+  jsonrpc: '2.0',
+  id,
+  method,
+  ...(params ? { params } : {}),
+});
 
 describe('McpDispatcher (stateless)', () => {
   it('defaults to stateless mode', () => {

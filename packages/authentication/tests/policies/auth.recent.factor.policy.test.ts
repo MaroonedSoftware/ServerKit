@@ -1,7 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { DateTime, Duration } from 'luxon';
 import { AuthRecentFactorPolicyContext, DefaultRecentFactorPolicy } from '../../src/policies/auth.recent.factor.policy.js';
+import { isPolicyResultDenied, type PolicyResult } from '@maroonedsoftware/policies';
 import { AuthenticationFactorKind, AuthenticationFactorMethod, AuthenticationSessionFactor } from '../../src/types.js';
+
+/** Narrows a result to its denied arm, where `details` lives, failing loudly if the policy allowed. */
+const denialDetails = <T>(result: PolicyResult): T => {
+  if (!isPolicyResultDenied(result)) {
+    throw new Error('expected the policy to deny');
+  }
+  return result.details as T;
+};
 
 const now = DateTime.utc(2026, 5, 12, 12, 0, 0);
 const envelope = { now };
@@ -50,7 +59,7 @@ describe('DefaultRecentFactorPolicy', () => {
       within: fiveMinutes,
     });
     expect(result.allowed).toBe(false);
-    expect((result as { details: { kind: string } }).details.kind).toBe('step_up_required');
+    expect(denialDetails<{ kind: string }>(result).kind).toBe('step_up_required');
   });
 
   it('filters by anyOfKinds — denies when no recent factor matches the required kinds', async () => {
@@ -60,10 +69,7 @@ describe('DefaultRecentFactorPolicy', () => {
       anyOfKinds: ['possession', 'biometric'],
     });
     expect(result.allowed).toBe(false);
-    expect((result as { details: { stepUp: { acceptableKinds: ReadonlyArray<string> } } }).details.stepUp.acceptableKinds).toEqual([
-      'possession',
-      'biometric',
-    ]);
+    expect(denialDetails<{ stepUp: { acceptableKinds: ReadonlyArray<string> } }>(result).stepUp.acceptableKinds).toEqual(['possession', 'biometric']);
   });
 
   it('filters by anyOfMethods — allows when a recent factor matches one of the methods', async () => {
@@ -82,7 +88,7 @@ describe('DefaultRecentFactorPolicy', () => {
       excludeMethods: ['email'],
     });
     expect(result.allowed).toBe(false);
-    expect((result as { details: { stepUp: { excludeMethods: ReadonlyArray<string> } } }).details.stepUp.excludeMethods).toEqual(['email']);
+    expect(denialDetails<{ stepUp: { excludeMethods: ReadonlyArray<string> } }>(result).stepUp.excludeMethods).toEqual(['email']);
   });
 
   it('combines anyOfKinds and excludeMethods correctly', async () => {

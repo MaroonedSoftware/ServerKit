@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { AppConfigBuilder } from '../../src/app.config.builder.js';
 import { AppConfigStore } from '../../src/options/app.config.store.js';
+import { stubSource } from '../source.stub.js';
 
 /**
  * Builds a store backed by a single source whose `load` behavior can be swapped,
@@ -8,7 +9,7 @@ import { AppConfigStore } from '../../src/options/app.config.store.js';
  */
 function mutableBuilder<T extends Record<string, unknown>>(initial: T) {
   let behavior: () => Promise<Record<string, unknown>> = () => Promise.resolve(initial);
-  const builder = new AppConfigBuilder().addSource({ load: () => behavior(), watch: () => () => {} });
+  const builder = new AppConfigBuilder().addSource(stubSource({ load: () => behavior(), watch: () => () => {} }));
   return {
     builder,
     set(next: () => Promise<Record<string, unknown>>) {
@@ -108,13 +109,13 @@ function watchableSource(initial: Record<string, unknown>) {
   const load = vi.fn(() => Promise.resolve(value));
   const dispose = vi.fn();
   return {
-    source: {
+    source: stubSource({
       load,
       watch(onChange: () => void) {
         trigger = onChange;
         return dispose;
       },
-    },
+    }),
     load,
     dispose,
     set(next: Record<string, unknown>) {
@@ -143,7 +144,7 @@ describe('AppConfigStore watch capability', () => {
     const staticLoad = vi.fn(() => Promise.resolve({ b: 1 }));
     const store = await new AppConfigBuilder()
       .addSource(watched.source)
-      .addSource({ load: staticLoad, watch: () => () => {} })
+      .addSource(stubSource({ load: staticLoad, watch: () => () => {} }))
       .buildStore();
 
     expect(staticLoad).toHaveBeenCalledTimes(1); // initial build

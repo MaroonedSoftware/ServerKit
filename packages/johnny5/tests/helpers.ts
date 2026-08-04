@@ -1,23 +1,31 @@
-import { vi } from 'vitest';
+import { vi, type Mock } from 'vitest';
 import { DateTime } from 'luxon';
 import { AppConfig } from '@maroonedsoftware/appconfig';
 import type { CliContext, CliLogger, Daemons, DaemonStatus, Shell } from '../src/index.js';
 
-export interface MockLogger extends CliLogger {
-  info: ReturnType<typeof vi.fn>;
-  warn: ReturnType<typeof vi.fn>;
-  error: ReturnType<typeof vi.fn>;
-  debug: ReturnType<typeof vi.fn>;
-  success: ReturnType<typeof vi.fn>;
-}
+/**
+ * `CliLogger` with every method replaced by a mock that keeps the real
+ * signature, so it stays assignable to `CliLogger` while exposing `.mock`.
+ */
+export type MockLogger = { [K in keyof CliLogger]: Mock<CliLogger[K]> };
 
 export const createMockLogger = (): MockLogger => ({
-  info: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
-  debug: vi.fn(),
-  success: vi.fn(),
+  info: vi.fn<CliLogger['info']>(),
+  warn: vi.fn<CliLogger['warn']>(),
+  error: vi.fn<CliLogger['error']>(),
+  debug: vi.fn<CliLogger['debug']>(),
+  success: vi.fn<CliLogger['success']>(),
 });
+
+/**
+ * Types a stubbed `Shell.run` so a test can return just the fields it asserts
+ * on instead of restating execa's full result shape.
+ *
+ * @param impl - Returns the subset of the execa result the test needs.
+ * @returns A mock assignable to `Shell['run']` that still exposes `.mock`.
+ */
+export const mockShellRun = (impl: (command: string, args: string[]) => Promise<unknown>): Mock<Shell['run']> =>
+  vi.fn(impl) as unknown as Mock<Shell['run']>;
 
 export interface ContextOverrides {
   cwd?: string;
@@ -31,9 +39,9 @@ export interface ContextOverrides {
 }
 
 export const createMockShell = (overrides: Partial<Shell> = {}): Shell => ({
-  run: vi.fn(async () => ({ stdout: '', stderr: '', exitCode: 0 }) as never),
-  runStreaming: vi.fn(async () => 0),
-  runDetached: vi.fn(() => ({ pid: 1234 })),
+  run: mockShellRun(async () => ({ stdout: '', stderr: '', exitCode: 0 })),
+  runStreaming: vi.fn<Shell['runStreaming']>(async () => 0),
+  runDetached: vi.fn<Shell['runDetached']>(() => ({ pid: 1234 })),
   ...overrides,
 });
 

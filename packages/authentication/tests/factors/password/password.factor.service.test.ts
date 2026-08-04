@@ -72,14 +72,20 @@ const makeRegistrationPayload = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const makePasswordFactor = (overrides: Partial<PasswordFactor> = {}): PasswordFactor => ({
-  id: 'factor-1',
-  actorId: 'actor-1',
-  active: true,
-  needsReset: false,
-  value: hashPassword('correct-horse-battery-staple'),
-  ...overrides,
-});
+const makePasswordFactor = (overrides: Partial<PasswordFactor> = {}): PasswordFactor => {
+  // PasswordFactor intersects PasswordValue, so hash/salt sit at the top level
+  // as well as under `value`.
+  const value = hashPassword('correct-horse-battery-staple');
+  return {
+    id: 'factor-1',
+    actorId: 'actor-1',
+    active: true,
+    needsReset: false,
+    ...value,
+    value,
+    ...overrides,
+  };
+};
 
 describe('PasswordFactorService', () => {
   let repo: ReturnType<typeof makeRepository>;

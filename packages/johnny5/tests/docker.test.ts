@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dockerServicesUp } from '../src/integrations/docker/index.js';
-import { createMockContext } from './helpers.js';
+import { createMockContext, mockShellRun } from './helpers.js';
 
 describe('dockerServicesUp', () => {
   let dir: string;
@@ -32,7 +32,7 @@ describe('dockerServicesUp', () => {
 
   it('parses NDJSON output and reports all services running', async () => {
     await writeFile(path.join(dir, 'docker-compose.yml'), 'services:\n');
-    const run = vi.fn(async () => ({ stdout: '{"Service":"db","State":"running"}\n{"Service":"redis","State":"running"}\n' }) as never);
+    const run = mockShellRun(async () => ({ stdout: '{"Service":"db","State":"running"}\n{"Service":"redis","State":"running"}\n' }));
     const ctx = createMockContext({ repoRoot: dir, shell: { run } });
     const result = await dockerServicesUp().run(ctx);
     expect(result.ok).toBe(true);
@@ -41,7 +41,7 @@ describe('dockerServicesUp', () => {
 
   it('parses JSON array output', async () => {
     await writeFile(path.join(dir, 'docker-compose.yml'), 'services:\n');
-    const run = vi.fn(async () => ({ stdout: '[{"Service":"db","State":"running"}]' }) as never);
+    const run = mockShellRun(async () => ({ stdout: '[{"Service":"db","State":"running"}]' }));
     const ctx = createMockContext({ repoRoot: dir, shell: { run } });
     const result = await dockerServicesUp().run(ctx);
     expect(result.ok).toBe(true);
@@ -49,7 +49,7 @@ describe('dockerServicesUp', () => {
 
   it('flags services that are not in the running state', async () => {
     await writeFile(path.join(dir, 'docker-compose.yml'), 'services:\n');
-    const run = vi.fn(async () => ({ stdout: '{"Service":"db","State":"running"}\n{"Service":"web","State":"exited"}\n' }) as never);
+    const run = mockShellRun(async () => ({ stdout: '{"Service":"db","State":"running"}\n{"Service":"web","State":"exited"}\n' }));
     const ctx = createMockContext({ repoRoot: dir, shell: { run } });
     const result = await dockerServicesUp().run(ctx);
     expect(result.ok).toBe(false);
@@ -58,7 +58,7 @@ describe('dockerServicesUp', () => {
 
   it('fails with a fixHint when no services are running', async () => {
     await writeFile(path.join(dir, 'docker-compose.yml'), 'services:\n');
-    const run = vi.fn(async () => ({ stdout: '' }) as never);
+    const run = mockShellRun(async () => ({ stdout: '' }));
     const ctx = createMockContext({ repoRoot: dir, shell: { run } });
     const result = await dockerServicesUp().run(ctx);
     expect(result.ok).toBe(false);
@@ -105,7 +105,7 @@ describe('dockerServicesUp', () => {
   it('honours an absolute composeFile path', async () => {
     const absolute = path.join(dir, 'custom.yml');
     await writeFile(absolute, 'services:\n');
-    const run = vi.fn(async () => ({ stdout: '[]' }) as never);
+    const run = mockShellRun(async () => ({ stdout: '[]' }));
     const ctx = createMockContext({ repoRoot: '/nope', shell: { run } });
     const result = await dockerServicesUp({ composeFile: absolute }).run(ctx);
     expect(result.ok).toBe(false);

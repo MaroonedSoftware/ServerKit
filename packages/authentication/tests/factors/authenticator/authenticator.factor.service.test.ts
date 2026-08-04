@@ -5,7 +5,7 @@ vi.mock('qrcode', () => ({
 }));
 
 import { toDataURL } from 'qrcode';
-import { AuthenticatorFactorService } from '../../../src/factors/authenticator/authenticator.factor.service.js';
+import { AuthenticatorFactorService, AuthenticatorFactorServiceOptions } from '../../../src/factors/authenticator/authenticator.factor.service.js';
 import type { AuthenticatorFactorRepository, AuthenticatorFactor } from '../../../src/factors/authenticator/authenticator.factor.repository.js';
 import type { OtpProvider } from '../../../src/providers/otp.provider.js';
 import type { CacheProvider } from '@maroonedsoftware/cache';
@@ -73,12 +73,14 @@ const makeAuthenticatorFactor = (overrides: Partial<AuthenticatorFactor> = {}): 
   ...overrides,
 });
 
-const makeOptions = () => ({
-  issuer: 'TestApp',
-  registrationExpiration: Duration.fromObject({ minutes: 30 }),
-  factorExpiration: Duration.fromObject({ hours: 4 }),
-  defaults: { type: 'totp' as const, algorithm: 'sha1' as const, counter: 0, periodSeconds: 30, tokenLength: 6 },
-});
+const makeOptions = () =>
+  new AuthenticatorFactorServiceOptions('TestApp', Duration.fromObject({ minutes: 30 }), Duration.fromObject({ hours: 4 }), undefined, undefined, {
+    type: 'totp',
+    algorithm: 'sha1',
+    counter: 0,
+    periodSeconds: 30,
+    tokenLength: 6,
+  });
 
 const makeRegistrationPayload = (overrides = {}) => ({
   id: 'reg-id-1',

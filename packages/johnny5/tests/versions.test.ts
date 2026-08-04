@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { nodeVersion, pnpmVersion } from '../src/integrations/versions/index.js';
-import { createMockContext } from './helpers.js';
+import { createMockContext, mockShellRun } from './helpers.js';
 
 describe('nodeVersion', () => {
   it('passes when the current Node major matches the min', async () => {
@@ -20,7 +20,7 @@ describe('nodeVersion', () => {
 
 describe('pnpmVersion', () => {
   it('returns the installed pnpm version when only presence is required', async () => {
-    const run = vi.fn(async () => ({ stdout: '10.24.0\n' }) as never);
+    const run = mockShellRun(async () => ({ stdout: '10.24.0\n' }));
     const ctx = createMockContext({ shell: { run } });
     const result = await pnpmVersion().run(ctx);
     expect(run).toHaveBeenCalledWith('pnpm', ['--version']);
@@ -39,7 +39,7 @@ describe('pnpmVersion', () => {
   });
 
   it('fails when expected version differs from installed', async () => {
-    const run = vi.fn(async () => ({ stdout: '10.24.0' }) as never);
+    const run = mockShellRun(async () => ({ stdout: '10.24.0' }));
     const ctx = createMockContext({ shell: { run } });
     const result = await pnpmVersion({ expected: '9.0.0' }).run(ctx);
     expect(result.ok).toBe(false);
@@ -48,7 +48,7 @@ describe('pnpmVersion', () => {
   });
 
   it('passes when expected version matches installed', async () => {
-    const run = vi.fn(async () => ({ stdout: '10.24.0' }) as never);
+    const run = mockShellRun(async () => ({ stdout: '10.24.0' }));
     const ctx = createMockContext({ shell: { run } });
     const result = await pnpmVersion({ expected: '10.24.0' }).run(ctx);
     expect(result.ok).toBe(true);

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { EmailFactorService } from '../../../src/factors/email/email.factor.service.js';
+import { EmailFactorService, EmailFactorServiceOptions } from '../../../src/factors/email/email.factor.service.js';
 import type { EmailFactorRepository, EmailFactor } from '../../../src/factors/email/email.factor.repository.js';
 import type { OtpProvider } from '../../../src/providers/otp.provider.js';
 import type { PolicyService } from '@maroonedsoftware/policies';
@@ -66,10 +66,8 @@ const makeEmailFactor = (overrides: Partial<EmailFactor> = {}): EmailFactor => (
   ...overrides,
 });
 
-const makeOptions = () => ({
-  otpExpiration: Duration.fromObject({ minutes: 10 }),
-  magiclinkExpiration: Duration.fromObject({ minutes: 30 }),
-});
+const makeOptions = (maxVerificationAttempts?: number) =>
+  new EmailFactorServiceOptions(Duration.fromObject({ minutes: 10 }), Duration.fromObject({ minutes: 30 }), undefined, maxVerificationAttempts);
 
 const makeRegistrationPayload = (overrides = {}) => ({
   id: 'reg-id-1',
@@ -485,7 +483,7 @@ describe('EmailFactorService', () => {
     it('locks out the challenge after the attempt budget is exhausted', async () => {
       const payload = makeChallengePayload({ verificationMethod: 'code' });
       const statefulCache = makeStatefulCache({ 'email_factor_challenge_chal-id-1': JSON.stringify(payload) });
-      service = new EmailFactorService({ ...makeOptions(), maxVerificationAttempts: 5 }, repo, otpProvider, statefulCache, policyService);
+      service = new EmailFactorService(makeOptions(5), repo, otpProvider, statefulCache, policyService);
       repo.getFactor = vi.fn().mockResolvedValue(makeEmailFactor());
       vi.mocked(otpProvider.validate).mockReturnValue(false);
 

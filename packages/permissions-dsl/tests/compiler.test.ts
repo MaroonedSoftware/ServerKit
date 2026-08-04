@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { compile } from '../src/compiler.js';
+import type { PermissionsConfig } from '../src/config.js';
 import { AggregateCompileError, CompileError } from '../src/diagnostics.js';
 
 let workDir: string;
@@ -103,7 +104,7 @@ describe('compile', () => {
       patterns: ['*.perm'],
       prettier: false,
       output: { baseDir: workDir, namespace: 'out/{filename}.ts', model: 'out/index.ts' },
-    } as const;
+    } satisfies PermissionsConfig;
 
     const first = await compile(cfg);
     expect(first.cached).toHaveLength(0);
@@ -122,7 +123,7 @@ describe('compile', () => {
       patterns: ['*.perm'],
       prettier: false,
       output: { baseDir: workDir, namespace: 'out/{filename}.ts', model: 'out/index.ts' },
-    } as const;
+    } satisfies PermissionsConfig;
 
     await compile(cfg);
     // Touch doc.perm with a meaningful change.
@@ -141,7 +142,7 @@ describe('compile', () => {
       patterns: ['*.perm'],
       prettier: false,
       output: { baseDir: workDir, namespace: 'out/{filename}.ts', model: 'out/index.ts' },
-    } as const;
+    } satisfies PermissionsConfig;
     await compile(cfg);
     expect(existsSync(join(workDir, 'out/doc.ts'))).toBe(true);
 
@@ -198,7 +199,7 @@ describe('compile', () => {
       patterns: ['doc.perm'],
       prettier: false,
       output: { baseDir: workDir, namespace: 'out/{filename}.ts', model: 'out/index.ts' },
-    } as const;
+    } satisfies PermissionsConfig;
     await compile(cfg);
     const before = await stat(join(workDir, 'out/doc.ts'));
     await new Promise(r => setTimeout(r, 10));
@@ -215,7 +216,7 @@ describe('compile', () => {
       patterns: ['*.perm'],
       prettier: false,
       output: { baseDir: workDir, namespace: 'out/{filename}.ts', model: 'out/index.ts' },
-    } as const;
+    } satisfies PermissionsConfig;
 
     // Warm up: real compile populates the cache and writes outputs.
     await compile(cfg);
@@ -245,7 +246,7 @@ describe('compile', () => {
       patterns: ['*.perm'],
       prettier: false,
       output: { baseDir: workDir, namespace: 'out/{filename}.ts', model: 'out/index.ts' },
-    } as const;
+    } satisfies PermissionsConfig;
     await compile(cfg);
     expect(existsSync(join(workDir, 'out/doc.ts'))).toBe(true);
 
@@ -264,7 +265,7 @@ describe('compile', () => {
       patterns: ['*.perm'],
       prettier: false,
       output: { baseDir: workDir, namespace: 'out/{filename}.ts', model: 'out/index.ts' },
-    } as const;
+    } satisfies PermissionsConfig;
     await compile(cfg);
     const dry = await compile(cfg, { dryRun: true });
     expect(dry.outputs).toEqual([]);

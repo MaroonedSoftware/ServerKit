@@ -1,7 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { DateTime } from 'luxon';
 import { AuthMfaRequiredPolicyContext, AuthMfaRequiredPolicyFactor, DefaultMfaRequiredPolicy } from '../../src/policies/auth.mfa.required.policy.js';
+import { isPolicyResultDenied, type PolicyResult } from '@maroonedsoftware/policies';
 import { AuthenticationFactorKind, AuthenticationFactorMethod, AuthenticationSessionFactor } from '../../src/types.js';
+
+/** Narrows a result to its denied arm, where `details` lives, failing loudly if the policy allowed. */
+const denialDetails = <T>(result: PolicyResult): T => {
+  if (!isPolicyResultDenied(result)) {
+    throw new Error('expected the policy to deny');
+  }
+  return result.details as T;
+};
 
 const envelope = { now: DateTime.utc() };
 
@@ -22,12 +31,16 @@ const factor = (
   kind: AuthenticationFactorKind,
   methodId = `${method}-1`,
   label?: string | null,
-): AuthMfaRequiredPolicyFactor => ({
-  method,
-  methodId,
-  kind,
-  ...(label !== undefined ? { label } : {}),
-});
+): AuthMfaRequiredPolicyFactor =>
+  // `label` is `string | undefined` on the policy type. Passing null models a
+  // nullable DB column, which the policy is expected to drop rather than
+  // forward, so the cast is the point of the null case below.
+  ({
+    method,
+    methodId,
+    kind,
+    ...(label !== undefined ? { label } : {}),
+  }) as AuthMfaRequiredPolicyFactor;
 
 const evaluate = (context: AuthMfaRequiredPolicyContext) => policy.evaluate(context, envelope);
 
@@ -65,7 +78,7 @@ describe('DefaultMfaRequiredPolicy', () => {
       availableFactors: [email],
     });
     expect(result.allowed).toBe(false);
-    expect((result as { details: { eligibleFactors: AuthMfaRequiredPolicyFactor[] } }).details.eligibleFactors).toEqual([
+    expect(denialDetails<{ eligibleFactors: AuthMfaRequiredPolicyFactor[] }>(result).eligibleFactors).toEqual([
       { method: 'email', methodId: email.methodId, kind: 'possession' },
     ]);
   });
@@ -90,7 +103,7 @@ describe('DefaultMfaRequiredPolicy', () => {
       });
       expect(result.allowed).toBe(false);
       // Only phone survives — oidc is always filtered.
-      expect((result as { details: { eligibleFactors: AuthMfaRequiredPolicyFactor[] } }).details.eligibleFactors).toEqual([
+      expect(denialDetails<{ eligibleFactors: AuthMfaRequiredPolicyFactor[] }>(result).eligibleFactors).toEqual([
         { method: 'phone', methodId: phone.methodId, kind: 'possession' },
       ]);
     },
@@ -116,7 +129,7 @@ describe('DefaultMfaRequiredPolicy', () => {
     });
     expect(result.allowed).toBe(false);
     // password (knowledge) is filtered; email, phone, fido all survive because primary is password.
-    expect((result as { details: { eligibleFactors: AuthMfaRequiredPolicyFactor[] } }).details.eligibleFactors).toEqual([
+    expect(denialDetails<{ eligibleFactors: AuthMfaRequiredPolicyFactor[] }>(result).eligibleFactors).toEqual([
       { method: 'email', methodId: email.methodId, kind: 'possession' },
       { method: 'phone', methodId: phone.methodId, kind: 'possession' },
       { method: 'fido', methodId: fido.methodId, kind: 'possession' },
@@ -146,7 +159,7 @@ describe('DefaultMfaRequiredPolicy', () => {
       availableFactors: [phone, fido],
     });
     expect(result.allowed).toBe(false);
-    expect((result as { details: { eligibleFactors: AuthMfaRequiredPolicyFactor[] } }).details.eligibleFactors).toEqual([
+    expect(denialDetails<{ eligibleFactors: AuthMfaRequiredPolicyFactor[] }>(result).eligibleFactors).toEqual([
       { method: 'phone', methodId: phone.methodId, kind: 'possession', label: '+1·····1234' },
       { method: 'fido', methodId: fido.methodId, kind: 'possession', label: 'YubiKey 5C' },
     ]);
@@ -155,7 +168,7 @@ describe('DefaultMfaRequiredPolicy', () => {
   it('omits the label key entirely when the source factor has no label', async () => {
     const phone = factor('phone', 'possession');
     const result = await evaluate({ actor, primaryFactor: makePrimary('password'), availableFactors: [phone] });
-    const eligible = (result as { details: { eligibleFactors: AuthMfaRequiredPolicyFactor[] } }).details.eligibleFactors[0]!;
+    const eligible = denialDetails<{ eligibleFactors: AuthMfaRequiredPolicyFactor[] }>(result).eligibleFactors[0]!;
     expect(eligible).toEqual({ method: 'phone', methodId: phone.methodId, kind: 'possession' });
     expect('label' in eligible).toBe(false);
   });
@@ -163,7 +176,7 @@ describe('DefaultMfaRequiredPolicy', () => {
   it('omits the label key when the source factor has an explicit null label', async () => {
     const phone = factor('phone', 'possession', 'phone-1', null);
     const result = await evaluate({ actor, primaryFactor: makePrimary('password'), availableFactors: [phone] });
-    const eligible = (result as { details: { eligibleFactors: AuthMfaRequiredPolicyFactor[] } }).details.eligibleFactors[0]!;
+    const eligible = denialDetails<{ eligibleFactors: AuthMfaRequiredPolicyFactor[] }>(result).eligibleFactors[0]!;
     expect(eligible).toEqual({ method: 'phone', methodId: phone.methodId, kind: 'possession' });
     expect('label' in eligible).toBe(false);
   });
@@ -193,7 +206,7 @@ describe('DefaultMfaRequiredPolicy', () => {
         availableFactors: [second],
       });
       expect(result.allowed).toBe(false);
-      expect((result as { details: { eligibleFactors: AuthMfaRequiredPolicyFactor[] } }).details.eligibleFactors).toEqual([
+      expect(denialDetails<{ eligibleFactors: AuthMfaRequiredPolicyFactor[] }>(result).eligibleFactors).toEqual([
         { method, methodId: second.methodId, kind: 'possession' },
       ]);
     },

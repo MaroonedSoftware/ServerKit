@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { AppConfigKeyedResolver } from '../../src/resolvers/app.config.resolver.keyed.js';
 import type { AppConfigSource } from '../../src/app.config.source.js';
 import type { ObjectVisitorMeta } from '../../src/object.visitor.js';
+import { stubSource } from '../source.stub.js';
 
 function meta(owner: object, propertyPath: string, arrayIndex?: number): ObjectVisitorMeta {
   return { owner, propertyPath, path: propertyPath, propertyType: 'string', arrayIndex };
@@ -9,7 +10,7 @@ function meta(owner: object, propertyPath: string, arrayIndex?: number): ObjectV
 
 /** A minimal source whose `get` drives the resolver (`load` is unused here). */
 function source(get: (key: string) => Promise<unknown>): AppConfigSource {
-  return { load: async () => ({}), get };
+  return stubSource({ load: async () => ({}), get });
 }
 
 describe('AppConfigKeyedResolver', () => {

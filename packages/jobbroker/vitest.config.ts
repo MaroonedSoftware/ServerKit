@@ -8,12 +8,11 @@ export default defineProject({
     environment: 'node',
     // Reuse the worker between test files; these suites don't depend on per-file isolation.
     isolate: false,
-    // `KyselyLike` is a structural type with no `kysely` import behind it, so only a
-    // real type check can prove it still matches Kysely. The build tsconfig covers
-    // src/ alone, hence the separate tests tsconfig.
+    // Type-check the tests too: the build tsconfig covers src/ only, so without
+    // this a broken type in a test (or a `.test-d.ts` assertion) never fails.
     typecheck: {
       enabled: true,
-      include: ['./tests/**/*.test-d.ts'],
+      include: ['./tests/**/*.test.ts', './tests/**/*.test-d.ts'],
       tsconfig: './tsconfig.tests.json',
     },
   },

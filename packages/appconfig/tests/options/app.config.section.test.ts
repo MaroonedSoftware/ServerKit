@@ -3,14 +3,15 @@ import type { Logger } from '@maroonedsoftware/logger';
 import { AppConfigBuilder } from '../../src/app.config.builder.js';
 import { AppConfigStore } from '../../src/options/app.config.store.js';
 import { AppConfigSectionImpl } from '../../src/options/app.config.section.js';
+import { stubSource } from '../source.stub.js';
 
 interface WidgetConfig {
   name: string;
 }
 
-interface RootConfig {
+type RootConfig = {
   widget: WidgetConfig;
-}
+};
 
 function stubLogger(): Logger {
   return { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn(), trace: vi.fn() } as unknown as Logger;
@@ -25,7 +26,7 @@ const flush = () => new Promise(resolve => setTimeout(resolve, 0));
  */
 async function setup(initial: RootConfig) {
   let behavior: () => Promise<Record<string, unknown>> = () => Promise.resolve(initial);
-  const builder = new AppConfigBuilder().addSource({ load: () => behavior(), watch: () => () => {} });
+  const builder = new AppConfigBuilder().addSource(stubSource({ load: () => behavior(), watch: () => () => {} }));
   const store = (await builder.buildStore()) as AppConfigStore<RootConfig>;
   return {
     store,

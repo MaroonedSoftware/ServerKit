@@ -33,7 +33,8 @@ describe('MultipartBody (real HTTP)', () => {
   const buildForm = (filename: string, payload: Buffer | string) => {
     const form = new FormData();
     form.append('description', 'hello');
-    form.append('file', new Blob([payload]), filename);
+    // Buffer is not a BlobPart under lib.dom's types; copy into a plain Uint8Array.
+    form.append('file', new Blob([typeof payload === 'string' ? payload : new Uint8Array(payload)]), filename);
     return form;
   };
 
@@ -213,7 +214,7 @@ describe('MultipartBody (real HTTP)', () => {
       headers: { 'content-type': 'multipart/form-data; boundary=----abortTest' },
       body: slowBody,
       signal: controller.signal,
-      // @ts-expect-error Node fetch requires duplex for streamed bodies
+      // Node's fetch requires duplex for streamed bodies.
       duplex: 'half',
     });
 

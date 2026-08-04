@@ -1,4 +1,4 @@
-import { describe, it, expect, expectTypeOf } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { AppConfig } from '../src/app.config.js';
 
 describe('AppConfig', () => {
@@ -92,18 +92,18 @@ describe('AppConfig', () => {
       const config: Record<string, unknown> = { GOOGLE_OIDC_ISSUER: undefined };
       const appConfig = new AppConfig(config);
       const issuer = appConfig.get('GOOGLE_OIDC_ISSUER', 'https://accounts.google.com');
-      expectTypeOf(issuer).toEqualTypeOf<string>();
       expect(issuer).toBe('https://accounts.google.com');
     });
 
-    it('should preserve the precise value type for typed configs', () => {
+    // The matching type-level assertions live in app.config.test-d.ts.
+    it('should fall back per key for typed configs', () => {
       interface TypedConfig {
         port: number;
         host?: string;
       }
       const appConfig = new AppConfig<TypedConfig>({ port: 3000 });
-      expectTypeOf(appConfig.get('port', 8080)).toEqualTypeOf<number>();
-      expectTypeOf(appConfig.get('host', 'localhost')).toEqualTypeOf<string>();
+      expect(appConfig.get('port', 8080)).toBe(3000);
+      expect(appConfig.get('host', 'localhost')).toBe('localhost');
     });
   });
 

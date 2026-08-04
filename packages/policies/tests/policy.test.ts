@@ -70,7 +70,7 @@ describe('Policy', () => {
 
   it('deny().withHeaders() attaches headers to the denial', async () => {
     class HeaderPolicy extends Policy<{ allow: boolean }> {
-      async evaluate(context: { allow: boolean }): Promise<PolicyResult> {
+      async evaluate(context: { allow: boolean }, _envelope: PolicyEnvelope): Promise<PolicyResult> {
         if (context.allow) return this.allow();
         return this.deny('mfa_required').withHeaders({ 'WWW-Authenticate': 'Bearer error="mfa_required"' });
       }
@@ -85,7 +85,7 @@ describe('Policy', () => {
 
   it('denyStepUp().withHeaders() composes with the step-up details', async () => {
     class StepUpHeaderPolicy extends Policy<{ allow: boolean }> {
-      async evaluate(context: { allow: boolean }): Promise<PolicyResult> {
+      async evaluate(context: { allow: boolean }, _envelope: PolicyEnvelope): Promise<PolicyResult> {
         if (context.allow) return this.allow();
         return this.denyStepUp('aal2_required', { within: Duration.fromObject({ minutes: 15 }) }).withHeaders({
           'WWW-Authenticate': 'Bearer error="aal2_required"',

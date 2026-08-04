@@ -7,6 +7,7 @@ import type { CacheProvider } from '@maroonedsoftware/cache';
 const makeCache = (): CacheProvider => ({
   get: vi.fn().mockResolvedValue(null),
   set: vi.fn().mockResolvedValue(undefined),
+  add: vi.fn().mockResolvedValue(true),
   update: vi.fn().mockResolvedValue(undefined),
   delete: vi.fn().mockResolvedValue(null),
 });

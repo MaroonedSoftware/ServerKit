@@ -5,14 +5,15 @@ import { AppConfig } from '../../src/app.config.js';
 import { AppConfigBuilder } from '../../src/app.config.builder.js';
 import { AppConfigModule } from '../../src/options/app.config.module.js';
 import { AppConfigSection } from '../../src/options/app.config.section.js';
+import { stubSource } from '../source.stub.js';
 
 interface WidgetConfig {
   name: string;
 }
 
-interface RootConfig {
+type RootConfig = {
   widget: WidgetConfig;
-}
+};
 
 // One token per section, declared exactly as a consumer would (mirrors `SlackConfig`).
 @Injectable()
@@ -27,7 +28,7 @@ const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 async function setup(initial: RootConfig) {
   let behavior: () => Promise<Record<string, unknown>> = () => Promise.resolve(initial);
-  const builder = new AppConfigBuilder().addSource({ load: () => behavior(), watch: () => () => {} });
+  const builder = new AppConfigBuilder().addSource(stubSource({ load: () => behavior(), watch: () => () => {} }));
   const logger = stubLogger();
   const module = await AppConfigModule.create<RootConfig>(builder, logger);
   return {

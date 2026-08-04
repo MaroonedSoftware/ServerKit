@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerCommands } from '../src/commander/register.js';
 import { defineCommand } from '../src/index.js';
+import type { CommandModule } from '../src/types.js';
 import type { DiscoveredCommand } from '../src/index.js';
 import { createMockContext } from './helpers.js';
 
@@ -23,7 +24,7 @@ describe('registerCommands', () => {
   });
 
   it('registers a leaf command and invokes its handler with parsed options', async () => {
-    const run = vi.fn(async () => 0);
+    const run = vi.fn<CommandModule['run']>(async () => 0);
     const program = buildProgram();
     const discovered: DiscoveredCommand[] = [
       {
@@ -43,7 +44,7 @@ describe('registerCommands', () => {
   });
 
   it('builds nested groups for multi-segment paths', async () => {
-    const run = vi.fn(async () => 0);
+    const run = vi.fn<CommandModule['run']>(async () => 0);
     const program = buildProgram();
     registerCommands(
       program,
@@ -85,7 +86,7 @@ describe('registerCommands', () => {
   });
 
   it('falls back to the envVar value when an option is not supplied on the CLI', async () => {
-    const run = vi.fn(async () => 0);
+    const run = vi.fn<CommandModule['run']>(async () => 0);
     process.env['MY_NAME'] = 'from-env';
     const program = buildProgram();
     registerCommands(
@@ -108,7 +109,7 @@ describe('registerCommands', () => {
   });
 
   it('prefers the explicit CLI flag over the envVar fallback', async () => {
-    const run = vi.fn(async () => 0);
+    const run = vi.fn<CommandModule['run']>(async () => 0);
     process.env['MY_NAME'] = 'from-env';
     const program = buildProgram();
     registerCommands(
@@ -131,7 +132,7 @@ describe('registerCommands', () => {
   });
 
   it('derives the camelCase option key from a kebab-case long flag for envVar fallback', async () => {
-    const run = vi.fn(async () => 0);
+    const run = vi.fn<CommandModule['run']>(async () => 0);
     process.env['ORG_NAME'] = 'acme';
     const program = buildProgram();
     registerCommands(
@@ -155,7 +156,7 @@ describe('registerCommands', () => {
 
   it('invokes the interactive hook only when the context is interactive', async () => {
     const interactive = vi.fn(async () => ({ name: 'from-prompt' }));
-    const run = vi.fn(async () => 0);
+    const run = vi.fn<CommandModule['run']>(async () => 0);
     const program = buildProgram();
     registerCommands(
       program,
@@ -175,7 +176,7 @@ describe('registerCommands', () => {
 
   it('skips the interactive hook when isInteractive returns false', async () => {
     const interactive = vi.fn(async () => ({ name: 'prompted' }));
-    const run = vi.fn(async () => 0);
+    const run = vi.fn<CommandModule['run']>(async () => 0);
     const program = buildProgram();
     registerCommands(
       program,
@@ -193,7 +194,7 @@ describe('registerCommands', () => {
   });
 
   it('passes positional args through to run', async () => {
-    const run = vi.fn(async () => 0);
+    const run = vi.fn<CommandModule['run']>(async () => 0);
     const program = buildProgram();
     registerCommands(
       program,
@@ -215,7 +216,7 @@ describe('registerCommands', () => {
   });
 
   it('forwards unknown args verbatim when passthrough is true', async () => {
-    const run = vi.fn(async () => 0);
+    const run = vi.fn<CommandModule['run']>(async () => 0);
     const program = buildProgram();
     registerCommands(
       program,

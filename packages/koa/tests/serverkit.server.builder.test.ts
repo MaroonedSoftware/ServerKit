@@ -4,7 +4,7 @@ import http, { type Server } from 'node:http';
 import { Settings } from 'luxon';
 import Koa from 'koa';
 import { InjectKitContainerNoop, type Container } from 'injectkit';
-import type Router from '@koa/router';
+import type { ServerKitRouterType } from '../src/serverkit.router.js';
 import { ServerKitServerBuilder } from '../src/serverkit.server.builder.js';
 import { ServerKitBodyParser, ServerKitParserMappings } from '../src/serverkit.bodyparser.js';
 import { BinaryParser } from '../src/parsers/binary.parser.js';
@@ -21,6 +21,8 @@ interface Internals {
   server: Koa & { middleware: unknown[] };
   container?: Container;
   modules: ServerKitModule[];
+  /** `shutdown` is protected on the builder; the tests drive it directly. */
+  shutdown(): Promise<void>;
 }
 const internals = (builder: ServerKitServerBuilder): Internals => builder as unknown as Internals;
 
@@ -193,7 +195,7 @@ describe('ServerKitServerBuilder', () => {
       const router = {
         routes: vi.fn(() => routesMw),
         allowedMethods: vi.fn(() => allowedMw),
-      } as unknown as Router;
+      } as unknown as ServerKitRouterType;
       const before = internals(builder).server.middleware.length;
 
       const result = builder.setupRoutes([router]);
@@ -222,7 +224,7 @@ describe('ServerKitServerBuilder', () => {
     it('throws when called before the container is initialized', async () => {
       const builder = new ServerKitServerBuilder();
 
-      await expect(builder.shutdown()).rejects.toThrow(ServerkitError);
+      await expect(internals(builder).shutdown()).rejects.toThrow(ServerkitError);
     });
 
     it('runs each module shutdown hook with the container and exits', async () => {
@@ -230,7 +232,7 @@ describe('ServerKitServerBuilder', () => {
       const builder = new ServerKitServerBuilder();
       await builder.setup(config, logger, [module]);
 
-      await builder.shutdown();
+      await internals(builder).shutdown();
 
       expect(module.shutdown).toHaveBeenCalledTimes(1);
       expect(module.shutdown).toHaveBeenCalledWith(internals(builder).container);
@@ -244,7 +246,7 @@ describe('ServerKitServerBuilder', () => {
       const builder = new ServerKitServerBuilder();
       await builder.setup(config, logger, [module]);
 
-      await expect(builder.shutdown()).resolves.toBeUndefined();
+      await expect(internals(builder).shutdown()).resolves.toBeUndefined();
       expect(exitSpy).toHaveBeenCalled();
     });
   });
@@ -381,7 +383,7 @@ describe('ServerKitServerBuilder', () => {
       server = await builder.start(0);
       await vi.waitFor(() => expect(first.ready).toHaveBeenCalled());
 
-      const shuttingDown = builder.shutdown();
+      const shuttingDown = internals(builder).shutdown();
       release();
       await shuttingDown;
 
@@ -410,7 +412,7 @@ describe('ServerKitServerBuilder', () => {
       expect(observed!.aborted).toBe(false);
 
       // shutdown() aborts synchronously, before it awaits anything.
-      const shuttingDown = builder.shutdown();
+      const shuttingDown = internals(builder).shutdown();
       expect(observed!.aborted).toBe(true);
 
       release();
@@ -426,7 +428,7 @@ describe('ServerKitServerBuilder', () => {
       server = await builder.start(0, { shutdownGraceMs: 20 });
       await vi.waitFor(() => expect(stuck.ready).toHaveBeenCalled());
 
-      await builder.shutdown();
+      await internals(builder).shutdown();
 
       expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Ready phase did not unwind within 20ms'));
       expect(stuck.shutdown).toHaveBeenCalledTimes(1);
@@ -441,8 +443,8 @@ describe('ServerKitServerBuilder', () => {
       server = await builder.start(0);
       await builder.whenReady();
 
-      await builder.shutdown();
-      await builder.shutdown();
+      await internals(builder).shutdown();
+      await internals(builder).shutdown();
 
       expect(module.shutdown).toHaveBeenCalledTimes(1);
     });

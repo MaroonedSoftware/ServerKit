@@ -45,7 +45,7 @@ describe('discord /comms adapter', () => {
 
     expect(got).toEqual({ name: 'deploy', args: 'staging' });
     expect(result).toMatchObject({ type: InteractionCallbackType.CHANNEL_MESSAGE_WITH_SOURCE });
-    const data = (result as { data: { content: string; components: Array<{ components: Array<{ custom_id: string }> }> } }).data;
+    const data = result?.data as { content: string; components: Array<{ components: Array<{ custom_id: string }> }> };
     expect(data.content).toBe('Deploying…');
     expect(data.components[0]!.components[0]!.custom_id).toBe('deploy:confirm');
     expect(createFollowupMessage).not.toHaveBeenCalled();
@@ -82,7 +82,7 @@ describe('discord /comms adapter', () => {
 
     const result = await dispatchDiscord(router, client, { ...base, type: InteractionType.APPLICATION_COMMAND, data: { name: 'say' } } as never);
 
-    const data = (result as { data: { content: string; allowed_mentions: { parse: unknown[] } } }).data;
+    const data = result?.data as { content: string; allowed_mentions: { parse: unknown[] } };
     expect(data.content).toBe('hey @everyone ship it');
     expect(data.allowed_mentions).toEqual({ parse: [] });
   });

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { PhoneFactorService } from '../../../src/factors/phone/phone.factor.service.js';
+import { PhoneFactorService, PhoneFactorServiceOptions } from '../../../src/factors/phone/phone.factor.service.js';
 import type { PhoneFactorRepository, PhoneFactor } from '../../../src/factors/phone/phone.factor.repository.js';
 import type { OtpProvider } from '../../../src/providers/otp.provider.js';
 import type { PolicyService } from '@maroonedsoftware/policies';
@@ -63,9 +63,8 @@ const makePhoneFactor = (overrides: Partial<PhoneFactor> = {}): PhoneFactor => (
   ...overrides,
 });
 
-const makeOptions = () => ({
-  otpExpiration: Duration.fromObject({ minutes: 10 }),
-});
+const makeOptions = (maxVerificationAttempts?: number) =>
+  new PhoneFactorServiceOptions(Duration.fromObject({ minutes: 10 }), undefined, maxVerificationAttempts);
 
 const makeRegistrationPayload = (overrides = {}) => ({
   id: 'reg-id-1',
@@ -393,7 +392,7 @@ describe('PhoneFactorService', () => {
     it('locks out the challenge after the attempt budget is exhausted', async () => {
       const payload = makeChallengePayload();
       const statefulCache = makeStatefulCache({ 'phone_factor_challenge_chal-id-1': JSON.stringify(payload) });
-      service = new PhoneFactorService({ ...makeOptions(), maxVerificationAttempts: 5 }, repo, otpProvider, statefulCache, policyService);
+      service = new PhoneFactorService(makeOptions(5), repo, otpProvider, statefulCache, policyService);
       repo.getFactor = vi.fn().mockResolvedValue(makePhoneFactor());
       vi.mocked(otpProvider.validate).mockReturnValue(false);
 

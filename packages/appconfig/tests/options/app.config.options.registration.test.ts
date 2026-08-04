@@ -4,18 +4,19 @@ import { AppConfigBuilder } from '../../src/app.config.builder.js';
 import { AppConfigStore } from '../../src/options/app.config.store.js';
 import { registerLiveAppConfig } from '../../src/options/app.config.options.registration.js';
 import { AppConfig } from '../../src/app.config.js';
+import { stubSource } from '../source.stub.js';
 
 interface WidgetConfig {
   name: string;
 }
 
-interface RootConfig {
+type RootConfig = {
   widget: WidgetConfig;
-}
+};
 
 async function setup(initial: RootConfig) {
   let behavior: () => Promise<Record<string, unknown>> = () => Promise.resolve(initial);
-  const builder = new AppConfigBuilder().addSource({ load: () => behavior(), watch: () => () => {} });
+  const builder = new AppConfigBuilder().addSource(stubSource({ load: () => behavior(), watch: () => () => {} }));
   const store = await builder.buildStore<RootConfig>();
   const registry = new InjectKitRegistry();
   return {

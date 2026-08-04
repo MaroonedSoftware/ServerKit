@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { Storage } from '@google-cloud/storage';
@@ -42,9 +42,8 @@ describe.skipIf(!enabled)('GcsStorageProvider (integration)', () => {
     provider = new GcsStorageProvider(storage, new GcsStorageProviderOptions({ bucket }));
   });
 
-  afterAll(async () => {
-    await storage?.close?.();
-  });
+  // The GCS `Storage` client holds no connection of its own, so there is
+  // nothing to tear down between runs.
 
   it('round-trips a buffer write and reports metadata via stat', async () => {
     const key = `${prefix}note.txt`;

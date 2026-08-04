@@ -1,10 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import type { Check } from '../src/index.js';
 import { buildDoctorCommand, runChecks } from '../src/doctor/runner.js';
 import { createMockContext } from './helpers.js';
 
 describe('runChecks', () => {
-  let writeSpy: ReturnType<typeof vi.spyOn>;
+  let writeSpy: MockInstance<typeof process.stdout.write>;
 
   beforeEach(() => {
     writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
@@ -109,7 +109,7 @@ describe('runChecks', () => {
 });
 
 describe('buildDoctorCommand', () => {
-  let writeSpy: ReturnType<typeof vi.spyOn>;
+  let writeSpy: MockInstance<typeof process.stdout.write>;
 
   beforeEach(() => {
     writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);

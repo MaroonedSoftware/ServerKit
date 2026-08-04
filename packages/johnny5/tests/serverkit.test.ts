@@ -2,6 +2,7 @@ import { AppConfig } from '@maroonedsoftware/appconfig';
 import { describe, expect, it, vi } from 'vitest';
 import { bootstrapForCli, configureServerKitModules, getOrBootstrapContainer, requireContainer } from '../src/integrations/serverkit/index.js';
 import { createMockContext } from './helpers.js';
+import type { CommandModule } from '../src/types.js';
 
 interface FakeModule {
   name?: string;
@@ -118,7 +119,7 @@ describe('requireContainer', () => {
     const ctx = createMockContext({ config: new AppConfig({}) });
     configureServerKitModules(ctx, [mod] as never);
 
-    const handler = vi.fn(async () => 0);
+    const handler = vi.fn<CommandModule['run']>(async () => 0);
     const wrapped = requireContainer(handler);
     await wrapped({ flag: true }, ctx, ['arg1', 'arg2']);
 
