@@ -57,14 +57,14 @@ describe('AppConfigStore', () => {
     const live = store.toLiveConfig();
 
     expect(live.get('a')).toBe(1);
-    expect(live.getString('mode')).toBe('x');
+    expect(live.get('mode')).toBe('x');
 
     set(() => Promise.resolve({ a: 2, mode: 'y' }));
     await store.reload();
 
     // Same live instance, new values — no re-resolution needed.
     expect(live.get('a')).toBe(2);
-    expect(live.getString('mode')).toBe('y');
+    expect(live.get('mode')).toBe('y');
   });
 
   it('isolates a throwing listener: still notifies the rest and reload resolves with the new config live', async () => {

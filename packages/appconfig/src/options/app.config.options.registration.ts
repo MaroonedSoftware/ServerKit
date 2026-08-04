@@ -24,7 +24,7 @@ import { AppConfigStore } from './app.config.store.js';
  * ```typescript
  * const store = await builder.buildStore();
  * registerLiveAppConfig(registry, store);
- * // anywhere downstream: container.get(AppConfig).getString('FEATURE_FLAG')
+ * // anywhere downstream: container.get(AppConfig).get('FEATURE_FLAG')
  * // returns the latest value after store.reload().
  * ```
  */

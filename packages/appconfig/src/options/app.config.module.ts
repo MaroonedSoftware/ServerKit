@@ -79,7 +79,7 @@ export class AppConfigModule<TRoot = Record<string, unknown>> {
     this.registrars.push(registry => {
       registry
         .register(token)
-        .useFactory(() => new AppConfigSectionImpl<TRoot, K>(this.store.current.getAs<TRoot[K]>(key), this.store, key, this.logger))
+        .useFactory(() => new AppConfigSectionImpl<TRoot, K>(this.store.current.get(key), this.store, key, this.logger))
         .asScoped();
     });
     return this;

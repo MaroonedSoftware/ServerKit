@@ -101,7 +101,7 @@ export class AppConfigSectionImpl<TRoot, K extends keyof TRoot & string> extends
 
   /** The latest value, sliced live from the store on every read. */
   get current(): TRoot[K] {
-    return this.store.current.getAs<TRoot[K]>(this.key);
+    return this.store.current.get(this.key);
   }
 
   /**
@@ -116,7 +116,7 @@ export class AppConfigSectionImpl<TRoot, K extends keyof TRoot & string> extends
   onChange(listener: (value: TRoot[K]) => void | Promise<void>): () => void {
     let last = this.current;
     return this.store.subscribe(config => {
-      const next = config.getAs<TRoot[K]>(this.key);
+      const next = config.get(this.key);
       if (structurallyEqual(last, next)) {
         return;
       }

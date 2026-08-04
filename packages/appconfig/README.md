@@ -56,11 +56,10 @@ import { AppConfig } from '@maroonedsoftware/appconfig';
 const config = new AppConfig({
   database: { host: 'localhost', port: 5432 },
   api: { timeout: 5000 },
-  port: '3000',
 });
 
 const database = config.get('database'); // Type-safe access
-const port = config.getNumber('port'); // Returns 3000 as number
+const retries = config.get('retries', 3); // Falls back to 3 when missing
 const db = config.getAs<{ host: string }>('database'); // Cast to interface
 ```
 
@@ -118,10 +117,6 @@ The configuration container providing type-safe access to configuration values.
 | `get(key)`               | Returns the value for the key with full type safety                   |
 | `get(key, defaultValue)` | Returns `defaultValue` when the value is missing (`undefined`/`null`) |
 | `getAs<U>(key)`          | Returns the value cast to the specified type `U`                      |
-| `getString(key)`         | Returns the value converted to a string                               |
-| `getNumber(key)`         | Returns the value converted to a number                               |
-| `getBoolean(key)`        | Returns the value converted to a boolean                              |
-| `getObject(key)`         | Returns the value cast as an object                                   |
 
 ### AppConfigBuilder
 
@@ -645,7 +640,7 @@ config.register(registry);
 ```
 
 `register()` also binds the `AppConfig` token to a live view of the store, so even ad-hoc key access
-(`container.get(AppConfig).getString('FEATURE_FLAG')`) observes a reload. Reach for `registerLiveAppConfig`
+(`container.get(AppConfig).get('FEATURE_FLAG')`) observes a reload. Reach for `registerLiveAppConfig`
 directly if you want that live `AppConfig` token without configuring any typed sections.
 
 ### Reloading
@@ -702,7 +697,7 @@ const store = await new AppConfigBuilder()
   .addResolver(new AppConfigResolverEnv())
   .buildStore<RootConfig>(logger);
 
-store.subscribe(cfg => logger.info('config reloaded', { port: cfg.getNumber('port') }));
+store.subscribe(cfg => logger.info('config reloaded', { port: cfg.get('port') }));
 ```
 
 Call `store.dispose()` on shutdown to release the watchers/listeners (and clear subscribers).
@@ -717,7 +712,7 @@ Three ways to read the latest value, depending on what you hold:
 this.options.current; // always the latest; this.options.onChange(fn) to react.
 
 // 2. The live AppConfig token registered by AppConfigModule.register() — observes reloads too.
-container.get(AppConfig).getString('FEATURE_FLAG');
+container.get(AppConfig).get('FEATURE_FLAG');
 
 // 3. The store directly, for advanced wiring.
 store.current.get('database'); // snapshot in effect right now

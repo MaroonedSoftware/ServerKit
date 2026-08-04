@@ -3,10 +3,10 @@ import { AppConfig } from '@maroonedsoftware/appconfig';
 import { envNumber, readConfigNumber, readConfigString } from '../src/integrations/config.values.js';
 import { createMockContext } from './helpers.js';
 
-// These helpers exist because AppConfig coerces missing keys instead of
-// throwing: getString returns the literal string 'undefined' and getNumber
-// returns NaN. The tests pin the raw-read-and-validate behavior the postgres
-// and redis checks rely on for their process.env fallbacks.
+// These helpers exist because AppConfig returns `undefined` for a missing key
+// instead of throwing, and stores whatever a source produced without coercing
+// it. The tests pin the raw-read-and-validate behavior the postgres and redis
+// checks rely on for their process.env fallbacks.
 
 const contextWithConfig = (values: Record<string, unknown>) => createMockContext({ config: new AppConfig(values) });
 

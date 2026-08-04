@@ -1,12 +1,11 @@
 import type { CliContext } from '../types.js';
 
-// AppConfig coerces missing keys instead of throwing: `getString` returns the
-// literal string 'undefined' (String(undefined)) and `getNumber` returns NaN.
-// A try/catch around the getter alone therefore never reaches the env
-// fallback — and the default AppConfig built by `buildContext` when the
-// consumer passes no config has no sources at all, so EVERY key is missing.
-// These helpers read the raw value and accept it only when it is genuinely
-// usable, letting checks fall back to process.env and sane defaults.
+// AppConfig returns `undefined` for a missing key instead of throwing, so a
+// try/catch around the getter alone never reaches the env fallback. The default
+// AppConfig built by `buildContext` when the consumer passes no config has no
+// sources at all, so EVERY key is missing. These helpers read the raw value and
+// accept it only when it is genuinely usable, letting checks fall back to
+// process.env and sane defaults.
 
 /** Read a config key as a non-empty string, or `undefined` when the key is absent, empty, non-string, or the getter throws. */
 export const readConfigString = (ctx: CliContext, key: string): string | undefined => {
