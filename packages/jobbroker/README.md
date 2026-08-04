@@ -26,7 +26,7 @@ pnpm add @maroonedsoftware/jobbroker injectkit pg-boss reflect-metadata
 | Import                               | Contents                                                                                                     | Pulls in      |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------ | ------------- |
 | `@maroonedsoftware/jobbroker`        | `Job`, `JobBroker`, `JobRunner`, `JobMonitor`, `JobInfo`, `JobState`, `JobQueuePolicy`, `NotSupportedError`  | nothing extra |
-| `@maroonedsoftware/jobbroker/pgboss` | `PgBossJobBroker`, `PgBossJobRunner`, `PgBossJobMonitor`, `PgBossJobRegistryMap`, `PgBossConnectionProvider` | `pg-boss`     |
+| `@maroonedsoftware/jobbroker/pgboss` | `PgBossJobBroker`, `PgBossJobRunner`, `PgBossJobMonitor`, `PgBossJobRegistryMap`, `PgBossConnectionProvider`, `KyselyTransactionConnectionProvider` | `pg-boss`     |
 
 ## Quick Start
 
@@ -357,32 +357,48 @@ Supplies the pg-boss `db` executor used when enqueuing or scheduling jobs.
 
 The default implementation returns `undefined`, so pg-boss uses its own connection pool (standard, non-transactional behavior). Override it on a request-scoped DI container to return a transaction-bound executor and enqueue jobs atomically with the surrounding database transaction — see [Transactional enqueue](#transactional-enqueue).
 
+### `KyselyTransactionConnectionProvider`
+
+`PgBossConnectionProvider` bound to an active Kysely transaction. Constructor signature: `new KyselyTransactionConnectionProvider(trx: KyselyLike)`. Register it as a request-scoped override of `PgBossConnectionProvider` and every enqueue performed during the request inserts on the transaction's connection, so the job row and the surrounding writes commit or roll back together.
+
+The constructor takes `KyselyLike`, a structural type satisfied by both `Kysely<DB>` and `Transaction<DB>` with no type argument or cast. Declaring it structurally means the package has no dependency on `kysely`, not even an optional peer.
+
+Plugins are stripped (`withoutPlugins()`) before the transaction is adapted: pg-boss runs raw SQL straight through `executeQuery`, so a column-rewriting plugin on the caller's instance would corrupt pg-boss's own result columns. The stripped instance shares the same connection-bound executor, so atomicity is preserved.
+
 ## Transactional enqueue
 
-By default a job row is inserted on pg-boss's own connection, so it commits independently of any database work happening in the same request. To make an enqueue commit (or roll back) together with your business writes, override `PgBossConnectionProvider` in the request scope so its `executor()` returns the active transaction's connection. pg-boss ships adapters for the common query builders (`fromKysely`, `fromKnex`, `fromDrizzle`, `fromPrisma`) that wrap a transaction into the executor shape pg-boss expects:
+By default a job row is inserted on pg-boss's own connection, so it commits independently of any database work happening in the same request. To make an enqueue commit (or roll back) together with your business writes, override `PgBossConnectionProvider` in the request scope so its `executor()` returns the active transaction's connection.
+
+For Kysely, `KyselyTransactionConnectionProvider` does this for you:
 
 ```typescript
-import { fromKysely } from 'pg-boss';
-import { PgBossConnectionProvider } from '@maroonedsoftware/jobbroker/pgboss';
-
-class TransactionalConnectionProvider extends PgBossConnectionProvider {
-  constructor(private readonly trx: Transaction<DB>) {
-    super();
-  }
-
-  override executor() {
-    return fromKysely(this.trx);
-  }
-}
+import { PgBossConnectionProvider, KyselyTransactionConnectionProvider } from '@maroonedsoftware/jobbroker/pgboss';
 
 // Inside a transaction, bind the provider on the scoped container before resolving the broker:
 await repository.withTransaction(async trx => {
-  scopedContainer.override(PgBossConnectionProvider, new TransactionalConnectionProvider(trx));
+  scopedContainer.override(PgBossConnectionProvider, new KyselyTransactionConnectionProvider(trx));
 
   await doBusinessWrites(trx);
   await scopedContainer.get(JobBroker).send('send-email', { to: 'user@example.com' });
   // The job row and the business writes commit together.
 });
+```
+
+For the other query builders, pg-boss ships adapters (`fromKnex`, `fromDrizzle`, `fromPrisma`) that wrap a transaction into the executor shape pg-boss expects. Subclass the provider yourself:
+
+```typescript
+import { fromKnex } from 'pg-boss';
+import { PgBossConnectionProvider } from '@maroonedsoftware/jobbroker/pgboss';
+
+class KnexTransactionConnectionProvider extends PgBossConnectionProvider {
+  constructor(private readonly trx: Knex.Transaction) {
+    super();
+  }
+
+  override executor() {
+    return fromKnex(this.trx);
+  }
+}
 ```
 
 ### `PgBossJobRunner`

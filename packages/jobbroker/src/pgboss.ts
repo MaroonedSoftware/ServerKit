@@ -5,3 +5,4 @@ export * from './pgboss/pgboss.job.monitor.js';
 export * from './pgboss/pgboss.job.runner.js';
 export * from './pgboss/pgboss.job.registration.js';
 export * from './pgboss/pgboss.connection.provider.js';
+export * from './pgboss/kysely.transaction.connection.provider.js';
