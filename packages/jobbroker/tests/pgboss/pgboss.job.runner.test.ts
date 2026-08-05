@@ -1,10 +1,11 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, Mock } from 'vitest';
 import { Duration } from 'luxon';
 import { Job as PgJob, PgBoss } from 'pg-boss';
-import { Container } from 'injectkit';
+import { Container, ScopedContainer } from 'injectkit';
 import { PgBossJobRunner } from '../../src/pgboss/pgboss.job.runner.js';
 import { PgBossJobRegistryMap } from '../../src/pgboss/pgboss.job.registration.js';
 import { Job } from '../../src/job.js';
+import { JobContext } from '../../src/job.context.js';
 import { Logger } from '@maroonedsoftware/logger';
 
 class TestJob extends Job<{ message: string }> {
@@ -16,6 +17,8 @@ class TestJob extends Job<{ message: string }> {
 describe('PgBossJobRunner', () => {
   let mockPgBoss: PgBoss;
   let mockContainer: Container;
+  /** Every scope handed out by `mockContainer.createScopedContainer`, in creation order. */
+  let scopes: { get: Mock; override: Mock; disposeAsync: Mock }[];
   let mockLogger: Logger;
   let registrations: PgBossJobRegistryMap;
   let runner: PgBossJobRunner;
@@ -35,8 +38,22 @@ describe('PgBossJobRunner', () => {
       stop: vi.fn().mockResolvedValue(undefined),
     } as unknown as PgBoss;
 
+    // The runner must resolve jobs from a per-execution scope, never from the root
+    // container, so the root's `get` is deliberately left un-stubbed: calling it fails.
+    scopes = [];
     mockContainer = {
-      get: vi.fn().mockReturnValue(testJobInstance),
+      get: vi.fn(() => {
+        throw new Error('jobs must be resolved from a scoped container, not the root');
+      }),
+      createScopedContainer: vi.fn(() => {
+        const scope = {
+          get: vi.fn().mockReturnValue(testJobInstance),
+          override: vi.fn(),
+          disposeAsync: vi.fn().mockResolvedValue(undefined),
+        };
+        scopes.push(scope);
+        return scope as unknown as ScopedContainer;
+      }),
     } as unknown as Container;
 
     mockLogger = {
@@ -124,7 +141,7 @@ describe('PgBossJobRunner', () => {
   });
 
   describe('job worker callback', () => {
-    it('should resolve job from container and execute run method', async () => {
+    it('should resolve job from a scoped container and execute run method', async () => {
       await runner.start();
 
       // Get the worker callback
@@ -135,7 +152,9 @@ describe('PgBossJobRunner', () => {
 
       await workerCallback(mockJobs);
 
-      expect(mockContainer.get).toHaveBeenCalledWith(TestJob);
+      expect(scopes).toHaveLength(1);
+      expect(scopes[0]!.get).toHaveBeenCalledWith(TestJob);
+      expect(mockContainer.get).not.toHaveBeenCalled();
       expect(testJobInstance.run).toHaveBeenCalledWith({ message: 'Hello' }, expect.any(AbortSignal));
     });
 
@@ -257,14 +276,12 @@ describe('PgBossJobRunner', () => {
       expect(settled).toBe(true);
     });
 
-    it('resolves a fresh job instance for each item in the batch', async () => {
-      // The DI container may register the Job as transient; resolving once and
-      // reusing the instance across concurrent jobs would corrupt per-instance state.
+    it('resolves each item in the batch from its own scope', async () => {
+      // The DI container may register the Job as transient or scoped; sharing one
+      // scope (or the root) across concurrent jobs would corrupt per-execution state.
       await runner.start();
       const workCall = vi.mocked(mockPgBoss.work).mock.calls[0]!;
       const workerCallback = workCall[1] as (jobs: PgJob<object>[]) => Promise<void>;
-
-      vi.mocked(mockContainer.get).mockClear();
 
       await workerCallback([
         { id: 'job-1', data: { message: 'a' } } as unknown as PgJob<object>,
@@ -272,7 +289,143 @@ describe('PgBossJobRunner', () => {
         { id: 'job-3', data: { message: 'c' } } as unknown as PgJob<object>,
       ]);
 
-      expect(mockContainer.get).toHaveBeenCalledTimes(3);
+      expect(scopes).toHaveLength(3);
+      for (const scope of scopes) {
+        expect(scope.get).toHaveBeenCalledTimes(1);
+        expect(scope.get).toHaveBeenCalledWith(TestJob);
+      }
+    });
+
+    it('registers a JobContext describing the running job', async () => {
+      await runner.start();
+      const workCall = vi.mocked(mockPgBoss.work).mock.calls[0]!;
+      const workerCallback = workCall[1] as (jobs: PgJob<object>[]) => Promise<void>;
+
+      await workerCallback([{ id: 'job-1', data: { message: 'a' }, expireInSeconds: 90 } as unknown as PgJob<object>]);
+
+      expect(scopes[0]!.override).toHaveBeenCalledWith(JobContext, {
+        id: 'job-1',
+        name: 'test-job',
+        signal: expect.any(AbortSignal),
+        expiresIn: Duration.fromObject({ seconds: 90 }),
+      });
+    });
+
+    it('omits expiresIn when the backend reports no expiry', async () => {
+      await runner.start();
+      const workCall = vi.mocked(mockPgBoss.work).mock.calls[0]!;
+      const workerCallback = workCall[1] as (jobs: PgJob<object>[]) => Promise<void>;
+
+      await workerCallback([{ id: 'job-1', data: { message: 'a' } } as unknown as PgJob<object>]);
+
+      const context = scopes[0]!.override.mock.calls[0]![1] as JobContext;
+      expect(context).not.toHaveProperty('expiresIn');
+    });
+
+    it('exposes the same signal on the context that it passes to run', async () => {
+      await runner.start();
+      const workCall = vi.mocked(mockPgBoss.work).mock.calls[0]!;
+      const workerCallback = workCall[1] as (jobs: PgJob<object>[]) => Promise<void>;
+
+      await workerCallback([{ id: 'job-1', data: { message: 'a' } } as unknown as PgJob<object>]);
+
+      const context = scopes[0]!.override.mock.calls[0]![1] as JobContext;
+      expect(vi.mocked(testJobInstance.run).mock.calls[0]![1]).toBe(context.signal);
+    });
+
+    it('registers the context before resolving the job, so the job can inject it', async () => {
+      // A job that depends on JobContext is constructed during `scope.get`, so the
+      // override has to already be in place by then.
+      await runner.start();
+      const workCall = vi.mocked(mockPgBoss.work).mock.calls[0]!;
+      const workerCallback = workCall[1] as (jobs: PgJob<object>[]) => Promise<void>;
+
+      await workerCallback([{ id: 'job-1', data: { message: 'a' } } as unknown as PgJob<object>]);
+
+      expect(scopes[0]!.override.mock.invocationCallOrder[0]!).toBeLessThan(scopes[0]!.get.mock.invocationCallOrder[0]!);
+    });
+
+    it('gives each item in a batch its own context', async () => {
+      await runner.start();
+      const workCall = vi.mocked(mockPgBoss.work).mock.calls[0]!;
+      const workerCallback = workCall[1] as (jobs: PgJob<object>[]) => Promise<void>;
+
+      await workerCallback([
+        { id: 'job-1', data: { message: 'a' } } as unknown as PgJob<object>,
+        { id: 'job-2', data: { message: 'b' } } as unknown as PgJob<object>,
+      ]);
+
+      const ids = scopes.map(scope => (scope.override.mock.calls[0]![1] as JobContext).id);
+      expect(ids).toEqual(['job-1', 'job-2']);
+    });
+
+    it('logs and reports a failure to resolve the job, and still disposes the scope', async () => {
+      const resolutionError = new Error('no registration');
+      vi.mocked(mockContainer.createScopedContainer).mockImplementation(() => {
+        const scope = {
+          get: vi.fn(() => {
+            throw resolutionError;
+          }),
+          override: vi.fn(),
+          disposeAsync: vi.fn().mockResolvedValue(undefined),
+        };
+        scopes.push(scope);
+        return scope as unknown as ScopedContainer;
+      });
+
+      await runner.start();
+      const workCall = vi.mocked(mockPgBoss.work).mock.calls[0]!;
+      const workerCallback = workCall[1] as (jobs: PgJob<object>[]) => Promise<void>;
+
+      await expect(workerCallback([{ id: 'job-1', data: { message: 'a' } } as unknown as PgJob<object>])).rejects.toThrow(resolutionError);
+
+      expect(mockLogger.error).toHaveBeenCalledWith(resolutionError);
+      expect(scopes[0]!.disposeAsync).toHaveBeenCalledTimes(1);
+    });
+
+    it('disposes each execution scope once the job settles', async () => {
+      await runner.start();
+      const workCall = vi.mocked(mockPgBoss.work).mock.calls[0]!;
+      const workerCallback = workCall[1] as (jobs: PgJob<object>[]) => Promise<void>;
+
+      await workerCallback([{ id: 'job-1', data: { message: 'a' } } as unknown as PgJob<object>]);
+
+      expect(scopes[0]!.disposeAsync).toHaveBeenCalledTimes(1);
+    });
+
+    it('disposes the execution scope when the job throws', async () => {
+      const failure = new Error('job failed');
+      vi.mocked(testJobInstance.run).mockRejectedValue(failure);
+
+      await runner.start();
+      const workCall = vi.mocked(mockPgBoss.work).mock.calls[0]!;
+      const workerCallback = workCall[1] as (jobs: PgJob<object>[]) => Promise<void>;
+
+      await expect(workerCallback([{ id: 'job-1', data: { message: 'a' } } as unknown as PgJob<object>])).rejects.toThrow(failure);
+
+      expect(scopes[0]!.disposeAsync).toHaveBeenCalledTimes(1);
+    });
+
+    it('logs a disposal failure without masking the job result', async () => {
+      const disposalError = new Error('dispose blew up');
+      vi.mocked(mockContainer.createScopedContainer).mockImplementation(() => {
+        const scope = {
+          get: vi.fn().mockReturnValue(testJobInstance),
+          override: vi.fn(),
+          disposeAsync: vi.fn().mockRejectedValue(disposalError),
+        };
+        scopes.push(scope);
+        return scope as unknown as ScopedContainer;
+      });
+
+      await runner.start();
+      const workCall = vi.mocked(mockPgBoss.work).mock.calls[0]!;
+      const workerCallback = workCall[1] as (jobs: PgJob<object>[]) => Promise<void>;
+
+      // The batch still resolves — a failed teardown must not be reported to pg-boss
+      // as a failed job, which would trigger a spurious retry or dead-letter.
+      await expect(workerCallback([{ id: 'job-1', data: { message: 'a' } } as unknown as PgJob<object>])).resolves.toBeUndefined();
+      expect(mockLogger.error).toHaveBeenCalledWith(disposalError);
     });
 
     it('should use correct job identifier from cron registration', async () => {
@@ -294,7 +447,7 @@ describe('PgBossJobRunner', () => {
 
       await workerCallback(mockJobs);
 
-      expect(mockContainer.get).toHaveBeenCalledWith(TestJob);
+      expect(scopes[0]!.get).toHaveBeenCalledWith(TestJob);
     });
   });
 

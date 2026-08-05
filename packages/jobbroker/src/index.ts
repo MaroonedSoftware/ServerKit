@@ -3,6 +3,7 @@
 // core never statically loads the optional `pg-boss` peer dependency.
 export * from './job.broker.js';
 export * from './job.js';
+export * from './job.context.js';
 export * from './job.info.js';
 export * from './job.send.options.js';
 export * from './job.queue.policy.js';

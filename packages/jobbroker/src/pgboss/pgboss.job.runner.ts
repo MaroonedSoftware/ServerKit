@@ -1,6 +1,8 @@
 import { Job as PgJob, PgBoss } from 'pg-boss';
+import { Duration } from 'luxon';
 import { Container, Injectable } from 'injectkit';
 import { Job } from '../job.js';
+import { JobContext } from '../job.context.js';
 import { JobQueuePolicy } from '../job.queue.policy.js';
 import { JobRunner } from '../job.runner.js';
 import { PgBossJobRegistration, PgBossJobRegistryMap } from './pgboss.job.registration.js';
@@ -87,7 +89,8 @@ export class PgBossJobRunner extends JobRunner {
   /**
    * Creates a new PgBossJobRunner instance.
    *
-   * @param container - The DI container for resolving job instances.
+   * @param container - The root DI container. Each job execution resolves from a
+   *                    scope created off it, not from the container itself.
    * @param registrations - The registry map containing all registered jobs.
    * @param pgboss - The pg-boss instance to use for queue operations.
    * @param logger - The logger for recording job execution errors.
@@ -115,10 +118,15 @@ export class PgBossJobRunner extends JobRunner {
    * 4. Sets up the cron schedule (for scheduled jobs)
    * 5. Starts a worker to process jobs from the queue
    *
-   * Each item in a batch resolves its `Job` instance from the DI container
-   * individually and execution is awaited via `Promise.allSettled`, so pg-boss
-   * does not acknowledge a batch until every job has actually finished and
-   * one job's failure cannot suppress its sibling's logs.
+   * Each item in a batch runs in its own scoped container, created from the
+   * injected root container and disposed once the item settles, so `scoped`
+   * registrations behave per execution (the job-side equivalent of a request
+   * scope) and any disposables the execution created are released. Each scope
+   * carries a {@link JobContext} describing the running job, so the job and its
+   * collaborators can inject it. Execution is
+   * awaited via `Promise.allSettled`, so pg-boss does not acknowledge a batch
+   * until every job has actually finished and one job's failure cannot suppress
+   * its sibling's logs.
    *
    * @returns A promise that resolves when all workers are registered with pg-boss.
    */
@@ -154,15 +162,27 @@ export class PgBossJobRunner extends JobRunner {
       await this.pgboss.work(name, async (jobs: PgJob<object>[]) => {
         const results = await Promise.allSettled(
           jobs.map(async job => {
-            const jobRunner = this.container.get<Job>(identifier);
+            // Every execution resolves from its own scope, never the root container.
+            // InjectKit caches a `scoped` registration in whichever container first
+            // resolves it, and child scopes inherit a parent's cache, so resolving a
+            // scoped token at the root would turn it into a process-lifetime singleton
+            // shared by every job *and* inherited by every later request scope.
+            const scope = this.container.createScopedContainer();
             const controller = new AbortController();
             // pg-boss aborts `job.signal` on timeout/shutdown; combine it with our
             // own controller, which the cancellation poll aborts. (`signal` is typed
             // as always present, but may be absent when jobs are faked in tests.)
             const pgSignal = (job as { signal?: AbortSignal }).signal;
             const signal = AbortSignal.any(pgSignal ? [controller.signal, pgSignal] : [controller.signal]);
-            const stopWatching = this.watchForCancellation(name, job.id, controller);
+            // Assigned once the watch starts; until then there is nothing to stop, so
+            // `finally` can run unconditionally even if resolution threw.
+            let stopWatching = () => {};
             try {
+              // Override before resolving, so a job (or anything it depends on) may
+              // take JobContext as a constructor dependency.
+              scope.override(JobContext, this.toJobContext(name, job, signal));
+              const jobRunner = scope.get<Job>(identifier);
+              stopWatching = this.watchForCancellation(name, job.id, controller);
               await jobRunner.run(job.data, signal);
             } catch (error) {
               // Log first so a sibling's failure can't suppress this job's diagnostics,
@@ -170,7 +190,12 @@ export class PgBossJobRunner extends JobRunner {
               this.logger.error(error);
               throw error;
             } finally {
+              // Stop the poll before disposing: resolving from a disposed scope throws,
+              // and a late tick must not turn a finished job into a logged error.
               stopWatching();
+              // Log rather than rethrow, so a disposal failure can't replace the job's
+              // real error and mislead pg-boss's retry/dead-letter accounting.
+              await scope.disposeAsync().catch((error: unknown) => this.logger.error(error));
             }
           }),
         );
@@ -188,6 +213,27 @@ export class PgBossJobRunner extends JobRunner {
         }
       });
     }
+  }
+
+  /**
+   * Builds the {@link JobContext} registered in an execution's scoped container.
+   *
+   * @param name - The queue the job was dequeued from.
+   * @param job - The pg-boss job being executed.
+   * @param signal - The combined cancellation signal handed to {@link Job.run}.
+   * @returns The context describing this execution.
+   * @internal
+   */
+  private toJobContext(name: string, job: PgJob<object>, signal: AbortSignal): JobContext {
+    // Typed as always present, but absent when jobs are faked in tests, so it is
+    // read defensively and simply omitted when the backend reports no limit.
+    const expireInSeconds = (job as { expireInSeconds?: number }).expireInSeconds;
+    return {
+      id: job.id,
+      name,
+      signal,
+      ...(expireInSeconds === undefined ? {} : { expiresIn: Duration.fromObject({ seconds: expireInSeconds }) }),
+    };
   }
 
   /**

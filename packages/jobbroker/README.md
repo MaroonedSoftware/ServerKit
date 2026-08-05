@@ -25,7 +25,7 @@ pnpm add @maroonedsoftware/jobbroker injectkit pg-boss reflect-metadata
 
 | Import                               | Contents                                                                                                                                            | Pulls in      |
 | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
-| `@maroonedsoftware/jobbroker`        | `Job`, `JobBroker`, `JobRunner`, `JobMonitor`, `JobInfo`, `JobState`, `JobQueuePolicy`, `NotSupportedError`                                         | nothing extra |
+| `@maroonedsoftware/jobbroker`        | `Job`, `JobContext`, `registerJobContext`, `JobBroker`, `JobRunner`, `JobMonitor`, `JobInfo`, `JobState`, `JobQueuePolicy`, `NotSupportedError`     | nothing extra |
 | `@maroonedsoftware/jobbroker/pgboss` | `PgBossJobBroker`, `PgBossJobRunner`, `PgBossJobMonitor`, `PgBossJobRegistryMap`, `PgBossConnectionProvider`, `KyselyTransactionConnectionProvider` | `pg-boss`     |
 
 ## Quick Start
@@ -164,6 +164,49 @@ await broker.schedule('cleanup', '0 0 * * *', { olderThan: 30 });
 await broker.unschedule('cleanup');
 ```
 
+## Job execution scope and `JobContext`
+
+Each job execution runs in its own scoped DI container, created from the root container and disposed once the execution settles. This is the job-side counterpart of the per-request scope `serverKitContextMiddleware` creates: a service registered `asScoped()` gets a fresh instance per job, and any container-owned disposables the execution created are released when it finishes.
+
+The scope carries a `JobContext` describing the job in flight, so a job — or anything it depends on, however deep — can inject it instead of having the metadata threaded through by hand:
+
+```typescript
+import { Injectable } from 'injectkit';
+import { Job, JobContext } from '@maroonedsoftware/jobbroker';
+
+@Injectable()
+class AuditLog {
+  constructor(private readonly context: JobContext) {}
+
+  record(message: string): void {
+    logger.info({ jobId: this.context.id, queue: this.context.name }, message);
+  }
+}
+
+@Injectable()
+class SendEmailJob extends Job<EmailPayload> {
+  constructor(private readonly audit: AuditLog) {
+    super();
+  }
+
+  async run(payload: EmailPayload): Promise<void> {
+    this.audit.record('sending'); // attributed to this job, no plumbing at the call site
+  }
+}
+```
+
+`JobContext` exposes `id`, `name` (the queue), `signal` (the same cancellation signal handed to `run`), and `expiresIn` when the backend reports a limit. There is deliberately no attempt/retry counter: pg-boss hands the work handler a bare job, and the retry count would cost an extra query per execution. Read it from `JobMonitor` when you need it.
+
+**Register the token whenever anything injects it.** `Registry.build()` validates the dependency graph up front, and the runner's per-execution override cannot satisfy that check because it only exists at runtime, inside a scope:
+
+```typescript
+import { registerJobContext } from '@maroonedsoftware/jobbroker';
+
+registerJobContext(diRegistry); // before diRegistry.build()
+```
+
+That registers a placeholder which the runner's scoped override shadows during a job. Resolving `JobContext` anywhere else — at boot, in a request, from a singleton — throws with an explanation rather than returning a stale or fake context. So a service that has to work both inside and outside a job should not depend on it directly.
+
 ## Cancelling jobs
 
 `broker.cancel(name, id)` requests cancellation of a job **whatever state it is in**:
@@ -269,6 +312,19 @@ Abstract base class for job handlers.
 | Method                                                       | Description                                                                             |
 | ------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
 | `run(payload: Payload, signal?: AbortSignal): Promise<void>` | Execute the job. `signal` is aborted on cancellation/shutdown; honoring it is optional. |
+
+### `JobContext`
+
+Injection token describing the job execution in flight, registered by the runner in the per-execution scoped container. See [Job execution scope and `JobContext`](#job-execution-scope-and-jobcontext).
+
+| Property               | Description                                                                  |
+| ---------------------- | ---------------------------------------------------------------------------- |
+| `id: string`           | Backend-assigned job id, matching what `JobBroker.send` returned.            |
+| `name: string`         | Queue the job was dequeued from, which is also its registered job name.      |
+| `signal: AbortSignal`  | Aborted on cancellation or runner shutdown; the same signal passed to `run`. |
+| `expiresIn?: Duration` | How long the backend allows this execution to run, when it reports a limit.  |
+
+`registerJobContext(registry)` registers the token so `build()`'s dependency validation passes. Required whenever a registered service injects `JobContext`.
 
 ### `JobBroker`
 
@@ -403,7 +459,9 @@ class KnexTransactionConnectionProvider extends PgBossConnectionProvider {
 
 ### `PgBossJobRunner`
 
-Concrete `JobRunner` implementation backed by pg-boss. Constructor signature: `new PgBossJobRunner(container: Container, registrations: PgBossJobRegistryMap, pgboss: PgBoss, logger: Logger)`. Calls `pgboss.start()` during `start()` and `pgboss.stop()` during `stop()`. Job instances are resolved from the DI container on each invocation. Typically resolved through the DI container rather than instantiated directly.
+Concrete `JobRunner` implementation backed by pg-boss. Constructor signature: `new PgBossJobRunner(container: Container, registrations: PgBossJobRegistryMap, pgboss: PgBoss, logger: Logger)`. Calls `pgboss.start()` during `start()` and `pgboss.stop()` during `stop()`. Typically resolved through the DI container rather than instantiated directly.
+
+Each job execution runs in its own scoped container carrying a `JobContext`, created from the injected root container via `createScopedContainer()` and disposed once the execution settles — see [Job execution scope and `JobContext`](#job-execution-scope-and-jobcontext). Resolving a scoped registration from the root would instead cache it at the root for the lifetime of the process, where it would be shared by every job and inherited by every scope created later.
 
 Exposes a `cancelPollIntervalSeconds` property (default `5`) that controls how often a running job is polled for cancellation; set it to `0` to disable polling. See [Cancelling jobs](#cancelling-jobs).
 
