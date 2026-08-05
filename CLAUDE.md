@@ -1,251 +1,39 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+ServerKit is a modular TypeScript monorepo of independent server-side packages (`packages/*`), built around Koa HTTP APIs, DI, config, errors, auth, and background jobs. Packages are published individually under `@maroonedsoftware/*` and are meant to be usable on their own, so anything one package assumes about another is a real API contract.
 
-## Project Overview
-
-ServerKit is a modular TypeScript monorepo for building Node.js server applications. It consists of independent packages that can be used together or separately, with a focus on Koa-based HTTP APIs, configuration management, error handling, and background jobs.
-
-**Tech Stack:**
-
-- Node.js 22+
-- TypeScript 6.0.3
-- pnpm 11.1.1+ (workspace monorepo)
-- Turbo (build orchestration)
-- Vitest (testing)
-- ESLint (linting)
-- tsup (bundling)
-
-## Development Commands
-
-```bash
-# Install dependencies
-pnpm install
-
-# Build all packages (respects dependency order)
-pnpm build
-
-# Run all tests
-pnpm test
-
-# Run tests for a single package
-cd packages/<package-name>
-pnpm test
-
-# Run tests in watch mode
-cd packages/<package-name>
-pnpm test -- --watch
-
-# Lint all packages
-pnpm lint
-
-# Format all packages
-pnpm format
-
-# Create a changeset for versioning
-pnpm changeset
-```
-
-## Repository Structure
-
-```
-packages/
-├── appconfig/       # Configuration management with multiple sources
-├── authentication/  # Scheme dispatch, sessions, JWT, OTP, password/email/phone/authenticator/FIDO factors
-├── cache/           # CacheProvider abstraction with an ioredis implementation
-├── comms/           # Channel-agnostic messaging core (ChannelRouter, Reply/Notifier, TemplateRegistry); chat packages add a ./comms adapter
-├── discord/         # Discord dispatcher (interaction handlers, Ed25519 signature verification, REST client)
-├── encryption/      # AES-GCM envelope encryption, per-id KMS provider, PKCE helpers
-├── errors/          # HTTP error handling and PostgreSQL error mapping
-├── eventbus/        # In-process event bus (subscribers + registration)
-├── jobbroker/       # Background job processing (pg-boss wrapper)
-├── johnny5/         # CLI/tooling (commander, doctor, integrations keyring, plugin loader)
-├── koa/             # Koa middleware, utilities, and the SSE streaming transport
-├── kysely/          # Kysely repository base, transaction helpers, PG type overrides
-├── logger/          # Logger interface and console implementation
-├── mcp/             # MCP (Model Context Protocol) server dispatcher wrapping the official SDK
-├── serverfeed/      # Transport-free realtime feed of server activity (pub/sub, replay buffer, snapshot) + an optional `./logger` bridge
-├── multipart/       # Multipart form-data parsing
-├── permissions/     # Zanzibar-style relationship-based access control
-├── permissions-dsl/ # DSL for the permissions language (grammar, parser, compiler, codegen, CLI)
-├── policies/        # Named, DI-friendly allow/deny policies with PolicyService
-├── scim/            # SCIM user provisioning (filter parser, patch, router, schemas, services)
-├── slack/           # Slack dispatcher (command/event/interaction handlers, signature verification)
-├── storage/         # Object storage providers (disk, AWS S3, GCS) behind a DI-friendly StorageProvider
-├── telegram/        # Telegram Bot API dispatcher (command/callback/update handlers, secret-token verification, Bot API client)
-├── whatsapp/        # WhatsApp Cloud API dispatcher (message/interactive/status handlers, HMAC signature + webhook verification, REST client)
-├── utilities/       # Common utilities (UUID, email, base32, avatar generation)
-├── zod/             # Zod-to-httpError validation helper
-├── config-eslint/   # Shared ESLint configuration
-└── config-typescript/ # Shared TypeScript configuration
-
-apps/
-└── vscode-extension/ # Language client/server for the permissions DSL
-```
-
-> Note: `permissions-dsl`, `config-eslint`, and `config-typescript` use hyphenated *directory* names predating the no-hyphens convention; their source files still follow the dot/camelCase rules.
-
-## Architecture
-
-### Package Dependencies
-
-The monorepo uses workspace references (`workspace:*`). Key dependency relationships:
-
-- **koa** depends on: `appconfig`, `authentication`, `errors`, `logger`, `multipart`, `policies`, `utilities` (+ optional peer `serverfeed` for the `./serverfeed` SSE endpoint). Owns the SSE transport (`openSseStream`), which is dependency-free and exported from the main entry point.
-- **scim** depends on: `authentication`, `errors`, `koa`, `logger`, `utilities`
-- **authentication** depends on: `cache`, `encryption`, `errors`, `logger`, `policies`, `utilities`
-- **slack** depends on: `errors`, `logger`, `policies` (+ optional peers `comms` for the `./comms` adapter and `cache` for webhook de-duplication)
-- **discord** depends on: `errors`, `logger`, `policies` (+ optional peers `comms` for the `./comms` adapter and `cache` for webhook de-duplication)
-- **whatsapp** depends on: `errors`, `logger`, `policies` (+ optional peers `comms` for the `./comms` adapter and `cache` for webhook de-duplication)
-- **telegram** depends on: `errors`, `logger`, `policies` (+ optional peers `comms` for the `./comms` adapter and `cache` for webhook de-duplication)
-- **mcp** depends on: `errors`, `logger`, `policies` (+ the official `@modelcontextprotocol/sdk` as the protocol engine; optional peer `cache` for stateful session/event storage)
-- **comms** depends on: `errors`, `logger` (standalone, channel-free core; chat packages bind to it via an optional `./comms` peer)
-- **johnny5** depends on: `appconfig`, `logger`
-- **permissions-dsl** depends on: `permissions`
-- **policies** depends on: `errors`
-- **cache** depends on: `errors`, `logger`, `utilities`
-- **encryption** depends on: `errors`
-- **jobbroker** depends on: `errors`, `logger`
-- **kysely** depends on: `errors`, `utilities`
-- **multipart** depends on: `errors`
-- **storage** depends on: `errors` (+ optional peer AWS S3 / Google Cloud Storage SDKs for the `./s3` and `./gcs` backends)
-- **zod** depends on: `errors`
-- **serverfeed** depends on: nothing internal at runtime (framework-agnostic, transport-free core; `luxon` for timestamps). It owns the event contract and the bus only — framing and connection handling belong to a transport, e.g. koa's SSE module. The `koa` `./serverfeed` endpoint consumes it as an optional peer. Its own `./logger` subpath ships `ServerFeedLogger` and takes `logger` as an optional peer, which keeps the arrow pointing this way and leaves `logger` standalone.
-- **logger** is standalone (no dependencies, internal or peer)
-- **errors**, **appconfig**, **utilities**, **permissions**, **eventbus** are standalone (no internal deps)
-- All packages use `config-eslint` and `config-typescript`
-
-### Error Handling Pattern
-
-ServerKit uses a fluent HTTP error pattern throughout:
-
-```typescript
-import { httpError } from '@maroonedsoftware/errors';
-
-// Basic error
-throw httpError(404);
-
-// With details (for validation errors)
-throw httpError(400).withDetails({ email: 'Invalid format' });
-
-// With headers
-throw httpError(401).withHeaders({ 'WWW-Authenticate': 'Bearer' });
-
-// With cause (for error chaining)
-throw httpError(500).withCause(originalError);
-
-// With internal details (for logging, not exposed)
-throw httpError(500).withInternalDetails({ userId: 123 });
-```
-
-The `errorMiddleware` in the koa package catches these errors and serializes them to appropriate HTTP responses.
-
-For errors that aren't HTTP-shaped (domain rule violations, background-job failures, etc.), throw or subclass `ServerkitError` — `HttpError` extends it, so the same `withDetails` / `withCause` / `withInternalDetails` setters apply. `errorMiddleware` recognises a bare `ServerkitError` and renders it as a 500 with the attached `details` (a plain `Error` gets a generic 500 with no details).
-
-### Koa Integration
-
-The **koa** package provides a typed context pattern:
-
-1. **ServerKitContext** extends Koa's context with:
-   - `container`: Request-scoped InjectKit DI container
-   - `logger`: Request-scoped logger instance
-   - `requestId`: From `X-Request-Id` header or generated
-   - `correlationId`: From `X-Correlation-Id` header or generated
-   - `userAgent`: From `User-Agent` header
-
-2. **ServerKitRouter** and **ServerKitMiddleware** are type-safe wrappers that ensure proper context typing
-
-3. **Middleware order** is critical:
-   ```typescript
-   app.use(errorMiddleware()); // First: catch all errors
-   app.use(serverKitContextMiddleware(container)); // Set up context
-   app.use(corsMiddleware({ origin: ['*'] })); // CORS
-   // ... other middleware
-   app.use(router.routes()); // Last: route handlers
-   ```
-
-### Configuration Pattern
-
-The **appconfig** package uses a builder pattern with sources and providers:
-
-- **Sources** load config from files (JSON, YAML, .env)
-- **Providers** transform values (resolve env vars, GCP secrets)
-- Configs are deep-merged in order (last wins)
-
-```typescript
-const config = await new AppConfigBuilder()
-  .addSource(new AppConfigSourceJson('./config.json'))
-  .addSource(new AppConfigSourceDotenv())
-  .addProvider(new AppConfigProviderDotenv()) // Resolves ${env:VAR}
-  .build<MyConfigType>();
-```
-
-### Decorator Pattern
-
-The **errors** package provides decorators for class-level error handling:
-
-- `@OnError(handler)`: Wraps all methods with error handling
-- `@OnPostgresError()`: Maps PostgreSQL errors to HTTP errors automatically
-
-These are used on service classes to handle database errors consistently.
-
-## Testing
-
-- Tests use **Vitest** with `unplugin-swc` for fast TypeScript compilation
-- Test files: `packages/*/tests/**/*.test.ts`
-- Each package has its own `vitest.config.ts`
-- Tests run in Node environment with globals enabled
-- Coverage via `@vitest/coverage-v8`
-
-## Build System
-
-- **Turbo** orchestrates builds with dependency awareness
-- Each package builds with **tsup** (ESM format, sourcemaps, declaration files)
-- Output: `packages/*/dist/`
-- Build inputs include `.env*` files (some packages use env vars at build time)
-
-## Important Patterns
-
-### Fluent API Design
-
-Many packages use method chaining for configuration:
-
-```typescript
-throw httpError(400).withDetails({}).withCause(err);
-config.addSource(s1).addSource(s2).addProvider(p1).build();
-```
-
-### Dependency Injection
-
-The koa package integrates with **InjectKit** for request-scoped services. The `serverKitContextMiddleware` creates a scoped container per request, allowing services to access request-specific data (logger, request IDs, etc.).
-
-### Type Safety
-
-All packages are fully typed. The koa package uses generic types (`ServerKitContext`, `ServerKitMiddleware<ResponseBody>`) to ensure type safety in route handlers.
-
-### File Naming
-
-Source and test filenames use **dot separators**, not hyphens. Compose the name from the symbol it exports plus a kind suffix:
-
-- Services: `scim.user.service.ts`
-- Repositories: `scim.user.repository.ts`
-- Middleware: `require.security.middleware.ts`
-- Schemas: `enterprise.user.schema.ts`
-- Test files mirror their source: `scim.user.service.test.ts`
-
-Index/barrel files are `index.ts`. Do not introduce hyphenated filenames; match the existing convention across packages.
+Read a package's `README.md` and `package.json` for what it does and what it depends on. This file covers only the things you cannot learn from the tree.
 
 ## Conventions
 
-- **Dates and times**: use Luxon's `DateTime`, `Duration`, and `Interval` instead of the native JS `Date`, and instead of ad-hoc duration math on milliseconds. Never use `Date.now()`, `new Date()`, or `Date.parse()` for time logic:
-  - Current time: `DateTime.now()` (or `DateTime.utc()`).
-  - Unix seconds: `Math.floor(DateTime.now().toSeconds())`, not `Math.floor(Date.now() / 1000)`.
-  - Adding/subtracting time: `DateTime.now().plus({ seconds })`, not `new Date(Date.now() + ms)`.
-  - ISO string: `DateTime.now().toISO()`, not `new Date().toISOString()`.
-  - Convert at boundaries only (`DateTime.fromJSDate` / `.toJSDate()`, `.toISO()` / `DateTime.fromISO()`); keep everything in between as Luxon types. The native `Date` is allowed solely at interop boundaries — type annotations for external libraries (e.g. OAuth/OIDC tokens), `instanceof Date` checks, and reconstituting a `Date` from a stored timestamp.
-- **Formatting**: 2-space indent, single quotes, semicolons, print width 150 (see `.prettierrc`).
-- **TypeScript**: strict mode with `noUncheckedIndexedAccess`. Decorators enabled for DI.
-- **No hyphens — anywhere.** This applies to:
-  - Catalog keys (document kinds, requirement keys, job names, product keys, rule keys, anything stored as a string identifier in a `Record<string, …>` catalog) — use **dot notation**. Examples: `agreement.terms.of.service`, `enterprise.user`.
-  - File names — use dot-separated multi-word names (`local.storage.driver.ts`), not kebab-case (`local-storage-driver.ts`).
-  - Code identifiers — use camelCase / PascalCase, never kebab-case.
+**No hyphens — anywhere.** This is the convention most likely to be violated by default:
+
+- File names use dot separators, composed from the exported symbol plus a kind suffix: `scim.user.service.ts`, `require.security.middleware.ts`, `enterprise.user.schema.ts`. Tests mirror their source: `scim.user.service.test.ts`. Barrels are `index.ts`.
+- Catalog keys (job names, document kinds, rule keys, anything used as a string identifier in a `Record<string, …>`) use dot notation: `agreement.terms.of.service`.
+- Code identifiers are camelCase / PascalCase.
+
+Exception: the directories `permissions-dsl`, `config-eslint`, and `config-typescript` predate this rule. Their *contents* still follow it. Do not add new hyphenated names.
+
+**Luxon, not `Date`.** Use `DateTime` / `Duration` / `Interval` for all time logic. Never `Date.now()`, `new Date()`, or `Date.parse()`, and no millisecond arithmetic. Unix seconds are `Math.floor(DateTime.now().toSeconds())`. Native `Date` is allowed only at interop boundaries: external library type signatures, `instanceof Date` checks, and reconstituting a stored timestamp. Convert at the boundary and keep everything in between as Luxon types.
+
+**Tests live in `tests/` at the package root**, mirroring `src/`, not colocated. `tests/` stays out of the build tsconfig so `tsc --noEmit` only checks shippable code.
+
+TypeScript is strict with `noUncheckedIndexedAccess` and decorators enabled. Prefer `undefined` over `null` for "not set".
+
+## Gotchas
+
+**Koa middleware order is load-bearing.** `errorMiddleware()` must be first (it catches everything downstream), then `serverKitContextMiddleware(container)` (which creates the request-scoped DI container and attaches `logger` / `requestId` / `correlationId`), then everything else, with `router.routes()` last. Middleware registered before the context middleware will not have `ctx.container` or `ctx.logger`.
+
+**Errors that aren't HTTP-shaped.** `httpError(n)` is for HTTP responses; domain rule violations and job failures should throw or subclass `ServerkitError` (which `HttpError` extends, so the same `withDetails` / `withCause` / `withInternalDetails` setters apply). `errorMiddleware` renders a bare `ServerkitError` as a 500 *with* its `details`; a plain `Error` gets a generic 500 with none. Use `withInternalDetails` for anything that must be logged but never sent to a client.
+
+**Cross-package dependency arrows are deliberate.** Optional integrations are wired as optional peer deps plus a subpath export, so the dependency points the way that keeps the lower-level package standalone. `serverfeed` is the sharpest case: it owns the event contract and bus only and depends on nothing internal. Framing and connection handling belong to a transport (koa's SSE module), and the `serverfeed/logger` bridge lives in `serverfeed` with `logger` as an optional peer specifically so `logger` stays dependency-free. When adding an integration, put the adapter in the higher-level package and take the other side as an optional peer — do not add a hard dependency to keep an import tidy.
+
+**Services take typed config, not `AppConfig`.** `appconfig` builds and merges config at bootstrap; a service constructor should receive the already-typed section it needs. The consumer wires `AppConfig` → typed config at composition time.
+
+**Do not run `changeset version` in a feature branch.** It consumes every pending changeset in the repo, not just yours. Add the changeset file and let the release automation do the bump.
+
+## Commands
+
+`pnpm build`, `pnpm test`, `pnpm lint`, `pnpm format` at the root (Turbo, dependency-aware). Per package, `cd packages/<name> && pnpm test`. Vitest with `unplugin-swc`; tsup for ESM builds.
+
+If pnpm's `verifyDepsBeforeRun` check misfires in a sandboxed session, run the underlying binary (`vitest`, `eslint`) directly. Never set `CI=true` to get past it — that auto-confirms a destructive purge and reinstall of the whole workspace.
