@@ -1,4 +1,19 @@
 /**
+ * Widens a literal type to its base primitive, leaving everything else alone.
+ *
+ * Needed because {@link AppConfig.get}'s `defaultValue` infers as a literal: its
+ * constraint (`NonNullable<T[K]>`, which is `{}` for a loosely-typed config)
+ * admits primitives, and TypeScript preserves literal types when inferring to
+ * such a parameter. Without this, `get('KEY', '')` would be typed `''` rather
+ * than `string`, and every later assignment to it would fail.
+ *
+ * Only applied on the loosely-typed branch. A typed config returns
+ * `NonNullable<T[K]> | D`, where the declared value type already supplies the
+ * precision (`get('mode', 'a')` on `{ mode: 'a' | 'b' }` stays `'a' | 'b'`).
+ */
+type WidenLiteral<D> = D extends string ? string : D extends number ? number : D extends boolean ? boolean : D extends bigint ? bigint : D;
+
+/**
  * Configuration container that provides type-safe access to configuration values.
  *
  * @template T - The type of the configuration object. Defaults to `Record<string, unknown>`.
@@ -83,8 +98,9 @@ export class AppConfig<T = Record<string, unknown>> {
    * The result is typed precisely: for a typed config the return is
    * `NonNullable<T[K]> | D`, and for a loosely-typed config (where `T[K]` is
    * `unknown`, e.g. the default `Record<string, unknown>`) the return is the
-   * default value's type `D` — so `get('KEY', 'fallback')` yields `string`
-   * rather than `{}`.
+   * default value's type widened to its base primitive (see
+   * {@link WidenLiteral}) — so `get('KEY', 'fallback')` yields `string` rather
+   * than `{}` or the literal `'fallback'`.
    *
    * @template K - The key type, must be a key of T.
    * @template D - The default value's type, inferred from `defaultValue`.
@@ -98,13 +114,17 @@ export class AppConfig<T = Record<string, unknown>> {
    * const port = config.get('port'); // Returns 3000, typed as number
    * const retries = config.get('retries', 3); // Falls back to 3 when missing
    *
-   * // Loosely-typed config: the default value's type is preserved.
+   * // Loosely-typed config: the default value's type carries the result.
    * const env = new AppConfig<Record<string, unknown>>({});
    * const issuer = env.get('OIDC_ISSUER', 'https://accounts.google.com'); // typed as string
+   * const secret = env.get('JWT_PRIVATE_KEY', ''); // typed as string, not ''
    * ```
    */
   get<K extends keyof T>(key: K): T[K];
-  get<K extends keyof T, D extends NonNullable<T[K]> = NonNullable<T[K]>>(key: K, defaultValue: D): unknown extends T[K] ? D : NonNullable<T[K]> | D;
+  get<K extends keyof T, D extends NonNullable<T[K]> = NonNullable<T[K]>>(
+    key: K,
+    defaultValue: D,
+  ): unknown extends T[K] ? WidenLiteral<D> : NonNullable<T[K]> | D;
   get<K extends keyof T>(key: K, defaultValue?: unknown): unknown {
     const value = this.read()[key];
     if (arguments.length < 2) {

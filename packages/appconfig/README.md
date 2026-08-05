@@ -118,6 +118,12 @@ The configuration container providing type-safe access to configuration values.
 | `get(key, defaultValue)` | Returns `defaultValue` when the value is missing (`undefined`/`null`) |
 | `getAs<U>(key)`          | Returns the value cast to the specified type `U`                      |
 
+On a typed config, `get(key, defaultValue)` returns the declared value type, so `get('mode', 'a')` on
+`{ mode: 'a' | 'b' }` stays `'a' | 'b'`. On a loosely-typed config (the `Record<string, unknown>` default)
+there is no declared type to fall back on, so the default value carries the result, widened to its base
+primitive: `get('JWT_PRIVATE_KEY', '')` is `string`, not the literal `''`. Reach for `getAs<U>(key)` when you
+want a narrower type than that.
+
 ### AppConfigBuilder
 
 Builder for constructing `AppConfig` instances from multiple sources.
