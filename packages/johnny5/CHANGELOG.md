@@ -1,5 +1,25 @@
 # @maroonedsoftware/johnny5
 
+## 8.0.7
+
+### Patch Changes
+
+- Ship `AGENTS.md` in the published tarball.
+
+  Each package now carries an `AGENTS.md` alongside its `README.md`: a machine-oriented guide for AI
+  coding agents covering the full export surface, canonical wiring, package-specific rules, and the
+  non-obvious failure modes. Adding it to the `files` array means a downstream agent finds it in
+  `node_modules` without a network round-trip.
+
+  No runtime code changed.
+
+- Updated dependencies
+  - @maroonedsoftware/appconfig@2.4.5
+  - @maroonedsoftware/koa@3.0.7
+  - @maroonedsoftware/logger@1.1.7
+  - @maroonedsoftware/permissions@0.2.7
+  - @maroonedsoftware/permissions-dsl@0.5.4
+
 ## 8.0.6
 
 ### Patch Changes

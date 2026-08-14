@@ -1,5 +1,26 @@
 # @maroonedsoftware/authentication
 
+## 4.30.5
+
+### Patch Changes
+
+- Ship `AGENTS.md` in the published tarball.
+
+  Each package now carries an `AGENTS.md` alongside its `README.md`: a machine-oriented guide for AI
+  coding agents covering the full export surface, canonical wiring, package-specific rules, and the
+  non-obvious failure modes. Adding it to the `files` array means a downstream agent finds it in
+  `node_modules` without a network round-trip.
+
+  No runtime code changed.
+
+- Updated dependencies
+  - @maroonedsoftware/cache@0.4.4
+  - @maroonedsoftware/encryption@0.5.9
+  - @maroonedsoftware/errors@1.8.4
+  - @maroonedsoftware/logger@1.1.7
+  - @maroonedsoftware/policies@0.6.4
+  - @maroonedsoftware/utilities@1.11.4
+
 ## 4.30.4
 
 ### Patch Changes
