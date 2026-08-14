@@ -1,5 +1,26 @@
 # @maroonedsoftware/telegram
 
+## 2.0.2
+
+### Patch Changes
+
+- Ship `AGENTS.md` in the published tarball.
+
+  Each package now carries an `AGENTS.md` alongside its `README.md`: a machine-oriented guide for AI
+  coding agents covering the full export surface, canonical wiring, package-specific rules, and the
+  non-obvious failure modes. Adding it to the `files` array means a downstream agent finds it in
+  `node_modules` without a network round-trip.
+
+  No runtime code changed.
+
+- Updated dependencies [2a2bcf4]
+- Updated dependencies
+  - @maroonedsoftware/cache@0.4.1
+  - @maroonedsoftware/comms@0.2.4
+  - @maroonedsoftware/errors@1.8.1
+  - @maroonedsoftware/logger@1.1.4
+  - @maroonedsoftware/policies@0.6.1
+
 ## 2.0.1
 
 ### Patch Changes
