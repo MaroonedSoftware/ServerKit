@@ -29,37 +29,37 @@ Two audiences use these files:
 
 ## Package index
 
-| Package             | Layer   | Purpose                                                                                  | Guide                                                       |
-| ------------------- | ------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| `errors`            | L0      | `ServerkitError` / `HttpError` with chainable details, causes, and internal-only details | [errors](./packages/errors/AGENTS.md)                       |
-| `logger`            | L0      | DI-friendly `Logger` abstraction with a console implementation                           | [logger](./packages/logger/AGENTS.md)                       |
-| `utilities`         | L0      | Validation, base32, deterministic avatars, and misc dependency-free helpers              | [utilities](./packages/utilities/AGENTS.md)                 |
-| `permissions`       | L0      | Zanzibar-style relationship-based access control with a validated authorization model    | [permissions](./packages/permissions/AGENTS.md)             |
-| `eventbus`          | L0      | Synchronous in-process fan-out event dispatch                                            | [eventbus](./packages/eventbus/AGENTS.md)                   |
-| `appconfig`         | L1      | Typed config loading, merging, transformation, and runtime reload                        | [appconfig](./packages/appconfig/AGENTS.md)                 |
-| `policies`          | L1      | Named, injectable allow/deny rules returning a discriminated `PolicyResult`              | [policies](./packages/policies/AGENTS.md)                   |
-| `encryption`        | L1      | Envelope encryption with a pluggable KMS provider interface                              | [encryption](./packages/encryption/AGENTS.md)               |
-| `multipart`         | L1      | Streaming `multipart/form-data` parsing with size limits                                 | [multipart](./packages/multipart/AGENTS.md)                 |
-| `zod`               | L1      | Zod-to-`HttpError` translation and shared schema helpers                                 | [zod](./packages/zod/AGENTS.md)                             |
-| `storage`           | L1      | Object storage abstraction over filesystem, S3, and GCS                                  | [storage](./packages/storage/AGENTS.md)                     |
-| `jobbroker`         | L1      | Background jobs on PostgreSQL-backed queues with scoped `JobContext`                     | [jobbroker](./packages/jobbroker/AGENTS.md)                 |
-| `serverfeed`        | L1      | Transport-free realtime activity feed: event contract, bus, replay buffer, snapshot      | [serverfeed](./packages/serverfeed/AGENTS.md)               |
-| `comms`             | L1      | Channel-agnostic messaging core: router, reply/notifier, template registry               | [comms](./packages/comms/AGENTS.md)                         |
-| `cache`             | L1      | Cache interface with a Redis backend and rate-limiting helpers                           | [cache](./packages/cache/AGENTS.md)                         |
-| `kysely`            | L1      | Kysely/PostgreSQL client wiring plus `pg` and Luxon type helpers                         | [kysely](./packages/kysely/AGENTS.md)                       |
-| `permissions-dsl`   | L1      | `.perm` surface syntax, compiler, fixtures, and the `pdsl` CLI                           | [permissions-dsl](./packages/permissions-dsl/AGENTS.md)     |
-| `authentication`    | L2      | Auth factors, scheme handlers, sessions, JWT issuance, and account recovery              | [authentication](./packages/authentication/AGENTS.md)       |
-| `koa`               | L2      | Server builder, typed context, middleware stack, body parsing, SSE                       | [koa](./packages/koa/AGENTS.md)                             |
-| `mcp`               | L2      | Model Context Protocol server over Streamable HTTP, wrapping the official SDK            | [mcp](./packages/mcp/AGENTS.md)                             |
-| `discord`           | L3      | Discord interaction dispatcher with Ed25519 signature verification                       | [discord](./packages/discord/AGENTS.md)                     |
-| `slack`             | L3      | Slack command/event/interaction dispatcher with signature verification                   | [slack](./packages/slack/AGENTS.md)                         |
-| `telegram`          | L3      | Telegram Bot API dispatcher with secret-token webhook verification                       | [telegram](./packages/telegram/AGENTS.md)                   |
-| `whatsapp`          | L3      | WhatsApp Cloud API dispatcher with HMAC signature verification                           | [whatsapp](./packages/whatsapp/AGENTS.md)                   |
-| `scim`              | L3      | SCIM 2.0 server toolkit: schemas, filter parser, PATCH applier, Koa router               | [scim](./packages/scim/AGENTS.md)                           |
-| `johnny5`           | L3      | CLI framework for ServerKit apps, with a doctor runner and plugin discovery              | [johnny5](./packages/johnny5/AGENTS.md)                     |
-| `config-eslint`     | tooling | Shared ESLint flat configs (private, workspace-only)                                     | [config-eslint](./packages/config-eslint/AGENTS.md)         |
-| `config-typescript` | tooling | Shared `tsconfig` bases (private, workspace-only)                                        | [config-typescript](./packages/config-typescript/AGENTS.md) |
-| `vscode-extension`  | app     | VS Code language support for `.perm` files                                               | [vscode-extension](./apps/vscode-extension/AGENTS.md)       |
+| Package             | Layer   | Purpose                                                                                   | Guide                                                       |
+| ------------------- | ------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `errors`            | L0      | `ServerkitError` / `HttpError` with chainable details, causes, and internal-only details  | [errors](./packages/errors/AGENTS.md)                       |
+| `logger`            | L0      | DI-friendly `Logger` abstraction with a console implementation                            | [logger](./packages/logger/AGENTS.md)                       |
+| `utilities`         | L0      | Validation, base32, deterministic avatars, and misc dependency-free helpers               | [utilities](./packages/utilities/AGENTS.md)                 |
+| `permissions`       | L0      | Zanzibar-style relationship-based access control with a validated authorization model     | [permissions](./packages/permissions/AGENTS.md)             |
+| `eventbus`          | L0      | Synchronous in-process fan-out event dispatch                                             | [eventbus](./packages/eventbus/AGENTS.md)                   |
+| `appconfig`         | L1      | Typed config loading, merging, transformation, and runtime reload                         | [appconfig](./packages/appconfig/AGENTS.md)                 |
+| `policies`          | L1      | Named, injectable allow/deny rules returning a discriminated `PolicyResult`               | [policies](./packages/policies/AGENTS.md)                   |
+| `encryption`        | L1      | Envelope encryption with a pluggable KMS provider interface                               | [encryption](./packages/encryption/AGENTS.md)               |
+| `multipart`         | L1      | Streaming `multipart/form-data` parsing with size limits                                  | [multipart](./packages/multipart/AGENTS.md)                 |
+| `zod`               | L1      | Zod-to-`HttpError` translation and shared schema helpers                                  | [zod](./packages/zod/AGENTS.md)                             |
+| `storage`           | L1      | Object storage abstraction over filesystem, S3, and GCS                                   | [storage](./packages/storage/AGENTS.md)                     |
+| `jobbroker`         | L1      | Background jobs on PostgreSQL-backed queues with scoped `JobContext`                      | [jobbroker](./packages/jobbroker/AGENTS.md)                 |
+| `serverfeed`        | L1      | Transport-free realtime activity feed: event contract, bus, replay buffer, snapshot       | [serverfeed](./packages/serverfeed/AGENTS.md)               |
+| `comms`             | L1      | Channel-agnostic messaging core: router, reply/notifier, template registry                | [comms](./packages/comms/AGENTS.md)                         |
+| `cache`             | L1      | Cache interface with a Redis backend, plus an idempotency store for at-least-once sources | [cache](./packages/cache/AGENTS.md)                         |
+| `kysely`            | L1      | Kysely/PostgreSQL client wiring plus `pg` and Luxon type helpers                          | [kysely](./packages/kysely/AGENTS.md)                       |
+| `permissions-dsl`   | L1      | `.perm` surface syntax, compiler, fixtures, and the `pdsl` CLI                            | [permissions-dsl](./packages/permissions-dsl/AGENTS.md)     |
+| `authentication`    | L2      | Auth factors, scheme handlers, sessions, JWT issuance, and account recovery               | [authentication](./packages/authentication/AGENTS.md)       |
+| `koa`               | L2      | Server builder, typed context, middleware stack, body parsing, SSE                        | [koa](./packages/koa/AGENTS.md)                             |
+| `mcp`               | L2      | Model Context Protocol server over Streamable HTTP, wrapping the official SDK             | [mcp](./packages/mcp/AGENTS.md)                             |
+| `discord`           | L3      | Discord interaction dispatcher with Ed25519 signature verification                        | [discord](./packages/discord/AGENTS.md)                     |
+| `slack`             | L3      | Slack command/event/interaction dispatcher with signature verification                    | [slack](./packages/slack/AGENTS.md)                         |
+| `telegram`          | L3      | Telegram Bot API dispatcher with secret-token webhook verification                        | [telegram](./packages/telegram/AGENTS.md)                   |
+| `whatsapp`          | L3      | WhatsApp Cloud API dispatcher with HMAC signature verification                            | [whatsapp](./packages/whatsapp/AGENTS.md)                   |
+| `scim`              | L3      | SCIM 2.0 server toolkit: schemas, filter parser, PATCH applier, Koa router                | [scim](./packages/scim/AGENTS.md)                           |
+| `johnny5`           | L3      | CLI framework for ServerKit apps, with a doctor runner and plugin discovery               | [johnny5](./packages/johnny5/AGENTS.md)                     |
+| `config-eslint`     | tooling | Shared ESLint flat configs (private, workspace-only)                                      | [config-eslint](./packages/config-eslint/AGENTS.md)         |
+| `config-typescript` | tooling | Shared `tsconfig` bases (private, workspace-only)                                         | [config-typescript](./packages/config-typescript/AGENTS.md) |
+| `vscode-extension`  | app     | VS Code language support for `.perm` files                                                | [vscode-extension](./apps/vscode-extension/AGENTS.md)       |
 
 ## Dependency layers
 
