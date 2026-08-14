@@ -26,8 +26,8 @@ Runtime dependencies: `injectkit`, `luxon`. Optional peer: `ioredis`.
 
 ## Position in the graph
 
-- **Depends on:** `errors` and `utilities` are declared in `package.json` but **not imported by
-  any source file** (see Gotchas).
+- **Depends on:** nothing internal. This is an L1 package with no ServerKit dependencies at all —
+  keep it that way (see Gotchas).
 - **Depended on by:** `authentication`, `discord`, `mcp`, `slack`, `telegram`, `whatsapp`.
 - **Subpath exports:**
   - `.` — `CacheProvider`, `IdempotencyStore`, `CacheIdempotencyStore`. Backend-agnostic; loads no
@@ -128,13 +128,10 @@ ctx.status = 200; // ack in every case
   not resurrected — the write silently does nothing. Do not use `update` to create.
 - **Sub-second TTLs round up to 1 second** in the Redis backend. `Duration.fromMillis(50)` is a
   1-second TTL.
-- **`package.json` declares dependencies the source never imports:** `@maroonedsoftware/errors`,
-  `@maroonedsoftware/utilities`, and `rate-limiter-flexible`. Nothing in `src/` references them.
-  Rate limiting actually lives in `@maroonedsoftware/koa` (`rateLimiterMiddleware`, the
-  `RateLimiter` token), so do not go looking for it here — and do not add an import just to make
-  the manifest honest.
-- **The JSDoc on `IoRedisCacheProvider` shows `import { IoRedisCacheProvider } from '@maroonedsoftware/cache'`.**
-  That is stale; the root barrel does not export it. Use `/ioredis`.
+- **There is no rate limiting in this package.** Older docs listed it here; it actually lives in
+  `@maroonedsoftware/koa` (`rateLimiterMiddleware` and the `RateLimiter` DI token). `cache` used to
+  declare `rate-limiter-flexible` as a dependency without importing it, which made the manifest
+  read as though it belonged here — that entry has been removed.
 
 ## Working inside this package
 
@@ -154,6 +151,9 @@ Invariants a change must not break:
 
 - **Nothing reachable from `src/index.ts` may import `ioredis`.** That is the whole reason for the
   `./ioredis` entry, and a stray import would make an optional peer mandatory.
+- **No internal dependencies.** `injectkit` and `luxon` are the only runtime deps. Six packages
+  depend on this one, so anything added here lands in all of their installs — and a dependency on
+  `errors` or `utilities` would be a real arrow in the graph, not a formality.
 - `add()` must be atomic in every backend. `CacheIdempotencyStore` is built entirely on that
   guarantee; a non-atomic implementation silently breaks de-duplication under concurrency.
 - The attempt counter must outlive claim releases, or the poison-event cap stops working across

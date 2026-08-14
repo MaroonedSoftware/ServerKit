@@ -8,10 +8,13 @@ import { Duration } from 'luxon';
  *
  * Register this class in your DI container and bind an `ioredis` `Redis` instance to it.
  *
+ * Reachable only via the `@maroonedsoftware/cache/ioredis` subpath — the root barrel does not
+ * export it, so importing the core entry never loads the optional `ioredis` peer dependency.
+ *
  * @example
  * ```typescript
  * import { Redis } from 'ioredis';
- * import { IoRedisCacheProvider } from '@maroonedsoftware/cache';
+ * import { IoRedisCacheProvider } from '@maroonedsoftware/cache/ioredis';
  *
  * container.bind(Redis).toConstantValue(new Redis(process.env.REDIS_URL));
  * container.bind(CacheProvider).to(IoRedisCacheProvider);

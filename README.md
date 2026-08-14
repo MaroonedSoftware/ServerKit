@@ -37,9 +37,9 @@ Authentication primitives for ServerKit applications.
 
 Cache utilities with pluggable backends.
 
-- DI-friendly cache interface
+- DI-friendly cache interface with an atomic set-if-absent primitive
 - Redis (ioredis) backend support
-- Rate limiting helpers
+- `IdempotencyStore` for de-duplicating at-least-once deliveries, with a poison-event dead-letter cap
 
 [View documentation →](./packages/cache/README.md)
 

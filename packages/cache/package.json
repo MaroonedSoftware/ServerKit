@@ -42,11 +42,8 @@
     "test:ci": "vitest run --coverage"
   },
   "dependencies": {
-    "@maroonedsoftware/errors": "workspace:*",
-    "@maroonedsoftware/utilities": "workspace:*",
     "injectkit": "^1.6.0",
-    "luxon": "^3.7.2",
-    "rate-limiter-flexible": "^11.2.0"
+    "luxon": "^3.7.2"
   },
   "devDependencies": {
     "@repo/config-eslint": "workspace:*",
