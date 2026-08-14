@@ -1,5 +1,29 @@
 # @maroonedsoftware/koa
 
+## 3.0.5
+
+### Patch Changes
+
+- 680557c: Run module `shutdown` hooks in reverse registration order, so a module tears down before the modules it depends on.
+- Ship `AGENTS.md` in the published tarball.
+
+  Each package now carries an `AGENTS.md` alongside its `README.md`: a machine-oriented guide for AI
+  coding agents covering the full export surface, canonical wiring, package-specific rules, and the
+  non-obvious failure modes. Adding it to the `files` array means a downstream agent finds it in
+  `node_modules` without a network round-trip.
+
+  No runtime code changed.
+
+- Updated dependencies
+  - @maroonedsoftware/appconfig@2.4.3
+  - @maroonedsoftware/authentication@4.30.3
+  - @maroonedsoftware/errors@1.8.2
+  - @maroonedsoftware/logger@1.1.5
+  - @maroonedsoftware/multipart@1.3.2
+  - @maroonedsoftware/policies@0.6.2
+  - @maroonedsoftware/serverfeed@0.1.2
+  - @maroonedsoftware/utilities@1.11.2
+
 ## 3.0.4
 
 ### Patch Changes
