@@ -197,14 +197,15 @@ throws if you call anything else before `setup`.
 
 ### Module lifecycle
 
-Hooks run in module registration order at every phase.
+Hooks run in module registration order at every phase except `shutdown`, which runs in reverse
+registration order so a module tears down before whatever it depends on.
 
 | Hook                       | When                             | Use for                                                                    |
 | -------------------------- | -------------------------------- | -------------------------------------------------------------------------- |
 | `setup(registry, config)`  | Before the container is built    | Registering services and bindings                                          |
 | `start(container, signal)` | Socket listening, before "ready" | Wiring that must exist before the first request: subscribers, listeners    |
 | `ready(container, signal)` | After every module's `start`     | Background work that must not delay boot: pollers, schedulers, cache warms |
-| `shutdown(container)`      | On SIGINT/SIGTERM                | Closing connections, flushing buffers                                      |
+| `shutdown(container)`      | On SIGINT/SIGTERM, reverse order | Closing connections, flushing buffers                                      |
 
 `start` hooks are all awaited, so anything slow belongs in `ready` — work done in `start` delays
 boot for every module after it. A `ready` hook that throws is logged and does not block the rest.

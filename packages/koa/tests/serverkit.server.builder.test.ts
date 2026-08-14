@@ -241,6 +241,29 @@ describe('ServerKitServerBuilder', () => {
       expect(exitSpy).toHaveBeenCalled();
     });
 
+    it('runs the shutdown hooks in reverse registration order', async () => {
+      const calls: string[] = [];
+      const first = createModule({ name: 'first', shutdown: vi.fn(async () => void calls.push('first')) });
+      const second = createModule({ name: 'second', shutdown: vi.fn(async () => void calls.push('second')) });
+      const builder = new ServerKitServerBuilder();
+      await builder.setup(config, logger, [first, second]);
+
+      await internals(builder).shutdown();
+
+      expect(calls).toEqual(['second', 'first']);
+    });
+
+    it('leaves the registered module order untouched while shutting down', async () => {
+      const first = createModule({ name: 'first' });
+      const second = createModule({ name: 'second' });
+      const builder = new ServerKitServerBuilder();
+      await builder.setup(config, logger, [first, second]);
+
+      await internals(builder).shutdown();
+
+      expect(internals(builder).modules).toEqual([first, second]);
+    });
+
     it('skips modules without a shutdown hook', async () => {
       const module = createModule({ shutdown: undefined });
       const builder = new ServerKitServerBuilder();

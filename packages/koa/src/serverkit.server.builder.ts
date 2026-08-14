@@ -364,7 +364,11 @@ export class ServerKitServerBuilder {
   }
 
   /**
-   * Runs each module's `shutdown` hook in order, then terminates the process.
+   * Runs each module's `shutdown` hook in reverse registration order, then terminates the process.
+   *
+   * Reverse order mirrors teardown to setup: a module registered later may depend on one
+   * registered earlier (a job runner on its database client, say), so it has to release its
+   * resources first, while what it depends on is still alive.
    *
    * Invoked automatically when the server socket closes; can also be called directly. Calls
    * `process.exit()` once all hooks complete.
@@ -389,7 +393,11 @@ export class ServerKitServerBuilder {
     this.logger.info('Server closing');
     await this.awaitReadyPhase();
 
-    for (const module of this.modules) {
+    // Copy before reversing: `Array.prototype.reverse` mutates in place, and `this.modules`
+    // is the registration order every other phase reads.
+    const modulesInReverseOrder = [...this.modules].reverse();
+
+    for (const module of modulesInReverseOrder) {
       if (module.shutdown) {
         this.logger.info(`Shutting down ${module.name}`);
         await module.shutdown(this.container);

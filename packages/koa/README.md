@@ -77,7 +77,7 @@ builder
 await builder.start(3000);
 ```
 
-`setup` registers the `Logger` and `AppConfig`, wires the parser mappings (defaulting to `defaultParserMappings`), and runs each module's `setup` hook before building the container. The full lifecycle is `setup` → `start` → listening (`Server is running on port N`) → `ready` → `shutdown`, with hooks running in module registration order at every phase. `start` also installs `SIGINT`/`SIGTERM` handlers that trigger a graceful `shutdown` (each module's `shutdown` hook, then `process.exit()`).
+`setup` registers the `Logger` and `AppConfig`, wires the parser mappings (defaulting to `defaultParserMappings`), and runs each module's `setup` hook before building the container. The full lifecycle is `setup` → `start` → listening (`Server is running on port N`) → `ready` → `shutdown`, with hooks running in module registration order at every phase except `shutdown`, which runs in reverse registration order so a module releases its resources before whatever it depends on. `start` also installs `SIGINT`/`SIGTERM` handlers that trigger a graceful `shutdown` (each module's `shutdown` hook, then `process.exit()`).
 
 The `start`/`ready` split matters: `start` hooks are awaited before the server reports ready, so put only wiring and subscriptions there — anything slow (pollers, schedulers, cache warms, outbound connections) belongs in `ready`, which runs after the ready log and blocks neither boot nor the modules registered after it. A `ready` hook that throws is logged and the remaining modules still run; hooks are skipped once shutdown has begun. `builder.whenReady()` returns a promise that resolves when the ready phase finishes (it stays pending if a `start` hook throws, since boot failed).
 
