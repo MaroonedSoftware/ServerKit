@@ -1,5 +1,24 @@
 # @maroonedsoftware/mcp
 
+## 0.1.4
+
+### Patch Changes
+
+- Ship `AGENTS.md` in the published tarball.
+
+  Each package now carries an `AGENTS.md` alongside its `README.md`: a machine-oriented guide for AI
+  coding agents covering the full export surface, canonical wiring, package-specific rules, and the
+  non-obvious failure modes. Adding it to the `files` array means a downstream agent finds it in
+  `node_modules` without a network round-trip.
+
+  No runtime code changed.
+
+- Updated dependencies
+  - @maroonedsoftware/cache@0.4.3
+  - @maroonedsoftware/errors@1.8.3
+  - @maroonedsoftware/logger@1.1.6
+  - @maroonedsoftware/policies@0.6.3
+
 ## 0.1.3
 
 ### Patch Changes

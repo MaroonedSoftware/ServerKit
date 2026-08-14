@@ -1,5 +1,28 @@
 # @maroonedsoftware/koa
 
+## 3.0.6
+
+### Patch Changes
+
+- Ship `AGENTS.md` in the published tarball.
+
+  Each package now carries an `AGENTS.md` alongside its `README.md`: a machine-oriented guide for AI
+  coding agents covering the full export surface, canonical wiring, package-specific rules, and the
+  non-obvious failure modes. Adding it to the `files` array means a downstream agent finds it in
+  `node_modules` without a network round-trip.
+
+  No runtime code changed.
+
+- Updated dependencies
+  - @maroonedsoftware/appconfig@2.4.4
+  - @maroonedsoftware/authentication@4.30.4
+  - @maroonedsoftware/errors@1.8.3
+  - @maroonedsoftware/logger@1.1.6
+  - @maroonedsoftware/multipart@1.3.3
+  - @maroonedsoftware/policies@0.6.3
+  - @maroonedsoftware/serverfeed@0.1.3
+  - @maroonedsoftware/utilities@1.11.3
+
 ## 3.0.5
 
 ### Patch Changes
