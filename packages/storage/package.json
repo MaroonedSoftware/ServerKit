@@ -1,6 +1,6 @@
 {
   "name": "@maroonedsoftware/storage",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "Storage utilities for ServerKit.",
   "author": {
     "name": "Marooned Software",

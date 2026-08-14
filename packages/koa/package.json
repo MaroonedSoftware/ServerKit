@@ -1,6 +1,6 @@
 {
   "name": "@maroonedsoftware/koa",
-  "version": "3.0.6",
+  "version": "3.0.7",
   "description": "Koa middleware, body parsing, SSE streaming, and utilities for ServerKit",
   "author": {
     "name": "Marooned Software",
