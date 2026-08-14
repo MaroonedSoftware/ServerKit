@@ -38,6 +38,7 @@
   },
   "license": "MIT",
   "files": [
+    "AGENTS.md",
     "dist/**"
   ],
   "scripts": {
