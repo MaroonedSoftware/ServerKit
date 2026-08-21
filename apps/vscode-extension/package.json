@@ -21,6 +21,7 @@
     "type": "git",
     "url": "git+https://github.com/MaroonedSoftware/serverkit.git"
   },
+  "license": "MIT",
   "private": true,
   "type": "module",
   "publisher": "MaroonedSoftware",

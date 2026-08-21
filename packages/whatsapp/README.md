@@ -258,4 +258,4 @@ http.post('/whatsapp/webhook', async ctx => {
 
 ## License
 
-MIT
+MIT — see [LICENSE](./LICENSE).

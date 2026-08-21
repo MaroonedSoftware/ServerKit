@@ -518,4 +518,4 @@ Convenience alias for `mask(0, 4, character)` — masks everything except the tr
 
 ## License
 
-MIT
+MIT — see [LICENSE](./LICENSE).

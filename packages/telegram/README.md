@@ -255,4 +255,4 @@ http.post('/telegram/webhook', async ctx => {
 
 ## License
 
-MIT
+MIT — see [LICENSE](./LICENSE).

@@ -174,4 +174,4 @@ router.post('/mcp', requireSignature<McpAuthOptions>('mcp', { policy: MCP_AUTH_P
 
 ## License
 
-MIT
+MIT — see [LICENSE](./LICENSE).

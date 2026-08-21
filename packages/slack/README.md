@@ -368,4 +368,4 @@ router.post('/slack/commands', async ctx => {
 
 ## License
 
-MIT
+MIT — see [LICENSE](./LICENSE).

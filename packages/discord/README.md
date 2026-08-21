@@ -275,4 +275,4 @@ http.post('/discord/interactions', async ctx => {
 
 ## License
 
-MIT
+MIT — see [LICENSE](./LICENSE).

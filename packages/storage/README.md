@@ -184,3 +184,7 @@ import { S3StorageProviderOptions } from '@maroonedsoftware/storage/s3';
 
 registry.register(S3StorageProviderOptions).useFactory(c => new S3StorageProviderOptions({ bucket: c.get(StorageOptions).value.bucket }));
 ```
+
+## License
+
+MIT — see [LICENSE](./LICENSE).

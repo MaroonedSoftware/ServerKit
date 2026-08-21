@@ -215,4 +215,4 @@ Extends `ServerkitError`. Inherits all of the above and adds:
 
 ## License
 
-MIT
+MIT — see [LICENSE](./LICENSE).

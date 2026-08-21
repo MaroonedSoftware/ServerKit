@@ -130,4 +130,4 @@ const chatty = new ServerFeedLogger(new ConsoleLogger(), feed, 'info');
 
 ## License
 
-MIT
+MIT — see [LICENSE](./LICENSE).

@@ -60,3 +60,7 @@ This package does not validate bearer tokens itself. It reads `ctx.authenticatio
 ## Compliance testing
 
 The router has been designed against RFC 7643/7644. To validate against a real IdP, point Okta or [`scim2-compliance-test-utils`](https://github.com/suvera/scim2-compliance-test-utils) at a sample app that mounts `createScimRouter`.
+
+## License
+
+MIT — see [LICENSE](./LICENSE).

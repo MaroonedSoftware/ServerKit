@@ -353,4 +353,4 @@ pnpm format     # Format
 
 ## License
 
-MIT
+MIT — see [LICENSE](./LICENSE).

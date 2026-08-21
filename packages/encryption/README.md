@@ -314,4 +314,4 @@ For server-side PKCE state storage (binding a value to a challenge for the durat
 
 ## License
 
-MIT
+MIT — see [LICENSE](./LICENSE).

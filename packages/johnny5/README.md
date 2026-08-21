@@ -432,4 +432,4 @@ if (!apiKey) {
 
 ## License
 
-MIT
+MIT — see [LICENSE](./LICENSE).

@@ -255,4 +255,4 @@ export class Service {
 
 ## License
 
-MIT
+MIT — see [LICENSE](./LICENSE).
