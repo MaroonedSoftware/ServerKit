@@ -1,5 +1,18 @@
 # @maroonedsoftware/authentication
 
+## 4.30.6
+
+### Patch Changes
+
+- be035ce: Ship the MIT LICENSE file in the published package tarball, and link to it from the README.
+- Updated dependencies [be035ce]
+  - @maroonedsoftware/cache@0.4.5
+  - @maroonedsoftware/encryption@0.5.10
+  - @maroonedsoftware/errors@1.8.5
+  - @maroonedsoftware/logger@1.1.8
+  - @maroonedsoftware/policies@0.6.5
+  - @maroonedsoftware/utilities@1.11.5
+
 ## 4.30.5
 
 ### Patch Changes

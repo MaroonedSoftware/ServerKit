@@ -1,5 +1,17 @@
 # @maroonedsoftware/johnny5
 
+## 8.0.8
+
+### Patch Changes
+
+- be035ce: Ship the MIT LICENSE file in the published package tarball, and link to it from the README.
+- Updated dependencies [be035ce]
+  - @maroonedsoftware/appconfig@2.4.6
+  - @maroonedsoftware/koa@3.0.8
+  - @maroonedsoftware/logger@1.1.8
+  - @maroonedsoftware/permissions-dsl@0.5.5
+  - @maroonedsoftware/permissions@0.2.8
+
 ## 8.0.7
 
 ### Patch Changes

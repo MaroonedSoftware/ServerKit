@@ -1,5 +1,20 @@
 # @maroonedsoftware/koa
 
+## 3.0.8
+
+### Patch Changes
+
+- be035ce: Ship the MIT LICENSE file in the published package tarball, and link to it from the README.
+- Updated dependencies [be035ce]
+  - @maroonedsoftware/appconfig@2.4.6
+  - @maroonedsoftware/authentication@4.30.6
+  - @maroonedsoftware/errors@1.8.5
+  - @maroonedsoftware/logger@1.1.8
+  - @maroonedsoftware/multipart@1.3.5
+  - @maroonedsoftware/policies@0.6.5
+  - @maroonedsoftware/serverfeed@0.1.5
+  - @maroonedsoftware/utilities@1.11.5
+
 ## 3.0.7
 
 ### Patch Changes

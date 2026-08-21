@@ -1,5 +1,11 @@
 # @maroonedsoftware/eventbus
 
+## 0.1.7
+
+### Patch Changes
+
+- be035ce: Ship the MIT LICENSE file in the published package tarball, and link to it from the README.
+
 ## 0.1.6
 
 ### Patch Changes

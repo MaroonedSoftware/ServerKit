@@ -1,5 +1,13 @@
 # @maroonedsoftware/multipart
 
+## 1.3.5
+
+### Patch Changes
+
+- be035ce: Ship the MIT LICENSE file in the published package tarball, and link to it from the README.
+- Updated dependencies [be035ce]
+  - @maroonedsoftware/errors@1.8.5
+
 ## 1.3.4
 
 ### Patch Changes

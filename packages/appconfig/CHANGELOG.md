@@ -1,5 +1,14 @@
 # @maroonedsoftware/appconfig
 
+## 2.4.6
+
+### Patch Changes
+
+- be035ce: Ship the MIT LICENSE file in the published package tarball, and link to it from the README.
+- Updated dependencies [be035ce]
+  - @maroonedsoftware/errors@1.8.5
+  - @maroonedsoftware/logger@1.1.8
+
 ## 2.4.5
 
 ### Patch Changes

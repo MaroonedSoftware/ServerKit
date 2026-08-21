@@ -1,5 +1,14 @@
 # @maroonedsoftware/kysely
 
+## 0.7.8
+
+### Patch Changes
+
+- be035ce: Ship the MIT LICENSE file in the published package tarball, and link to it from the README.
+- Updated dependencies [be035ce]
+  - @maroonedsoftware/errors@1.8.5
+  - @maroonedsoftware/utilities@1.11.5
+
 ## 0.7.7
 
 ### Patch Changes
