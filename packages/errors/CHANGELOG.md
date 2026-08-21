@@ -1,5 +1,11 @@
 # @maroonedsoftware/errors
 
+## 1.8.5
+
+### Patch Changes
+
+- be035ce: Ship the MIT LICENSE file in the published package tarball, and link to it from the README.
+
 ## 1.8.4
 
 ### Patch Changes

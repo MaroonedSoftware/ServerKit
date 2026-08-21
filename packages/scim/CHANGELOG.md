@@ -1,5 +1,17 @@
 # @maroonedsoftware/scim
 
+## 0.2.14
+
+### Patch Changes
+
+- be035ce: Ship the MIT LICENSE file in the published package tarball, and link to it from the README.
+- Updated dependencies [be035ce]
+  - @maroonedsoftware/authentication@4.30.6
+  - @maroonedsoftware/errors@1.8.5
+  - @maroonedsoftware/koa@3.0.8
+  - @maroonedsoftware/logger@1.1.8
+  - @maroonedsoftware/utilities@1.11.5
+
 ## 0.2.13
 
 ### Patch Changes

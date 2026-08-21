@@ -1,6 +1,6 @@
 {
   "name": "@maroonedsoftware/serverfeed",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Framework-agnostic, transport-free in-process feed of realtime server activity (pub/sub, replay buffer, snapshot) for ServerKit.",
   "author": {
     "name": "Marooned Software",

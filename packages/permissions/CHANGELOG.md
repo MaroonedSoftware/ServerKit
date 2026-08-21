@@ -1,5 +1,11 @@
 # @maroonedsoftware/permissions
 
+## 0.2.8
+
+### Patch Changes
+
+- be035ce: Ship the MIT LICENSE file in the published package tarball, and link to it from the README.
+
 ## 0.2.7
 
 ### Patch Changes

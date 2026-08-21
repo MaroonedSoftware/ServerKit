@@ -1,5 +1,13 @@
 # serverkit-vscode-extension
 
+## 0.0.13
+
+### Patch Changes
+
+- Updated dependencies [be035ce]
+  - @maroonedsoftware/permissions-dsl@0.5.5
+  - @maroonedsoftware/permissions@0.2.8
+
 ## 0.0.12
 
 ### Patch Changes
