@@ -300,4 +300,4 @@ asserts as expected).
 
 ## License
 
-MIT
+MIT — see [LICENSE](./LICENSE).

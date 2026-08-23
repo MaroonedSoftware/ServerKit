@@ -71,3 +71,7 @@ pnpm dev    # esbuild watch
 
 Open this folder in a fresh VSCode window and press `F5` to launch an
 Extension Development Host.
+
+## License
+
+MIT — see [LICENSE](./LICENSE).

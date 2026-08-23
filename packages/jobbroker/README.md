@@ -489,4 +489,4 @@ process.on('SIGTERM', async () => {
 
 ## License
 
-MIT
+MIT — see [LICENSE](./LICENSE).

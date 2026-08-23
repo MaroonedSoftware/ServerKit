@@ -930,4 +930,4 @@ const config = await new AppConfigBuilder()
 
 ## License
 
-MIT
+MIT — see [LICENSE](./LICENSE).

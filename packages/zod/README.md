@@ -134,4 +134,4 @@ const result = await schema.parseAsync({ id: '9007199254740993n' });
 
 ## License
 
-MIT
+MIT — see [LICENSE](./LICENSE).

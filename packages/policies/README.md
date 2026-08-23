@@ -191,3 +191,7 @@ Default `PolicyService`. Subclass and implement `buildEnvelope(): Promise<TEnvel
 | -------------------------- | ---------------------------------- |
 | `isPolicyResultAllowed(r)` | Narrows `r` to the allowed branch. |
 | `isPolicyResultDenied(r)`  | Narrows `r` to the denied branch.  |
+
+## License
+
+MIT — see [LICENSE](./LICENSE).

@@ -109,4 +109,4 @@ proactive, non-reply sends: `notifier.send(recipientId, { text: '…' })`.
 
 ## License
 
-MIT
+MIT — see [LICENSE](./LICENSE).

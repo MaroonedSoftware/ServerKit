@@ -1540,4 +1540,4 @@ Abstract base class with the same surface as `OidcFactorRepository`. Extends `Fa
 
 ## License
 
-MIT
+MIT — see [LICENSE](./LICENSE).

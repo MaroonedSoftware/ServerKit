@@ -92,4 +92,4 @@ const logger = new ConsoleLogger(customConsole);
 
 ## License
 
-MIT
+MIT — see [LICENSE](./LICENSE).

@@ -430,4 +430,4 @@ Clients filter with `?source=render,llm&kind=progress,status&level=warn&correlat
 
 ## License
 
-MIT
+MIT — see [LICENSE](./LICENSE).

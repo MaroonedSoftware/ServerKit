@@ -149,3 +149,7 @@ export class InMemoryCacheProvider extends CacheProvider {
   }
 }
 ```
+
+## License
+
+MIT — see [LICENSE](./LICENSE).

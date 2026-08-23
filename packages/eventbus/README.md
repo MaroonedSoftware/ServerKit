@@ -128,4 +128,4 @@ Abstract base for subscribers.
 
 ## License
 
-MIT
+MIT — see [LICENSE](./LICENSE).

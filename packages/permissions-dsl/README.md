@@ -220,3 +220,7 @@ up a database.
 - `yamlParse` / `yamlStringify` — passthrough re-exports of the `yaml`
   package, so consumers that already depend on `permissions-dsl` (for
   the fixture API) don't need to take a second YAML dependency.
+
+## License
+
+MIT — see [LICENSE](./LICENSE).

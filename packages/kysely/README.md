@@ -278,4 +278,4 @@ Kysely plugin that shallowly converts `null` values to `undefined` in every quer
 
 ## License
 
-MIT
+MIT — see [LICENSE](./LICENSE).
