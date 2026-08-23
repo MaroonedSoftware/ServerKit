@@ -5,7 +5,7 @@ A flexible, type-safe configuration management library with support for multiple
 ## Features
 
 - **Type-safe access** - Full TypeScript support with generics
-- **Multiple sources** - Load configuration from JSON files, YAML files, `.env` files, Postgres, and AWS/GCP secret managers
+- **Multiple sources** - Load configuration from JSON files, YAML files, `.env` files, the process environment, Postgres, and AWS/GCP secret managers
 - **Reference resolution** - Resolve environment variables, GCP secrets, and AWS secrets via `${…}` resolvers
 - **Intra-config references** - Resolve `${ref:some.path}` references against the config itself (opt-in)
 - **Deep merging** - Combine configurations from multiple sources with predictable override behavior
@@ -20,7 +20,7 @@ A flexible, type-safe configuration management library with support for multiple
 - [Installation](#installation)
 - [Usage](#usage) — [basic](#basic-usage), [the builder](#using-the-builder), [reference resolution](#reference-resolution)
 - [API](#api) — [`AppConfig`](#appconfig), [`AppConfigBuilder`](#appconfigbuilder)
-- [Sources](#sources) — [JSON](#appconfigsourcejson), [YAML](#appconfigsourceyaml), [Dotenv](#appconfigsourcedotenv), [Postgres](#appconfigsourcepostgres), [AWS](#appconfigsourceawssecrets) / [GCP](#appconfigsourcegcpsecrets) secrets
+- [Sources](#sources) — [JSON](#appconfigsourcejson), [YAML](#appconfigsourceyaml), [Dotenv](#appconfigsourcedotenv), [Env](#appconfigsourceenv), [Postgres](#appconfigsourcepostgres), [AWS](#appconfigsourceawssecrets) / [GCP](#appconfigsourcegcpsecrets) secrets
 - [Intra-config references](#intra-config-references) — `${ref:some.path}`
 - [Resolvers](#resolvers) — [env](#appconfigresolverenv), [GCP](#appconfigresolvergcpsecrets) / [AWS](#appconfigresolverawssecrets) secrets, [Postgres](#appconfigresolverpostgres)
 - [Live configuration](#live-configuration) — [`AppConfigModule`](#wiring-with-appconfigmodule), [reloading](#reloading), [consuming a section](#consuming-a-section), [`AppConfigStore`](#appconfigstore)
@@ -38,13 +38,13 @@ The Postgres, YAML, and cloud secret-manager backends each need an optional peer
 dependency, and live behind subpath exports so importing the core never loads a
 backend SDK you aren't using. Install the peer for the backend(s) you use:
 
-| Import                                 | Backend                                                          | Optional peer                     |
-| -------------------------------------- | ---------------------------------------------------------------- | --------------------------------- |
-| `@maroonedsoftware/appconfig`          | core (file/JSON/dotenv/fetch sources, env resolver, live config) | —                                 |
-| `@maroonedsoftware/appconfig/postgres` | `AppConfigSourcePostgres`, `AppConfigResolverPostgres`           | `pg`                              |
-| `@maroonedsoftware/appconfig/yaml`     | `AppConfigSourceYaml`                                            | `yaml`                            |
-| `@maroonedsoftware/appconfig/aws`      | `AppConfigSourceAwsSecrets`, `AppConfigResolverAwsSecrets`       | `@aws-sdk/client-secrets-manager` |
-| `@maroonedsoftware/appconfig/gcp`      | `AppConfigSourceGcpSecrets`, `AppConfigResolverGcpSecrets`       | `@google-cloud/secret-manager`    |
+| Import                                 | Backend                                                              | Optional peer                     |
+| -------------------------------------- | -------------------------------------------------------------------- | --------------------------------- |
+| `@maroonedsoftware/appconfig`          | core (file/JSON/dotenv/env/fetch sources, env resolver, live config) | —                                 |
+| `@maroonedsoftware/appconfig/postgres` | `AppConfigSourcePostgres`, `AppConfigResolverPostgres`               | `pg`                              |
+| `@maroonedsoftware/appconfig/yaml`     | `AppConfigSourceYaml`                                                | `yaml`                            |
+| `@maroonedsoftware/appconfig/aws`      | `AppConfigSourceAwsSecrets`, `AppConfigResolverAwsSecrets`           | `@aws-sdk/client-secrets-manager` |
+| `@maroonedsoftware/appconfig/gcp`      | `AppConfigSourceGcpSecrets`, `AppConfigResolverGcpSecrets`           | `@google-cloud/secret-manager`    |
 
 ## Usage
 
@@ -269,6 +269,46 @@ Extends `AppConfigSourceFileOptions` (`ignoreMissingFile`, `encoding`) with:
 | `groupSeparator`    | `string`         | Optional. When set, keys containing this string are split into nested objects (e.g. `'__'`). |
 | `ignoreMissingFile` | `boolean`        | Optional, defaults to `true`. Returns `{}` for a missing file instead of throwing.           |
 | `encoding`          | `BufferEncoding` | Optional, defaults to `'utf8'`.                                                              |
+
+#### AppConfigSourceEnv
+
+Reads the process environment as a configuration layer.
+
+The counterpart to [`AppConfigSourceDotenv`](#appconfigsourcedotenv): that one reads a `.env` **file**, which is how a developer sets a value; this one reads the variables the process was started with, which is the only way anything is configured in a container. An application wired with only the dotenv source ignores `docker run -e` and quietly falls back to its defaults in code.
+
+Note this is a **source** and is not the same thing as [`AppConfigResolverEnv`](#appconfigresolverenv), which is a resolver: the resolver rewrites `${env:KEY}` tokens found _inside_ values, so it can only fill in a placeholder somebody already wrote. This contributes the variables themselves.
+
+Order it after the file sources — an environment variable is the more specific statement of a value, and later sources win the merge.
+
+```typescript
+const source1 = new AppConfigSourceEnv();
+const source2 = new AppConfigSourceEnv({ groupSeparator: '__' }); // matching the dotenv layer
+const source3 = new AppConfigSourceEnv({ environment: collectedElsewhere });
+const source4 = new AppConfigSourceEnv({ snapshot: false }); // re-read on every load
+```
+
+```typescript
+const config = await new AppConfigBuilder()
+  .addSource(new AppConfigSourceJson('./config.json'))
+  .addSource(new AppConfigSourceDotenv('./.env', { groupSeparator: '__' }))
+  .addSource(new AppConfigSourceEnv({ groupSeparator: '__' }))
+  .addResolver(new AppConfigResolverEnv())
+  .buildSnapshot();
+```
+
+Set `groupSeparator` to whatever the dotenv layer uses, so that `A__B` means one thing whichever layer it arrives through rather than two.
+
+Values are strings, as they are in the environment itself; a variable that is not set is omitted rather than contributed as `undefined`, which would otherwise shadow the value a lower layer had set.
+
+**The environment is captured once, when the source is constructed**, and every later `load()` answers with that copy. This matters for any application that removes its secrets from `process.env` after boot — a good practice, since it stops a child process or a crash dump carrying them. Reload re-runs the entire pipeline, so a source reading the environment live would return those secrets on the first pass and nothing at all on a reload hours later, triggered by something unrelated. Pass `snapshot: false` only when the process genuinely mutates its own environment and you want the later value.
+
+##### AppConfigSourceEnvOptions
+
+| Option           | Type                | Description                                                                                              |
+| ---------------- | ------------------- | -------------------------------------------------------------------------------------------------------- |
+| `groupSeparator` | `string`            | Optional. When set, keys containing this string are split into nested objects (e.g. `'__'`).             |
+| `environment`    | `NodeJS.ProcessEnv` | Optional, defaults to `process.env`.                                                                     |
+| `snapshot`       | `boolean`           | Optional, defaults to `true`. Capture the environment at construction rather than reading it every load. |
 
 #### AppConfigSourcePostgres
 

@@ -19,6 +19,8 @@ export type { AppConfigSourceFileOptions } from './sources/app.config.source.fil
 export { AppConfigSourceJson } from './sources/app.config.source.json.js';
 export { AppConfigSourceDotenv } from './sources/app.config.source.dotenv.js';
 export type { AppConfigSourceDotenvOptions } from './sources/app.config.source.dotenv.js';
+export { AppConfigSourceEnv } from './sources/app.config.source.env.js';
+export type { AppConfigSourceEnvOptions } from './sources/app.config.source.env.js';
 export { AppConfigSourceFetch } from './sources/app.config.source.fetch.js';
 export type { AppConfigSourceFetchOptions } from './sources/app.config.source.fetch.js';
 

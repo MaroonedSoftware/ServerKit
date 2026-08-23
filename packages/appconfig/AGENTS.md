@@ -74,6 +74,7 @@ a database driver.
 | `AppConfigSourceFile`    | class | Options type `AppConfigSourceFileOptions`.                                                                                                                 |
 | `AppConfigSourceJson`    | class | —                                                                                                                                                          |
 | `AppConfigSourceDotenv`  | class | Options type `AppConfigSourceDotenvOptions`.                                                                                                               |
+| `AppConfigSourceEnv`     | class | Options type `AppConfigSourceEnvOptions`. The process environment as a layer — **not** the same thing as `AppConfigResolverEnv`. Snapshots by default.     |
 | `AppConfigSourceFetch`   | class | Options type `AppConfigSourceFetchOptions`.                                                                                                                |
 | `AppConfigResolverEnv`   | class | Default pattern `${env:KEY}`. **String-interpolating** — see Gotchas.                                                                                      |
 | `AppConfigKeyedResolver` | class | `new AppConfigKeyedResolver(source: AppConfigSource, prefix: string \| RegExp)`. Generic `${scheme:KEY}` → `source.get(KEY)`. **Whole-value** replacement. |
@@ -188,6 +189,10 @@ See [.claude/skills/config](../../.claude/skills/config) for worked examples.
 - Read `.current` at use time. Caching it in a field defeats hot reload just as thoroughly as
   caching `.value` would.
 - Order sources least- to most-specific. Later sources win the deep merge.
+- **A containerized app needs `AppConfigSourceEnv`.** `AppConfigSourceDotenv` reads a FILE, and
+  `AppConfigResolverEnv` only rewrites `${env:…}` tokens inside values somebody already wrote, so
+  without the env source a variable passed to the container reaches nothing and the app falls
+  through to its defaults in code, silently. Order it after the file sources.
 - Import backend sources and resolvers from their subpath (`/yaml`, `/postgres`, `/aws`, `/gcp`),
   never from the root.
 - Put secrets in a secret manager and reference them with `${aws:…}` / `${gcp:…}`. Do not commit a
@@ -248,7 +253,7 @@ src/
     app.config.module.ts                AppConfigModule
     app.config.store.ts                 AppConfigStore and its params/listener types
     app.config.options.registration.ts  registerLiveAppConfig
-  sources/     file, json, dotenv, fetch, yaml, postgres, aws.secrets, gcp.secrets
+  sources/     file, json, dotenv, env, fetch, yaml, postgres, aws.secrets, gcp.secrets
   resolvers/   keyed, env, postgres, aws.secrets, gcp.secrets
   yaml.ts  postgres.ts  aws.ts  gcp.ts    Subpath entries
 ```
