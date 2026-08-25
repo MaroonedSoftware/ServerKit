@@ -34,9 +34,11 @@ export class ScimError extends HttpError {
   readonly scimType?: ScimErrorType;
 
   constructor(statusCode: HttpStatusCodes, scimType?: ScimErrorType, message?: HttpStatusMessage<HttpStatusCodes>) {
+    // No `Object.setPrototypeOf` here: `ServerkitError` restores the prototype from
+    // `new.target`, which is already the right class. Pinning it to `ScimError.prototype`
+    // would overwrite that and break `instanceof` for anything subclassing this.
     super(statusCode, message);
     this.scimType = scimType;
-    Object.setPrototypeOf(this, ScimError.prototype);
   }
 
   /** Build the SCIM error JSON body for this error. */

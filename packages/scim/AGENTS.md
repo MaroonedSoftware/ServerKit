@@ -192,6 +192,10 @@ app.use(router.routes()).use(router.allowedMethods());
   `filter.maxResults`, then 200. A client asking for more is capped silently.
 - **`ScimError extends HttpError`**, so it flows through the standard ServerKit error path as well —
   but only `scimErrorMiddleware` renders the SCIM envelope.
+- **Never call `Object.setPrototypeOf` in a `ScimError` subclass constructor.** `ServerkitError`
+  restores the prototype from `new.target`, which is already the right class; pinning it to a fixed
+  one overwrites that and breaks `instanceof` for anything that subclasses yours. `ScimError` used
+  to carry such a line as a workaround for the same bug in `HttpError`; both are gone.
 - **The body parser accepts both `application/scim+json` and `application/json`.** Real clients send
   the former; being lenient avoids a class of integration failures, but it means
   `scimContentTypeMiddleware` is what actually enforces the media type if you want strictness.

@@ -44,4 +44,56 @@ describe('scimError', () => {
     expect(new ScimError(403, 'insufficientScope')).toBeInstanceOf(ScimError);
     expect(new ScimError(403)).toBeInstanceOf(HttpError);
   });
+
+  it('keeps its own prototype without pinning it in the constructor', () => {
+    // ServerkitError restores the prototype from `new.target`, so ScimError does not
+    // repeat `Object.setPrototypeOf` — doing so would break the subclass case below.
+    expect(Object.getPrototypeOf(new ScimError(404, 'invalidPath'))).toBe(ScimError.prototype);
+  });
+});
+
+describe('subclassing ScimError', () => {
+  class TenantScimError extends ScimError {
+    constructor(readonly tenantId: string) {
+      super(409, 'uniqueness', 'Conflict');
+    }
+  }
+
+  it('keeps instanceof working down the chain', () => {
+    const err = new TenantScimError('acme');
+
+    expect(err).toBeInstanceOf(TenantScimError);
+    expect(err).toBeInstanceOf(ScimError);
+    expect(err).toBeInstanceOf(HttpError);
+    expect(Object.getPrototypeOf(err)).toBe(TenantScimError.prototype);
+  });
+
+  it('is still recognised by every type guard', () => {
+    const err = new TenantScimError('acme');
+
+    expect(IsScimError(err)).toBe(true);
+    expect(IsHttpError(err)).toBe(true);
+    expect(IsServerkitError(err)).toBe(true);
+  });
+
+  it('inherits the SCIM envelope and its own fields', () => {
+    const err = new TenantScimError('acme');
+
+    expect(err.tenantId).toBe('acme');
+    expect(err.toScimBody()).toEqual({
+      schemas: [ScimErrorSchema],
+      status: '409',
+      scimType: 'uniqueness',
+      detail: 'Conflict',
+    });
+  });
+
+  it('keeps the subclass through the chainable HttpError setters', () => {
+    const cause = new Error('boom');
+    const err = new TenantScimError('acme').withCause(cause).withDetails({ field: 'userName' });
+
+    expect(err).toBeInstanceOf(TenantScimError);
+    expect(err.cause).toBe(cause);
+    expect(err.details).toEqual({ field: 'userName' });
+  });
 });
