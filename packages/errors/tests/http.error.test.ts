@@ -26,6 +26,71 @@ describe('HttpError', () => {
     });
   });
 
+  describe('constructor cause', () => {
+    it('keeps a cause passed through the constructor options', () => {
+      const root = new Error('upstream refused');
+
+      const error = new HttpError(502, 'Bad Gateway', { cause: root });
+
+      expect(error.cause).toBe(root);
+      expect(error.statusCode).toBe(502);
+      expect(error.message).toBe('Bad Gateway');
+    });
+
+    it('still defaults the message when only options are of interest', () => {
+      const root = new Error('upstream refused');
+
+      const error = new HttpError(502, undefined, { cause: root });
+
+      expect(error.message).toBe(HttpStatusMap[502]);
+      expect(error.cause).toBe(root);
+    });
+
+    it('leaves cause undefined when no options are given', () => {
+      expect(new HttpError(404).cause).toBeUndefined();
+    });
+
+    it('lets withCause override a constructor cause', () => {
+      const first = new Error('first');
+      const second = new Error('second');
+
+      const error = new HttpError(500, undefined, { cause: first }).withCause(second);
+
+      expect(error.cause).toBe(second);
+    });
+  });
+
+  describe('subclassing', () => {
+    class TeapotError extends HttpError {
+      constructor() {
+        super(418);
+      }
+    }
+
+    it('keeps instanceof working for a subclass without repeating setPrototypeOf', () => {
+      // HttpError used to pin the prototype to HttpError.prototype after super(),
+      // overwriting what ServerkitError had already set from `new.target` and forcing
+      // every subclass to repeat the workaround.
+      const error = new TeapotError();
+
+      expect(error).toBeInstanceOf(TeapotError);
+      expect(error).toBeInstanceOf(HttpError);
+      expect(error).toBeInstanceOf(Error);
+      expect(Object.getPrototypeOf(error)).toBe(TeapotError.prototype);
+    });
+
+    it('is still recognised by IsHttpError', () => {
+      expect(IsHttpError(new TeapotError())).toBe(true);
+    });
+
+    it('carries the subclass through the fluent setters', () => {
+      const error = new TeapotError().withDetails({ pot: 'short and stout' });
+
+      expect(error).toBeInstanceOf(TeapotError);
+      expect(error.details).toEqual({ pot: 'short and stout' });
+    });
+  });
+
   describe('withDetails', () => {
     it('should set details and return the error instance', () => {
       const error = new HttpError(400);
@@ -259,5 +324,14 @@ describe('httpError factory function', () => {
       expect(error.statusCode).toBe(statusCode);
       expect(error.message).toBe(HttpStatusMap[statusCode]);
     });
+  });
+
+  it('forwards constructor options so a cause can be chained at the throw site', () => {
+    const root = new Error('upstream refused');
+
+    const error = httpError(502, 'Bad Gateway', { cause: root });
+
+    expect(error.cause).toBe(root);
+    expect(error.statusCode).toBe(502);
   });
 });

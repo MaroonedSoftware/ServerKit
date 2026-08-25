@@ -63,8 +63,9 @@ throw httpError(401).withHeaders({
 // Shorthand for unauthorized with WWW-Authenticate header
 throw unauthorizedError('Bearer realm="api"');
 
-// With error chaining
+// With error chaining — as a setter, or through the constructor options
 throw httpError(500).withCause(originalError);
+throw httpError(502, 'Bad Gateway', { cause: upstreamError });
 
 // With internal details (for logging, not exposed to clients)
 throw httpError(500).withInternalDetails({

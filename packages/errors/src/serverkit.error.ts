@@ -28,6 +28,9 @@ export class ServerkitError extends Error {
   /**
    * Optional underlying error that caused this Serverkit error.
    * Follows the Error.cause pattern for error chaining.
+   *
+   * Set it through the constructor's `options.cause` or the {@link withCause}
+   * setter; both leave it as an own enumerable property.
    */
   cause?: Error;
 
@@ -48,6 +51,22 @@ export class ServerkitError extends Error {
     // means subclasses get correct `instanceof` behaviour without each one
     // having to replicate this line.
     Object.setPrototypeOf(this, new.target.prototype);
+
+    // `super(message, options)` sets the native `Error.cause`, but the `cause`
+    // field declared above compiles to a `defineProperty` under
+    // `useDefineForClassFields` (implied by `target: esnext`) that runs *after*
+    // the super call and overwrites it with `undefined`. Re-assigning here is
+    // what makes the constructor option survive at all. Do not turn the field
+    // into `declare` to avoid this: a plain assignment keeps `cause` an own
+    // *enumerable* property, matching what `withCause` leaves behind, whereas
+    // the native property `super` installs is non-enumerable and would vanish
+    // from anything that spreads or enumerates the error.
+    if (options?.cause !== undefined) {
+      // The option is typed `unknown` to mirror native `Error`, while the field
+      // narrows to `Error` for the benefit of `withCause` callers. Anything
+      // else a caller passes is stored as-is, exactly as the platform does.
+      this.cause = options.cause as Error;
+    }
   }
 
   /**

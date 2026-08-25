@@ -41,6 +41,60 @@ describe('ServerkitError', () => {
     });
   });
 
+  describe('constructor cause', () => {
+    it('keeps a cause passed through the constructor options', () => {
+      // `super()` sets the native `Error.cause`, but the declared `cause` field
+      // compiles to a defineProperty that runs after it; the constructor re-assigns
+      // so the option is not silently dropped.
+      const root = new Error('original');
+
+      const error = new ServerkitError('wrapper', { cause: root });
+
+      expect(error.cause).toBe(root);
+    });
+
+    it('leaves cause as an own enumerable property', () => {
+      // Anything that spreads or enumerates the error — a logger, a serialiser — must
+      // still see the cause, which the native non-enumerable property would hide.
+      const root = new Error('original');
+
+      const error = new ServerkitError('wrapper', { cause: root });
+
+      expect(Object.getOwnPropertyDescriptor(error, 'cause')).toMatchObject({ value: root, enumerable: true });
+      expect({ ...error }).toMatchObject({ cause: root });
+    });
+
+    it('stores a non-Error cause as-is, like the platform does', () => {
+      const error = new ServerkitError('wrapper', { cause: 'a string reason' });
+
+      expect(error.cause).toBe('a string reason');
+    });
+
+    it('leaves cause undefined when no options are given', () => {
+      expect(new ServerkitError('x').cause).toBeUndefined();
+      expect(new ServerkitError('x', {}).cause).toBeUndefined();
+    });
+
+    it('carries the cause through to a subclass', () => {
+      class DomainError extends ServerkitError {}
+      const root = new Error('original');
+
+      const error = new DomainError('wrapper', { cause: root });
+
+      expect(error).toBeInstanceOf(DomainError);
+      expect(error.cause).toBe(root);
+    });
+
+    it('lets withCause override a constructor cause', () => {
+      const first = new Error('first');
+      const second = new Error('second');
+
+      const error = new ServerkitError('wrapper', { cause: first }).withCause(second);
+
+      expect(error.cause).toBe(second);
+    });
+  });
+
   describe('withCause', () => {
     it('sets cause and returns the instance for chaining', () => {
       const root = new Error('original');

@@ -34,6 +34,11 @@ export type HttpStatusMessage<T extends HttpStatusCodes> = (typeof HttpStatusMap
  *   .withHeaders({ 'WWW-Authenticate': 'Bearer' })
  *   .withCause(originalError);
  * ```
+ *
+ * @example
+ * ```ts
+ * throw new HttpError(502, 'Bad Gateway', { cause: upstreamError });
+ * ```
  */
 export class HttpError extends ServerkitError {
   /**
@@ -47,14 +52,18 @@ export class HttpError extends ServerkitError {
    *
    * @param statusCode - The HTTP status code (must be a key from HttpStatusMap).
    * @param message - Optional custom error message. If not provided, uses the default message from HttpStatusMap.
+   * @param options - Standard error options; `cause` chains the underlying error, equivalent to {@link withCause}.
    */
   constructor(
     readonly statusCode: HttpStatusCodes,
     message?: HttpStatusMessage<HttpStatusCodes>,
+    options?: { cause?: unknown },
   ) {
-    super(message ?? HttpStatusMap[statusCode]);
-    // 👇️ because we are extending a built-in class
-    Object.setPrototypeOf(this, HttpError.prototype);
+    // `ServerkitError` restores the prototype from `new.target`, so this class must
+    // *not* pin it to `HttpError.prototype` afterwards: doing so overwrote the real
+    // constructor's prototype and broke `instanceof` for every subclass of HttpError,
+    // which is why subclasses used to repeat the `setPrototypeOf` line themselves.
+    super(message ?? HttpStatusMap[statusCode], options);
   }
 
   /**
@@ -111,17 +120,24 @@ export const IsHttpError = (error: unknown): error is HttpError => {
  * @template StatusMessage - The status message type for the given status code.
  * @param statusCode - The HTTP status code.
  * @param message - Optional custom error message.
+ * @param options - Standard error options; `cause` chains the underlying error.
  * @returns A new HttpError instance.
  *
  * @example
  * ```ts
  * throw httpError(404);
  * ```
+ *
+ * @example
+ * ```ts
+ * throw httpError(502, 'Bad Gateway', { cause: upstreamError });
+ * ```
  */
 export const httpError = <StatusCode extends HttpStatusCodes, StatusMessage extends HttpStatusMessage<StatusCode>>(
   statusCode: StatusCode,
   message?: StatusMessage,
-) => new HttpError(statusCode, message);
+  options?: { cause?: unknown },
+) => new HttpError(statusCode, message, options);
 
 /**
  * Factory function to create an unauthorized HttpError instance.
