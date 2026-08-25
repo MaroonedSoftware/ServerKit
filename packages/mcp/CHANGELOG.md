@@ -1,5 +1,13 @@
 # @maroonedsoftware/mcp
 
+## 0.1.7
+
+### Patch Changes
+
+- Updated dependencies [e2e968d]
+  - @maroonedsoftware/errors@1.9.0
+  - @maroonedsoftware/policies@0.6.6
+
 ## 0.1.6
 
 ### Patch Changes
