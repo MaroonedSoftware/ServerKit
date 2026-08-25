@@ -40,40 +40,42 @@ Notably **not** a dependency: `kysely`. Transactional enqueue is supported throu
 
 ### `.` — abstractions
 
-| Export                               | Kind                       | Shape                                                                                                                        | Notes                                                                                             |
-| ------------------------------------ | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `Job<Payload>`                       | abstract class             | `@Injectable() abstract run(payload: Payload, signal?: AbortSignal): Promise<void>`                                          | `Payload extends object = object`.                                                                |
-| `JobBroker`                          | abstract class             | `@Injectable()`. Producer side.                                                                                              | Unsupported operations throw `NotSupportedError` rather than no-op.                               |
-| `#send`                              | method                     | `<P extends object>(name: string, payload: P, options?: JobSendOptions) => Promise<string>`                                  | Returns the job id. Throws if `name` is not registered.                                           |
-| `#schedule`                          | method                     | `<P extends object>(name: string, cron: string, payload?: P) => Promise<void>`                                               | —                                                                                                 |
-| `#unschedule`                        | method                     | `(name: string) => Promise<void>`                                                                                            | —                                                                                                 |
-| `#cancel` / `#resume` / `#deleteJob` | method                     | `(name: string, id: string \| string[]) => Promise<void>`                                                                    | `cancel` aborts the signal for a running job.                                                     |
-| `#getJob`                            | method                     | `<P extends object>(name: string, id: string) => Promise<JobInfo<P> \| null>`                                                | —                                                                                                 |
-| `JobRunner`                          | abstract class             | `@Injectable()`. `start()`, `stop()`                                                                                         | Consumer side. `stop()` waits for in-flight jobs.                                                 |
-| `JobMonitor`                         | abstract class             | `@Injectable()`. `getQueueStats`, `listJobs`, `redrive`, `deleteJob`, `retryJob`                                             | Operational surface — dashboards, dead-letter drains.                                             |
-| `JobContext`                         | interface + abstract class | `{ id: string; name: string; signal: AbortSignal; expiresIn?: Duration }`                                                    | Declaration-merged so one symbol is both the type and the DI token.                               |
-| `registerJobContext`                 | function                   | `<T extends Registry>(registry: T) => T`                                                                                     | **Required** if any service injects `JobContext`. Registers a throwing placeholder.               |
-| `JobSendOptions`                     | interface                  | `{ startAfter?: Duration \| DateTime }`                                                                                      | Relative delay or absolute earliest-run time. A lower bound, not exact scheduling.                |
-| `JobQueuePolicy`                     | interface                  | `{ retryLimit?, retryDelay?: Duration, retryBackoff?, retryDelayMax?: Duration, expiresIn?: Duration, deadLetter?: string }` | Applied per queue when the runner starts. `expiresIn` is what surfaces as `JobContext.expiresIn`. |
-| `JobInfo<Payload>`                   | interface                  | `{ id, name, state: JobState, data: Payload }`                                                                               | Lowest common denominator across backends.                                                        |
-| `JobState`                           | type                       | `'created' \| 'retry' \| 'active' \| 'completed' \| 'cancelled' \| 'failed'`                                                 | —                                                                                                 |
-| `JobQueueStats`                      | interface                  | `{ name, queued, active, failed, total }`                                                                                    | `failed` is a **retained** count, not an all-time total.                                          |
-| `JobQueryOptions`                    | interface                  | `{ id?, data?: Record<string, unknown>, queuedOnly? }`                                                                       | `data` is a partial-match payload filter.                                                         |
-| `JobRedriveOptions`                  | interface                  | `{ destination?, sourceName?, limit? }`                                                                                      | Without `destination`, each job returns to its original queue.                                    |
-| `NotSupportedError`                  | class                      | `extends ServerkitError`                                                                                                     | Thrown by a backend that cannot honour an operation.                                              |
+| Export                               | Kind                       | Shape                                                                                                                        | Notes                                                                                                      |
+| ------------------------------------ | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `Job<Payload>`                       | abstract class             | `@Injectable() abstract run(payload: Payload, signal?: AbortSignal): Promise<void>`                                          | `Payload extends object = object`.                                                                         |
+| `JobBroker`                          | abstract class             | `@Injectable()`. Producer side.                                                                                              | Unsupported operations throw `NotSupportedError` rather than no-op.                                        |
+| `#send`                              | method                     | `<P extends object>(name: string, payload: P, options?: JobSendOptions) => Promise<string>`                                  | Returns the job id. Throws if `name` is not registered.                                                    |
+| `#schedule`                          | method                     | `<P extends object>(name: string, cron: string, payload?: P) => Promise<void>`                                               | —                                                                                                          |
+| `#unschedule`                        | method                     | `(name: string) => Promise<void>`                                                                                            | —                                                                                                          |
+| `#cancel` / `#resume` / `#deleteJob` | method                     | `(name: string, id: string \| string[]) => Promise<void>`                                                                    | `cancel` aborts the signal for a running job.                                                              |
+| `#getJob`                            | method                     | `<P extends object>(name: string, id: string) => Promise<JobInfo<P> \| null>`                                                | —                                                                                                          |
+| `JobRunner`                          | abstract class             | `@Injectable()`. `start()`, `stop()`                                                                                         | Consumer side. `stop()` waits for in-flight jobs.                                                          |
+| `JobMonitor`                         | abstract class             | `@Injectable()`. `getQueueStats`, `listJobs`, `redrive`, `deleteJob`, `retryJob`                                             | Operational surface — dashboards, dead-letter drains.                                                      |
+| `JobContext`                         | interface + abstract class | `{ id: string; name: string; signal: AbortSignal; expiresIn?: Duration }`                                                    | Declaration-merged so one symbol is both the type and the DI token.                                        |
+| `registerJobContext`                 | function                   | `<T extends Registry>(registry: T) => T`                                                                                     | **Required** if any service injects `JobContext`. Registers a throwing placeholder.                        |
+| `JobSendOptions`                     | interface                  | `{ startAfter?: Duration \| DateTime }`                                                                                      | Relative delay or absolute earliest-run time. A lower bound, not exact scheduling.                         |
+| `JobQueuePolicy`                     | interface                  | `{ retryLimit?, retryDelay?: Duration, retryBackoff?, retryDelayMax?: Duration, expiresIn?: Duration, deadLetter?: string }` | Applied per queue when the runner starts. `expiresIn` is what surfaces as `JobContext.expiresIn`.          |
+| `JobWorkerPolicy`                    | interface                  | `{ concurrency?: number, batchSize?: number, pollInterval?: Duration }`                                                      | Configures the worker **this node** starts, not the queue. Applied when the runner registers the worker.   |
+| `JobInfo<Payload>`                   | interface                  | `{ id, name, state: JobState, data: Payload }`                                                                               | Lowest common denominator across backends.                                                                 |
+| `JobState`                           | type                       | `'created' \| 'retry' \| 'active' \| 'completed' \| 'cancelled' \| 'failed'`                                                 | —                                                                                                          |
+| `JobQueueStats`                      | interface                  | `{ name, queued, active, failed, total }`                                                                                    | `failed` is a **retained** count, not an all-time total.                                                   |
+| `JobQueryOptions`                    | interface                  | `{ id?, data?: Record<string, unknown>, queuedOnly? }`                                                                       | `data` is a partial-match payload filter.                                                                  |
+| `JobRedriveOptions`                  | interface                  | `{ destination?, sourceName?, limit? }`                                                                                      | Without `destination`, each job returns to its original queue.                                             |
+| `NotSupportedError`                  | class                      | `extends ServerkitError`                                                                                                     | Thrown by a backend that cannot honour an operation.                                                       |
+| `PermanentJobError`                  | class                      | `extends ServerkitError`. `new (message, options?: { cause?: unknown })`                                                     | Thrown by a job to skip its remaining retries and dead-letter immediately. Matched by direct `instanceof`. |
 
 ### `./pgboss`
 
-| Export                                | Kind      | Shape                                                              | Notes                                                                              |
-| ------------------------------------- | --------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| `PgBossJobBroker`                     | class     | `extends JobBroker`                                                | Supports every `JobBroker` operation.                                              |
-| `PgBossJobRunner`                     | class     | `extends JobRunner`                                                | Creates the per-execution scope and registers the live `JobContext`.               |
-| `PgBossJobMonitor`                    | class     | `extends JobMonitor`                                               | —                                                                                  |
-| `PgBossJobRegistration`               | type      | `{ job: Identifier<Job>; cron?: string; policy?: JobQueuePolicy }` | —                                                                                  |
-| `PgBossJobRegistryMap`                | class     | `extends Map<string, Identifier<Job> \| PgBossJobRegistration>`    | Job name → handler. Read by both the broker (validation) and the runner.           |
-| `PgBossConnectionProvider`            | class     | `@Injectable()`. `executor(): Db \| undefined`                     | Default returns `undefined` — pg-boss uses its own pool.                           |
-| `KyselyTransactionConnectionProvider` | class     | `extends PgBossConnectionProvider`. `new (trx: KyselyLike)`        | Enqueue inside the caller's transaction. Strips Kysely plugins first.              |
-| `KyselyLike`                          | interface | `{ withoutPlugins(): … }`                                          | Structural, so no `kysely` dependency. Accepts `Kysely<DB>` and `Transaction<DB>`. |
+| Export                                | Kind      | Shape                                                                                        | Notes                                                                                                                                                  |
+| ------------------------------------- | --------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PgBossJobBroker`                     | class     | `extends JobBroker`                                                                          | Supports every `JobBroker` operation.                                                                                                                  |
+| `PgBossJobRunner`                     | class     | `extends JobRunner`                                                                          | Creates the per-execution scope and registers the live `JobContext`. Fields: `cancelPollIntervalSeconds`, `defaultQueuePolicy`, `defaultWorkerPolicy`. |
+| `PgBossJobMonitor`                    | class     | `extends JobMonitor`                                                                         | —                                                                                                                                                      |
+| `PgBossJobRegistration`               | type      | `{ job: Identifier<Job>; cron?: string; policy?: JobQueuePolicy; worker?: JobWorkerPolicy }` | `policy` configures the queue, `worker` configures this node's worker.                                                                                 |
+| `PgBossJobRegistryMap`                | class     | `extends Map<string, Identifier<Job> \| PgBossJobRegistration>`                              | Job name → handler. Read by both the broker (validation) and the runner.                                                                               |
+| `PgBossConnectionProvider`            | class     | `@Injectable()`. `executor(): Db \| undefined`                                               | Default returns `undefined` — pg-boss uses its own pool.                                                                                               |
+| `KyselyTransactionConnectionProvider` | class     | `extends PgBossConnectionProvider`. `new (trx: KyselyLike)`                                  | Enqueue inside the caller's transaction. Strips Kysely plugins first.                                                                                  |
+| `KyselyLike`                          | interface | `{ withoutPlugins(): … }`                                                                    | Structural, so no `kysely` dependency. Accepts `Kysely<DB>` and `Transaction<DB>`.                                                                     |
 
 ## Canonical usage
 
@@ -106,6 +108,10 @@ jobs.set('webhook.deliver', {
   job: DeliverWebhookJob,
   policy: { retryLimit: 5, retryDelay: Duration.fromObject({ seconds: 30 }), retryBackoff: true, deadLetter: 'webhook.deliver.dead' },
 });
+jobs.set('image.thumbnail', { job: ThumbnailJob, worker: { concurrency: 8 } });
+
+// Inside a handler: skip the retries for input that can never succeed.
+//   throw new PermanentJobError('Malformed payload').withDetails({ issues });
 
 registerJobContext(registry); // required because services inject JobContext
 registry.register(PgBossJobRegistryMap).useValue(jobs);
@@ -151,6 +157,12 @@ See [.claude/skills/job](../../.claude/skills/job) for the generator and its exa
 - Use `startAfter` with a Luxon `Duration` or `DateTime`, never a millisecond number.
 - Give any queue that talks to an external service a `JobQueuePolicy` with `retryBackoff` and a
   `deadLetter` queue. Without one you get the backend's defaults and no dead-letter capture.
+- A queue that is falling behind gets `worker: { concurrency: n }`, **not** `batchSize`. See the
+  gotcha below — they are not interchangeable.
+- Throw `PermanentJobError` for input that can never succeed (a malformed payload, a `422` from a
+  receiver), and a plain `Error` for anything that might succeed on a retry (a timeout, a `503`, a
+  rate limit). Getting this backwards either burns a retry budget on a hopeless job or dead-letters a
+  blip on its first attempt. When in doubt, a plain `Error` is the safe default — it retries.
 - Import pg-boss classes from `@maroonedsoftware/jobbroker/pgboss`, never from the root.
 - Wire `runner.start()` into a module's `ready` hook and `runner.stop()` into `shutdown`. Starting
   in `start` delays boot for every module after it.
@@ -169,6 +181,30 @@ See [.claude/skills/job](../../.claude/skills/job) for the generator and its exa
 - **A backend that cannot honour an option throws `NotSupportedError`** rather than silently
   ignoring it. SQS caps delays at 15 minutes, for instance. pg-boss supports everything, so this
   only bites on a backend swap.
+- **`JobWorkerPolicy.concurrency` and `batchSize` are not interchangeable.** `concurrency` spawns
+  N independent workers, each fetching and settling its own job. `batchSize` makes _one_ worker
+  fetch N jobs and hand them to the handler together, trading round trips for latency on any one
+  job. Failure isolation is _not_ part of that trade — the runner reports a per-job outcome, so a
+  poison message in a batch fails alone. Prefer `concurrency` for throughput anyway.
+- **The runner always registers workers with `perJobResults: true`**, so its handler resolves with a
+  `JobResult[]` instead of throwing. This is not optional and not tied to `batchSize`: it is what
+  makes per-job settlement work, and the only route pg-boss offers to the `deadletter` disposition
+  that `PermanentJobError` needs. Throwing from the handler still fails the _whole_ batch, which is
+  correct for a runner-level bug but wrong for a job-level one — never rethrow a job's error there.
+- **A job omitted from the returned `JobResult[]` is failed by pg-boss**, with
+  `Error('no disposition returned by handler')`, and retried. Silence is not success, which is why
+  the runner maps over `jobs` rather than over the `allSettled` results.
+- **`PermanentJobError` is matched by direct `instanceof`, not by walking the `cause` chain.** The
+  meaning is "this handler declared the failure permanent". Wrapping a transient error in one makes
+  it permanent; a transient error that merely carries one as its cause stays retryable.
+- **`JobWorkerPolicy` is not stored on the queue.** Unlike `JobQueuePolicy`, which the runner
+  reconciles onto the queue via `createQueue`/`updateQueue`, a worker policy configures only the
+  workers _this process_ starts. Two nodes on the same queue may use different values, and a change
+  takes effect on the next runner start for that node alone.
+- **The peer floor is pg-boss >= 12.21.0**, and it is load-bearing. `concurrency` maps to
+  `localConcurrency` (added in 12.6.0) and per-job settlement to `perJobResults` (added in 12.21.0).
+  An older peer would ignore `perJobResults`, take the handler's `JobResult[]` as the batch's single
+  output, and mark **every job complete, including the failed ones**.
 - **`JobQueueStats.failed` is a retained count**, bounded by the queue's retention policy, not an
   all-time total. It goes down on its own.
 - **`KyselyTransactionConnectionProvider` strips plugins before adapting the transaction.**
@@ -198,7 +234,9 @@ src/
   job.info.ts              JobState, JobInfo
   job.send.options.ts      JobSendOptions
   job.queue.policy.ts      JobQueuePolicy
+  job.worker.policy.ts     JobWorkerPolicy
   not.supported.error.ts   NotSupportedError
+  permanent.job.error.ts   PermanentJobError
   pgboss.ts                Subpath entry for ./pgboss
   pgboss/
     pgboss.job.broker.ts

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Job as PgJob, PgBoss } from 'pg-boss';
+import { Job as PgJob, JobResult, PgBoss } from 'pg-boss';
 import { Injectable, InjectKitRegistry } from 'injectkit';
 import { PgBossJobRunner } from '../../src/pgboss/pgboss.job.runner.js';
 import { PgBossJobRegistryMap } from '../../src/pgboss/pgboss.job.registration.js';
@@ -61,7 +61,8 @@ describe('PgBossJobRunner scoping (real container)', () => {
   let runner: PgBossJobRunner;
   let container: ReturnType<InjectKitRegistry['build']>;
 
-  const workerCallback = () => vi.mocked(mockPgBoss.work).mock.calls[0]![1] as (jobs: PgJob<object>[]) => Promise<void>;
+  // Index 2: `work` is always called with an options object — `perJobResults` is unconditional.
+  const workerCallback = () => vi.mocked(mockPgBoss.work).mock.calls[0]![2] as unknown as (jobs: PgJob<object>[]) => Promise<JobResult[]>;
 
   beforeEach(async () => {
     UnitOfWork.constructed = 0;

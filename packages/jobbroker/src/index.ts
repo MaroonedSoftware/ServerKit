@@ -7,6 +7,8 @@ export * from './job.context.js';
 export * from './job.info.js';
 export * from './job.send.options.js';
 export * from './job.queue.policy.js';
+export * from './job.worker.policy.js';
 export * from './job.monitor.js';
 export * from './job.runner.js';
 export * from './not.supported.error.js';
+export * from './permanent.job.error.js';

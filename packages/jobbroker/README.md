@@ -10,6 +10,9 @@ A flexible background job processing library with support for scheduled and on-d
 - **On-demand jobs** for immediate execution
 - **Cancellation** of queued _and_ running jobs, plus state lookup, delete, and resume
 - **Per-queue retry & dead-letter policy** for retry limits, backoff, and poison-message capture
+- **Per-queue worker policy** for concurrency, batch size, and poll interval
+- **Per-job settlement** so one failing job in a batch never drags its siblings into retry
+- **Permanent failures** that skip remaining retries and dead-letter immediately
 - **Dead-letter monitoring** to inspect, redrive, retry, or discard failed jobs
 - **PostgreSQL backing** for reliability and transactional guarantees
 
@@ -263,6 +266,71 @@ await runner.start();
 
 Retry and dead-letter behavior is a **queue-level** concern here, not a per-`send` one: it is declared once where the job is registered rather than on each `broker.send(...)`. This matches how the mainstream backends model it (pg-boss `retryLimit`/`deadLetter`, SQS's redrive policy, Cloud Tasks' `maxAttempts`), none of which support per-message retry overrides — so `JobQueuePolicy` stays portable across backends.
 
+## Permanent failures
+
+Retries exist for failures that might not happen next time — a timeout, a rate limit, a deploy in progress. They are wasted on a job that can never succeed: a malformed payload, a `422` from a receiver that will reject the same body every time. A queue with `retryLimit: 5` and exponential backoff will spend hours re-running such a job before it finally dead-letters.
+
+Throw a `PermanentJobError` to skip straight to the end:
+
+```typescript
+import { Job, PermanentJobError } from '@maroonedsoftware/jobbroker';
+
+class DeliverWebhookJob extends Job<DeliverWebhookPayload> {
+  async run(payload: DeliverWebhookPayload): Promise<void> {
+    const parsed = webhookSchema.safeParse(payload);
+    if (!parsed.success) {
+      throw new PermanentJobError('Malformed webhook payload').withDetails({ issues: parsed.error.issues });
+    }
+
+    const response = await fetch(parsed.data.url, { method: 'POST', body: parsed.data.body });
+    if (response.status === 422) {
+      throw new PermanentJobError(`Receiver rejected the payload with ${response.status}`);
+    }
+    if (!response.ok) {
+      throw new Error(`Delivery failed with ${response.status}`); // transient — let it retry
+    }
+  }
+}
+```
+
+The job goes straight to the queue's `deadLetter` queue on its first attempt, with the error as its output, where [`JobMonitor`](#monitoring--draining-dead-letter-queues) can inspect or redrive it. A queue with no dead-letter queue simply fails the job terminally. Anything attached with `withDetails` is persisted alongside it — worth using, since that is what an operator reads when draining the queue.
+
+The match is a direct `instanceof`, deliberately: it means "this handler declared the failure permanent", not "something permanent happened somewhere underneath". Wrapping a transient error in a `PermanentJobError` makes it permanent; a transient error that merely _has_ a `PermanentJobError` as its cause stays retryable.
+
+## Worker concurrency
+
+Out of the box each queue is consumed by a single worker fetching one job at a time — safe, and slow if a queue is busy. A `JobWorkerPolicy` on the registration says how much of this node's capacity the queue gets:
+
+```typescript
+import { Duration } from 'luxon';
+
+registry.set('image.thumbnail', {
+  job: ThumbnailJob,
+  worker: {
+    concurrency: 8, // run up to 8 of these at once on this node
+    pollInterval: Duration.fromObject({ seconds: 1 }), // check for work this often when idle
+  },
+});
+```
+
+`concurrency` is the knob you want when a queue is falling behind. Each unit is an independent worker that fetches and settles its own job, so one job failing has no effect on its siblings.
+
+`batchSize` is the other one, and it is **not** a synonym. It makes a single worker fetch that many jobs and hand them to the handler together, trading round trips for latency on any single job. Each job in the batch still settles on its own — the runner reports a per-job outcome, so one poison message fails, retries, and dead-letters alone while its siblings complete normally. Reach for it when the work is batch-shaped; prefer `concurrency` when you simply want more throughput.
+
+The policy is applied when `runner.start()` registers the worker. Nothing is stored on the queue — this configures _this process_, so two nodes consuming the same queue may legitimately use different values, and changing one takes effect on the next runner start rather than for everyone at once. That is the difference from `JobQueuePolicy`, which is queue state and does apply to everyone.
+
+As with queue policies, `defaultWorkerPolicy` on the runner sets a baseline for every queue, and each queue's own `worker` is layered on top field-by-field:
+
+```typescript
+const runner = container.get(JobRunner) as PgBossJobRunner;
+runner.defaultWorkerPolicy = { concurrency: 4 };
+await runner.start();
+```
+
+When a registration declares no worker policy and no default is set, pg-boss's own defaults apply: one worker, one job per fetch.
+
+> `concurrency` maps to pg-boss `localConcurrency` and per-job settlement to `perJobResults`, both of which the package's peer floor (**pg-boss >= 12.21.0**) guarantees.
+
 ## Monitoring & draining dead-letter queues
 
 Capturing a poison message is only half the job: a consumer needs to see what landed in a dead-letter queue and act on it. `JobMonitor` is the operator-side companion to `JobBroker` (produce) and `JobRunner` (consume) — it reads queue depth, lists the stuck jobs, and remediates them. Unlike the broker, it operates on **any queue name and does not require the queue to be registered**, because a dead-letter queue is often an unregistered sink with no worker of its own.
@@ -378,13 +446,14 @@ Entries can be either:
 
 ### `PgBossJobRegistration`
 
-Configuration object for a job. Only `job` is required, so it covers on-demand jobs (`{ job }`), scheduled jobs (`{ job, cron }`), and either with a retry/dead-letter policy attached.
+Configuration object for a job. Only `job` is required, so it covers on-demand jobs (`{ job }`), scheduled jobs (`{ job, cron }`), and either with a retry/dead-letter policy and/or a worker policy attached.
 
-| Property | Type              | Description                                                          |
-| -------- | ----------------- | -------------------------------------------------------------------- |
-| `job`    | `Identifier<Job>` | The job class identifier to instantiate when the job runs.           |
-| `cron`   | `string`          | Optional cron expression defining when the job should run.           |
-| `policy` | `JobQueuePolicy`  | Optional per-queue retry and dead-letter policy for the job's queue. |
+| Property | Type              | Description                                                                |
+| -------- | ----------------- | -------------------------------------------------------------------------- |
+| `job`    | `Identifier<Job>` | The job class identifier to instantiate when the job runs.                 |
+| `cron`   | `string`          | Optional cron expression defining when the job should run.                 |
+| `policy` | `JobQueuePolicy`  | Optional per-queue retry and dead-letter policy for the job's queue.       |
+| `worker` | `JobWorkerPolicy` | Optional per-queue worker policy for this node — concurrency and batching. |
 
 ### `JobQueuePolicy`
 
@@ -398,6 +467,26 @@ Backend-agnostic per-queue retry and dead-letter policy (see [Retry & dead-lette
 | `retryDelayMax` | `Duration` | Upper bound on the backoff delay. Only used when `retryBackoff` is on.               |
 | `expiresIn`     | `Duration` | How long a run may take before it is considered stuck and made eligible for retry.   |
 | `deadLetter`    | `string`   | Name of the dead-letter queue that receives jobs which exhaust their retries.        |
+
+### `JobWorkerPolicy`
+
+Per-queue worker throughput, declared on the registration's `worker` field or runner-wide via `defaultWorkerPolicy`. All fields optional.
+
+| Field          | Type       | Meaning                                                                          |
+| -------------- | ---------- | -------------------------------------------------------------------------------- |
+| `concurrency`  | `number`   | Jobs this node may run at once for the queue. Each unit settles its own job.     |
+| `batchSize`    | `number`   | Jobs fetched per trip and handed to the handler as one batch, settled as a unit. |
+| `pollInterval` | `Duration` | How long a worker waits between fetches while idle. Passed through unrounded.    |
+
+Configures the worker this process starts, not the queue. See [Worker concurrency](#worker-concurrency).
+
+### `PermanentJobError`
+
+`extends ServerkitError`. Thrown by a job to declare its failure permanent: the remaining retries are skipped and the job dead-letters immediately. See [Permanent failures](#permanent-failures).
+
+| Signature                                                               | Description                                                                                               |
+| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `new PermanentJobError(message: string, options?: { cause?: unknown })` | `message` says why the job can never succeed. Chain `withDetails` to persist context on the job's output. |
 
 ### `PgBossJobBroker`
 
@@ -467,6 +556,8 @@ Exposes a `cancelPollIntervalSeconds` property (default `5`) that controls how o
 
 Also exposes an optional `defaultQueuePolicy` (a `JobQueuePolicy`) applied beneath every queue's own policy, so all queues can share retry/dead-letter defaults without repeating them. See [Retry & dead-letter policy](#retry--dead-letter-policy).
 
+Exposes an optional `defaultWorkerPolicy` (a `JobWorkerPolicy`) applied beneath every queue's own `worker` policy, so all queues can share a concurrency or poll-interval baseline. See [Worker concurrency](#worker-concurrency).
+
 ### `PgBossJobMonitor`
 
 Concrete `JobMonitor` implementation backed by pg-boss. Constructor signature: `new PgBossJobMonitor(pgboss: PgBoss, connectionProvider: PgBossConnectionProvider)`. Reads and remediates queues via pg-boss's `getQueue`, `findJobs`, `redrive`, `deleteJob`, and `retry`, sourcing the `db` executor from the injected `PgBossConnectionProvider` (so remediation can be transactional). Does not consult the job registry, so it works on unregistered dead-letter sinks. Typically resolved through the DI container rather than instantiated directly.
@@ -484,7 +575,7 @@ process.on('SIGTERM', async () => {
 
 ## Peer Dependencies
 
-- `pg-boss` ^12.5.4 - PostgreSQL-based job queue
+- `pg-boss` ^12.21.0 - PostgreSQL-based job queue
 - `reflect-metadata` - Required by InjectKit for decorator metadata
 
 ## License

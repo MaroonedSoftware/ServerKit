@@ -67,7 +67,7 @@
     "pg-boss": "^12.24.1"
   },
   "peerDependencies": {
-    "pg-boss": "^12.5.4"
+    "pg-boss": "^12.21.0"
   },
   "peerDependenciesMeta": {
     "pg-boss": {

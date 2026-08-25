@@ -172,6 +172,37 @@ describe('PgBossJobRegistration type', () => {
     expect(retrieved.policy?.expiresIn?.as('seconds')).toBe(120);
   });
 
+  it('should type a job registration carrying a worker policy', () => {
+    const registration: PgBossJobRegistration = {
+      job: TestJob,
+      worker: {
+        concurrency: 8,
+        batchSize: 4,
+        pollInterval: Duration.fromObject({ milliseconds: 500 }),
+      },
+    };
+
+    expect(registration.worker?.concurrency).toBe(8);
+    expect(registration.worker?.batchSize).toBe(4);
+    expect(registration.worker?.pollInterval?.as('seconds')).toBe(0.5);
+  });
+
+  it('should type a registration carrying both a queue policy and a worker policy', () => {
+    // The two are independent: one configures the queue, the other this node's worker.
+    const registration: PgBossJobRegistration = {
+      job: TestJob,
+      policy: { retryLimit: 5, deadLetter: 'test.job.dead' },
+      worker: { concurrency: 2 },
+    };
+
+    const registry = new PgBossJobRegistryMap();
+    registry.set('test.job', registration);
+
+    const retrieved = registry.get('test.job') as PgBossJobRegistration;
+    expect(retrieved.policy?.retryLimit).toBe(5);
+    expect(retrieved.worker?.concurrency).toBe(2);
+  });
+
   it('should support various cron expressions', () => {
     const registrations: PgBossJobRegistration[] = [
       { job: TestJob, cron: '* * * * *' },

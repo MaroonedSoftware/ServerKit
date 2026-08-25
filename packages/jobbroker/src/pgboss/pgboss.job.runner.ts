@@ -1,12 +1,15 @@
-import { Job as PgJob, PgBoss } from 'pg-boss';
+import { Job as PgJob, JobResult, PgBoss } from 'pg-boss';
 import { Duration } from 'luxon';
 import { Container, Injectable } from 'injectkit';
 import { Job } from '../job.js';
 import { JobContext } from '../job.context.js';
 import { JobQueuePolicy } from '../job.queue.policy.js';
 import { JobRunner } from '../job.runner.js';
+import { JobWorkerPolicy } from '../job.worker.policy.js';
+import { PermanentJobError } from '../permanent.job.error.js';
 import { PgBossJobRegistration, PgBossJobRegistryMap } from './pgboss.job.registration.js';
 import { Logger } from '@maroonedsoftware/logger';
+import { ServerkitError } from '@maroonedsoftware/errors';
 
 /**
  * pg-boss queue options as accepted by `createQueue`/`updateQueue`. Derived from
@@ -14,6 +17,14 @@ import { Logger } from '@maroonedsoftware/logger';
  * @internal
  */
 type PgBossQueueOptions = NonNullable<Parameters<PgBoss['updateQueue']>[1]>;
+
+/**
+ * pg-boss work options as accepted by the three-argument `work` overload.
+ * Derived from the installed pg-boss types so the mapping tracks the peer's
+ * exact shape.
+ * @internal
+ */
+type PgBossWorkOptions = NonNullable<Parameters<PgBoss['work']>[1]>;
 
 /**
  * Type guard to check if a registration is the object configuration form
@@ -34,6 +45,12 @@ const isPgBossJobRegistration = (registration: unknown): registration is PgBossJ
  * This runner processes jobs from PostgreSQL queues using pg-boss. It
  * automatically creates queues for registered jobs, sets up scheduled
  * jobs, and handles job execution with error logging.
+ *
+ * Each job settles on its own: the runner reports a per-job outcome to pg-boss
+ * rather than throwing, so one failure retries and dead-letters alone instead of
+ * dragging the rest of its batch with it. A job that throws
+ * {@link PermanentJobError} skips its remaining retries and dead-letters on the
+ * first attempt.
  *
  * @example
  * ```typescript
@@ -87,6 +104,25 @@ export class PgBossJobRunner extends JobRunner {
   defaultQueuePolicy?: JobQueuePolicy;
 
   /**
+   * A base {@link JobWorkerPolicy} applied to *every* queue this runner starts a
+   * worker for, beneath each queue's own `worker` policy. Set it to give all
+   * queues the same concurrency or poll interval without repeating them on each
+   * registration; a field a queue sets on its own `worker` overrides the same
+   * field here.
+   *
+   * Unlike {@link defaultQueuePolicy} this is not stored on the queue — it
+   * configures the workers *this process* starts, so another node consuming the
+   * same queues may use different values.
+   *
+   * Leave it unset (the default) to opt in per queue only. A queue with no policy
+   * from either side runs on pg-boss's own worker defaults: one worker, one job
+   * per fetch.
+   *
+   * @default undefined
+   */
+  defaultWorkerPolicy?: JobWorkerPolicy;
+
+  /**
    * Creates a new PgBossJobRunner instance.
    *
    * @param container - The root DI container. Each job execution resolves from a
@@ -116,7 +152,9 @@ export class PgBossJobRunner extends JobRunner {
    *    an existing queue to match; when no policy applies, the queue is created
    *    with the name only (unchanged pre-policy behavior)
    * 4. Sets up the cron schedule (for scheduled jobs)
-   * 5. Starts a worker to process jobs from the queue
+   * 5. Starts a worker to process jobs from the queue, with the effective worker
+   *    policy (the runner's {@link defaultWorkerPolicy} merged with the
+   *    registration's own `worker`, if any) applied
    *
    * Each item in a batch runs in its own scoped container, created from the
    * injected root container and disposed once the item settles, so `scoped`
@@ -127,6 +165,12 @@ export class PgBossJobRunner extends JobRunner {
    * awaited via `Promise.allSettled`, so pg-boss does not acknowledge a batch
    * until every job has actually finished and one job's failure cannot suppress
    * its sibling's logs.
+   *
+   * Workers run with pg-boss's `perJobResults`, so the handler reports each job's
+   * outcome rather than throwing: a job that fails is retried and dead-lettered on
+   * its own, without dragging the rest of its batch along. A job that throws
+   * {@link PermanentJobError} skips its remaining retries and dead-letters
+   * immediately.
    *
    * @returns A promise that resolves when all workers are registered with pg-boss.
    */
@@ -159,7 +203,7 @@ export class PgBossJobRunner extends JobRunner {
         identifier = registration;
       }
 
-      await this.pgboss.work(name, async (jobs: PgJob<object>[]) => {
+      const handler = async (jobs: PgJob<object>[]): Promise<JobResult[]> => {
         const results = await Promise.allSettled(
           jobs.map(async job => {
             // Every execution resolves from its own scope, never the root container.
@@ -200,18 +244,40 @@ export class PgBossJobRunner extends JobRunner {
           }),
         );
 
-        // Every job in the batch is isolated (they run concurrently and each logs its own
-        // error), but the work handler itself must reject when any job threw. Otherwise
-        // pg-boss treats the whole batch as completed and never applies retryLimit or
-        // dead-lettering to the jobs that actually failed.
+        // Under `perJobResults` the handler reports each job's outcome instead of
+        // throwing, so pg-boss settles them individually: one poisoned job fails (and
+        // retries, and dead-letters) alone rather than dragging its whole batch with it.
+        // Throwing from here still fails the entire batch, which is what a runner-level
+        // bug — as opposed to a job-level one — should do.
         const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected').map(result => result.reason);
-        if (failures.length === 1) {
-          throw failures[0];
-        }
         if (failures.length > 1) {
-          throw new AggregateError(failures, `${failures.length} of ${jobs.length} jobs in queue "${name}" failed`);
+          // The per-job errors are already logged above and are about to be persisted as
+          // each job's own output. This adds back the batch-wide view that the pre-
+          // `perJobResults` AggregateError carried, as a log line rather than as a
+          // settlement decision — the cause keeps every individual error reachable.
+          this.logger.error(
+            new ServerkitError(`${failures.length} of ${jobs.length} jobs in queue "${name}" failed`).withCause(new AggregateError(failures)),
+          );
         }
-      });
+
+        // Map over `jobs`, not `results`: pg-boss matches dispositions by job id and
+        // fails any job the handler omits, so the batch itself must drive the output.
+        return jobs.map((job, index) => {
+          const result = results[index];
+          // `allSettled` returns one entry per input, so a missing entry is impossible;
+          // treat it as a failure anyway rather than silently completing a job that may
+          // never have run.
+          if (result?.status === 'fulfilled') {
+            return { id: job.id, status: 'completed' };
+          }
+          // A job that declares its own failure permanent skips its remaining retries
+          // and goes straight to the queue's dead-letter queue.
+          const status = result?.reason instanceof PermanentJobError ? 'deadletter' : 'failed';
+          return { id: job.id, status, output: result?.reason };
+        });
+      };
+
+      await this.pgboss.work(name, this.toWorkOptions(this.resolveWorkerPolicy(registration)), handler);
     }
   }
 
@@ -320,6 +386,53 @@ export class PgBossJobRunner extends JobRunner {
       options.deadLetter = policy.deadLetter;
     }
     return Object.keys(options).length > 0 ? options : undefined;
+  }
+
+  /**
+   * Merges the runner-wide {@link defaultWorkerPolicy} with a registration's own
+   * `worker` policy, letting the registration override individual fields. Returns
+   * `undefined` when neither supplies a policy, so a queue with no policy keeps
+   * pg-boss's own worker defaults.
+   *
+   * @param registration - The registry entry (a bare identifier or an object).
+   * @returns The effective worker policy for the queue, or `undefined` if none applies.
+   * @internal
+   */
+  private resolveWorkerPolicy(registration: unknown): JobWorkerPolicy | undefined {
+    const own = isPgBossJobRegistration(registration) ? registration.worker : undefined;
+    if (!this.defaultWorkerPolicy && !own) {
+      return undefined;
+    }
+    return { ...this.defaultWorkerPolicy, ...own };
+  }
+
+  /**
+   * Maps a backend-agnostic {@link JobWorkerPolicy} onto pg-boss's native work
+   * options. `pollInterval` is passed as a fractional second count rather than
+   * rounded — pg-boss accepts intervals down to 0.5s, so rounding would turn a
+   * deliberate sub-second poll into either 0 (rejected) or 1.
+   *
+   * Always returns options, because `perJobResults` is always on: it is what makes
+   * pg-boss settle each job in a batch individually, and what gives
+   * {@link PermanentJobError} somewhere to land. A queue with no worker policy
+   * still gets that, and nothing else.
+   *
+   * @param policy - The effective worker policy for a queue, or `undefined`.
+   * @returns The pg-boss work options.
+   * @internal
+   */
+  private toWorkOptions(policy: JobWorkerPolicy | undefined): PgBossWorkOptions {
+    const options: PgBossWorkOptions = { perJobResults: true };
+    if (policy?.concurrency !== undefined) {
+      options.localConcurrency = policy.concurrency;
+    }
+    if (policy?.batchSize !== undefined) {
+      options.batchSize = policy.batchSize;
+    }
+    if (policy?.pollInterval !== undefined) {
+      options.pollingIntervalSeconds = policy.pollInterval.as('seconds');
+    }
+    return options;
   }
 
   /**
