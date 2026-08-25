@@ -1,5 +1,16 @@
 # @maroonedsoftware/koa
 
+## 3.0.10
+
+### Patch Changes
+
+- Updated dependencies [e2e968d]
+  - @maroonedsoftware/errors@1.9.0
+  - @maroonedsoftware/appconfig@2.5.1
+  - @maroonedsoftware/authentication@4.30.7
+  - @maroonedsoftware/multipart@1.3.6
+  - @maroonedsoftware/policies@0.6.6
+
 ## 3.0.9
 
 ### Patch Changes

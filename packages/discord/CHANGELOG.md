@@ -1,5 +1,14 @@
 # @maroonedsoftware/discord
 
+## 2.0.7
+
+### Patch Changes
+
+- Updated dependencies [e2e968d]
+  - @maroonedsoftware/errors@1.9.0
+  - @maroonedsoftware/comms@0.2.9
+  - @maroonedsoftware/policies@0.6.6
+
 ## 2.0.6
 
 ### Patch Changes

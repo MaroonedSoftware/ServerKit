@@ -1,5 +1,12 @@
 # @maroonedsoftware/comms
 
+## 0.2.9
+
+### Patch Changes
+
+- Updated dependencies [e2e968d]
+  - @maroonedsoftware/errors@1.9.0
+
 ## 0.2.8
 
 ### Patch Changes
