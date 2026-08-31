@@ -16,11 +16,11 @@ import { parseAndValidate, parseAndValidateArray, zBigint } from '@maroonedsoftw
 
 ## API Reference
 
-### `parseAndValidate(data, schema)`
+### `parseAndValidate(data, schema, statusCode?)`
 
 Parses and validates `data` against a Zod schema, returning the typed result on success.
 
-On failure, throws an `HttpError` with status `400` whose `details` map field paths to human-readable error messages. Field paths use dot notation (e.g. `"user.email"`). Root-level errors are keyed as `"_root"`. When a field has multiple violations, the value is a string array.
+On failure, throws an `HttpError` — `400` by default, or `statusCode` when supplied — whose `details` map field paths to human-readable error messages. Field paths use dot notation (e.g. `"user.email"`). Root-level errors are keyed as `"_root"`. When a field has multiple violations, the value is a string array.
 
 ```typescript
 const body = await parseAndValidate(
@@ -61,18 +61,24 @@ const body = await parseAndValidate(
 
 - `data` - The unknown input to validate.
 - `schema` - The Zod schema to validate against.
+- `statusCode` - Optional status for the thrown `HttpError`. Defaults to `400`; pass e.g. `422` when the payload is syntactically fine but semantically rejected.
+
+```typescript
+// Reject a well-formed but semantically invalid payload as 422 instead of 400
+const body = await parseAndValidate(ctx.request.body, schema, 422);
+```
 
 **Returns:** `Promise<z.infer<T>>` — the parsed and transformed output.
 
-**Throws:** `HttpError` 400 with field-level `details` when validation fails.
+**Throws:** `HttpError` with `statusCode` (default `400`) and field-level `details` when validation fails.
 
 ---
 
-### `parseAndValidateArray(data, schema)`
+### `parseAndValidateArray(data, schema, statusCode?)`
 
 Parses and validates every element of `data` against a Zod schema, returning the typed array on success. `schema` describes a single **element**, not the array.
 
-Error handling matches `parseAndValidate`, with detail keys prefixed by the element index. A `data` that is not an array fails with a `400` keyed `"_root"`, so an unexpected request body shape stays a client error rather than becoming a 500.
+Error handling matches `parseAndValidate`, with detail keys prefixed by the element index. A `data` that is not an array fails with a `"_root"` detail, so an unexpected request body shape stays a client error rather than becoming a 500.
 
 ```typescript
 const users = await parseAndValidateArray(
@@ -109,10 +115,11 @@ const users = await parseAndValidateArray(
 
 - `data` - The unknown input to validate. Must be an array to pass.
 - `schema` - The Zod schema each element is validated against.
+- `statusCode` - Optional status for the thrown `HttpError`. Defaults to `400`. Applies to a non-array input as well as to element-level failures.
 
 **Returns:** `Promise<z.infer<T>[]>` — the parsed and transformed elements, in input order.
 
-**Throws:** `HttpError` 400 with index-prefixed `details` when validation fails.
+**Throws:** `HttpError` with `statusCode` (default `400`) and index-prefixed `details` when validation fails.
 
 ---
 

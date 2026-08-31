@@ -5,12 +5,13 @@ Repo-wide conventions live in the [root AGENTS.md](../../AGENTS.md).
 
 ## Purpose
 
-Two things: a validate-or-throw bridge that turns a Zod parse failure into an `HttpError(400)` whose
-`details` map dotted field paths to human-readable messages, and a `zBigint()` schema for carrying
-bigints through JSON.
+Two things: a validate-or-throw bridge that turns a Zod parse failure into an `HttpError` (`400` by
+default) whose `details` map dotted field paths to human-readable messages, and a `zBigint()` schema
+for carrying bigints through JSON.
 
 Reach for `parseAndValidate` at every request boundary. Do **not** use it for internal invariants —
-a failure there is a 500, not a 400, and this always throws 400.
+a failure there is a 500, and the optional `statusCode` only spans `HttpStatusCodes`, so the throw
+is always an HTTP-shaped client/server error rather than a domain error.
 
 ## Install
 
@@ -28,11 +29,11 @@ Runtime dependencies: `@maroonedsoftware/errors`, `zod` (v4).
 
 ## API surface
 
-| Export                  | Kind     | Shape                                                                           | Notes                                                                       |
-| ----------------------- | -------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `parseAndValidate`      | function | `<T extends ZodType>(data: unknown, schema: T) => Promise<z.infer<T>>`          | Uses `safeParseAsync`. Throws `httpError(400).withDetails(...)` on failure. |
-| `parseAndValidateArray` | function | `<T extends ZodType>(data: unknown, schema: T) => Promise<z.infer<T>[]>`        | `schema` describes one **element**, not the array.                          |
-| `zBigint`               | function | `() => ZodType` — a `z.string()` matching `/^-?\d+n$/`, transformed to `bigint` | Accepts `"100n"`, yields `100n`.                                            |
+| Export                  | Kind     | Shape                                                                                                  | Notes                                                                                           |
+| ----------------------- | -------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| `parseAndValidate`      | function | `<T extends ZodType>(data: unknown, schema: T, statusCode?: HttpStatusCodes) => Promise<z.infer<T>>`   | Uses `safeParseAsync`. Throws `httpError(statusCode ?? 400).withDetails(...)` on failure.       |
+| `parseAndValidateArray` | function | `<T extends ZodType>(data: unknown, schema: T, statusCode?: HttpStatusCodes) => Promise<z.infer<T>[]>` | `schema` describes one **element**, not the array. `statusCode` forwards to `parseAndValidate`. |
+| `zBigint`               | function | `() => ZodType` — a `z.string()` matching `/^-?\d+n$/`, transformed to `bigint`                        | Accepts `"100n"`, yields `100n`.                                                                |
 
 ### Detail-key format
 
@@ -73,6 +74,9 @@ router.post('/invoices', bodyParserMiddleware(['application/json']), async ctx =
 
 // Bulk endpoint — schema describes one element
 const rows = await parseAndValidateArray(ctx.parsedBody, CreateInvoice);
+
+// Well-formed but semantically rejected payload — 422 instead of 400
+const patch = await parseAndValidate(ctx.parsedBody, PatchInvoice, 422);
 ```
 
 A failure produces `400` with, for example,
@@ -88,14 +92,20 @@ A failure produces `400` with, for example,
   dropped.
 - Use `zBigint()` in any JSON-facing schema that carries a bigint. `z.bigint()` cannot survive
   `JSON.parse`. Pair it with `bigIntReplacer` from `@maroonedsoftware/utilities` on the way out.
-- Do not catch the thrown `HttpError` to reshape it. `errorMiddleware` already renders `details`.
-- Do not use these for internal invariants or config validation — the 400 is baked in. Validate
-  config with a plain `schema.parse` and let it throw at bootstrap.
+- Do not catch the thrown `HttpError` to reshape it. Pass `statusCode` instead — that is what it is
+  for. `errorMiddleware` already renders `details`.
+- Leave `statusCode` off unless you mean it. `400` is the right answer for a malformed request
+  body; reach for `422` only when the shape parsed and the _meaning_ was rejected.
+- Do not use these for internal invariants or config validation — the throw is always an
+  `HttpError`. Validate config with a plain `schema.parse` and let it throw at bootstrap.
 
 ## Gotchas
 
-- **The status is always 400.** There is no option to change it. If you need a different status,
-  call `schema.safeParseAsync` yourself.
+- **The status defaults to 400 and is capped at `HttpStatusCodes`.** The optional third argument
+  changes it, but only to a code in `HttpStatusMap` — there is still no way to throw a non-HTTP
+  error from here.
+- **`statusCode` applies to the whole call, not per issue.** In `parseAndValidateArray` it covers a
+  non-array input as well as element-level failures; you cannot key it off which issue fired.
 - **`_root` is the key for path-less failures**, including "this is not an array" from
   `parseAndValidateArray`. A client that only reads named fields will show nothing.
 - **Union errors are flattened onto one key.** Every branch of a `z.union` contributes its issues
@@ -130,6 +140,11 @@ Invariants a change must not break:
   to an array. Preserve both behaviours — clients render either shape.
 - The detail-key format (dotted path, `_root`, index prefixes) is what client-side form binding
   depends on. Changing it is breaking even though no type moves.
+- `statusCode` stays optional and stays defaulted to `400`. Existing two-argument callers must keep
+  getting a 400.
+- `HttpStatusCodes` is a **type-only** export of `errors`. Import it with `import type` /
+  `import { type ... }` — `isolatedModules` is on, so a value import emits a runtime binding that
+  does not exist.
 - `errors` and `zod` are the only dependencies.
 
 User-visible changes need a changeset in `.changeset/`.

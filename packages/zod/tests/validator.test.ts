@@ -282,6 +282,44 @@ describe('parseAndValidate', () => {
     const result = await parseAndValidate({ id: '42' }, schema);
     expect(result.id).toBe(42);
   });
+
+  it('should throw with the supplied status code instead of 400', async () => {
+    const schema = z.object({ name: z.string() });
+    try {
+      await parseAndValidate({ name: 123 }, schema, 422);
+      expect.fail('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(HttpError);
+      expect((err as HttpError).statusCode).toBe(422);
+    }
+  });
+
+  it('should keep field-level details when a status code is supplied', async () => {
+    const schema = z.object({ email: z.string().email() });
+    try {
+      await parseAndValidate({ email: 'not-an-email' }, schema, 422);
+      expect.fail('should have thrown');
+    } catch (err) {
+      expect((err as HttpError).statusCode).toBe(422);
+      expect((err as HttpError).details).toHaveProperty('email', 'Invalid email');
+    }
+  });
+
+  it('should default to 400 when no status code is supplied', async () => {
+    const schema = z.object({ name: z.string() });
+    try {
+      await parseAndValidate({ name: 123 }, schema);
+      expect.fail('should have thrown');
+    } catch (err) {
+      expect((err as HttpError).statusCode).toBe(400);
+    }
+  });
+
+  it('should ignore the status code on success', async () => {
+    const schema = z.object({ name: z.string() });
+    const result = await parseAndValidate({ name: 'Alice' }, schema, 422);
+    expect(result).toEqual({ name: 'Alice' });
+  });
 });
 
 describe('parseAndValidateArray', () => {
@@ -478,5 +516,32 @@ describe('parseAndValidateArray', () => {
     });
     const result = await parseAndValidateArray(['ok', 'fine'], schema);
     expect(result).toEqual(['ok', 'fine']);
+  });
+
+  it('should throw an element failure with the supplied status code', async () => {
+    try {
+      await parseAndValidateArray([{ email: 'nope', age: 30 }], userSchema, 422);
+      expect.fail('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(HttpError);
+      expect((err as HttpError).statusCode).toBe(422);
+      expect((err as HttpError).details).toHaveProperty('0.email', 'Invalid email');
+    }
+  });
+
+  it('should apply the supplied status code to a non-array input', async () => {
+    try {
+      await parseAndValidateArray('not-an-array', userSchema, 422);
+      expect.fail('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(HttpError);
+      expect((err as HttpError).statusCode).toBe(422);
+      expect((err as HttpError).details).toHaveProperty('_root', 'Expected array');
+    }
+  });
+
+  it('should ignore the status code on success', async () => {
+    const result = await parseAndValidateArray([{ email: 'a@example.com', age: 30 }], userSchema, 422);
+    expect(result).toEqual([{ email: 'a@example.com', age: 30 }]);
   });
 });
