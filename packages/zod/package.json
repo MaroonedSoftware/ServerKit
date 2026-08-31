@@ -1,6 +1,6 @@
 {
   "name": "@maroonedsoftware/zod",
-  "version": "0.5.6",
+  "version": "0.6.0",
   "description": "Zod utilities for ServerKit.",
   "author": {
     "name": "Marooned Software",
