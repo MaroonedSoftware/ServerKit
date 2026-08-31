@@ -1,5 +1,15 @@
 # @maroonedsoftware/scim
 
+## 0.2.17
+
+### Patch Changes
+
+- 7587006: Update runtime dependency ranges across the workspace (injectkit ^1.7.1, zod ^4.5.4, deepmerge-ts ^8, raw-body ^4, qs ^6.16, kysely ^0.29.5, pg ^8.23, @modelcontextprotocol/sdk ^1.30, @fastify/busboy ^3.2.2, and related minors).
+- Updated dependencies [7587006]
+  - @maroonedsoftware/authentication@4.30.8
+  - @maroonedsoftware/koa@3.0.11
+  - @maroonedsoftware/logger@1.1.9
+
 ## 0.2.16
 
 ### Patch Changes

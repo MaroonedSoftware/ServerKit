@@ -1,6 +1,6 @@
 {
   "name": "@maroonedsoftware/whatsapp",
-  "version": "2.0.7",
+  "version": "2.0.8",
   "description": "WhatsApp Cloud API utilities for ServerKit.",
   "author": {
     "name": "Marooned Software",

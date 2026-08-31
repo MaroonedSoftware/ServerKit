@@ -1,5 +1,16 @@
 # @maroonedsoftware/mcp
 
+## 0.1.8
+
+### Patch Changes
+
+- 7587006: Update runtime dependency ranges across the workspace (injectkit ^1.7.1, zod ^4.5.4, deepmerge-ts ^8, raw-body ^4, qs ^6.16, kysely ^0.29.5, pg ^8.23, @modelcontextprotocol/sdk ^1.30, @fastify/busboy ^3.2.2, and related minors).
+- Updated dependencies [7587006]
+- Updated dependencies [7587006]
+  - @maroonedsoftware/cache@0.5.0
+  - @maroonedsoftware/logger@1.1.9
+  - @maroonedsoftware/policies@0.6.7
+
 ## 0.1.7
 
 ### Patch Changes
