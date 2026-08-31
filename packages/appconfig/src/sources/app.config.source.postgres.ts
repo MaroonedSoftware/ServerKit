@@ -285,9 +285,33 @@ export class AppConfigSourcePostgres implements AppConfigSource {
    * @internal
    */
   private async acquireListener(channel: string, onChange: () => void): Promise<() => void> {
-    const isPool = 'pool' in this.source;
-    const client = isPool ? await this.source.pool.connect() : await this.connectedClient();
+    if ('pool' in this.source) {
+      const client = await this.source.pool.connect();
+      await this.startListening(client, channel, onChange);
+      return () => {
+        client.removeAllListeners('notification');
+        // Destroy (true) rather than return to the pool — see method note.
+        client.release(true);
+      };
+    }
 
+    const client = await this.connectedClient();
+    await this.startListening(client, channel, onChange);
+    return () => {
+      client.removeAllListeners('notification');
+      void client.end().catch(() => {});
+    };
+  }
+
+  /**
+   * Attaches the error/notification handlers to a listen connection and issues the `LISTEN`.
+   *
+   * @param client - The dedicated listen connection (pool-checked-out or owned).
+   * @param channel - The Postgres channel to `LISTEN` on.
+   * @param onChange - Invoked on each notification.
+   * @internal
+   */
+  private async startListening(client: Client, channel: string, onChange: () => void): Promise<void> {
     // pg's Client/PoolClient is an EventEmitter; an unhandled 'error' event would throw. Log instead
     // so a dropped listen connection degrades to "no live notifications" rather than crashing.
     client.on('error', (err: Error) => this.logger.error(`AppConfigSourcePostgres: LISTEN connection error on "${channel}"`, err));
@@ -295,16 +319,6 @@ export class AppConfigSourcePostgres implements AppConfigSource {
     // Channel is configured (never user input); quote it to preserve case. LISTEN takes no
     // bind parameters.
     await client.query(`LISTEN "${channel}"`);
-
-    return () => {
-      client.removeAllListeners('notification');
-      if ('release' in client) {
-        // Destroy (true) rather than return to the pool — see method note.
-        client.release(true);
-      } else {
-        void client.end().catch(() => {});
-      }
-    };
   }
 
   /**

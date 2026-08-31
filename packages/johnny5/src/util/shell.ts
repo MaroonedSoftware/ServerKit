@@ -5,9 +5,9 @@ import { execa, type Options as ExecaOptions, type ResultPromise } from 'execa';
 import type { CliLogger } from './logger.js';
 
 /** Execa options re-typed to require a string `cwd` at the call site. */
-export interface ShellOptions extends ExecaOptions {
+export type ShellOptions = ExecaOptions & {
   cwd?: string;
-}
+};
 
 /** Options accepted by `Shell.runDetached`. */
 export interface RunDetachedOptions {

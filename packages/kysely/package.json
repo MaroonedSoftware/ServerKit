@@ -43,16 +43,16 @@
   "dependencies": {
     "@maroonedsoftware/errors": "workspace:*",
     "@maroonedsoftware/utilities": "workspace:*",
-    "injectkit": "^1.6.0",
-    "kysely": "^0.29.2",
+    "injectkit": "^1.7.1",
+    "kysely": "^0.29.5",
     "luxon": "^3.7.2",
-    "pg": "^8.22.0"
+    "pg": "^8.23.0"
   },
   "devDependencies": {
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
-    "@types/luxon": "^3.7.2",
-    "@types/pg": "^8.20.0"
+    "@types/luxon": "^3.7.5",
+    "@types/pg": "^8.23.1"
   },
   "engines": {
     "node": ">=22"

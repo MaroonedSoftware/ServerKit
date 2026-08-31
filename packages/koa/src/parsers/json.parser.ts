@@ -1,6 +1,6 @@
 import { parse, Reviver } from '@hapi/bourne';
 import { IncomingMessage } from 'http';
-import raw from 'raw-body';
+import raw, { type Options as RawBodyOptions } from 'raw-body';
 import inflate from 'inflation';
 import { httpError } from '@maroonedsoftware/errors';
 import { ServerKitParser, ServerKitParserResult } from './serverkit.parser.js';
@@ -20,7 +20,7 @@ import { Injectable } from 'injectkit';
  * @property length      - Expected byte length from `Content-Length` (auto-set by the parser).
  */
 @Injectable()
-export class JsonParserOptions implements raw.Options {
+export class JsonParserOptions implements RawBodyOptions {
   strict?: boolean;
   protoAction?: 'error' | 'remove' | 'ignore';
   reviver?: Reviver;

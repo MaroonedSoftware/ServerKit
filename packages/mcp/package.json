@@ -50,8 +50,8 @@
     "@maroonedsoftware/errors": "workspace:*",
     "@maroonedsoftware/logger": "workspace:*",
     "@maroonedsoftware/policies": "workspace:*",
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "injectkit": "^1.6.0"
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "injectkit": "^1.7.1"
   },
   "devDependencies": {
     "@maroonedsoftware/cache": "workspace:*",

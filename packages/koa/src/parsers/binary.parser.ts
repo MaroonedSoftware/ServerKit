@@ -1,7 +1,7 @@
 import { Injectable } from 'injectkit';
 import { ServerKitParser, ServerKitParserResult } from './serverkit.parser.js';
 import { IncomingMessage } from 'http';
-import raw from 'raw-body';
+import raw, { type Options as RawBodyOptions } from 'raw-body';
 import inflate from 'inflation';
 
 /**
@@ -13,7 +13,7 @@ import inflate from 'inflation';
  * @property length - Expected byte length from `Content-Length` (auto-set by the parser).
  */
 @Injectable()
-export class BinaryParserOptions implements raw.Options {
+export class BinaryParserOptions implements RawBodyOptions {
   limit?: string;
   length?: number;
 }

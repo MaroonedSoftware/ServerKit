@@ -43,8 +43,8 @@
     "test:ci": "vitest run --coverage"
   },
   "dependencies": {
-    "injectkit": "^1.6.0",
-    "zod": "^4.4.3"
+    "injectkit": "^1.7.1",
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@repo/config-eslint": "workspace:*",

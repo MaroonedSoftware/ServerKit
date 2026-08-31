@@ -84,8 +84,10 @@ describe('add', () => {
   });
 
   it('returns false when the key already exists (NX set did not apply)', async () => {
-    // Redis returns null for a NX SET that was skipped because the key exists.
-    vi.mocked(mockRedis.set).mockResolvedValue(null);
+    // Redis returns null for a NX SET that was skipped because the key exists. The cast is
+    // needed because vi.mocked resolves the overloaded `set` against its non-NX overload,
+    // whose return type excludes null.
+    vi.mocked(mockRedis.set).mockResolvedValue(null as never);
 
     const result = await provider.add('lock', 'held');
 
@@ -101,7 +103,7 @@ describe('add', () => {
   });
 
   it('returns true then false across two calls for the same key', async () => {
-    vi.mocked(mockRedis.set).mockResolvedValueOnce('OK').mockResolvedValueOnce(null);
+    vi.mocked(mockRedis.set).mockResolvedValueOnce('OK').mockResolvedValueOnce(null as never);
 
     expect(await provider.add('lock', 'held')).toBe(true);
     expect(await provider.add('lock', 'held')).toBe(false);

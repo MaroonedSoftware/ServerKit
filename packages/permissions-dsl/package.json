@@ -46,9 +46,9 @@
   "dependencies": {
     "@maroonedsoftware/permissions": "workspace:*",
     "ohm-js": "^17.5.0",
-    "prettier": "^3.9.4",
+    "prettier": "^3.9.6",
     "yaml": "^2.9.0",
-    "zod": "^4.4.3"
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@repo/config-eslint": "workspace:*",

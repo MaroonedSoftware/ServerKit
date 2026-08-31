@@ -42,17 +42,17 @@
     "test:ci": "vitest run --coverage"
   },
   "dependencies": {
-    "injectkit": "^1.6.0",
+    "injectkit": "^1.7.1",
     "luxon": "^3.7.2"
   },
   "devDependencies": {
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
-    "@types/luxon": "^3.7.2",
-    "ioredis": "^5.11.1"
+    "@types/luxon": "^3.7.5",
+    "ioredis": "^6.0.0"
   },
   "peerDependencies": {
-    "ioredis": "^5.10.1"
+    "ioredis": "^5.10.1 || ^6.0.0"
   },
   "peerDependenciesMeta": {
     "ioredis": {

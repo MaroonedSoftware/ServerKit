@@ -3,7 +3,7 @@ import { Injectable } from 'injectkit';
 import { ServerKitParser, ServerKitParserResult } from './serverkit.parser.js';
 import { IncomingMessage } from 'http';
 import { parse, IParseOptions } from 'qs';
-import raw from 'raw-body';
+import raw, { type Options as RawBodyOptions } from 'raw-body';
 import inflate from 'inflation';
 
 /**
@@ -20,7 +20,7 @@ import inflate from 'inflation';
  * @property parameterLimit  - Maximum number of parameters to parse (default: `qs` default of `1000`).
  */
 @Injectable()
-export class FormParserOptions implements raw.Options, IParseOptions {
+export class FormParserOptions implements RawBodyOptions, IParseOptions {
   encoding?: string;
   limit?: string;
   length?: number;

@@ -13,10 +13,12 @@ import { ServerkitError } from '@maroonedsoftware/errors';
 
 /**
  * pg-boss queue options as accepted by `createQueue`/`updateQueue`. Derived from
- * the installed pg-boss types so the mapping tracks the peer's exact shape.
+ * `createQueue`, whose options are the strict (no-`null`) subset of
+ * `UpdateQueueOptions` — {@link JobQueuePolicy} never clears a setting, so the
+ * narrower shape satisfies both calls.
  * @internal
  */
-type PgBossQueueOptions = NonNullable<Parameters<PgBoss['updateQueue']>[1]>;
+type PgBossQueueOptions = NonNullable<Parameters<PgBoss['createQueue']>[1]>;
 
 /**
  * pg-boss work options as accepted by the three-argument `work` overload.

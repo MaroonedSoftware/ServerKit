@@ -128,16 +128,16 @@
   "dependencies": {
     "@maroonedsoftware/permissions": "workspace:*",
     "@maroonedsoftware/permissions-dsl": "workspace:*",
-    "vscode-languageclient": "^10.1.0",
-    "vscode-languageserver": "^10.1.0",
-    "vscode-languageserver-textdocument": "^1.0.12"
+    "vscode-languageclient": "^10.1.1",
+    "vscode-languageserver": "^10.1.1",
+    "vscode-languageserver-textdocument": "^1.0.14"
   },
   "devDependencies": {
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
-    "@types/vscode": "^1.125.0",
+    "@types/vscode": "^1.134.0",
     "@vscode/vsce": "^3.9.2",
-    "esbuild": "^0.28.1",
-    "sharp": "^0.35.3"
+    "esbuild": "^0.28.2",
+    "sharp": "^0.35.4"
   }
 }

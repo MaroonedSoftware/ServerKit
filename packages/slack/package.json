@@ -53,8 +53,8 @@
     "@maroonedsoftware/errors": "workspace:*",
     "@maroonedsoftware/logger": "workspace:*",
     "@maroonedsoftware/policies": "workspace:*",
-    "@slack/web-api": "^7.18.0",
-    "injectkit": "^1.6.0",
+    "@slack/web-api": "^8.1.1",
+    "injectkit": "^1.7.1",
     "luxon": "^3.7.2"
   },
   "devDependencies": {
@@ -62,7 +62,7 @@
     "@maroonedsoftware/comms": "workspace:*",
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
-    "@types/luxon": "^3.7.2"
+    "@types/luxon": "^3.7.5"
   },
   "peerDependencies": {
     "@maroonedsoftware/cache": "workspace:*",

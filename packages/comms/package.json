@@ -42,7 +42,7 @@
   "dependencies": {
     "@maroonedsoftware/errors": "workspace:*",
     "@maroonedsoftware/logger": "workspace:*",
-    "injectkit": "^1.6.0"
+    "injectkit": "^1.7.1"
   },
   "devDependencies": {
     "@repo/config-eslint": "workspace:*",

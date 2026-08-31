@@ -42,8 +42,8 @@
     "test:ci": "vitest run --coverage"
   },
   "dependencies": {
-    "@maroonedsoftware/errors": "workspace:*",
-    "@fastify/busboy": "^3.2.0"
+    "@fastify/busboy": "^3.2.2",
+    "@maroonedsoftware/errors": "workspace:*"
   },
   "devDependencies": {
     "@repo/config-eslint": "workspace:*",

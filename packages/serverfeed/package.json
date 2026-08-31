@@ -58,7 +58,7 @@
     "@maroonedsoftware/logger": "workspace:*",
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
-    "@types/luxon": "^3.7.2"
+    "@types/luxon": "^3.7.5"
   },
   "engines": {
     "node": ">=22"
