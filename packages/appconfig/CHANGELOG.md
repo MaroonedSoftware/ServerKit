@@ -1,5 +1,17 @@
 # @maroonedsoftware/appconfig
 
+## 2.6.0
+
+### Minor Changes
+
+- 7587006: Widen optional SDK peer ranges to allow the new majors now tested against: ioredis `^5.10.1 || ^6.0.0` (cache), @google-cloud/storage `^7.14.0 || ^8.0.0` (storage), and @google-cloud/secret-manager `^6.1.1 || ^7.0.0` (appconfig).
+
+### Patch Changes
+
+- 7587006: Update runtime dependency ranges across the workspace (injectkit ^1.7.1, zod ^4.5.4, deepmerge-ts ^8, raw-body ^4, qs ^6.16, kysely ^0.29.5, pg ^8.23, @modelcontextprotocol/sdk ^1.30, @fastify/busboy ^3.2.2, and related minors).
+- Updated dependencies [7587006]
+  - @maroonedsoftware/logger@1.1.9
+
 ## 2.5.1
 
 ### Patch Changes

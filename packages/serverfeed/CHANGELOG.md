@@ -1,5 +1,12 @@
 # @maroonedsoftware/serverfeed
 
+## 0.1.6
+
+### Patch Changes
+
+- Updated dependencies [7587006]
+  - @maroonedsoftware/logger@1.1.9
+
 ## 0.1.5
 
 ### Patch Changes
