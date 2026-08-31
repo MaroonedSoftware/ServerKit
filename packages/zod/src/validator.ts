@@ -87,10 +87,15 @@ function formatZodErrors(error: ZodError) {
 /**
  * Parses and validates `data` against a Zod schema, returning the typed result on success.
  *
- * On failure, throws an `HttpError` — `400` by default, or `statusCode` when supplied — whose
- * `details` map field paths to human-readable error messages. Field paths use dot notation
+ * On failure, throws an `HttpError` — `400` by default, or `statusCode` when supplied — carrying a
+ * map of field paths to human-readable error messages. Field paths use dot notation
  * (e.g. `"user.email"`). Root-level errors are keyed as `"_root"`. When a field has multiple
  * violations the value is a string array.
+ *
+ * Where that map lands depends on the status: a 4xx puts it on `details`, which `errorMiddleware`
+ * renders into the response body, while a 5xx puts it on `internalDetails`, which is logged but
+ * never sent to a client. A server-side failure should not tell the caller which of its own fields
+ * the server disagreed with, so a 5xx response body carries no `details` at all.
  *
  * Special cases:
  * - Unrecognized keys (from `z.strictObject`) are each reported as `"Unrecognized key"`.
@@ -99,9 +104,11 @@ function formatZodErrors(error: ZodError) {
  * @param data - The unknown input to validate.
  * @param schema - The Zod schema to validate against.
  * @param statusCode - Status for the thrown `HttpError`. Defaults to `400`; pass e.g. `422` when
- * the payload is syntactically fine but semantically rejected.
+ * the payload is syntactically fine but semantically rejected. A value `>= 500` also diverts the
+ * field map from `details` to `internalDetails`.
  * @returns The parsed and transformed output inferred from the schema.
- * @throws {HttpError} `statusCode` (default `400`) with field-level `details` when validation fails.
+ * @throws {HttpError} `statusCode` (default `400`), with the field map on `details` below `500`
+ * and on `internalDetails` at `500` and above.
  *
  * @example
  * ```typescript
@@ -116,7 +123,12 @@ export const parseAndValidate = async <T extends ZodType>(data: unknown, schema:
   const parsed = await schema.safeParseAsync(data);
 
   if (!parsed.success) {
-    throw httpError(statusCode).withDetails(formatZodErrors(parsed.error));
+    const details = formatZodErrors(parsed.error);
+    if (statusCode >= 500) {
+      throw httpError(statusCode).withInternalDetails(details);
+    } else {
+      throw httpError(statusCode).withDetails(details);
+    }
   }
 
   return parsed.data;
@@ -134,9 +146,11 @@ export const parseAndValidate = async <T extends ZodType>(data: unknown, schema:
  * @param data - The unknown input to validate. Must be an array to pass.
  * @param schema - The Zod schema each element is validated against.
  * @param statusCode - Status for the thrown `HttpError`. Defaults to `400`. Applies to a
- * non-array input as well as to element-level failures.
+ * non-array input as well as to element-level failures, and a value `>= 500` diverts the field map
+ * to `internalDetails` exactly as in {@link parseAndValidate}.
  * @returns The parsed and transformed elements, in input order.
- * @throws {HttpError} `statusCode` (default `400`) with index-prefixed `details` when validation fails.
+ * @throws {HttpError} `statusCode` (default `400`), with the index-prefixed field map on `details`
+ * below `500` and on `internalDetails` at `500` and above.
  *
  * @example
  * ```typescript

@@ -29,11 +29,11 @@ Runtime dependencies: `@maroonedsoftware/errors`, `zod` (v4).
 
 ## API surface
 
-| Export                  | Kind     | Shape                                                                                                  | Notes                                                                                           |
-| ----------------------- | -------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| `parseAndValidate`      | function | `<T extends ZodType>(data: unknown, schema: T, statusCode?: HttpStatusCodes) => Promise<z.infer<T>>`   | Uses `safeParseAsync`. Throws `httpError(statusCode ?? 400).withDetails(...)` on failure.       |
-| `parseAndValidateArray` | function | `<T extends ZodType>(data: unknown, schema: T, statusCode?: HttpStatusCodes) => Promise<z.infer<T>[]>` | `schema` describes one **element**, not the array. `statusCode` forwards to `parseAndValidate`. |
-| `zBigint`               | function | `() => ZodType` — a `z.string()` matching `/^-?\d+n$/`, transformed to `bigint`                        | Accepts `"100n"`, yields `100n`.                                                                |
+| Export                  | Kind     | Shape                                                                                                  | Notes                                                                                                                                                            |
+| ----------------------- | -------- | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `parseAndValidate`      | function | `<T extends ZodType>(data: unknown, schema: T, statusCode?: HttpStatusCodes) => Promise<z.infer<T>>`   | Uses `safeParseAsync`. Throws `httpError(statusCode ?? 400)` on failure, with the field map on `withDetails` below `500` and on `withInternalDetails` at `500`+. |
+| `parseAndValidateArray` | function | `<T extends ZodType>(data: unknown, schema: T, statusCode?: HttpStatusCodes) => Promise<z.infer<T>[]>` | `schema` describes one **element**, not the array. `statusCode` forwards to `parseAndValidate`.                                                                  |
+| `zBigint`               | function | `() => ZodType` — a `z.string()` matching `/^-?\d+n$/`, transformed to `bigint`                        | Accepts `"100n"`, yields `100n`.                                                                                                                                 |
 
 ### Detail-key format
 
@@ -96,6 +96,9 @@ A failure produces `400` with, for example,
   for. `errorMiddleware` already renders `details`.
 - Leave `statusCode` off unless you mean it. `400` is the right answer for a malformed request
   body; reach for `422` only when the shape parsed and the _meaning_ was rejected.
+- Pass a 5xx when the data being validated did not come from the caller — an upstream response, a
+  queue payload, a database row. The field map is then logged rather than returned, which is the
+  behaviour you want when the caller could not have caused the failure and cannot fix it.
 - Do not use these for internal invariants or config validation — the throw is always an
   `HttpError`. Validate config with a plain `schema.parse` and let it throw at bootstrap.
 
@@ -106,6 +109,10 @@ A failure produces `400` with, for example,
   error from here.
 - **`statusCode` applies to the whole call, not per issue.** In `parseAndValidateArray` it covers a
   non-array input as well as element-level failures; you cannot key it off which issue fired.
+- **A 5xx moves the field map from `details` to `internalDetails`,** so a 5xx response body has no
+  `details` at all. The cutover is `statusCode >= 500`, with no middle ground — `499` is
+  client-facing, `500` is not. Code that reads `err.details` off a thrown error has to read
+  `internalDetails` too once it starts passing 5xx codes.
 - **`_root` is the key for path-less failures**, including "this is not an array" from
   `parseAndValidateArray`. A client that only reads named fields will show nothing.
 - **Union errors are flattened onto one key.** Every branch of a `z.union` contributes its issues
@@ -141,7 +148,10 @@ Invariants a change must not break:
 - The detail-key format (dotted path, `_root`, index prefixes) is what client-side form binding
   depends on. Changing it is breaking even though no type moves.
 - `statusCode` stays optional and stays defaulted to `400`. Existing two-argument callers must keep
-  getting a 400.
+  getting a 400 with the field map on `details`.
+- A 5xx never populates `details`. `errorMiddleware` copies `details` into the response body for
+  every `HttpError` regardless of status, so putting the field map there for a 5xx leaks the
+  server's own validation failure to the client.
 - `HttpStatusCodes` is a **type-only** export of `errors`. Import it with `import type` /
   `import { type ... }` — `isolatedModules` is on, so a value import emits a runtime binding that
   does not exist.

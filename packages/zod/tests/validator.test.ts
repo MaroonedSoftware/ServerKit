@@ -320,6 +320,62 @@ describe('parseAndValidate', () => {
     const result = await parseAndValidate({ name: 'Alice' }, schema, 422);
     expect(result).toEqual({ name: 'Alice' });
   });
+
+  it('should divert the field map to internalDetails for a 5xx status', async () => {
+    const schema = z.object({ email: z.string().email() });
+    try {
+      await parseAndValidate({ email: 'not-an-email' }, schema, 500);
+      expect.fail('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(HttpError);
+      expect((err as HttpError).statusCode).toBe(500);
+      expect((err as HttpError).internalDetails).toEqual({ email: 'Invalid email' });
+    }
+  });
+
+  it('should leave details unset for a 5xx status so nothing reaches the client', async () => {
+    // errorMiddleware renders error.details into the response body for any HttpError, 5xx
+    // included, and never renders internalDetails. A populated details here would leak which
+    // fields the server disagreed with on a failure the caller cannot act on.
+    const schema = z.object({ email: z.string().email() });
+    try {
+      await parseAndValidate({ email: 'not-an-email' }, schema, 503);
+      expect.fail('should have thrown');
+    } catch (err) {
+      expect((err as HttpError).details).toBeUndefined();
+    }
+  });
+
+  it('should keep the field map on details for a 4xx status', async () => {
+    const schema = z.object({ email: z.string().email() });
+    try {
+      await parseAndValidate({ email: 'not-an-email' }, schema, 422);
+      expect.fail('should have thrown');
+    } catch (err) {
+      expect((err as HttpError).details).toEqual({ email: 'Invalid email' });
+      expect((err as HttpError).internalDetails).toBeUndefined();
+    }
+  });
+
+  it('should treat 499 as client-facing and 500 as internal', async () => {
+    const schema = z.object({ email: z.string().email() });
+    const thrownFor = async (statusCode: 499 | 500) => {
+      try {
+        await parseAndValidate({ email: 'not-an-email' }, schema, statusCode);
+        expect.fail('should have thrown');
+      } catch (err) {
+        return err as HttpError;
+      }
+    };
+
+    const below = await thrownFor(499);
+    expect(below.details).toEqual({ email: 'Invalid email' });
+    expect(below.internalDetails).toBeUndefined();
+
+    const atBoundary = await thrownFor(500);
+    expect(atBoundary.details).toBeUndefined();
+    expect(atBoundary.internalDetails).toEqual({ email: 'Invalid email' });
+  });
 });
 
 describe('parseAndValidateArray', () => {
@@ -543,5 +599,34 @@ describe('parseAndValidateArray', () => {
   it('should ignore the status code on success', async () => {
     const result = await parseAndValidateArray([{ email: 'a@example.com', age: 30 }], userSchema, 422);
     expect(result).toEqual([{ email: 'a@example.com', age: 30 }]);
+  });
+
+  it('should divert index-prefixed keys to internalDetails for a 5xx status', async () => {
+    try {
+      await parseAndValidateArray(
+        [
+          { email: 'a@example.com', age: 30 },
+          { email: 'nope', age: 40 },
+        ],
+        userSchema,
+        500,
+      );
+      expect.fail('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(HttpError);
+      expect((err as HttpError).statusCode).toBe(500);
+      expect((err as HttpError).details).toBeUndefined();
+      expect((err as HttpError).internalDetails).toEqual({ '1.email': 'Invalid email' });
+    }
+  });
+
+  it('should divert a non-array input to internalDetails for a 5xx status', async () => {
+    try {
+      await parseAndValidateArray('not-an-array', userSchema, 500);
+      expect.fail('should have thrown');
+    } catch (err) {
+      expect((err as HttpError).details).toBeUndefined();
+      expect((err as HttpError).internalDetails).toEqual({ _root: 'Expected array' });
+    }
   });
 });
