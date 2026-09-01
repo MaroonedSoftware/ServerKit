@@ -90,10 +90,10 @@ class SearchDocsTool implements McpToolHandler {
 }
 
 // Bootstrap
-const tools = new McpToolHandlerMap();
-tools.set('search_docs', container.get(SearchDocsTool));
-registry.register(McpToolHandlerMap).useValue(tools);
-registry.register(McpResourceHandlerMap).useValue(new McpResourceHandlerMap()); // empty is fine
+registry.register(SearchDocsTool).useClass(SearchDocsTool).asSingleton();
+
+registry.register(McpToolHandlerMap).useMap(McpToolHandlerMap).set('search_docs', SearchDocsTool);
+registry.register(McpResourceHandlerMap).useMap(McpResourceHandlerMap); // empty is fine
 ```
 
 Resources follow the same shape with `McpResourceHandler` (`read(uri, context)`), registered by URI in `McpResourceHandlerMap`. The dispatcher advertises only the capabilities backed by a non-empty map, so a tools-only server doesn't claim resource support.

@@ -110,11 +110,16 @@ class DeployCommand implements DiscordInteractionHandler {
 }
 
 // Bootstrap
-const interactions = new DiscordInteractionHandlerMap();
-interactions.set('command:deploy', container.get(DeployCommand));
-interactions.set('component:approve', container.get(ApproveButton));
-interactions.set('modal:create_ticket', container.get(CreateTicketModal));
-registry.register(DiscordInteractionHandlerMap).useValue(interactions);
+registry.register(DeployCommand).useClass(DeployCommand).asSingleton();
+registry.register(ApproveButton).useClass(ApproveButton).asSingleton();
+registry.register(CreateTicketModal).useClass(CreateTicketModal).asSingleton();
+
+registry
+  .register(DiscordInteractionHandlerMap)
+  .useMap(DiscordInteractionHandlerMap)
+  .set('command:deploy', DeployCommand)
+  .set('component:approve', ApproveButton)
+  .set('modal:create_ticket', CreateTicketModal);
 
 // Route
 router.post('/discord/interactions', async ctx => {

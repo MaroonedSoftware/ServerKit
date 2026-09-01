@@ -107,9 +107,9 @@ class AppMentionHandler implements SlackEventHandler {
 }
 
 // Bootstrap
-const events = new SlackEventHandlerMap();
-events.set('app_mention', container.get(AppMentionHandler));
-registry.register(SlackEventHandlerMap).useValue(events);
+registry.register(AppMentionHandler).useClass(AppMentionHandler).asSingleton();
+
+registry.register(SlackEventHandlerMap).useMap(SlackEventHandlerMap).set('app_mention', AppMentionHandler);
 
 // Route
 router.post('/slack/events', async ctx => {
@@ -181,9 +181,9 @@ class DeployCommand implements SlackCommandHandler {
   }
 }
 
-const commands = new SlackCommandHandlerMap();
-commands.set('/deploy', container.get(DeployCommand));
-registry.register(SlackCommandHandlerMap).useValue(commands);
+registry.register(DeployCommand).useClass(DeployCommand).asSingleton();
+
+registry.register(SlackCommandHandlerMap).useMap(SlackCommandHandlerMap).set('/deploy', DeployCommand);
 
 router.post('/slack/commands', async ctx => {
   const raw = await rawBody(ctx.req, { encoding: 'utf8' });
@@ -230,10 +230,14 @@ import {
 } from '@maroonedsoftware/slack';
 import rawBody from 'raw-body';
 
-const interactions = new SlackInteractionHandlerMap();
-interactions.set('block_actions:approve', container.get(ApproveButton));
-interactions.set('view_submission:create_ticket_modal', container.get(CreateTicketModal));
-registry.register(SlackInteractionHandlerMap).useValue(interactions);
+registry.register(ApproveButton).useClass(ApproveButton).asSingleton();
+registry.register(CreateTicketModal).useClass(CreateTicketModal).asSingleton();
+
+registry
+  .register(SlackInteractionHandlerMap)
+  .useMap(SlackInteractionHandlerMap)
+  .set('block_actions:approve', ApproveButton)
+  .set('view_submission:create_ticket_modal', CreateTicketModal);
 
 router.post('/slack/interactions', async ctx => {
   const raw = await rawBody(ctx.req, { encoding: 'utf8' });

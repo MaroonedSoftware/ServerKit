@@ -194,10 +194,9 @@ import {
 import { Duration } from 'luxon';
 
 // Scheme dispatch — keys MUST be lowercase
-const handlers = new AuthenticationHandlerMap();
-handlers.set('bearer', container.get(JwtAuthenticationHandler));
+registry.register(JwtAuthenticationHandler).useClass(JwtAuthenticationHandler).asSingleton();
 
-registry.register(AuthenticationHandlerMap).useValue(handlers);
+registry.register(AuthenticationHandlerMap).useMap(AuthenticationHandlerMap).set('bearer', JwtAuthenticationHandler);
 registry.register(AuthenticationSchemeHandler).useClass(AuthenticationSchemeHandler);
 
 // Sessions

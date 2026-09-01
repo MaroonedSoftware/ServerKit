@@ -35,10 +35,14 @@ export interface McpToolHandler {
  *
  * @example
  * ```ts
- * const tools = new McpToolHandlerMap();
- * tools.set('search_docs', container.get(SearchDocsTool));
- * tools.set('create_ticket', container.get(CreateTicketTool));
- * registry.register(McpToolHandlerMap).useValue(tools);
+ * registry.register(SearchDocsTool).useClass(SearchDocsTool).asSingleton();
+ * registry.register(CreateTicketTool).useClass(CreateTicketTool).asSingleton();
+ *
+ * registry
+ *   .register(McpToolHandlerMap)
+ *   .useMap(McpToolHandlerMap)
+ *   .set('search_docs', SearchDocsTool)
+ *   .set('create_ticket', CreateTicketTool);
  * ```
  */
 @Injectable()

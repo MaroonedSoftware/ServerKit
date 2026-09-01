@@ -125,9 +125,9 @@ class TextHandler implements WhatsAppMessageHandler {
   }
 }
 
-const messages = new WhatsAppMessageHandlerMap();
-messages.set('text', container.get(TextHandler));
-registry.register(WhatsAppMessageHandlerMap).useValue(messages);
+registry.register(TextHandler).useClass(TextHandler).asSingleton();
+
+registry.register(WhatsAppMessageHandlerMap).useMap(WhatsAppMessageHandlerMap).set('text', TextHandler);
 
 router.post('/whatsapp/webhook', async ctx => {
   const raw = await rawBody(ctx.req, { encoding: 'utf8' });

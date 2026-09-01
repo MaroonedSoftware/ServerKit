@@ -110,9 +110,9 @@ class StartCommand implements TelegramCommandHandler {
   }
 }
 
-const commands = new TelegramCommandHandlerMap();
-commands.set('/start', container.get(StartCommand));
-registry.register(TelegramCommandHandlerMap).useValue(commands);
+registry.register(StartCommand).useClass(StartCommand).asSingleton();
+
+registry.register(TelegramCommandHandlerMap).useMap(TelegramCommandHandlerMap).set('/start', StartCommand);
 
 router.post('/telegram/webhook', async ctx => {
   const raw = await rawBody(ctx.req, { encoding: 'utf8' });

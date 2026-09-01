@@ -31,9 +31,12 @@ export type SlackEventsResponse = { challenge: string } | undefined;
  *
  * @example
  * ```ts
- * const commands = new SlackCommandHandlerMap();
- * commands.set('/deploy', container.get(DeployCommandHandler));
- * registry.register(SlackCommandHandlerMap).useValue(commands);
+ * registry.register(DeployCommandHandler).useClass(DeployCommandHandler).asSingleton();
+ *
+ * registry
+ *   .register(SlackCommandHandlerMap)
+ *   .useMap(SlackCommandHandlerMap)
+ *   .set('/deploy', DeployCommandHandler);
  * ```
  */
 @Injectable()
@@ -46,9 +49,12 @@ export class SlackCommandHandlerMap extends Map<string, SlackCommandHandler> {}
  *
  * @example
  * ```ts
- * const handlers = new SlackEventHandlerMap();
- * handlers.set('app_mention', container.get(MyAppMentionHandler));
- * registry.register(SlackEventHandlerMap).useValue(handlers);
+ * registry.register(MyAppMentionHandler).useClass(MyAppMentionHandler).asSingleton();
+ *
+ * registry
+ *   .register(SlackEventHandlerMap)
+ *   .useMap(SlackEventHandlerMap)
+ *   .set('app_mention', MyAppMentionHandler);
  * ```
  */
 @Injectable()
@@ -63,10 +69,14 @@ export class SlackEventHandlerMap extends Map<string, SlackEventHandler> {}
  *
  * @example
  * ```ts
- * const interactions = new SlackInteractionHandlerMap();
- * interactions.set('block_actions:approve_button', container.get(ApproveHandler));
- * interactions.set('view_submission:create_ticket_modal', container.get(CreateTicketHandler));
- * registry.register(SlackInteractionHandlerMap).useValue(interactions);
+ * registry.register(ApproveHandler).useClass(ApproveHandler).asSingleton();
+ * registry.register(CreateTicketHandler).useClass(CreateTicketHandler).asSingleton();
+ *
+ * registry
+ *   .register(SlackInteractionHandlerMap)
+ *   .useMap(SlackInteractionHandlerMap)
+ *   .set('block_actions:approve_button', ApproveHandler)
+ *   .set('view_submission:create_ticket_modal', CreateTicketHandler);
  * ```
  */
 @Injectable()

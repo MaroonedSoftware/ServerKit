@@ -30,9 +30,12 @@ export type WhatsAppDispatchOptions = { idempotency?: IdempotencyStore };
  *
  * @example
  * ```ts
- * const messages = new WhatsAppMessageHandlerMap();
- * messages.set('text', container.get(TextMessageHandler));
- * registry.register(WhatsAppMessageHandlerMap).useValue(messages);
+ * registry.register(TextMessageHandler).useClass(TextMessageHandler).asSingleton();
+ *
+ * registry
+ *   .register(WhatsAppMessageHandlerMap)
+ *   .useMap(WhatsAppMessageHandlerMap)
+ *   .set('text', TextMessageHandler);
  * ```
  */
 @Injectable()
@@ -44,9 +47,12 @@ export class WhatsAppMessageHandlerMap extends Map<string, WhatsAppMessageHandle
  *
  * @example
  * ```ts
- * const interactives = new WhatsAppInteractiveHandlerMap();
- * interactives.set('confirm_order', container.get(ConfirmOrderHandler));
- * registry.register(WhatsAppInteractiveHandlerMap).useValue(interactives);
+ * registry.register(ConfirmOrderHandler).useClass(ConfirmOrderHandler).asSingleton();
+ *
+ * registry
+ *   .register(WhatsAppInteractiveHandlerMap)
+ *   .useMap(WhatsAppInteractiveHandlerMap)
+ *   .set('confirm_order', ConfirmOrderHandler);
  * ```
  */
 @Injectable()

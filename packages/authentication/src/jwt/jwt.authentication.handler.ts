@@ -14,10 +14,12 @@ import { Logger } from '@maroonedsoftware/logger';
  *
  * @example
  * ```typescript
+ * registry.register(MyIssuer).useClass(MyIssuer).asSingleton();
+ *
  * registry
  *   .register(JwtAuthenticationIssuerMap)
- *   .useMap()
- *   .add('https://auth.example.com', MyIssuer);
+ *   .useMap(JwtAuthenticationIssuerMap)
+ *   .set('https://auth.example.com', MyIssuer);
  * ```
  */
 @Injectable()

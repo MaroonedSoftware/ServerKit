@@ -130,11 +130,10 @@ class SearchDocsTool implements McpToolHandler {
 }
 
 // Composition root
-const tools = new McpToolHandlerMap();
-tools.set('search_docs', container.get(SearchDocsTool));
+registry.register(SearchDocsTool).useClass(SearchDocsTool).asSingleton();
 
-registry.register(McpToolHandlerMap).useValue(tools);
-registry.register(McpResourceHandlerMap).useValue(new McpResourceHandlerMap());
+registry.register(McpToolHandlerMap).useMap(McpToolHandlerMap).set('search_docs', SearchDocsTool);
+registry.register(McpResourceHandlerMap).useMap(McpResourceHandlerMap);
 registry.register(McpConfig).useValue(appConfig.getAs<McpConfig>('mcp'));
 policies.set(MCP_AUTH_POLICY, McpAuthPolicy);
 ```
