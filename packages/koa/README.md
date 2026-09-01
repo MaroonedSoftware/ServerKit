@@ -19,7 +19,7 @@ Peer dependencies: `koa`, `@koa/router`, `@koa/cors`.
 - **ServerKitRouter** — Router typed for `ServerKitContext`
 - **ServerKitRouterType** — The router instance type returned by `ServerKitRouter`, for typing routers without referencing `@koa/router` directly
 - **ServerKitMiddleware** — Middleware type bound to `ServerKitContext`
-- **serverKitContextMiddleware** — Populates context with scoped container, logger, and request/correlation IDs; registers the live context against the `ServerKitContext` injection token so request-scoped services can inject it
+- **serverKitContextMiddleware** — Populates context with scoped container, logger, and request/correlation IDs; registers the live context against the `ServerKitContext` injection token so request-scoped services can inject it. The scoped container is disposed when the response closes, releasing any scoped services that implement a dispose protocol
 - **corsMiddleware** — CORS headers with `'*'`, string, or RegExp origin matching
 - **errorMiddleware** — Central error handler; maps HTTP errors to status/body, 404 for unmatched routes, 500 for unknown errors
 - **rateLimiterMiddleware** — Per-IP rate limiting via `rate-limiter-flexible` (429 when exceeded)

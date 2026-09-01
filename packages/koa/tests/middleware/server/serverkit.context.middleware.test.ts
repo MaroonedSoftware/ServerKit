@@ -12,30 +12,42 @@ describe('serverKitContextMiddleware', () => {
   let mockScopedContainer: {
     get: Mock;
     override: Mock;
+    disposeAsync: Mock;
   };
   let mockContainer: {
     createScopedContainer: Mock;
   };
   let mockLogger: Logger;
+  let mockRes: { once: Mock };
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLogger = {} as Logger;
+    mockLogger = { error: vi.fn() } as unknown as Logger;
     mockScopedContainer = {
       get: vi.fn().mockReturnValue(mockLogger),
       override: vi.fn(),
+      disposeAsync: vi.fn().mockResolvedValue(undefined),
     };
     mockContainer = {
       createScopedContainer: vi.fn().mockReturnValue(mockScopedContainer),
     };
     mockNext = vi.fn().mockResolvedValue(undefined);
+    mockRes = { once: vi.fn() };
     mockCtx = {
       path: '/api/example',
       get: vi.fn(),
       set: vi.fn(),
       headers: {} as Record<string, string>,
+      res: mockRes,
     } as unknown as ServerKitContext;
   });
+
+  /** The 'close' listener the middleware registered on ctx.res, for tests to fire by hand. */
+  const closeListener = (): (() => void) => {
+    const call = mockRes.once.mock.calls.find(([event]) => event === 'close');
+    expect(call).toBeDefined();
+    return call![1] as () => void;
+  };
 
   it('should return a middleware function', () => {
     const middleware = serverKitContextMiddleware(mockContainer as unknown as Container);
@@ -175,5 +187,46 @@ describe('serverKitContextMiddleware', () => {
     await middleware(mockCtx, mockNext);
 
     expect(mockNext).toHaveBeenCalledTimes(1);
+  });
+
+  it('should register exactly one close listener on ctx.res', async () => {
+    const middleware = serverKitContextMiddleware(mockContainer as unknown as Container);
+
+    await middleware(mockCtx, mockNext);
+
+    expect(mockRes.once).toHaveBeenCalledTimes(1);
+    expect(mockRes.once).toHaveBeenCalledWith('close', expect.any(Function));
+  });
+
+  it('should not dispose the scoped container before the response closes', async () => {
+    // SSE/serverfeed handlers return while the response stays open, so disposal must be
+    // driven by the response closing, never by next() unwinding.
+    const middleware = serverKitContextMiddleware(mockContainer as unknown as Container);
+
+    await middleware(mockCtx, mockNext);
+
+    expect(mockScopedContainer.disposeAsync).not.toHaveBeenCalled();
+  });
+
+  it('should dispose the scoped container when the response closes', async () => {
+    const middleware = serverKitContextMiddleware(mockContainer as unknown as Container);
+
+    await middleware(mockCtx, mockNext);
+    closeListener()();
+
+    expect(mockScopedContainer.disposeAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('should log a disposal failure instead of letting it reject unhandled', async () => {
+    // The response is already gone when disposal runs, so a failure has no request to fail —
+    // it must land on the logger. An unhandled rejection here would fail the vitest run.
+    mockScopedContainer.disposeAsync.mockRejectedValue(new Error('teardown failed'));
+    const middleware = serverKitContextMiddleware(mockContainer as unknown as Container);
+
+    await middleware(mockCtx, mockNext);
+    closeListener()();
+    await new Promise(resolve => setImmediate(resolve));
+
+    expect(mockLogger.error).toHaveBeenCalledWith(expect.objectContaining({ message: 'teardown failed' }));
   });
 });
