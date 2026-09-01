@@ -1,5 +1,15 @@
 # @maroonedsoftware/zod
 
+## 0.7.0
+
+### Minor Changes
+
+- f2c5b2a: New `@maroonedsoftware/zod/serializer` subpath exporting `compileSerializer`, which turns a Zod schema into a `fast-json-stringify` serializer for the schema's output type — the compiled-serialization technique Fastify uses, typically 2-3× faster than `JSON.stringify` for a known shape. The conversion goes through zod's native `z.toJSONSchema` targeting draft-07, and nodes with no JSON Schema equivalent (transforms, `z.custom`, `z.date`, `z.bigint`) fail at compile time — startup, not per request — unless mapped via `override` or admitted with `unrepresentable: 'any'`. The returned function performs no validation; fast-json-stringify silently coerces or drops non-conforming input, so only serialize values that came out of the schema. `fast-json-stringify` is a new optional peer dependency loaded only by the subpath — the root barrel is unchanged and stays dependency-light. The package also gains an `exports` map (previously it had none), so deep imports into `dist/` no longer resolve; import from the package root or the `/serializer` subpath.
+
+### Patch Changes
+
+- 8b5bf70: `parseAndValidate` and `parseAndValidateArray` now complete fully synchronous schemas without a promise round-trip per parse. Previously every call went through `safeParseAsync`, which unconditionally awaits even when the schema contains nothing asynchronous — a microtask-queue tick per validation, and a generated route handler validates params, query, headers, and body separately. The functions now run zod's internal parse directly in async mode, which returns synchronously for sync schemas and a Promise only when the schema actually contains async refinements or transforms; issues are finalized through the same path `safeParseAsync` uses, so error shapes, detail keys, custom error maps, and the 4xx/5xx `details`/`internalDetails` split are all unchanged, as are both function signatures. Async refinements and transforms behave exactly as before, including a rejecting refinement surfacing as the call's own rejection.
+
 ## 0.6.1
 
 ### Patch Changes

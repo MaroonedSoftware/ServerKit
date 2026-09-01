@@ -1,5 +1,12 @@
 # @maroonedsoftware/whatsapp
 
+## 2.0.9
+
+### Patch Changes
+
+- Updated dependencies [8557da7]
+  - @maroonedsoftware/policies@0.6.8
+
 ## 2.0.8
 
 ### Patch Changes
