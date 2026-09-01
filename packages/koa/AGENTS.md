@@ -60,8 +60,10 @@ Runtime dependencies: `appconfig`, `authentication`, `errors`, `logger`, `multip
 | `corsMiddleware`             | function                   | `(options?: CorsOptions) => ServerKitMiddleware`    | `origin` accepts `'*'`, a string, or a `RegExp`.                                             |
 | `rateLimiterMiddleware`      | function                   | `(rateLimiter: RateLimiter) => ServerKitMiddleware` | Per-IP; 429 when exceeded.                                                                   |
 | `RateLimiter`                | interface + abstract class | `extends RateLimiterAbstract`                       | DI token for a `rate-limiter-flexible` limiter.                                              |
-| `authenticationMiddleware`   | function                   | `() => ServerKitMiddleware`                         | Resolves `Authorization` via `AuthenticationSchemeHandler` into `ctx.authenticationSession`. |
-| `serverKitDefaultMiddleware` | function                   | `(container: Container) => ServerKitMiddleware[]`   | The canonical stack in canonical order.                                                      |
+| `authenticationMiddleware`   | function                   | `(options?: AuthenticationMiddlewareOptions) => ServerKitMiddleware` | Resolves `Authorization` via `AuthenticationSchemeHandler` into `ctx.authenticationSession`. `anonymousPaths` (exact strings or RegExps against `ctx.path`) skips the handler entirely; the session stays invalid and the header is still stripped. |
+| `AuthenticationMiddlewareOptions` | interface             | `{ anonymousPaths?: (string \| RegExp)[] }`         | Strings match exactly — no prefix matching; RegExp is the escape hatch.                      |
+| `serverKitDefaultMiddleware` | function                   | `(container: Container, options?: ServerKitDefaultMiddlewareOptions) => ServerKitMiddleware[]` | The canonical stack in canonical order.                           |
+| `ServerKitDefaultMiddlewareOptions` | interface           | `{ authentication?: AuthenticationMiddlewareOptions }` | Forwarded to `authenticationMiddleware`.                                                  |
 | `CorsOptions`                | interface                  | `Omit<cors.Options, 'origin'> & { origin }`         | —                                                                                            |
 
 `serverKitDefaultMiddleware` builds: `errorMiddleware()` → `serverKitContextMiddleware(container)` →
