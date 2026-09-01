@@ -50,6 +50,7 @@ Runtime dependencies: `appconfig`, `authentication`, `errors`, `logger`, `multip
 | `ServerKitRouterMiddleware` | type                       | `RouterMiddleware<State, Context>`                                                                                                                                   | Route-level middleware.                                                        |
 | `ServerKitRouter`           | function                   | `<StateT, ContextT>(options?: RouterOptions) => Router<StateT, ContextT>`                                                                                            | Factory, not a class.                                                          |
 | `ServerKitRouterType`       | type                       | `ReturnType<typeof ServerKitRouter>`                                                                                                                                 | Type a router without importing `@koa/router`. Erased/invariant — see Gotchas. |
+| `sendJson`                  | function                   | `(ctx: ServerKitContext, serialized: string, status?: number) => void`                                                                                               | Writes a pre-serialized JSON string with `application/json` set explicitly (Koa infers `text/plain` for string bodies). Pairs with `compileSerializer` from `@maroonedsoftware/zod/serializer`. |
 
 ### Server middleware
 

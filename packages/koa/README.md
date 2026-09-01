@@ -18,6 +18,7 @@ Peer dependencies: `koa`, `@koa/router`, `@koa/cors`.
 - **ServerKitContext** — Koa context extended with `container`, `logger`, `requestId`, `correlationId`, `authenticationSession`, and related request metadata
 - **ServerKitRouter** — Router typed for `ServerKitContext`
 - **ServerKitRouterType** — The router instance type returned by `ServerKitRouter`, for typing routers without referencing `@koa/router` directly
+- **sendJson** — Writes a pre-serialized JSON string (e.g. from `compileSerializer` in `@maroonedsoftware/zod/serializer`) with the `application/json` content type Koa would not infer for a string body
 - **ServerKitMiddleware** — Middleware type bound to `ServerKitContext`
 - **serverKitContextMiddleware** — Populates context with scoped container, logger, and request/correlation IDs; registers the live context against the `ServerKitContext` injection token so request-scoped services can inject it. The scoped container is disposed when the response closes, releasing any scoped services that implement a dispose protocol
 - **corsMiddleware** — CORS headers with `'*'`, string, or RegExp origin matching
