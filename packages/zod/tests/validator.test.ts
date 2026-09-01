@@ -376,6 +376,67 @@ describe('parseAndValidate', () => {
     expect(atBoundary.details).toBeUndefined();
     expect(atBoundary.internalDetails).toEqual({ email: 'Invalid email' });
   });
+
+  it('should resolve an async transform', async () => {
+    const schema = z.string().transform(async val => {
+      await new Promise(resolve => setTimeout(resolve, 1));
+      return val.trim();
+    });
+    const result = await parseAndValidate('  padded  ', schema);
+    expect(result).toBe('padded');
+  });
+
+  it('should report a failure behind an async transform', async () => {
+    const schema = z
+      .string()
+      .transform(async val => {
+        await new Promise(resolve => setTimeout(resolve, 1));
+        return val.trim();
+      })
+      .refine(val => val.length > 0, 'Must not be blank');
+    try {
+      await parseAndValidate('   ', schema);
+      expect.fail('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(HttpError);
+      expect((err as HttpError).details).toEqual({ _root: 'Must not be blank' });
+    }
+  });
+
+  it('should reject when an async refinement rejects', async () => {
+    // The refinement's rejection must reach the caller as this call's own rejection. A sync
+    // parse attempt would start the refinement and abandon its promise, turning the failure
+    // into an unhandled rejection — which vitest fails the run on, so this test doubles as
+    // the no-abandoned-promise guard.
+    const schema = z.string().refine(async () => {
+      throw new Error('lookup failed');
+    });
+    await expect(parseAndValidate('value', schema)).rejects.toThrow('lookup failed');
+  });
+
+  it('should handle schemas rebuilt on every call', async () => {
+    // Generated route handlers construct their schema inline per request; the sync fast
+    // path must not depend on schema identity across calls.
+    for (let i = 0; i < 3; i++) {
+      const schema = z.strictObject({ id: z.coerce.number().int() });
+      const result = await parseAndValidate({ id: `${i}` }, schema);
+      expect(result).toEqual({ id: i });
+    }
+  });
+
+  it('should honour a schema-level custom error', async () => {
+    // The `error` option lives on the schema def and only reaches the issue during
+    // finalization — so this proves the internal parse path finalizes issues exactly as
+    // safeParseAsync does. (An invalid_type message would not do: formatZodErrors
+    // intentionally replaces those with its own "Expected …" text.)
+    const schema = z.object({ name: z.custom<string>(val => typeof val === 'string', { error: 'Name must be text' }) });
+    try {
+      await parseAndValidate({ name: 42 }, schema);
+      expect.fail('should have thrown');
+    } catch (err) {
+      expect((err as HttpError).details).toEqual({ name: 'Name must be text' });
+    }
+  });
 });
 
 describe('parseAndValidateArray', () => {

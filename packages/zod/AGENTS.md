@@ -31,7 +31,7 @@ Runtime dependencies: `@maroonedsoftware/errors`, `zod` (v4).
 
 | Export                  | Kind     | Shape                                                                                                  | Notes                                                                                                                                                            |
 | ----------------------- | -------- | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `parseAndValidate`      | function | `<T extends ZodType>(data: unknown, schema: T, statusCode?: HttpStatusCodes) => Promise<z.infer<T>>`   | Uses `safeParseAsync`. Throws `httpError(statusCode ?? 400)` on failure, with the field map on `withDetails` below `500` and on `withInternalDetails` at `500`+. |
+| `parseAndValidate`      | function | `<T extends ZodType>(data: unknown, schema: T, statusCode?: HttpStatusCodes) => Promise<z.infer<T>>`   | Sync schemas complete without a promise round-trip; async refinements/transforms are awaited. Throws `httpError(statusCode ?? 400)` on failure, with the field map on `withDetails` below `500` and on `withInternalDetails` at `500`+. |
 | `parseAndValidateArray` | function | `<T extends ZodType>(data: unknown, schema: T, statusCode?: HttpStatusCodes) => Promise<z.infer<T>[]>` | `schema` describes one **element**, not the array. `statusCode` forwards to `parseAndValidate`.                                                                  |
 | `zBigint`               | function | `() => ZodType` — a `z.string()` matching `/^-?\d+n$/`, transformed to `bigint`                        | Accepts `"100n"`, yields `100n`.                                                                                                                                 |
 
@@ -84,8 +84,9 @@ A failure produces `400` with, for example,
 
 ## Rules for generated code
 
-- Always `await`. Both functions are async because they use `safeParseAsync`; a forgotten `await`
-  gives you a `Promise` that types as the parsed value only if you also ignore the return type.
+- Always `await`. Both functions return a `Promise` (a fully synchronous schema resolves it
+  without an internal await, but the signature is async either way); a forgotten `await` gives
+  you a `Promise` that types as the parsed value only if you also ignore the return type.
 - Pass the **element** schema to `parseAndValidateArray`. Wrapping it in `z.array()` yourself gives
   you an array-of-arrays schema.
 - Use `z.strictObject` for request bodies so unexpected keys are reported rather than silently
