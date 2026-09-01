@@ -43,7 +43,7 @@ export interface DiscordDispatchOptions {
  * interactions.set('command:deploy', container.get(DeployCommandHandler));
  * interactions.set('component:approve_button', container.get(ApproveHandler));
  * interactions.set('modal:create_ticket', container.get(CreateTicketHandler));
- * container.register(DiscordInteractionHandlerMap, { useValue: interactions });
+ * registry.register(DiscordInteractionHandlerMap).useValue(interactions);
  * ```
  */
 @Injectable()

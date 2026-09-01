@@ -38,7 +38,7 @@ The package does not read `AppConfig` itself — services take `TelegramConfig` 
 import { TelegramConfig } from '@maroonedsoftware/telegram';
 
 const telegramConfig = appConfig.getAs<TelegramConfig>('telegram');
-container.register(TelegramConfig, { useValue: telegramConfig });
+registry.register(TelegramConfig).useValue(telegramConfig);
 ```
 
 ```jsonc
@@ -112,7 +112,7 @@ class StartCommand implements TelegramCommandHandler {
 
 const commands = new TelegramCommandHandlerMap();
 commands.set('/start', container.get(StartCommand));
-container.register(TelegramCommandHandlerMap, { useValue: commands });
+registry.register(TelegramCommandHandlerMap).useValue(commands);
 
 router.post('/telegram/webhook', async ctx => {
   const raw = await rawBody(ctx.req, { encoding: 'utf8' });

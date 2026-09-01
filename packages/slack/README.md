@@ -40,7 +40,7 @@ import { SlackConfig } from '@maroonedsoftware/slack';
 const appConfig = await new AppConfigBuilder().addSource(new AppConfigSourceJson('./config.json')).build();
 
 const slackConfig = appConfig.getAs<SlackConfig>('slack');
-container.register(SlackConfig, { useValue: slackConfig });
+registry.register(SlackConfig).useValue(slackConfig);
 ```
 
 ```jsonc
@@ -109,7 +109,7 @@ class AppMentionHandler implements SlackEventHandler {
 // Bootstrap
 const events = new SlackEventHandlerMap();
 events.set('app_mention', container.get(AppMentionHandler));
-container.register(SlackEventHandlerMap, { useValue: events });
+registry.register(SlackEventHandlerMap).useValue(events);
 
 // Route
 router.post('/slack/events', async ctx => {
@@ -183,7 +183,7 @@ class DeployCommand implements SlackCommandHandler {
 
 const commands = new SlackCommandHandlerMap();
 commands.set('/deploy', container.get(DeployCommand));
-container.register(SlackCommandHandlerMap, { useValue: commands });
+registry.register(SlackCommandHandlerMap).useValue(commands);
 
 router.post('/slack/commands', async ctx => {
   const raw = await rawBody(ctx.req, { encoding: 'utf8' });
@@ -233,7 +233,7 @@ import rawBody from 'raw-body';
 const interactions = new SlackInteractionHandlerMap();
 interactions.set('block_actions:approve', container.get(ApproveButton));
 interactions.set('view_submission:create_ticket_modal', container.get(CreateTicketModal));
-container.register(SlackInteractionHandlerMap, { useValue: interactions });
+registry.register(SlackInteractionHandlerMap).useValue(interactions);
 
 router.post('/slack/interactions', async ctx => {
   const raw = await rawBody(ctx.req, { encoding: 'utf8' });

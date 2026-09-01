@@ -39,7 +39,7 @@ import { DiscordConfig } from '@maroonedsoftware/discord';
 const appConfig = await new AppConfigBuilder().addSource(new AppConfigSourceJson('./config.json')).build();
 
 const discordConfig = appConfig.getAs<DiscordConfig>('discord');
-container.register(DiscordConfig, { useValue: discordConfig });
+registry.register(DiscordConfig).useValue(discordConfig);
 ```
 
 ```jsonc
@@ -114,7 +114,7 @@ const interactions = new DiscordInteractionHandlerMap();
 interactions.set('command:deploy', container.get(DeployCommand));
 interactions.set('component:approve', container.get(ApproveButton));
 interactions.set('modal:create_ticket', container.get(CreateTicketModal));
-container.register(DiscordInteractionHandlerMap, { useValue: interactions });
+registry.register(DiscordInteractionHandlerMap).useValue(interactions);
 
 // Route
 router.post('/discord/interactions', async ctx => {

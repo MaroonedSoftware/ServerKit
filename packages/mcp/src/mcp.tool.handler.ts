@@ -38,7 +38,7 @@ export interface McpToolHandler {
  * const tools = new McpToolHandlerMap();
  * tools.set('search_docs', container.get(SearchDocsTool));
  * tools.set('create_ticket', container.get(CreateTicketTool));
- * container.register(McpToolHandlerMap, { useValue: tools });
+ * registry.register(McpToolHandlerMap).useValue(tools);
  * ```
  */
 @Injectable()

@@ -33,7 +33,7 @@ export type SlackEventsResponse = { challenge: string } | undefined;
  * ```ts
  * const commands = new SlackCommandHandlerMap();
  * commands.set('/deploy', container.get(DeployCommandHandler));
- * container.register(SlackCommandHandlerMap, { useValue: commands });
+ * registry.register(SlackCommandHandlerMap).useValue(commands);
  * ```
  */
 @Injectable()
@@ -48,7 +48,7 @@ export class SlackCommandHandlerMap extends Map<string, SlackCommandHandler> {}
  * ```ts
  * const handlers = new SlackEventHandlerMap();
  * handlers.set('app_mention', container.get(MyAppMentionHandler));
- * container.register(SlackEventHandlerMap, { useValue: handlers });
+ * registry.register(SlackEventHandlerMap).useValue(handlers);
  * ```
  */
 @Injectable()
@@ -66,7 +66,7 @@ export class SlackEventHandlerMap extends Map<string, SlackEventHandler> {}
  * const interactions = new SlackInteractionHandlerMap();
  * interactions.set('block_actions:approve_button', container.get(ApproveHandler));
  * interactions.set('view_submission:create_ticket_modal', container.get(CreateTicketHandler));
- * container.register(SlackInteractionHandlerMap, { useValue: interactions });
+ * registry.register(SlackInteractionHandlerMap).useValue(interactions);
  * ```
  */
 @Injectable()

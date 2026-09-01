@@ -44,7 +44,7 @@ export interface TelegramDispatchOptions {
  * ```ts
  * const commands = new TelegramCommandHandlerMap();
  * commands.set('/start', container.get(StartCommand));
- * container.register(TelegramCommandHandlerMap, { useValue: commands });
+ * registry.register(TelegramCommandHandlerMap).useValue(commands);
  * ```
  */
 @Injectable()

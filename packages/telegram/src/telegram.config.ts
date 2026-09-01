@@ -14,7 +14,7 @@ export const TELEGRAM_DEFAULT_API_BASE_URL = 'https://api.telegram.org';
  *
  * ```ts
  * const telegramConfig = appConfig.getAs<TelegramConfig>('telegram');
- * container.register(TelegramConfig, { useValue: telegramConfig });
+ * registry.register(TelegramConfig).useValue(telegramConfig);
  * ```
  *
  * Services in this package take `TelegramConfig` directly in their constructor.

@@ -39,7 +39,7 @@ The package does not read `AppConfig` itself — services take `WhatsAppConfig` 
 import { WhatsAppConfig } from '@maroonedsoftware/whatsapp';
 
 const whatsappConfig = appConfig.getAs<WhatsAppConfig>('whatsapp');
-container.register(WhatsAppConfig, { useValue: whatsappConfig });
+registry.register(WhatsAppConfig).useValue(whatsappConfig);
 ```
 
 ```jsonc
@@ -127,7 +127,7 @@ class TextHandler implements WhatsAppMessageHandler {
 
 const messages = new WhatsAppMessageHandlerMap();
 messages.set('text', container.get(TextHandler));
-container.register(WhatsAppMessageHandlerMap, { useValue: messages });
+registry.register(WhatsAppMessageHandlerMap).useValue(messages);
 
 router.post('/whatsapp/webhook', async ctx => {
   const raw = await rawBody(ctx.req, { encoding: 'utf8' });

@@ -24,7 +24,7 @@ export type McpSessionMode = 'stateless' | 'stateful';
  *
  * ```ts
  * const mcpConfig = appConfig.getAs<McpConfig>('mcp');
- * container.register(McpConfig, { useValue: mcpConfig });
+ * registry.register(McpConfig).useValue(mcpConfig);
  * ```
  *
  * Services in this package take `McpConfig` directly in their constructor.

@@ -30,7 +30,7 @@ export interface McpResourceHandler {
  * ```ts
  * const resources = new McpResourceHandlerMap();
  * resources.set('config://app', container.get(AppConfigResource));
- * container.register(McpResourceHandlerMap, { useValue: resources });
+ * registry.register(McpResourceHandlerMap).useValue(resources);
  * ```
  */
 @Injectable()
