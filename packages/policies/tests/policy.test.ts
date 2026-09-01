@@ -32,6 +32,15 @@ describe('Policy', () => {
     await expect(new TestPolicy().evaluate({ allow: true }, envelope)).resolves.toEqual({ allowed: true });
   });
 
+  it('allow() returns the same frozen instance on every call', async () => {
+    // Allow results carry no per-decision data, so sharing one frozen constant is intended:
+    // no allocation per evaluation, and mutation throws instead of leaking across decisions.
+    const first = await new TestPolicy().evaluate({ allow: true }, envelope);
+    const second = await new TestPolicy().evaluate({ allow: true }, envelope);
+    expect(second).toBe(first);
+    expect(Object.isFrozen(first)).toBe(true);
+  });
+
   it('deny() returns { allowed: false, reason, details }', async () => {
     await expect(new TestPolicy().evaluate({ allow: false, reason: 'nope' }, envelope)).resolves.toEqual({
       allowed: false,
