@@ -11,7 +11,7 @@ import { Injectable } from 'injectkit';
  *
  * ```ts
  * const discordConfig = appConfig.getAs<DiscordConfig>('discord');
- * container.register(DiscordConfig, { useValue: discordConfig });
+ * registry.register(DiscordConfig).useValue(discordConfig);
  * ```
  *
  * Services in this package take `DiscordConfig` directly in their constructor.

@@ -11,7 +11,7 @@ import { Injectable } from 'injectkit';
  *
  * ```ts
  * const slackConfig = appConfig.getAs<SlackConfig>('slack');
- * container.register(SlackConfig, { useValue: slackConfig });
+ * registry.register(SlackConfig).useValue(slackConfig);
  * ```
  *
  * Services in this package take `SlackConfig` directly in their constructor.

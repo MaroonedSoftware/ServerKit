@@ -113,9 +113,9 @@ import {
 
 // Composition root
 registry.register(SlackConfig).useValue(appConfig.getAs<SlackConfig>('slack'));
-const events = new SlackEventHandlerMap();
-events.set('app_mention', container.get(MentionHandler));
-registry.register(SlackEventHandlerMap).useValue(events);
+registry.register(MentionHandler).useClass(MentionHandler).asSingleton();
+
+registry.register(SlackEventHandlerMap).useMap(SlackEventHandlerMap).set('app_mention', MentionHandler);
 policies.set(SLACK_SIGNATURE_POLICY, SlackSignaturePolicy);
 
 // Route — signature first, then dispatch

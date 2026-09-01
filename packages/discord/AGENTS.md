@@ -108,12 +108,15 @@ import {
   type DiscordSignatureOptions,
 } from '@maroonedsoftware/discord';
 
-const handlers = new DiscordInteractionHandlerMap();
-handlers.set('command:deploy', container.get(DeployCommand));
-handlers.set('component:deploy.confirm', container.get(DeployConfirm));
+registry.register(DeployCommand).useClass(DeployCommand).asSingleton();
+registry.register(DeployConfirm).useClass(DeployConfirm).asSingleton();
 
 registry.register(DiscordConfig).useValue(appConfig.getAs<DiscordConfig>('discord'));
-registry.register(DiscordInteractionHandlerMap).useValue(handlers);
+registry
+  .register(DiscordInteractionHandlerMap)
+  .useMap(DiscordInteractionHandlerMap)
+  .set('command:deploy', DeployCommand)
+  .set('component:deploy.confirm', DeployConfirm);
 policies.set(DISCORD_SIGNATURE_POLICY, DiscordSignaturePolicy);
 
 router.post('/discord/interactions', requireSignature<DiscordSignatureOptions>('discord', { policy: DISCORD_SIGNATURE_POLICY }), async ctx => {

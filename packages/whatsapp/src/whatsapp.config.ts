@@ -14,7 +14,7 @@ export const WHATSAPP_DEFAULT_GRAPH_API_VERSION = 'v21.0';
  *
  * ```ts
  * const whatsappConfig = appConfig.getAs<WhatsAppConfig>('whatsapp');
- * container.register(WhatsAppConfig, { useValue: whatsappConfig });
+ * registry.register(WhatsAppConfig).useValue(whatsappConfig);
  * ```
  *
  * Services in this package take `WhatsAppConfig` directly in their constructor.

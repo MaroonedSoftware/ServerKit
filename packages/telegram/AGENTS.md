@@ -107,11 +107,11 @@ import {
   type TelegramSecretTokenOptions,
 } from '@maroonedsoftware/telegram';
 
-const commands = new TelegramCommandHandlerMap();
-commands.set('/start', container.get(StartCommand)); // note the leading slash
+registry.register(StartCommand).useClass(StartCommand).asSingleton();
 
 registry.register(TelegramConfig).useValue(appConfig.getAs<TelegramConfig>('telegram'));
-registry.register(TelegramCommandHandlerMap).useValue(commands);
+// note the leading slash on the key
+registry.register(TelegramCommandHandlerMap).useMap(TelegramCommandHandlerMap).set('/start', StartCommand);
 policies.set(TELEGRAM_SECRET_TOKEN_POLICY, TelegramSecretTokenPolicy);
 
 router.post('/telegram/webhook', requireSignature<TelegramSecretTokenOptions>('telegram', { policy: TELEGRAM_SECRET_TOKEN_POLICY }), async ctx => {

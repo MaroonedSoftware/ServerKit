@@ -12,11 +12,14 @@ import { httpError } from '@maroonedsoftware/errors';
  *
  * @example
  * ```typescript
+ * registry.register(JsonParser).useClass(JsonParser).asSingleton();
+ * registry.register(FormParser).useClass(FormParser).asSingleton();
+ *
  * registry
  *   .register(ServerKitParserMappings)
- *   .useMap()
- *   .add('json', JsonParser)
- *   .add('urlencoded', FormParser);
+ *   .useMap(ServerKitParserMappings)
+ *   .set('json', JsonParser)
+ *   .set('urlencoded', FormParser);
  * ```
  */
 @Injectable()

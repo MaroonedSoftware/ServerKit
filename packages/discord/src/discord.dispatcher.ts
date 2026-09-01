@@ -39,11 +39,16 @@ export interface DiscordDispatchOptions {
  *
  * @example
  * ```ts
- * const interactions = new DiscordInteractionHandlerMap();
- * interactions.set('command:deploy', container.get(DeployCommandHandler));
- * interactions.set('component:approve_button', container.get(ApproveHandler));
- * interactions.set('modal:create_ticket', container.get(CreateTicketHandler));
- * container.register(DiscordInteractionHandlerMap, { useValue: interactions });
+ * registry.register(DeployCommandHandler).useClass(DeployCommandHandler).asSingleton();
+ * registry.register(ApproveHandler).useClass(ApproveHandler).asSingleton();
+ * registry.register(CreateTicketHandler).useClass(CreateTicketHandler).asSingleton();
+ *
+ * registry
+ *   .register(DiscordInteractionHandlerMap)
+ *   .useMap(DiscordInteractionHandlerMap)
+ *   .set('command:deploy', DeployCommandHandler)
+ *   .set('component:approve_button', ApproveHandler)
+ *   .set('modal:create_ticket', CreateTicketHandler);
  * ```
  */
 @Injectable()

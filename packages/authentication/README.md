@@ -72,7 +72,7 @@ class MyJwtHandler implements AuthenticationHandler {
 ```typescript
 import { AuthenticationHandlerMap, AuthenticationSchemeHandler } from '@maroonedsoftware/authentication';
 
-registry.register(AuthenticationHandlerMap).useMap().set('bearer', MyJwtHandler);
+registry.register(AuthenticationHandlerMap).useMap(AuthenticationHandlerMap).set('bearer', MyJwtHandler);
 registry.register(MyJwtHandler).useClass(MyJwtHandler).asSingleton();
 registry.register(AuthenticationSchemeHandler).useClass(AuthenticationSchemeHandler).asSingleton();
 ```
@@ -117,11 +117,12 @@ class MyIssuer extends JwtAuthenticationIssuer {
 }
 
 // Register in DI
-registry.register(JwtAuthenticationIssuerMap).useMap().set('https://auth.example.com', MyIssuer);
+registry.register(MyIssuer).useClass(MyIssuer).asSingleton();
+registry.register(JwtAuthenticationIssuerMap).useMap(JwtAuthenticationIssuerMap).set('https://auth.example.com', MyIssuer);
 registry.register(JwtAuthenticationHandler).useClass(JwtAuthenticationHandler).asSingleton();
 
 // Register as the bearer handler
-registry.register(AuthenticationHandlerMap).useMap().set('bearer', JwtAuthenticationHandler);
+registry.register(AuthenticationHandlerMap).useMap(AuthenticationHandlerMap).set('bearer', JwtAuthenticationHandler);
 ```
 
 ---
@@ -144,7 +145,7 @@ class MyBasicIssuer extends BasicAuthenticationIssuer {
 
 registry.register(MyBasicIssuer).useClass(MyBasicIssuer).asSingleton();
 registry.register(BasicAuthenticationHandler).useClass(BasicAuthenticationHandler).asSingleton();
-registry.register(AuthenticationHandlerMap).useMap().set('basic', BasicAuthenticationHandler);
+registry.register(AuthenticationHandlerMap).useMap(AuthenticationHandlerMap).set('basic', BasicAuthenticationHandler);
 ```
 
 ---
@@ -820,7 +821,12 @@ class OidcAwareMfaSatisfiedPolicy extends Policy<AuthMfaSatisfiedPolicyContext> 
 }
 
 // At bootstrap, replace the default registration:
-registry.register(PolicyRegistryMap).useMap().add('auth.session.mfa.satisfied', OidcAwareMfaSatisfiedPolicy);
+registry.register(OidcAwareMfaSatisfiedPolicy).useClass(OidcAwareMfaSatisfiedPolicy).asSingleton();
+registry.register(PolicyRegistryMap).useFactory(() => {
+  const map = new PolicyRegistryMap();
+  map.set('auth.session.mfa.satisfied', OidcAwareMfaSatisfiedPolicy);
+  return map;
+});
 ```
 
 `'auth.session.recent.factor'` — `DefaultRecentFactorPolicy`. Allows when at least

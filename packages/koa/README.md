@@ -157,10 +157,12 @@ builder.setupMiddleware(container => serverKitDefaultMiddleware(container, { aut
 import { AuthenticationSchemeHandler, AuthenticationHandlerMap } from '@maroonedsoftware/authentication';
 import { authenticationMiddleware } from '@maroonedsoftware/koa';
 
-// Register your scheme handlers in DI
-diRegistry.register(AuthenticationHandlerMap).useMap().add('Bearer', BearerAuthHandler);
+// Register your scheme handlers in DI — map keys must be lowercase, the
+// scheme handler lowercases the incoming Authorization scheme before lookup.
+diRegistry.register(BearerAuthHandler).useClass(BearerAuthHandler).asSingleton();
+diRegistry.register(AuthenticationHandlerMap).useMap(AuthenticationHandlerMap).set('bearer', BearerAuthHandler);
 
-diRegistry.register(AuthenticationSchemeHandler).asSingleton();
+diRegistry.register(AuthenticationSchemeHandler).useClass(AuthenticationSchemeHandler).asSingleton();
 
 // Add to the middleware stack after serverKitContextMiddleware
 app.use(serverKitContextMiddleware(container));
