@@ -23,6 +23,7 @@ describe('authenticationMiddleware', () => {
     mockNext = vi.fn().mockResolvedValue(undefined);
 
     mockCtx = {
+      path: '/api/example',
       req: { headers: { authorization: undefined } },
       container: { get: vi.fn().mockReturnValue(mockSchemeHandler) },
     } as unknown as ServerKitContext;
@@ -121,5 +122,72 @@ describe('authenticationMiddleware', () => {
 
     await expect(middleware(mockCtx, mockNext)).rejects.toThrow('handler failure');
     expect(mockNext).not.toHaveBeenCalled();
+  });
+
+  describe('anonymousPaths', () => {
+    it('skips the scheme handler entirely on an exactly-matched path', async () => {
+      (mockCtx as { path: string }).path = '/health';
+      const middleware = authenticationMiddleware({ anonymousPaths: ['/health'] });
+
+      await middleware(mockCtx, mockNext);
+
+      expect(mockCtx.container.get).not.toHaveBeenCalled();
+      expect(mockSchemeHandler.handle).not.toHaveBeenCalled();
+      expect(mockCtx.authenticationSession).toBe(invalidAuthenticationSession);
+      expect(mockNext).toHaveBeenCalledOnce();
+    });
+
+    it('still deletes the authorization header on a whitelisted path', async () => {
+      // The deletion is a logging-safety measure, not an authentication step — it must
+      // happen whether or not the scheme handler runs.
+      (mockCtx as { path: string }).path = '/health';
+      mockCtx.req.headers.authorization = 'Bearer token';
+      const middleware = authenticationMiddleware({ anonymousPaths: ['/health'] });
+
+      await middleware(mockCtx, mockNext);
+
+      expect(mockCtx.req.headers.authorization).toBeUndefined();
+    });
+
+    it('matches a RegExp entry', async () => {
+      (mockCtx as { path: string }).path = '/public/logo.png';
+      const middleware = authenticationMiddleware({ anonymousPaths: [/^\/public\//] });
+
+      await middleware(mockCtx, mockNext);
+
+      expect(mockSchemeHandler.handle).not.toHaveBeenCalled();
+      expect(mockNext).toHaveBeenCalledOnce();
+    });
+
+    it('does not treat a string entry as a prefix', async () => {
+      // '/health' must not cover '/healthz' — silent over-matching is why strings are
+      // exact and RegExp is the explicit escape hatch.
+      (mockCtx as { path: string }).path = '/healthz';
+      const middleware = authenticationMiddleware({ anonymousPaths: ['/health'] });
+
+      await middleware(mockCtx, mockNext);
+
+      expect(mockSchemeHandler.handle).toHaveBeenCalledWith(undefined);
+    });
+
+    it('authenticates non-matching paths as before', async () => {
+      const validSession = makeValidSession();
+      mockSchemeHandler.handle.mockResolvedValue(validSession);
+      mockCtx.req.headers.authorization = 'Bearer mytoken';
+      const middleware = authenticationMiddleware({ anonymousPaths: ['/health', /^\/public\//] });
+
+      await middleware(mockCtx, mockNext);
+
+      expect(mockSchemeHandler.handle).toHaveBeenCalledWith('Bearer mytoken');
+      expect(mockCtx.authenticationSession).toBe(validSession);
+    });
+
+    it('behaves as unconfigured when anonymousPaths is empty', async () => {
+      const middleware = authenticationMiddleware({ anonymousPaths: [] });
+
+      await middleware(mockCtx, mockNext);
+
+      expect(mockSchemeHandler.handle).toHaveBeenCalledWith(undefined);
+    });
   });
 });

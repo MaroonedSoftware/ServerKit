@@ -146,6 +146,33 @@ const result = await schema.parseAsync({ id: '9007199254740993n' });
 
 **Rejects:** plain numbers, floats, bare number strings, non-string inputs.
 
+---
+
+### `compileSerializer(schema, options?)` — `@maroonedsoftware/zod/serializer`
+
+Compiles a Zod schema into a `fast-json-stringify` serializer for the schema's **output** type — straight-line string building specialized to the schema's exact shape, typically 2-3× faster than `JSON.stringify`'s generic walk. This is the same technique Fastify uses for response serialization. Requires the optional peer dependency `fast-json-stringify`:
+
+```bash
+pnpm add fast-json-stringify
+```
+
+Compile once at startup and reuse the returned function; compilation is expensive. Pair with `sendJson` from `@maroonedsoftware/koa` to write the result with the correct content type:
+
+```typescript
+import { compileSerializer } from '@maroonedsoftware/zod/serializer';
+
+const serializeUser = compileSerializer(User);
+
+router.get('/users/:id', async ctx => {
+  const user = await service.getById(ctx.params.id);
+  sendJson(ctx, serializeUser(user));
+});
+```
+
+**The returned function performs no validation.** A non-conforming value is silently coerced or has unknown properties dropped — only serialize values that came out of the schema or are otherwise known-conforming.
+
+Schema nodes with no JSON Schema equivalent — transforms, `z.custom` (including Luxon `DateTime` customs), `z.date`, `z.bigint` — throw at compile time rather than serializing wrongly at request time. Model output datetimes as `z.iso.datetime()` strings, or map the node yourself with `options.override`; `options.unrepresentable: 'any'` accepts them as unconstrained values at your own risk.
+
 ## License
 
 MIT — see [LICENSE](./LICENSE).

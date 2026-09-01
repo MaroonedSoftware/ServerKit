@@ -166,8 +166,16 @@ export abstract class Policy<Context extends PolicyContext = PolicyContext, Enve
 
   /**
    * Build an allow result.
+   *
+   * Returns a shared frozen constant: an allow result carries no per-decision data, and this
+   * method runs on every evaluation of every allow-path policy, so allocating a fresh object
+   * per call is pure garbage. The freeze makes accidental mutation throw in strict mode
+   * instead of silently leaking state across unrelated policy decisions.
    */
   protected allow(): PolicyResultAllowed {
-    return { allowed: true };
+    return POLICY_ALLOWED;
   }
 }
+
+/** The one allow result: allows carry no data, so every evaluation shares this instance. */
+const POLICY_ALLOWED: PolicyResultAllowed = Object.freeze({ allowed: true });

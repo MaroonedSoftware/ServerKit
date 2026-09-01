@@ -4,7 +4,15 @@ import { errorMiddleware } from './error.middleware.js';
 import { serverKitContextMiddleware } from './serverkit.context.middleware.js';
 import { RateLimiter, rateLimiterMiddleware } from './rate.limiter.middleware.js';
 import { corsMiddleware } from './cors.middleware.js';
-import { authenticationMiddleware } from './authentication.middleware.js';
+import { authenticationMiddleware, AuthenticationMiddlewareOptions } from './authentication.middleware.js';
+
+/**
+ * Options for {@link serverKitDefaultMiddleware}.
+ */
+export interface ServerKitDefaultMiddlewareOptions {
+  /** Forwarded to {@link authenticationMiddleware}, e.g. to whitelist anonymous paths. */
+  authentication?: AuthenticationMiddlewareOptions;
+}
 
 /**
  * Builds the default ServerKit middleware stack in canonical order.
@@ -15,9 +23,10 @@ import { authenticationMiddleware } from './authentication.middleware.js';
  * so apps that never bind one skip it automatically.
  *
  * @param container - The built InjectKit container used to resolve the request-scoped context and, when present, the {@link RateLimiter}.
+ * @param options - Optional {@link ServerKitDefaultMiddlewareOptions} for configuring individual middlewares in the stack.
  * @returns The ordered middleware array to register on the Koa server.
  */
-export const serverKitDefaultMiddleware = (container: Container): ServerKitMiddleware[] => {
+export const serverKitDefaultMiddleware = (container: Container, options?: ServerKitDefaultMiddlewareOptions): ServerKitMiddleware[] => {
   const middlewares: ServerKitMiddleware[] = [errorMiddleware(), serverKitContextMiddleware(container)];
 
   if (container.hasRegistration(RateLimiter)) {
@@ -26,7 +35,7 @@ export const serverKitDefaultMiddleware = (container: Container): ServerKitMiddl
   }
 
   middlewares.push(corsMiddleware({ exposeHeaders: ['WWW-Authenticate'] }));
-  middlewares.push(authenticationMiddleware());
+  middlewares.push(authenticationMiddleware(options?.authentication));
 
   return middlewares;
 };

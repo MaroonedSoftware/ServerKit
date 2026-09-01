@@ -1,4 +1,4 @@
-import { z, type ZodError, type ZodType } from 'zod';
+import { z, ZodRealError, type ZodError, type ZodType } from 'zod';
 import { httpError, type HttpStatusCodes } from '@maroonedsoftware/errors';
 
 function describeIssue(issue: z.core.$ZodIssue): string {
@@ -120,10 +120,21 @@ function formatZodErrors(error: ZodError) {
  * ```
  */
 export const parseAndValidate = async <T extends ZodType>(data: unknown, schema: T, statusCode: HttpStatusCodes = 400): Promise<z.infer<T>> => {
-  const parsed = await schema.safeParseAsync(data);
+  // `safeParseAsync` always awaits, so every call pays a promise round-trip even when the
+  // schema is fully synchronous — which almost all of them are. Running the internal parse
+  // ourselves (exactly what `safeParseAsync` does, minus the unconditional `await`) lets a
+  // sync schema complete without touching the microtask queue, while a schema with async
+  // refinements or transforms returns a Promise and is awaited as before. `{ async: true }`
+  // is load-bearing: a sync-context run would throw `$ZodAsyncError` *after* starting any
+  // async refinement, abandoning its promise.
+  const runCtx = { async: true };
+  const result = schema._zod.run({ value: data, issues: [] }, runCtx);
+  const payload = result instanceof Promise ? await result : result;
 
-  if (!parsed.success) {
-    const details = formatZodErrors(parsed.error);
+  if (payload.issues.length > 0) {
+    // Same finalization `safeParseAsync` performs, so `formatZodErrors` sees identical issues.
+    const error = new ZodRealError(payload.issues.map(issue => z.core.util.finalizeIssue(issue, runCtx, z.core.config())));
+    const details = formatZodErrors(error);
     if (statusCode >= 500) {
       throw httpError(statusCode).withInternalDetails(details);
     } else {
@@ -131,7 +142,7 @@ export const parseAndValidate = async <T extends ZodType>(data: unknown, schema:
     }
   }
 
-  return parsed.data;
+  return payload.value as z.infer<T>;
 };
 
 /**

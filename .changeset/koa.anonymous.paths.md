@@ -1,0 +1,5 @@
+---
+'@maroonedsoftware/koa': minor
+---
+
+`authenticationMiddleware` accepts an optional `anonymousPaths` whitelist — exact-match strings or RegExps tested against `ctx.path` — for genuinely public routes where resolving and awaiting the scheme handler on every request is pure overhead. A whitelisted route skips the handler entirely: `ctx.authenticationSession` stays `invalidAuthenticationSession`, so `requirePolicy` rejects it exactly as it would any unauthenticated request, and the `Authorization` header is still stripped from `ctx.req.headers` since that deletion is a logging-safety measure, not an authentication step. Strings deliberately do not prefix-match (`'/health'` never covers `'/healthz'`); use a RegExp for prefixes. `serverKitDefaultMiddleware` gains an optional second `options` parameter (`{ authentication?: AuthenticationMiddlewareOptions }`) to thread the whitelist through the canonical stack. Both additions are backwards compatible — calls without options behave exactly as before.

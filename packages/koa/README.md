@@ -18,12 +18,13 @@ Peer dependencies: `koa`, `@koa/router`, `@koa/cors`.
 - **ServerKitContext** — Koa context extended with `container`, `logger`, `requestId`, `correlationId`, `authenticationSession`, and related request metadata
 - **ServerKitRouter** — Router typed for `ServerKitContext`
 - **ServerKitRouterType** — The router instance type returned by `ServerKitRouter`, for typing routers without referencing `@koa/router` directly
+- **sendJson** — Writes a pre-serialized JSON string (e.g. from `compileSerializer` in `@maroonedsoftware/zod/serializer`) with the `application/json` content type Koa would not infer for a string body
 - **ServerKitMiddleware** — Middleware type bound to `ServerKitContext`
-- **serverKitContextMiddleware** — Populates context with scoped container, logger, and request/correlation IDs; registers the live context against the `ServerKitContext` injection token so request-scoped services can inject it
+- **serverKitContextMiddleware** — Populates context with scoped container, logger, and request/correlation IDs; registers the live context against the `ServerKitContext` injection token so request-scoped services can inject it. The scoped container is disposed when the response closes, releasing any scoped services that implement a dispose protocol
 - **corsMiddleware** — CORS headers with `'*'`, string, or RegExp origin matching
 - **errorMiddleware** — Central error handler; maps HTTP errors to status/body, 404 for unmatched routes, 500 for unknown errors
 - **rateLimiterMiddleware** — Per-IP rate limiting via `rate-limiter-flexible` (429 when exceeded)
-- **authenticationMiddleware** — Resolves the `Authorization` header via `AuthenticationSchemeHandler` and populates `ctx.authenticationSession`
+- **authenticationMiddleware** — Resolves the `Authorization` header via `AuthenticationSchemeHandler` and populates `ctx.authenticationSession`; `anonymousPaths` whitelists public routes that skip the scheme handler entirely
 - **bodyParserMiddleware** — Parses JSON, form, text, multipart, or raw body by allowed content types
 - **defaultParserMappings** — Pre-built MIME-subtype-to-parser map (JSON with a bigint reviver, form, text, multipart, and binary types) for use with `bodyParserMiddleware` and `ServerKitServerBuilder`
 - **requireSignature** — Router middleware that verifies a request HMAC signature against `ctx.rawBody`
@@ -142,6 +143,15 @@ class CurrentUserService {
 ### Authentication
 
 `authenticationMiddleware` reads the `Authorization` header, delegates resolution to the `AuthenticationSchemeHandler` registered in the DI container, and populates `ctx.authenticationSession`. The header is deleted from `ctx.req.headers` immediately after reading so it cannot be captured by downstream logging.
+
+Genuinely public routes — health checks, webhooks carrying their own signatures, public content — can skip the scheme handler entirely with `anonymousPaths`. Strings match `ctx.path` exactly (no prefix matching; `'/health'` does not cover `'/healthz'`), and a RegExp is the explicit escape hatch for prefixes. A whitelisted route keeps the invalid session and still has its `Authorization` header stripped, so `requirePolicy` rejects it exactly as it would any unauthenticated request:
+
+```typescript
+app.use(authenticationMiddleware({ anonymousPaths: ['/health', /^\/public\//] }));
+
+// Or through the default stack:
+builder.setupMiddleware(container => serverKitDefaultMiddleware(container, { authentication: { anonymousPaths: ['/health'] } }));
+```
 
 ```typescript
 import { AuthenticationSchemeHandler, AuthenticationHandlerMap } from '@maroonedsoftware/authentication';
