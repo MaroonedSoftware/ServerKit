@@ -19,13 +19,16 @@ is always an HTTP-shaped client/server error rather than a domain error.
 pnpm add @maroonedsoftware/zod zod
 ```
 
-Runtime dependencies: `@maroonedsoftware/errors`, `zod` (v4).
+Runtime dependencies: `@maroonedsoftware/errors`, `zod` (v4). `fast-json-stringify` is an
+**optional peer**, needed only by the `/serializer` subpath.
 
 ## Position in the graph
 
 - **Depends on:** `errors`.
 - **Depended on by:** nothing internal. It is a leaf that applications use directly.
-- **Subpath exports:** none. The package has no `exports` map at all.
+- **Subpath exports:** `@maroonedsoftware/zod/serializer` — `compileSerializer`, behind the
+  optional `fast-json-stringify` peer so the root barrel stays dependency-light. The package has
+  an `exports` map, so deep imports into `dist/` do not resolve.
 
 ## API surface
 
@@ -34,6 +37,8 @@ Runtime dependencies: `@maroonedsoftware/errors`, `zod` (v4).
 | `parseAndValidate`      | function | `<T extends ZodType>(data: unknown, schema: T, statusCode?: HttpStatusCodes) => Promise<z.infer<T>>`   | Sync schemas complete without a promise round-trip; async refinements/transforms are awaited. Throws `httpError(statusCode ?? 400)` on failure, with the field map on `withDetails` below `500` and on `withInternalDetails` at `500`+. |
 | `parseAndValidateArray` | function | `<T extends ZodType>(data: unknown, schema: T, statusCode?: HttpStatusCodes) => Promise<z.infer<T>[]>` | `schema` describes one **element**, not the array. `statusCode` forwards to `parseAndValidate`.                                                                  |
 | `zBigint`               | function | `() => ZodType` — a `z.string()` matching `/^-?\d+n$/`, transformed to `bigint`                        | Accepts `"100n"`, yields `100n`.                                                                                                                                 |
+| `compileSerializer`     | function | `<T extends ZodType>(schema: T, options?: CompileSerializerOptions) => (value: z.infer<T>) => string`  | Subpath `@maroonedsoftware/zod/serializer`; needs the optional `fast-json-stringify` peer. **No runtime validation** — feed it schema-conforming values only. Throws at compile time for transforms/`z.custom`/`z.date`/`z.bigint` unless `unrepresentable: 'any'` or an `override` maps them. |
+| `CompileSerializerOptions` | interface | `{ unrepresentable?: 'throw' \| 'any'; override?: z.core.ToJSONSchemaParams['override'] }`         | Same subpath. Default `unrepresentable: 'throw'` fails at startup, not per request.                                                                              |
 
 ### Detail-key format
 
@@ -156,6 +161,8 @@ Invariants a change must not break:
 - `HttpStatusCodes` is a **type-only** export of `errors`. Import it with `import type` /
   `import { type ... }` — `isolatedModules` is on, so a value import emits a runtime binding that
   does not exist.
-- `errors` and `zod` are the only dependencies.
+- `errors` and `zod` are the only hard dependencies. `fast-json-stringify` is an optional peer
+  reachable only through the `/serializer` subpath — never import it from anything the root
+  barrel reaches, or it loads on every import.
 
 User-visible changes need a changeset in `.changeset/`.
