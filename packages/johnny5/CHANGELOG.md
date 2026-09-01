@@ -1,5 +1,12 @@
 # @maroonedsoftware/johnny5
 
+## 8.1.2
+
+### Patch Changes
+
+- Updated dependencies [d0264f8]
+  - @maroonedsoftware/koa@3.1.1
+
 ## 8.1.1
 
 ### Patch Changes
