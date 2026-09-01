@@ -1,5 +1,12 @@
 # @maroonedsoftware/slack
 
+## 3.1.1
+
+### Patch Changes
+
+- Updated dependencies [8557da7]
+  - @maroonedsoftware/policies@0.6.8
+
 ## 3.1.0
 
 ### Minor Changes

@@ -1,5 +1,0 @@
----
-'@maroonedsoftware/zod': minor
----
-
-New `@maroonedsoftware/zod/serializer` subpath exporting `compileSerializer`, which turns a Zod schema into a `fast-json-stringify` serializer for the schema's output type — the compiled-serialization technique Fastify uses, typically 2-3× faster than `JSON.stringify` for a known shape. The conversion goes through zod's native `z.toJSONSchema` targeting draft-07, and nodes with no JSON Schema equivalent (transforms, `z.custom`, `z.date`, `z.bigint`) fail at compile time — startup, not per request — unless mapped via `override` or admitted with `unrepresentable: 'any'`. The returned function performs no validation; fast-json-stringify silently coerces or drops non-conforming input, so only serialize values that came out of the schema. `fast-json-stringify` is a new optional peer dependency loaded only by the subpath — the root barrel is unchanged and stays dependency-light. The package also gains an `exports` map (previously it had none), so deep imports into `dist/` no longer resolve; import from the package root or the `/serializer` subpath.

@@ -1,5 +1,0 @@
----
-'@maroonedsoftware/koa': minor
----
-
-The request-scoped container created by `serverKitContextMiddleware` is now disposed when the response closes. Previously it was never disposed at all — not a memory leak, since nothing long-lived held the scope, but any scoped service implementing `Symbol.dispose`/`Symbol.asyncDispose` was never deterministically released. Disposal is driven by the response's `close` event rather than by `next()` unwinding, so SSE and serverfeed streams (whose handlers return while the socket stays open) keep their scope alive until the socket actually ends; disposal errors are logged through the request logger rather than thrown, since the response is already gone. Two things to be aware of: nothing in ServerKit itself registers a disposable scoped service today, so this is enabling infrastructure for apps that do; and code that stashes `ctx.container` and resolves from it after the response has closed now throws "Cannot resolve from a disposed container" — that was always a lifecycle bug, and it is now a loud one. Resolve dependencies before responding.

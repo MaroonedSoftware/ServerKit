@@ -1,5 +1,19 @@
 # @maroonedsoftware/koa
 
+## 3.1.0
+
+### Minor Changes
+
+- 6218dc5: `authenticationMiddleware` accepts an optional `anonymousPaths` whitelist — exact-match strings or RegExps tested against `ctx.path` — for genuinely public routes where resolving and awaiting the scheme handler on every request is pure overhead. A whitelisted route skips the handler entirely: `ctx.authenticationSession` stays `invalidAuthenticationSession`, so `requirePolicy` rejects it exactly as it would any unauthenticated request, and the `Authorization` header is still stripped from `ctx.req.headers` since that deletion is a logging-safety measure, not an authentication step. Strings deliberately do not prefix-match (`'/health'` never covers `'/healthz'`); use a RegExp for prefixes. `serverKitDefaultMiddleware` gains an optional second `options` parameter (`{ authentication?: AuthenticationMiddlewareOptions }`) to thread the whitelist through the canonical stack. Both additions are backwards compatible — calls without options behave exactly as before.
+- 77cded6: The request-scoped container created by `serverKitContextMiddleware` is now disposed when the response closes. Previously it was never disposed at all — not a memory leak, since nothing long-lived held the scope, but any scoped service implementing `Symbol.dispose`/`Symbol.asyncDispose` was never deterministically released. Disposal is driven by the response's `close` event rather than by `next()` unwinding, so SSE and serverfeed streams (whose handlers return while the socket stays open) keep their scope alive until the socket actually ends; disposal errors are logged through the request logger rather than thrown, since the response is already gone. Two things to be aware of: nothing in ServerKit itself registers a disposable scoped service today, so this is enabling infrastructure for apps that do; and code that stashes `ctx.container` and resolves from it after the response has closed now throws "Cannot resolve from a disposed container" — that was always a lifecycle bug, and it is now a loud one. Resolve dependencies before responding.
+- ba5e1f0: New `sendJson(ctx, serialized, status?)` helper for writing a pre-serialized JSON string as the response body. Koa infers `text/plain` for a string body unless a content type was set explicitly, so assigning compiled-serializer output to `ctx.body` directly ships the wrong content type — this helper sets `application/json` before the body and defaults the status to 200. It pairs with `compileSerializer` from `@maroonedsoftware/zod/serializer`, whose output skips Koa's own `JSON.stringify` pass entirely, but any pre-serialized JSON string works.
+
+### Patch Changes
+
+- Updated dependencies [8557da7]
+  - @maroonedsoftware/policies@0.6.8
+  - @maroonedsoftware/authentication@4.30.9
+
 ## 3.0.11
 
 ### Patch Changes
