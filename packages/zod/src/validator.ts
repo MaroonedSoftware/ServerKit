@@ -112,7 +112,7 @@ function formatZodErrors(error: ZodError) {
  *
  * @example
  * ```typescript
- * const body = await parseAndValidate(ctx.request.body, z.object({
+ * const body = await parseAndValidate(ctx.parsedBody, z.object({
  *   email: z.string().email(),
  *   age: z.number().min(0),
  * }));
@@ -165,7 +165,7 @@ export const parseAndValidate = async <T extends ZodType>(data: unknown, schema:
  *
  * @example
  * ```typescript
- * const users = await parseAndValidateArray(ctx.request.body, z.object({
+ * const users = await parseAndValidateArray(ctx.parsedBody, z.object({
  *   email: z.string().email(),
  *   age: z.number().min(0),
  * }));

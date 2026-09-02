@@ -14,6 +14,18 @@ pnpm add @maroonedsoftware/zod
 import { parseAndValidate, parseAndValidateArray, zBigint } from '@maroonedsoftware/zod';
 ```
 
+The examples below validate a request payload, which on ServerKit comes from `ctx.parsedBody` (koa)
+or `request.parsedBody` (fastify), populated by that route's `bodyParserMiddleware`. The frameworks'
+own `ctx.request.body` and `request.body` are never populated by ServerKit, so a route that reads
+them hands `undefined` to `parseAndValidate` and gets a 400 listing every field as missing.
+
+```typescript
+router.post('/users', bodyParserMiddleware(['application/json']), async ctx => {
+  const body = await parseAndValidate(ctx.parsedBody, CreateUser);
+  ctx.body = await users.create(body);
+});
+```
+
 ## API Reference
 
 ### `parseAndValidate(data, schema, statusCode?)`
@@ -26,7 +38,7 @@ Where that map lands depends on the status. Below `500` it goes on `details`, wh
 
 ```typescript
 const body = await parseAndValidate(
-  ctx.request.body,
+  ctx.parsedBody,
   z.object({
     email: z.string().email(),
     age: z.number().min(0),
@@ -67,7 +79,7 @@ const body = await parseAndValidate(
 
 ```typescript
 // Reject a well-formed but semantically invalid payload as 422 instead of 400
-const body = await parseAndValidate(ctx.request.body, schema, 422);
+const body = await parseAndValidate(ctx.parsedBody, schema, 422);
 
 // Validating something the client did not send — a failure is the server's fault, and the
 // field map is logged rather than returned
@@ -89,7 +101,7 @@ Error handling matches `parseAndValidate`, with detail keys prefixed by the elem
 
 ```typescript
 const users = await parseAndValidateArray(
-  ctx.request.body,
+  ctx.parsedBody,
   z.object({
     email: z.string().email(),
     age: z.number().min(0),
