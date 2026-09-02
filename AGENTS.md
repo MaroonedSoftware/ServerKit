@@ -86,8 +86,10 @@ lower-level package standalone. The adapter lives in the package that can afford
 exposed as a subpath export, with the other side declared an **optional** peer dependency.
 
 `serverfeed` is the sharpest case. It owns the event contract and bus and depends on nothing
-internal. Framing and connection handling are a transport concern, so they live in `koa` behind
-`@maroonedsoftware/koa/serverfeed`, with `serverfeed` as an optional peer of `koa`. The
+internal. Framing and connection handling are a transport concern, so the framework-neutral SSE
+handler lives in `servercore` behind `@maroonedsoftware/servercore/serverfeed`, and each HTTP
+adapter mounts it on a guarded route behind `@maroonedsoftware/koa/serverfeed` and
+`@maroonedsoftware/fastify/serverfeed`, with `serverfeed` as an optional peer of all three. The
 logger bridge goes the other way — `@maroonedsoftware/serverfeed/logger`, with `logger` as an
 optional peer of `serverfeed` — specifically so `logger` stays dependency-free.
 
@@ -178,7 +180,12 @@ service needs to observe reloads.
 
 ## Building an app on ServerKit
 
-The composition root is a `ServerKitServerBuilder` plus a list of `ServerKitModule`s.
+The composition root is a `ServerKitServerBuilder` plus a list of `ServerKitModule`s. Two
+adapters offer it with the same method names: `@maroonedsoftware/koa` and
+`@maroonedsoftware/fastify`. Both are thin layers over `@maroonedsoftware/servercore`, which owns
+the module lifecycle, body parsers, error rendering, and SSE transport. Pick one adapter per
+server; the snippet below is Koa, and the Fastify version differs only in its import and in
+handlers receiving `(request, reply)` instead of `ctx`.
 
 ```typescript
 import { ServerKitServerBuilder, ServerKitRouter } from '@maroonedsoftware/koa';
@@ -194,8 +201,9 @@ await builder.start(3000);
 ```
 
 `setup` registers `Logger` and `AppConfig`, wires the body-parser mappings, runs every module's
-`setup` hook, and builds the container. It sets Luxon's default zone to UTC on construction and
-throws if you call anything else before `setup`.
+`setup` hook, registers `ServerKitContext` as a scoped placeholder, and builds the container. It
+sets Luxon's default zone to UTC on construction and throws if you call anything else before
+`setup`. `start` resolves once the socket is bound and every `start` hook has run.
 
 ### Module lifecycle
 
@@ -218,7 +226,8 @@ down a half-wired server.
 ### Middleware order is load-bearing
 
 If you build the stack by hand instead of using `serverKitDefaultMiddleware`, this order is not
-stylistic:
+stylistic (on Fastify the same steps are `onRequest` hooks applied in this order, and the error
+step installs `setErrorHandler` / `setNotFoundHandler`):
 
 1. `errorMiddleware()` — **first**; it catches everything downstream.
 2. `serverKitContextMiddleware(container)` — creates the request-scoped DI container and attaches
@@ -272,4 +281,6 @@ repo, not just yours. Add the changeset file and let the release automation do t
 `.claude/skills/` holds vetted, working examples for the most commonly generated code:
 `config`, `error-handler`, `job`, `koa-middleware`, `koa-route`, `logger-setup`, `multipart-upload`.
 When generating code of one of those shapes, use the skill's example as the starting point rather
-than writing a fresh one — the examples are kept in sync with the packages.
+than writing a fresh one — the examples are kept in sync with the packages. There is no Fastify
+skill yet; for a Fastify route or hook, follow the canonical usage in
+[fastify/AGENTS.md](./packages/fastify/AGENTS.md) and mirror the shape of the Koa skill.

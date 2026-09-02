@@ -43,6 +43,7 @@ plus `injectkit` and `type-is`.
 | `ServerKitRouterMiddleware` | type                       | `(request: ServerKitContext, reply: FastifyReply) => Promise<void>`                                                                                                                                           | A route guard, run as a `preHandler`. Throw to reject.                                            |
 | `ServerKitRouteHandler`     | type                       | `(request: ServerKitContext, reply: FastifyReply) => unknown`                                                                                                                                                 | Return a value to send it.                                                                        |
 | `ServerKitRouter`           | function                   | `(options?: { prefix? }) => ServerKitRouterType`                                                                                                                                                              | Factory, not a class.                                                                             |
+| `ServerKitRouterOptions`    | interface                  | `{ prefix?: string }`                                                                                                                                                                                         | Mount prefix applied by `setupRoutes`.                                                            |
 | `ServerKitRouterType`       | interface                  | `use(...guards)`, `get/post/put/patch/delete/head/options(path, ...guards, handler)`, `routes(): FastifyPluginAsync`, `readonly prefix?`                                                                      | `routes()` registers each route with `preHandler: [...routerGuards, ...routeGuards]`.             |
 | `ServerKitRouteHandlers`    | type                       | `[...ServerKitRouterMiddleware[], ServerKitRouteHandler]`                                                                                                                                                     | —                                                                                                 |
 | `sendJson`                  | function                   | `(reply: FastifyReply, serialized: string, status?: number) => void`                                                                                                                                          | Sets `application/json` explicitly (Fastify sends a string as `text/plain`).                      |
@@ -141,6 +142,12 @@ builder.setupMiddleware(container => [
   app => app.addHook('onRequest', async request => request.logger.info('hello')),
 ]);
 ```
+
+There is no `.claude/skills/` example for this package yet. When generating a route or a hook,
+mirror [.claude/skills/koa-route](../../.claude/skills/koa-route) and
+[.claude/skills/koa-middleware](../../.claude/skills/koa-middleware) with the substitutions above:
+`(request, reply)` for `ctx`, `request.parsedBody` for `ctx.parsedBody`, return-or-`reply.send`
+for `ctx.body`, and a `ServerKitMiddleware` registration step for a `(ctx, next)` middleware.
 
 ## Rules for generated code
 
