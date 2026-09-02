@@ -1,5 +1,11 @@
 # @maroonedsoftware/zod
 
+## 0.7.2
+
+### Patch Changes
+
+- 9822d87: Fix the README and JSDoc examples, which fed `ctx.request.body` to `parseAndValidate` and `parseAndValidateArray`. ServerKit never populates that field, so the examples validated `undefined` and threw a 400 listing every field as missing. They now read `ctx.parsedBody`, and the README explains where it comes from.
+
 ## 0.7.1
 
 ### Patch Changes
