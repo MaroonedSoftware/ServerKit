@@ -1,6 +1,6 @@
-import crypto from 'crypto';
 import { Container } from 'injectkit';
 import { Logger } from '@maroonedsoftware/logger';
+import { resolveRequestIdentity } from '@maroonedsoftware/servercore';
 import { ServerKitMiddleware } from '../../serverkit.middleware.js';
 import { ServerKitContext } from '../../serverkit.context.js';
 
@@ -44,11 +44,9 @@ export const serverKitContextMiddleware = (container: Container): ServerKitMiddl
     ctx.userAgent = ctx.get('user-agent');
     ctx.ipAddress = ctx.ip;
 
-    const correlationId = ctx.headers['x-correlation-id'];
-    ctx.correlationId = Array.isArray(correlationId) ? (correlationId[0] ?? crypto.randomUUID()) : (correlationId ?? crypto.randomUUID());
-
-    const requestId = ctx.headers['x-request-id'];
-    ctx.requestId = Array.isArray(requestId) ? (requestId[0] ?? crypto.randomUUID()) : (requestId ?? crypto.randomUUID());
+    const { correlationId, requestId } = resolveRequestIdentity(ctx.headers);
+    ctx.correlationId = correlationId;
+    ctx.requestId = requestId;
 
     ctx.headers['x-correlation-id'] = ctx.correlationId;
     ctx.set('x-correlation-id', ctx.correlationId);

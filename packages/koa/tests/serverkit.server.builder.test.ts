@@ -6,14 +6,12 @@ import Koa from 'koa';
 import { InjectKitContainerNoop, type Container } from 'injectkit';
 import type { ServerKitRouterType } from '../src/serverkit.router.js';
 import { ServerKitServerBuilder } from '../src/serverkit.server.builder.js';
-import { ServerKitBodyParser, ServerKitParserMappings } from '../src/serverkit.bodyparser.js';
-import { BinaryParser } from '../src/parsers/binary.parser.js';
+import { BinaryParser, openSseStream, ServerKitBodyParser, ServerKitParserMappings, type SseContext } from '@maroonedsoftware/servercore';
 import { RateLimiter } from '../src/middleware/server/rate.limiter.middleware.js';
-import { openSseStream, type SseContext } from '../src/sse/sse.stream.js';
 import { Logger } from '@maroonedsoftware/logger';
 import { AppConfig } from '@maroonedsoftware/appconfig';
 import { ServerkitError } from '@maroonedsoftware/errors';
-import type { ServerKitModule } from '../src/serverkit.module.js';
+import type { ServerKitModule } from '@maroonedsoftware/servercore';
 import type { ServerKitMiddleware } from '../src/serverkit.middleware.js';
 
 /** Reaches into the builder's private fields for white-box assertions. */

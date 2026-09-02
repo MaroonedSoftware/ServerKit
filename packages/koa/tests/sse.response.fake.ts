@@ -1,4 +1,4 @@
-import type { SseContext, SseResponse } from '../src/sse/sse.stream.js';
+import type { SseContext, SseResponse } from '@maroonedsoftware/servercore';
 
 /**
  * A fake raw response recording writes and lifecycle calls, with a controllable backpressure

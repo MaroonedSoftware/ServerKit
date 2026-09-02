@@ -1,5 +1,6 @@
 import { ServerKitMiddleware } from '../../serverkit.middleware.js';
 import { AuthenticationSchemeHandler, invalidAuthenticationSession } from '@maroonedsoftware/authentication';
+import { createAnonymousPathMatcher } from '@maroonedsoftware/servercore';
 
 /**
  * Options for {@link authenticationMiddleware}.
@@ -46,16 +47,7 @@ export interface AuthenticationMiddlewareOptions {
  */
 export const authenticationMiddleware = (options?: AuthenticationMiddlewareOptions): ServerKitMiddleware => {
   // Precompiled once at construction: O(1) for exact paths, a linear scan only for patterns.
-  const exactPaths = new Set<string>();
-  const patterns: RegExp[] = [];
-  for (const path of options?.anonymousPaths ?? []) {
-    if (typeof path === 'string') {
-      exactPaths.add(path);
-    } else {
-      patterns.push(path);
-    }
-  }
-  const isAnonymous = (path: string): boolean => exactPaths.has(path) || patterns.some(pattern => pattern.test(path));
+  const isAnonymous = createAnonymousPathMatcher(options?.anonymousPaths);
 
   return async (ctx, next) => {
     ctx.authenticationSession = invalidAuthenticationSession; // bad initial state so it will fail verification

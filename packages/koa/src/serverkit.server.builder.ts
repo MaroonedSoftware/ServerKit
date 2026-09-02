@@ -1,11 +1,15 @@
 import { Logger, ConsoleLogger } from '@maroonedsoftware/logger';
 import { Container, InjectKitRegistry, Registry, InjectKitContainerNoop } from 'injectkit';
-import { ServerKitModule } from './serverkit.module.js';
 import Koa from 'koa';
 import { Settings } from 'luxon';
 import { AppConfig } from '@maroonedsoftware/appconfig';
-import { defaultParserMappings, ServerKitParserMapping } from './parsers/serverkit.default.parsers.js';
-import { ServerKitBodyParser, ServerKitParserMappings } from './serverkit.bodyparser.js';
+import {
+  defaultParserMappings,
+  ServerKitBodyParser,
+  ServerKitModule,
+  ServerKitParserMapping,
+  ServerKitParserMappings,
+} from '@maroonedsoftware/servercore';
 import { ServerKitMiddleware } from './serverkit.middleware.js';
 import { ServerkitError } from '@maroonedsoftware/errors';
 import { serverKitDefaultMiddleware } from './middleware/server/serverkit.default.middlewares.js';

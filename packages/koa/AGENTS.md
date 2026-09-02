@@ -24,14 +24,14 @@ pnpm add @maroonedsoftware/koa koa @koa/router @koa/cors
 Required peers: `koa`, `@koa/router`, `@koa/cors`. Optional peer:
 `@maroonedsoftware/serverfeed` (for the `./serverfeed` subpath).
 
-Runtime dependencies: `appconfig`, `authentication`, `errors`, `logger`, `multipart`, `policies`,
-`utilities`, plus `@hapi/bourne`, `co-body`, `inflation`, `injectkit`, `luxon`, `qs`,
-`rate-limiter-flexible`, `raw-body`.
+Runtime dependencies: `appconfig`, `authentication`, `errors`, `logger`, `policies`,
+`servercore`, plus `injectkit` and `luxon`. The body parsers, SSE transport, signature policy,
+and `RateLimiter` token are `servercore`'s and are re-exported here by name.
 
 ## Position in the graph
 
-- **Depends on:** `appconfig`, `authentication`, `errors`, `logger`, `multipart`, `policies`,
-  `utilities`.
+- **Depends on:** `servercore` (the framework-neutral core), `appconfig`, `authentication`,
+  `errors`, `logger`, `policies`.
 - **Depended on by:** `scim`, `johnny5`.
 - **Subpath exports:**
   - `.` — everything below.
@@ -43,29 +43,29 @@ Runtime dependencies: `appconfig`, `authentication`, `errors`, `logger`, `multip
 
 ### Context, router, middleware types
 
-| Export                      | Kind                       | Shape                                                                                                                                                                | Notes                                                                          |
-| --------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `ServerKitContext`          | interface + abstract class | `extends Context` with `container`, `logger`, `loggerName`, `userAgent`, `ipAddress`, `correlationId`, `requestId`, `rawBody`, `parsedBody`, `authenticationSession` | Declaration-merged so one symbol is both the type and a DI token.              |
-| `ServerKitMiddleware`       | type                       | `Middleware<…>` bound to `ServerKitContext`                                                                                                                          | Server-level middleware.                                                       |
-| `ServerKitRouterMiddleware` | type                       | `RouterMiddleware<State, Context>`                                                                                                                                   | Route-level middleware.                                                        |
-| `ServerKitRouter`           | function                   | `<StateT, ContextT>(options?: RouterOptions) => Router<StateT, ContextT>`                                                                                            | Factory, not a class.                                                          |
-| `ServerKitRouterType`       | type                       | `ReturnType<typeof ServerKitRouter>`                                                                                                                                 | Type a router without importing `@koa/router`. Erased/invariant — see Gotchas. |
+| Export                      | Kind                       | Shape                                                                                                                                                                | Notes                                                                                                                                                                                           |
+| --------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ServerKitContext`          | interface + abstract class | `extends Context` with `container`, `logger`, `loggerName`, `userAgent`, `ipAddress`, `correlationId`, `requestId`, `rawBody`, `parsedBody`, `authenticationSession` | Declaration-merged so one symbol is both the type and a DI token.                                                                                                                               |
+| `ServerKitMiddleware`       | type                       | `Middleware<…>` bound to `ServerKitContext`                                                                                                                          | Server-level middleware.                                                                                                                                                                        |
+| `ServerKitRouterMiddleware` | type                       | `RouterMiddleware<State, Context>`                                                                                                                                   | Route-level middleware.                                                                                                                                                                         |
+| `ServerKitRouter`           | function                   | `<StateT, ContextT>(options?: RouterOptions) => Router<StateT, ContextT>`                                                                                            | Factory, not a class.                                                                                                                                                                           |
+| `ServerKitRouterType`       | type                       | `ReturnType<typeof ServerKitRouter>`                                                                                                                                 | Type a router without importing `@koa/router`. Erased/invariant — see Gotchas.                                                                                                                  |
 | `sendJson`                  | function                   | `(ctx: ServerKitContext, serialized: string, status?: number) => void`                                                                                               | Writes a pre-serialized JSON string with `application/json` set explicitly (Koa infers `text/plain` for string bodies). Pairs with `compileSerializer` from `@maroonedsoftware/zod/serializer`. |
 
 ### Server middleware
 
-| Export                       | Kind                       | Shape                                               | Notes                                                                                        |
-| ---------------------------- | -------------------------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `errorMiddleware`            | function                   | `() => ServerKitMiddleware`                         | **Must be first.** Maps errors to responses; emits `error`/`warn` on the app.                |
-| `serverKitContextMiddleware` | function                   | `(container: Container) => ServerKitMiddleware`     | **Must be second.** Creates the request scope and registers the live `ctx`. The scope is disposed when the response closes (not when `next()` unwinds, so SSE outlives the handler); resolving from `ctx.container` after that throws. |
-| `corsMiddleware`             | function                   | `(options?: CorsOptions) => ServerKitMiddleware`    | `origin` accepts `'*'`, a string, or a `RegExp`.                                             |
-| `rateLimiterMiddleware`      | function                   | `(rateLimiter: RateLimiter) => ServerKitMiddleware` | Per-IP; 429 when exceeded.                                                                   |
-| `RateLimiter`                | interface + abstract class | `extends RateLimiterAbstract`                       | DI token for a `rate-limiter-flexible` limiter.                                              |
-| `authenticationMiddleware`   | function                   | `(options?: AuthenticationMiddlewareOptions) => ServerKitMiddleware` | Resolves `Authorization` via `AuthenticationSchemeHandler` into `ctx.authenticationSession`. `anonymousPaths` (exact strings or RegExps against `ctx.path`) skips the handler entirely; the session stays invalid and the header is still stripped. |
-| `AuthenticationMiddlewareOptions` | interface             | `{ anonymousPaths?: (string \| RegExp)[] }`         | Strings match exactly — no prefix matching; RegExp is the escape hatch.                      |
-| `serverKitDefaultMiddleware` | function                   | `(container: Container, options?: ServerKitDefaultMiddlewareOptions) => ServerKitMiddleware[]` | The canonical stack in canonical order.                           |
-| `ServerKitDefaultMiddlewareOptions` | interface           | `{ authentication?: AuthenticationMiddlewareOptions }` | Forwarded to `authenticationMiddleware`.                                                  |
-| `CorsOptions`                | interface                  | `Omit<cors.Options, 'origin'> & { origin }`         | —                                                                                            |
+| Export                              | Kind                       | Shape                                                                                          | Notes                                                                                                                                                                                                                                               |
+| ----------------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `errorMiddleware`                   | function                   | `() => ServerKitMiddleware`                                                                    | **Must be first.** Maps errors to responses; emits `error`/`warn` on the app.                                                                                                                                                                       |
+| `serverKitContextMiddleware`        | function                   | `(container: Container) => ServerKitMiddleware`                                                | **Must be second.** Creates the request scope and registers the live `ctx`. The scope is disposed when the response closes (not when `next()` unwinds, so SSE outlives the handler); resolving from `ctx.container` after that throws.              |
+| `corsMiddleware`                    | function                   | `(options?: CorsOptions) => ServerKitMiddleware`                                               | `origin` accepts `'*'`, a string, or a `RegExp`.                                                                                                                                                                                                    |
+| `rateLimiterMiddleware`             | function                   | `(rateLimiter: RateLimiter) => ServerKitMiddleware`                                            | Per-IP; 429 when exceeded.                                                                                                                                                                                                                          |
+| `RateLimiter`                       | interface + abstract class | `extends RateLimiterAbstract`                                                                  | DI token for a `rate-limiter-flexible` limiter.                                                                                                                                                                                                     |
+| `authenticationMiddleware`          | function                   | `(options?: AuthenticationMiddlewareOptions) => ServerKitMiddleware`                           | Resolves `Authorization` via `AuthenticationSchemeHandler` into `ctx.authenticationSession`. `anonymousPaths` (exact strings or RegExps against `ctx.path`) skips the handler entirely; the session stays invalid and the header is still stripped. |
+| `AuthenticationMiddlewareOptions`   | interface                  | `{ anonymousPaths?: (string \| RegExp)[] }`                                                    | Strings match exactly — no prefix matching; RegExp is the escape hatch.                                                                                                                                                                             |
+| `serverKitDefaultMiddleware`        | function                   | `(container: Container, options?: ServerKitDefaultMiddlewareOptions) => ServerKitMiddleware[]` | The canonical stack in canonical order.                                                                                                                                                                                                             |
+| `ServerKitDefaultMiddlewareOptions` | interface                  | `{ authentication?: AuthenticationMiddlewareOptions }`                                         | Forwarded to `authenticationMiddleware`.                                                                                                                                                                                                            |
+| `CorsOptions`                       | interface                  | `Omit<cors.Options, 'origin'> & { origin }`                                                    | —                                                                                                                                                                                                                                                   |
 
 `serverKitDefaultMiddleware` builds: `errorMiddleware()` → `serverKitContextMiddleware(container)` →
 `rateLimiterMiddleware(...)` **only if a `RateLimiter` is registered** → `corsMiddleware({ exposeHeaders: ['WWW-Authenticate'] })`
@@ -87,19 +87,20 @@ Runtime dependencies: `appconfig`, `authentication`, `errors`, `logger`, `multip
 
 ### Body parsing
 
-| Export                                 | Kind           | Shape                                                                  | Notes                                |
-| -------------------------------------- | -------------- | ---------------------------------------------------------------------- | ------------------------------------ |
-| `ServerKitParser`                      | abstract class | The parser base                                                        | —                                    |
-| `ServerKitParserResult`                | type           | Parser output                                                          | —                                    |
-| `ServerKitParserMapping`               | type           | `{ parser: Constructor<ServerKitParser>; options?: { id, instance } }` | —                                    |
-| `ServerKitParserMappings`              | class          | `extends Map<string, ServerKitParser>`                                 | DI token.                            |
-| `ServerKitBodyParser`                  | class          | Dispatches to the mapped parser                                        | —                                    |
-| `defaultParserMappings`                | constant       | `Record<string, ServerKitParserMapping>`                               | Table below. Extend by spreading.    |
-| `JsonParser` / `JsonParserOptions`     | class          | —                                                                      | Options carry the `bigIntReviver`.   |
-| `TextParser` / `TextParserOptions`     | class          | —                                                                      | —                                    |
-| `FormParser` / `FormParserOptions`     | class          | —                                                                      | Uses `qs`.                           |
-| `MultipartParser`                      | class          | —                                                                      | Wraps `@maroonedsoftware/multipart`. |
-| `BinaryParser` / `BinaryParserOptions` | class          | —                                                                      | —                                    |
+| Export                                 | Kind           | Shape                                                                  | Notes                                                  |
+| -------------------------------------- | -------------- | ---------------------------------------------------------------------- | ------------------------------------------------------ |
+| `ServerKitParser`                      | abstract class | The parser base                                                        | —                                                      |
+| `ServerKitParserResult`                | type           | Parser output                                                          | —                                                      |
+| `ServerKitParserMapping`               | type           | `{ parser: Constructor<ServerKitParser>; options?: { id, instance } }` | —                                                      |
+| `ServerKitParserMappings`              | class          | `extends Map<string, ServerKitParser>`                                 | DI token.                                              |
+| `ServerKitBodyParser`                  | class          | `parse(source: IncomingMessage \| { req })`                            | Re-exported from `servercore`; matches with `type-is`. |
+| `ServerKitBodySource`                  | type           | `IncomingMessage \| { req: IncomingMessage }`                          | A Koa ctx satisfies it.                                |
+| `defaultParserMappings`                | constant       | `Record<string, ServerKitParserMapping>`                               | Table below. Extend by spreading.                      |
+| `JsonParser` / `JsonParserOptions`     | class          | —                                                                      | Options carry the `bigIntReviver`.                     |
+| `TextParser` / `TextParserOptions`     | class          | —                                                                      | —                                                      |
+| `FormParser` / `FormParserOptions`     | class          | —                                                                      | Uses `qs`.                                             |
+| `MultipartParser`                      | class          | —                                                                      | Wraps `@maroonedsoftware/multipart`.                   |
+| `BinaryParser` / `BinaryParserOptions` | class          | —                                                                      | —                                                      |
 
 | MIME subtype                                                                         | Parser                        |
 | ------------------------------------------------------------------------------------ | ----------------------------- |
@@ -111,27 +112,27 @@ Runtime dependencies: `appconfig`, `authentication`, `errors`, `logger`, `multip
 
 ### SSE
 
-| Export                                     | Kind                  | Shape                                                              | Notes                                                                  |
-| ------------------------------------------ | --------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------- |
-| `openSseStream`                            | function              | `(ctx: SseContext, options?: SseStreamOptions) => SseStream`       | Takes over the raw socket (`ctx.respond = false`).                     |
-| `SseStream`                                | interface             | `write`, `event`, `comment`, `onClose`, `close`, `readonly closed` | Writes after close are no-ops. `onClose` after close runs immediately. |
-| `SseStreamOptions`                         | interface             | `{ heartbeatMs?, maxBufferedBytes?, headers?, signal? }`           | Pass `builder.lifecycleSignal` as `signal` — see Gotchas.              |
-| `SseContext`                               | interface             | `{ status, respond?, res: SseResponse }`                           | Small structural type so handlers are testable with a fake `res`.      |
-| `SseResponse`                              | interface             | Raw response sink, including `writableLength`                      | —                                                                      |
-| `SseFrame` / `frameEvent` / `frameComment` | interface / functions | Frame shape and serialisers                                        | —                                                                      |
-| `resolveLastEventId`                       | function              | `(header: string, queryLastEventId: unknown) => number`            | —                                                                      |
-| `firstQueryValue`                          | function              | `(value: unknown) => string \| undefined`                          | —                                                                      |
-| `DEFAULT_SSE_HEARTBEAT_MS`                 | constant              | `15_000`                                                           | `0` disables.                                                          |
-| `DEFAULT_SSE_MAX_BUFFERED_BYTES`           | constant              | `1_000_000`                                                        | Past this, the client is dropped and reconnects with `Last-Event-ID`.  |
+| Export                                     | Kind                  | Shape                                                              | Notes                                                                                   |
+| ------------------------------------------ | --------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `openSseStream`                            | function              | `(ctx: SseContext, options?: SseStreamOptions) => SseStream`       | Takes over the raw socket (`ctx.respond = false`).                                      |
+| `SseStream`                                | interface             | `write`, `event`, `comment`, `onClose`, `close`, `readonly closed` | Writes after close are no-ops. `onClose` after close runs immediately.                  |
+| `SseStreamOptions`                         | interface             | `{ heartbeatMs?, maxBufferedBytes?, headers?, signal? }`           | Pass `builder.lifecycleSignal` as `signal` — see Gotchas.                               |
+| `SseContext`                               | interface             | `{ status?, respond?, res: SseResponse, hijack?() }`               | Small structural type so handlers are testable with a fake `res`. A Koa ctx fits as-is. |
+| `SseResponse`                              | interface             | Raw response sink, including `writableLength`                      | —                                                                                       |
+| `SseFrame` / `frameEvent` / `frameComment` | interface / functions | Frame shape and serialisers                                        | —                                                                                       |
+| `resolveLastEventId`                       | function              | `(header: string, queryLastEventId: unknown) => number`            | —                                                                                       |
+| `firstQueryValue`                          | function              | `(value: unknown) => string \| undefined`                          | —                                                                                       |
+| `DEFAULT_SSE_HEARTBEAT_MS`                 | constant              | `15_000`                                                           | `0` disables.                                                                           |
+| `DEFAULT_SSE_MAX_BUFFERED_BYTES`           | constant              | `1_000_000`                                                        | Past this, the client is dropped and reconnects with `Last-Event-ID`.                   |
 
 ### Lifecycle
 
-| Export                      | Kind      | Shape                                                                                                                                                            | Notes                                             |
-| --------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| `ServerKitModule<ConfigT>`  | interface | `{ name?, setup?, start?, ready?, shutdown? }`                                                                                                                   | See the lifecycle table in the root AGENTS.md.    |
-| `ServerKitServerBuilder`    | class     | `setup(config, logger, modules, parserMappings?)`, `setupMiddleware(fn?)`, `setupRoutes(routers)`, `start(port, options?)`, `whenReady()`, `get lifecycleSignal` | Sets Luxon's default zone to UTC on construction. |
-| `ServerKitStartOptions`     | interface | `{ shutdownGraceMs?: number }`                                                                                                                                   | Default 10 s. `0` force-closes immediately.       |
-| `DEFAULT_SHUTDOWN_GRACE_MS` | constant  | `10_000`                                                                                                                                                         | —                                                 |
+| Export                      | Kind      | Shape                                                                                                                                                            | Notes                                                                         |
+| --------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `ServerKitModule<ConfigT>`  | interface | `{ name?, setup?, start?, ready?, shutdown? }`                                                                                                                   | Re-exported from `servercore`. See the lifecycle table in the root AGENTS.md. |
+| `ServerKitServerBuilder`    | class     | `setup(config, logger, modules, parserMappings?)`, `setupMiddleware(fn?)`, `setupRoutes(routers)`, `start(port, options?)`, `whenReady()`, `get lifecycleSignal` | Sets Luxon's default zone to UTC on construction.                             |
+| `ServerKitStartOptions`     | interface | `{ shutdownGraceMs?: number }`                                                                                                                                   | Default 10 s. `0` force-closes immediately.                                   |
+| `DEFAULT_SHUTDOWN_GRACE_MS` | constant  | `10_000`                                                                                                                                                         | —                                                                             |
 
 ### `./serverfeed`
 
@@ -248,29 +249,30 @@ See [.claude/skills/koa-route](../../.claude/skills/koa-route) and
   (header, algorithm, digest, both signatures) go to `internalDetails`; the secret never does.
 - **`ServerKitContext` is declaration-merged** (interface + abstract class) so one symbol is both
   the type and the DI token, like `Logger` and `JobContext`. Do not split it.
+- **The parsers, SSE transport, signature policy, and `RateLimiter` are `servercore`'s.** Edit
+  them in `packages/servercore`; this package only re-exports them. Adapter-only helpers such as
+  `renderError`, `consumeRateLimit`, and the body gate are not re-exported here.
 
 ## Working inside this package
 
 ```
 src/
-  index.ts                     Root barrel
+  index.ts                     Root barrel (plus named re-exports from servercore)
   serverkit.context.ts         ServerKitContext (interface + token)
   serverkit.middleware.ts      ServerKitMiddleware, ServerKitRouterMiddleware
   serverkit.router.ts          ServerKitRouter, ServerKitRouterType
-  serverkit.module.ts          ServerKitModule
   serverkit.server.builder.ts  ServerKitServerBuilder, start options, graceful shutdown
-  serverkit.bodyparser.ts      ServerKitBodyParser, ServerKitParserMappings
+  send.json.ts                 sendJson
   middleware/
     server/                    error, serverkit.context, cors, rate.limiter, authentication,
                                serverkit.default.middlewares, fake.security (NOT exported)
     router/                    body.parser, require.policy, require.signature
-  policies/                    request.signature.valid.policy
-  parsers/                     serverkit.parser, json, text, form, multipart, binary,
-                               serverkit.default.parsers
-  sse/                         sse.frame, sse.request, sse.stream
   serverfeed.ts                Subpath entry for ./serverfeed
   serverfeed/server.feed.stream.ts  serverFeedRouter, handleServerFeed, filter-from-query
 ```
+
+Parsers, the SSE transport, the signature policy, `ServerKitModule`, and `RateLimiter` live in
+`packages/servercore/src` and are re-exported from `src/index.ts` by name.
 
 Tests are in `tests/`, mirroring `src/`.
 

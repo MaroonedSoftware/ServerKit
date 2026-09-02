@@ -455,9 +455,6 @@ importers:
 
   packages/koa:
     dependencies:
-      '@hapi/bourne':
-        specifier: ^4.0.1
-        version: 4.0.1
       '@maroonedsoftware/appconfig':
         specifier: workspace:*
         version: link:../appconfig
@@ -470,36 +467,18 @@ importers:
       '@maroonedsoftware/logger':
         specifier: workspace:*
         version: link:../logger
-      '@maroonedsoftware/multipart':
-        specifier: workspace:*
-        version: link:../multipart
       '@maroonedsoftware/policies':
         specifier: workspace:*
         version: link:../policies
-      '@maroonedsoftware/utilities':
+      '@maroonedsoftware/servercore':
         specifier: workspace:*
-        version: link:../utilities
-      co-body:
-        specifier: ^6.2.0
-        version: 6.2.0
-      inflation:
-        specifier: ^2.1.0
-        version: 2.1.0
+        version: link:../servercore
       injectkit:
         specifier: ^1.7.1
         version: 1.7.1
       luxon:
         specifier: ^3.7.2
         version: 3.7.2
-      qs:
-        specifier: ^6.16.0
-        version: 6.16.0
-      rate-limiter-flexible:
-        specifier: ^11.2.0
-        version: 11.2.0
-      raw-body:
-        specifier: ^4.0.0
-        version: 4.0.0
     devDependencies:
       '@koa/cors':
         specifier: ^5.0.0
@@ -516,12 +495,6 @@ importers:
       '@repo/config-typescript':
         specifier: workspace:*
         version: link:../config-typescript
-      '@types/co-body':
-        specifier: ^6.1.3
-        version: 6.1.3
-      '@types/inflation':
-        specifier: ^2.0.4
-        version: 2.0.4
       '@types/koa':
         specifier: ^3.0.3
         version: 3.0.3
@@ -531,12 +504,12 @@ importers:
       '@types/luxon':
         specifier: ^3.7.5
         version: 3.7.5
-      '@types/qs':
-        specifier: ^6.15.1
-        version: 6.15.1
       koa:
         specifier: ^3.2.1
         version: 3.2.1
+      rate-limiter-flexible:
+        specifier: ^11.2.0
+        version: 11.2.0
 
   packages/kysely:
     dependencies:
@@ -1711,9 +1684,6 @@ packages:
     engines: {node: '>=6'}
     hasBin: true
 
-  '@hapi/bourne@3.0.0':
-    resolution: {integrity: sha512-Waj1cwPXJDucOib4a3bAISsKJVb15MKi9IvmTI/7ssVEm6sywXGjVJDhl6/umt1pK1ZS7PacXU3A1PmFKHEZ2w==}
-
   '@hapi/bourne@4.0.1':
     resolution: {integrity: sha512-SrAjK5gEaPONrdkQhiCrAbR20HrSbP/4PS16ETgP2F4jTXoRj5k7m92EHWe300IKC/v0iFQumVRLAsTJ51oibg==}
     engines: {node: '>=22'}
@@ -2739,9 +2709,6 @@ packages:
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
 
-  '@types/co-body@6.1.3':
-    resolution: {integrity: sha512-UhuhrQ5hclX6UJctv5m4Rfp52AfG9o9+d9/HwjxhVB5NjXxr5t9oKgJxN8xRHgr35oo8meUEHUPFWiKg6y71aA==}
-
   '@types/connect@3.4.38':
     resolution: {integrity: sha512-K6uROf1LD88uDQqJCktA4yzL1YYAK6NgfsI0v/mTgyPKWsX1CnJ0XPSDhViejru1GcRkLWb8RlzFYJRqGUbaug==}
 
@@ -3311,10 +3278,6 @@ packages:
   cluster-key-slot@1.1.1:
     resolution: {integrity: sha512-rwHwUfXL40Chm1r08yrhU3qpUvdVlgkKNeyeGPOxnW8/SyVDvgRaed/Uz54AqWNaTCAThlj6QAs3TZcKI0xDEw==}
     engines: {node: '>=0.10.0'}
-
-  co-body@6.2.0:
-    resolution: {integrity: sha512-Kbpv2Yd1NdL1V/V4cwLVxraHDV6K8ayohr2rmH0J87Er8+zJjcTa6dAn9QMPC9CRgU8+aNajKbSf1TzDB1yKPA==}
-    engines: {node: '>=8.0.0'}
 
   cockatiel@3.2.1:
     resolution: {integrity: sha512-gfrHV6ZPkquExvMh9IOkKsBzNDk6sDuZ6DdBGUBkvFnTCqCxzpuq48RySgP0AnaqQkw2zynOFj9yly6T1Q2G5Q==}
@@ -4109,10 +4072,6 @@ packages:
     resolution: {integrity: sha512-eKCa6bwnJhvxj14kZk5NCPc6Hb6BdsU9DZcOnmQKSnO1VKrfV0zCvtttPZUsBvjmNDn8rpcJfpwSYnHBjc95MQ==}
     engines: {node: '>=18.18.0'}
 
-  iconv-lite@0.4.24:
-    resolution: {integrity: sha512-v3MXnZAcvnywkTUEZomIActle7RXXeedOR31wwl7VlyoXO4Qi9arvSenNQWne1TcRwhCL1HwLI21bEqdpj8/rA==}
-    engines: {node: '>=0.10.0'}
-
   iconv-lite@0.6.3:
     resolution: {integrity: sha512-4fCk79wshMdzMp2rH06qWrJE4iolqLhCUH+OiuIgU++RB0+94NlDL81atO7GX55uUKueo0txHNtvEyI6D7WdMw==}
     engines: {node: '>=0.10.0'}
@@ -4543,10 +4502,6 @@ packages:
 
   mdurl@2.1.0:
     resolution: {integrity: sha512-1+HBaOx0zi/dQWht8rNv9MYf9qqpqL/kxI0hXImU6Y547zM6Sni8BQibt7ifgMcYtQg41ao3Ivd6cnSM86inpg==}
-
-  media-typer@0.3.0:
-    resolution: {integrity: sha512-dq+qelQ9akHpcOl/gUVRTxVIOkAJ1wR3QAvb4RsVjS8oVoFjDGTc679wJYmUmknUF5HwMLOgb5O+a3KxfWapPQ==}
-    engines: {node: '>= 0.6'}
 
   media-typer@1.1.1:
     resolution: {integrity: sha512-yz3xRaG20c6/BOzvYoDaGtPmGscs7YivItZEEqe6GbwNfHuxu9YNmvnEkMzKldAGY4/80pRcQRZSEnhquk9XuQ==}
@@ -5067,10 +5022,6 @@ packages:
   rate-limiter-flexible@11.2.0:
     resolution: {integrity: sha512-L0eIK+BmFMi6NcvmtEg7RSswOFKi9MMD5RhBIypFfOve+G6Jl1Xbb8qEHgK3uRzNtkOFYF0L9f7P4rSf2PnUVw==}
 
-  raw-body@2.5.3:
-    resolution: {integrity: sha512-s4VSOf6yN0rvbRZGxs8Om5CWj6seneMwK3oDb4lWDH0UPhWcxwOWw5+qk24bxq87szX1ydrwylIOp2uG1ojUpA==}
-    engines: {node: '>= 0.8'}
-
   raw-body@3.0.2:
     resolution: {integrity: sha512-K5zQjDllxWkf7Z5xJdV0/B0WTNqx6vxG70zJE4N0kBs4LovmEYWJzQGxC9bS9RAKu3bgM40lrd5zoLJ12MQ5BA==}
     engines: {node: '>= 0.10'}
@@ -5577,10 +5528,6 @@ packages:
   type-fest@5.8.0:
     resolution: {integrity: sha512-YGYEVz3Fm5iy/AybuA0oyNFq7H4CgQNfRp/qfe8nurE1kuCeNm3/vfm9X4Mtl+qLyaKJUh5xrFZwogr41SMjYA==}
     engines: {node: '>=20'}
-
-  type-is@1.6.18:
-    resolution: {integrity: sha512-TkRKr9sUTxEH8MdfuCSP7VizJyzRNMjj2J2do2Jr3Kym598JVdEksuzPQCnlFPW4ky9Q+iA+ma9BGm06XQBy8g==}
-    engines: {node: '>= 0.6'}
 
   type-is@2.1.0:
     resolution: {integrity: sha512-faYHw0anBbc/kWF3zFTEnxSFOAGUX9GFbOBthvDdLsIlEoWOFOtS0zgCiQYwIskL9iGXZL3kAXD8OoZ4GmMATA==}
@@ -6773,8 +6720,6 @@ snapshots:
       protobufjs: 7.6.6
       yargs: 17.7.3
 
-  '@hapi/bourne@3.0.0': {}
-
   '@hapi/bourne@4.0.1': {}
 
   '@hexagon/base64@2.0.4': {}
@@ -7600,11 +7545,6 @@ snapshots:
       '@types/deep-eql': 4.0.2
       assertion-error: 2.0.1
 
-  '@types/co-body@6.1.3':
-    dependencies:
-      '@types/node': 26.4.0
-      '@types/qs': 6.15.1
-
   '@types/connect@3.4.38':
     dependencies:
       '@types/node': 26.4.0
@@ -8324,14 +8264,6 @@ snapshots:
       wrap-ansi: 7.0.0
 
   cluster-key-slot@1.1.1: {}
-
-  co-body@6.2.0:
-    dependencies:
-      '@hapi/bourne': 3.0.0
-      inflation: 2.1.0
-      qs: 6.16.0
-      raw-body: 2.5.3
-      type-is: 1.6.18
 
   cockatiel@3.2.1: {}
 
@@ -9362,10 +9294,6 @@ snapshots:
 
   human-signals@8.0.1: {}
 
-  iconv-lite@0.4.24:
-    dependencies:
-      safer-buffer: 2.1.2
-
   iconv-lite@0.6.3:
     dependencies:
       safer-buffer: 2.1.2
@@ -9796,8 +9724,6 @@ snapshots:
   math-intrinsics@1.1.0: {}
 
   mdurl@2.1.0: {}
-
-  media-typer@0.3.0: {}
 
   media-typer@1.1.1: {}
 
@@ -10309,13 +10235,6 @@ snapshots:
   range-parser@1.3.0: {}
 
   rate-limiter-flexible@11.2.0: {}
-
-  raw-body@2.5.3:
-    dependencies:
-      bytes: 3.1.2
-      http-errors: 2.0.1
-      iconv-lite: 0.4.24
-      unpipe: 1.0.0
 
   raw-body@3.0.2:
     dependencies:
@@ -10986,11 +10905,6 @@ snapshots:
   type-fest@5.8.0:
     dependencies:
       tagged-tag: 1.0.0
-
-  type-is@1.6.18:
-    dependencies:
-      media-typer: 0.3.0
-      mime-types: 2.1.35
 
   type-is@2.1.0:
     dependencies:
