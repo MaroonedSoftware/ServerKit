@@ -48,6 +48,7 @@ Two audiences use these files:
 | `cache`             | L1      | Cache interface with a Redis backend, plus an idempotency store for at-least-once sources | [cache](./packages/cache/AGENTS.md)                         |
 | `kysely`            | L1      | Kysely/PostgreSQL client wiring plus `pg` and Luxon type helpers                          | [kysely](./packages/kysely/AGENTS.md)                       |
 | `permissions-dsl`   | L1      | `.perm` surface syntax, compiler, fixtures, and the `pdsl` CLI                            | [permissions-dsl](./packages/permissions-dsl/AGENTS.md)     |
+| `servercore`        | L1      | Framework-agnostic HTTP core: module lifecycle, body parsers, error rendering, SSE        | [servercore](./packages/servercore/AGENTS.md)               |
 | `authentication`    | L2      | Auth factors, scheme handlers, sessions, JWT issuance, and account recovery               | [authentication](./packages/authentication/AGENTS.md)       |
 | `koa`               | L2      | Server builder, typed context, middleware stack, body parsing, SSE                        | [koa](./packages/koa/AGENTS.md)                             |
 | `mcp`               | L2      | Model Context Protocol server over Streamable HTTP, wrapping the official SDK             | [mcp](./packages/mcp/AGENTS.md)                             |
@@ -69,7 +70,7 @@ Arrows point downward. A package may depend on any lower layer and never on a hi
 L3  discord  slack  telegram  whatsapp  scim  johnny5
 L2  authentication  koa  mcp
 L1  appconfig  policies  encryption  multipart  zod  storage
-    jobbroker  serverfeed  comms  cache  kysely  permissions-dsl
+    jobbroker  serverfeed  comms  cache  kysely  permissions-dsl  servercore
 L0  errors  logger  utilities  permissions  eventbus
 ```
 

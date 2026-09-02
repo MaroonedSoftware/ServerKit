@@ -741,6 +741,70 @@ importers:
         specifier: ^7.2.2
         version: 7.2.2
 
+  packages/servercore:
+    dependencies:
+      '@hapi/bourne':
+        specifier: ^4.0.1
+        version: 4.0.1
+      '@maroonedsoftware/appconfig':
+        specifier: workspace:*
+        version: link:../appconfig
+      '@maroonedsoftware/errors':
+        specifier: workspace:*
+        version: link:../errors
+      '@maroonedsoftware/logger':
+        specifier: workspace:*
+        version: link:../logger
+      '@maroonedsoftware/multipart':
+        specifier: workspace:*
+        version: link:../multipart
+      '@maroonedsoftware/policies':
+        specifier: workspace:*
+        version: link:../policies
+      '@maroonedsoftware/utilities':
+        specifier: workspace:*
+        version: link:../utilities
+      inflation:
+        specifier: ^2.1.0
+        version: 2.1.0
+      injectkit:
+        specifier: ^1.7.1
+        version: 1.7.1
+      luxon:
+        specifier: ^3.7.2
+        version: 3.7.2
+      qs:
+        specifier: ^6.16.0
+        version: 6.16.0
+      rate-limiter-flexible:
+        specifier: ^11.2.0
+        version: 11.2.0
+      raw-body:
+        specifier: ^4.0.0
+        version: 4.0.0
+      type-is:
+        specifier: ^2.1.0
+        version: 2.1.0
+    devDependencies:
+      '@repo/config-eslint':
+        specifier: workspace:*
+        version: link:../config-eslint
+      '@repo/config-typescript':
+        specifier: workspace:*
+        version: link:../config-typescript
+      '@types/inflation':
+        specifier: ^2.0.4
+        version: 2.0.4
+      '@types/luxon':
+        specifier: ^3.7.5
+        version: 3.7.5
+      '@types/qs':
+        specifier: ^6.15.1
+        version: 6.15.1
+      '@types/type-is':
+        specifier: ^1.6.7
+        version: 1.6.7
+
   packages/serverfeed:
     dependencies:
       luxon:
@@ -2782,6 +2846,9 @@ packages:
 
   '@types/supertest@7.2.1':
     resolution: {integrity: sha512-4CbBvoYVLHL7+yhbYrZET0vsvuyXTC05aRe7dNQkwMzm56auceoy6Yu3K50uZmwfHna1os3CMSgM/3QVkUtPTw==}
+
+  '@types/type-is@1.6.7':
+    resolution: {integrity: sha512-gEsh7n8824nusZ2Sidh6POxNsIdTSvIAl5gXbeFj+TUaD1CO2r4i7MQYNMfEQkChU42s2bVWAda6x6BzIhtFbQ==}
 
   '@types/vscode@1.134.0':
     resolution: {integrity: sha512-NDEu0hg4sF7+vvFsADsktqUJ6f80LHSZvVK2Ovo1XiQ0/VHck1O3zst+ZZyVA/uvz6vo6LcuoqU2q48YMqOwWw==}
@@ -7662,6 +7729,10 @@ snapshots:
     dependencies:
       '@types/methods': 1.1.4
       '@types/superagent': 8.1.11
+
+  '@types/type-is@1.6.7':
+    dependencies:
+      '@types/node': 26.4.0
 
   '@types/vscode@1.134.0': {}
 
