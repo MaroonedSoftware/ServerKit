@@ -1,5 +1,11 @@
 # @maroonedsoftware/mcp
 
+## 0.1.12
+
+### Patch Changes
+
+- 7741b47: Fix the Koa route example in the MCP docs: it read the request payload from `ctx.request.body`, which ServerKit never populates, and omitted the `bodyParserMiddleware` call that actually fills `ctx.parsedBody` and `ctx.rawBody`. The example now parses the body and dispatches `ctx.parsedBody` in both session modes.
+
 ## 0.1.11
 
 ### Patch Changes
