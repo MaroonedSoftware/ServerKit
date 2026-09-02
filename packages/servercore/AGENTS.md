@@ -18,7 +18,8 @@ application should import from its adapter package instead.
 pnpm add @maroonedsoftware/servercore
 ```
 
-Required peers: none. Optional peers: none yet (`./serverfeed` arrives in a later phase).
+Required peers: none. Optional peer: `@maroonedsoftware/serverfeed` — unlocks the `./serverfeed`
+subpath.
 
 Runtime dependencies: `appconfig`, `errors`, `logger`, `multipart`, `policies`, `utilities`,
 plus `@hapi/bourne`, `inflation`, `injectkit`, `luxon`, `qs`, `rate-limiter-flexible`,
@@ -29,7 +30,9 @@ plus `@hapi/bourne`, `inflation`, `injectkit`, `luxon`, `qs`, `rate-limiter-flex
 - **Depends on:** `appconfig`, `errors`, `logger`, `multipart`, `policies`, `utilities`.
   Deliberately **not** `authentication` (L2): the session-aware pieces stay in each adapter.
 - **Depended on by:** `koa`, `fastify`.
-- **Subpath exports:** none yet.
+- **Subpath exports:** `./serverfeed` — `handleServerFeed` and the query filter for the
+  `@maroonedsoftware/serverfeed` bus. A subpath so the bus stays an optional peer: nothing
+  reachable from the root barrel imports it.
 
 ## API surface
 
@@ -107,6 +110,14 @@ plus `@hapi/bourne`, `inflation`, `injectkit`, `luxon`, `qs`, `rate-limiter-flex
 | `DEFAULT_SSE_HEARTBEAT_MS`                 | constant              | `15_000`                                                           | `0` disables.                                                                 |
 | `DEFAULT_SSE_MAX_BUFFERED_BYTES`           | constant              | `1_000_000`                                                        | Past this, the client is dropped and reconnects with `Last-Event-ID`.         |
 
+### `./serverfeed`
+
+| Export                      | Kind      | Shape                                                                            | Notes                                                               |
+| --------------------------- | --------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `handleServerFeed`          | function  | `(ctx: ServerFeedContext, feed: ServerFeed, options?: SseStreamOptions) => void` | Replays from `Last-Event-ID`, then streams live events until close. |
+| `ServerFeedContext`         | interface | `extends SseContext` with `query: Record<string, unknown>` and `get(header)`     | Structural; each adapter builds one from its request.               |
+| `serverFeedFilterFromQuery` | function  | `(query: Record<string, unknown>) => ServerFeedFilter`                           | `?source=a,b&kind=progress&level=warn&correlationId=…`.             |
+
 ## Canonical usage
 
 An adapter's error handler and body gate, the two places the shared rules matter most:
@@ -137,6 +148,7 @@ if (assertBodyExpectation({ length, type, is: types => typeis(req, types) }, ['a
   stream own `res` afterwards.
 - Do not import `@maroonedsoftware/authentication` here. Session-aware guards belong to the
   adapters.
+- Import `handleServerFeed` from `@maroonedsoftware/servercore/serverfeed`, never from the root.
 
 ## Gotchas
 
@@ -174,11 +186,16 @@ src/
   cors/cors.origin.ts              normalizeCorsOrigins, createOriginMatcher
   authentication/anonymous.paths.ts  createAnonymousPathMatcher
   sse/                             sse.frame, sse.request, sse.stream
+  serverfeed.ts                    Subpath entry for ./serverfeed
+  serverfeed/server.feed.stream.ts handleServerFeed, ServerFeedContext, serverFeedFilterFromQuery
 ```
 
 Tests are in `tests/`, mirroring `src/`.
 
 Invariants a change must not break:
+
+- **Nothing reachable from `src/index.ts` may import `@maroonedsoftware/serverfeed`.** It is an
+  optional peer reachable only through `./serverfeed`; the `build` script lists both tsup entries.
 
 - `renderError`'s three-way split (`HttpError` / `ServerkitError` / `Error`) is a security
   boundary shared with `@maroonedsoftware/policies`' `assert`. Changing which payload reaches

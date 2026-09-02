@@ -759,6 +759,9 @@ importers:
         specifier: ^2.1.0
         version: 2.1.0
     devDependencies:
+      '@maroonedsoftware/serverfeed':
+        specifier: workspace:*
+        version: link:../serverfeed
       '@repo/config-eslint':
         specifier: workspace:*
         version: link:../config-eslint

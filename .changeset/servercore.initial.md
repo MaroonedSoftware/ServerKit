@@ -18,6 +18,8 @@ adapter can share it:
 - `normalizeCorsOrigins`, `createOriginMatcher`, and `createAnonymousPathMatcher`.
 - `SignatureOptions`, `SignaturePolicyContext`, `DefaultSignaturePolicy`, and
   `assertRequestSignature`.
+- A `./serverfeed` subpath with `handleServerFeed`, `ServerFeedContext`, and
+  `serverFeedFilterFromQuery`; `@maroonedsoftware/serverfeed` is an optional peer.
 - The SSE transport (`openSseStream`, frames, `resolveLastEventId`). `SseContext` gains an optional
   `hijack` hook for frameworks that hand over the raw response explicitly, and its Koa-specific
   `status` field is now optional.

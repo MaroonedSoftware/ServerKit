@@ -136,13 +136,13 @@ and `RateLimiter` token are `servercore`'s and are re-exported here by name.
 
 ### `./serverfeed`
 
-| Export                      | Kind      | Shape                                                                            | Notes                                                                 |
-| --------------------------- | --------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| `serverFeedRouter`          | function  | `(options?: ServerFeedRouterOptions) => ServerKitRouterType`                     | Mounts `GET /server/feed` (configurable), guarded by `requirePolicy`. |
-| `ServerFeedRouterOptions`   | interface | `extends SseStreamOptions` with `{ path?, policy?, resolveFeed? }`               | `resolveFeed` defaults to `ctx.container.get(ServerFeed)`.            |
-| `handleServerFeed`          | function  | `(ctx: ServerFeedContext, feed: ServerFeed, options?: SseStreamOptions) => void` | For mounting the handler on your own route.                           |
-| `ServerFeedContext`         | interface | `extends SseContext`                                                             | —                                                                     |
-| `serverFeedFilterFromQuery` | function  | `(query: Record<string, unknown>) => ServerFeedFilter`                           | —                                                                     |
+| Export                      | Kind      | Shape                                                                            | Notes                                                                                 |
+| --------------------------- | --------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `serverFeedRouter`          | function  | `(options?: ServerFeedRouterOptions) => ServerKitRouterType`                     | Mounts `GET /server/feed` (configurable), guarded by `requirePolicy`.                 |
+| `ServerFeedRouterOptions`   | interface | `extends SseStreamOptions` with `{ path?, policy?, resolveFeed? }`               | `resolveFeed` defaults to `ctx.container.get(ServerFeed)`.                            |
+| `handleServerFeed`          | function  | `(ctx: ServerFeedContext, feed: ServerFeed, options?: SseStreamOptions) => void` | For mounting the handler on your own route. Re-exported from `servercore/serverfeed`. |
+| `ServerFeedContext`         | interface | `extends SseContext`                                                             | — Re-exported from `servercore/serverfeed`.                                           |
+| `serverFeedFilterFromQuery` | function  | `(query: Record<string, unknown>) => ServerFeedFilter`                           | — Re-exported from `servercore/serverfeed`.                                           |
 
 **Not exported:** `fakeSecurityMiddleware` (`src/middleware/server/fake.security.middleware.ts`) is
 absent from the barrel despite having tests. It injects a fixed `Authorization` header and logs a
@@ -279,7 +279,8 @@ Tests are in `tests/`, mirroring `src/`.
 Invariants a change must not break:
 
 - **Nothing reachable from `src/index.ts` may import `@maroonedsoftware/serverfeed`.** It is an
-  optional peer reachable only through `./serverfeed`.
+  optional peer reachable only through `./serverfeed`. The handler itself is
+  `@maroonedsoftware/servercore/serverfeed`'s; only `serverFeedRouter` lives here.
 - The canonical middleware order in `serverKitDefaultMiddleware` is a correctness contract, not a
   default. Reordering it breaks every app that uses it.
 - `errorMiddleware`'s three-way rendering split (`HttpError` / `ServerkitError` / `Error`) is a

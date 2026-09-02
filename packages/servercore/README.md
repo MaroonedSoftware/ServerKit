@@ -31,6 +31,9 @@ an adapter for another framework, or a library that must work under either adapt
   `assertRequestSignature`, verifying an HMAC over the raw body in constant time.
 - **SSE transport**: `openSseStream` with heartbeat, backpressure, and lifecycle-signal drain,
   plus `frameEvent`, `frameComment`, and `resolveLastEventId`.
+- **Server feed handler** (`@maroonedsoftware/servercore/serverfeed`): `handleServerFeed` streams
+  the `@maroonedsoftware/serverfeed` bus over SSE with replay and resync; the bus is an optional
+  peer.
 
 ## Installation
 
@@ -156,6 +159,25 @@ stream.onClose(() => clearInterval(timer));
 - `openSseStream(ctx, options?)`, `SseStream`, `SseStreamOptions`, `SseContext`, `SseResponse`.
 - `SseFrame`, `frameEvent`, `frameComment`, `firstQueryValue`, `resolveLastEventId`.
 - `DEFAULT_SSE_HEARTBEAT_MS`, `DEFAULT_SSE_MAX_BUFFERED_BYTES`.
+
+## Server feed handler
+
+`@maroonedsoftware/servercore/serverfeed` maps the `@maroonedsoftware/serverfeed` realtime bus
+onto SSE frames: it replays the backlog from the client's `Last-Event-ID` (or `?lastEventId=`),
+emits a `resync` event when the resume point predates the replay buffer, then streams live events
+matching the `?source=…&kind=…&level=…&correlationId=…` filter until the socket closes.
+
+```typescript
+import { handleServerFeed } from '@maroonedsoftware/servercore/serverfeed';
+
+// Any adapter: build the structural context from its request and reply.
+handleServerFeed({ res: reply.raw, hijack: () => reply.hijack(), query: request.query, get: name => request.headers[name] ?? '' }, feed, {
+  signal: builder.lifecycleSignal,
+});
+```
+
+Both adapters ship a ready-made guarded route on top of it: `serverFeedRouter` from
+`@maroonedsoftware/koa/serverfeed` and `@maroonedsoftware/fastify/serverfeed`.
 
 ## License
 

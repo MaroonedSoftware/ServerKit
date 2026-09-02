@@ -32,6 +32,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./serverfeed": {
+      "types": "./dist/serverfeed.d.ts",
+      "import": "./dist/serverfeed.js"
+    },
     "./package.json": "./package.json"
   },
   "license": "MIT",
@@ -40,7 +44,7 @@
     "dist/**"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm --sourcemap && tsc --emitDeclarationOnly --declaration",
+    "build": "tsup src/index.ts src/serverfeed.ts --format esm --sourcemap && tsc --emitDeclarationOnly --declaration",
     "build:ci": "eslint --max-warnings=0 && pnpm run build",
     "lint": "eslint --fix",
     "format": "prettier --write .",
@@ -64,6 +68,7 @@
     "type-is": "^2.1.0"
   },
   "devDependencies": {
+    "@maroonedsoftware/serverfeed": "workspace:*",
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
     "@types/inflation": "^2.0.4",
@@ -73,5 +78,13 @@
   },
   "engines": {
     "node": ">=22"
+  },
+  "peerDependencies": {
+    "@maroonedsoftware/serverfeed": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@maroonedsoftware/serverfeed": {
+      "optional": true
+    }
   }
 }
