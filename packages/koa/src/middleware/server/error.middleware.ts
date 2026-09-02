@@ -1,10 +1,13 @@
 import { ServerKitMiddleware } from '../../serverkit.middleware.js';
-import { IsHttpError, IsServerkitError } from '@maroonedsoftware/errors';
+import { notFoundBody, renderError } from '@maroonedsoftware/servercore';
 
 /**
  * Central error handler: catches thrown errors, sets status/body from HTTP errors,
  * returns 404 for unmatched routes, and 500 for unknown errors.
  * Emits `error` or `warn` on the app for logging.
+ *
+ * The status/body/headers split is `renderError` from `@maroonedsoftware/servercore`, shared
+ * with every other adapter; this middleware only writes the result onto the Koa context.
  *
  * @returns {@link ServerKitMiddleware} that wraps the stack in try/catch and normalizes responses.
  */
@@ -13,41 +16,19 @@ export const errorMiddleware = (): ServerKitMiddleware => {
     try {
       await next();
       if (ctx.status === 404 && !ctx.body) {
-        const body = {
-          statusCode: 404,
-          message: 'Not Found',
-          details: { url: ctx.URL.toString() },
-        };
+        const body = notFoundBody(ctx.URL.toString());
         ctx.status = 404;
         ctx.body = body;
         ctx.app.emit('warn', body, ctx);
       }
     } catch (error) {
-      if (IsHttpError(error)) {
-        ctx.status = error.statusCode;
-        ctx.body = {
-          statusCode: error.statusCode,
-          message: error.message,
-          details: error.details,
-        };
-        if (error.headers) {
-          for (const entry of Object.entries(error.headers)) {
-            ctx.set(entry[0], entry[1]);
-          }
+      const rendered = renderError(error);
+      ctx.status = rendered.status;
+      ctx.body = rendered.body;
+      if (rendered.headers) {
+        for (const entry of Object.entries(rendered.headers)) {
+          ctx.set(entry[0], entry[1]);
         }
-      } else if (IsServerkitError(error)) {
-        ctx.status = 500;
-        ctx.body = {
-          statusCode: 500,
-          message: error.message,
-          details: error.details,
-        };
-      } else {
-        ctx.status = 500;
-        ctx.body = {
-          statusCode: 500,
-          message: 'Internal Server Error',
-        };
       }
 
       ctx.app.emit('error', error, ctx);

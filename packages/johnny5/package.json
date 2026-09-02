@@ -1,7 +1,7 @@
 {
   "name": "@maroonedsoftware/johnny5",
   "version": "8.1.2",
-  "description": "CLI framework for ServerKit-based applications — plugin registration, doctor runner, and opt-in Postgres/Redis/Docker integrations",
+  "description": "CLI framework for ServerKit-based applications \u2014 plugin registration, doctor runner, and opt-in Postgres/Redis/Docker integrations",
   "author": {
     "name": "Marooned Software",
     "url": "https://github.com/MaroonedSoftware/serverkit"
@@ -98,9 +98,9 @@
     "luxon": "^3.7.2"
   },
   "peerDependencies": {
-    "@maroonedsoftware/koa": "workspace:*",
     "@maroonedsoftware/permissions": "workspace:*",
     "@maroonedsoftware/permissions-dsl": "workspace:*",
+    "@maroonedsoftware/servercore": "workspace:*",
     "@napi-rs/keyring": "^1.1.6",
     "@swc-node/register": "^1.11.1",
     "ioredis": "^5.10.0",
@@ -108,13 +108,13 @@
     "pg": "^8.20.0"
   },
   "peerDependenciesMeta": {
-    "@maroonedsoftware/koa": {
-      "optional": true
-    },
     "@maroonedsoftware/permissions": {
       "optional": true
     },
     "@maroonedsoftware/permissions-dsl": {
+      "optional": true
+    },
+    "@maroonedsoftware/servercore": {
       "optional": true
     },
     "@napi-rs/keyring": {
@@ -134,9 +134,9 @@
     }
   },
   "devDependencies": {
-    "@maroonedsoftware/koa": "workspace:*",
     "@maroonedsoftware/permissions": "workspace:*",
     "@maroonedsoftware/permissions-dsl": "workspace:*",
+    "@maroonedsoftware/servercore": "workspace:*",
     "@napi-rs/keyring": "^1.3.0",
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",

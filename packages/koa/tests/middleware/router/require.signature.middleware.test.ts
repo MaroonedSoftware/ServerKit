@@ -1,11 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { requireSignature, type SignatureOptions } from '../../../src/middleware/router/require.signature.middleware.js';
-import {
-  DefaultSignaturePolicy,
-  REQUIRE_SIGNATURE_POLICY,
-  type SignaturePolicyContext,
-} from '../../../src/policies/request.signature.valid.policy.js';
+import { DefaultSignaturePolicy, REQUIRE_SIGNATURE_POLICY, type SignaturePolicyContext } from '@maroonedsoftware/servercore';
 import { AppConfig } from '@maroonedsoftware/appconfig';
 import { isPolicyResultDenied, PolicyService } from '@maroonedsoftware/policies';
 import { httpError, HttpError } from '@maroonedsoftware/errors';

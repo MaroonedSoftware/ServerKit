@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, Mock } from 'vitest';
 import { bodyParserMiddleware } from '../../../src/middleware/router/body.parser.middleware.js';
 import { httpError, HttpError } from '@maroonedsoftware/errors';
-import { ServerKitBodyParser } from '../../../src/serverkit.bodyparser.js';
+import { ServerKitBodyParser } from '@maroonedsoftware/servercore';
 import type { ServerKitContext } from '../../../src/serverkit.context.js';
 import type { Next } from 'koa';
 

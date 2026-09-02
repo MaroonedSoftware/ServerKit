@@ -1,0 +1,86 @@
+{
+  "name": "@maroonedsoftware/fastify",
+  "version": "0.1.0",
+  "description": "Fastify server builder, request context, hooks, body parsing, SSE streaming, and utilities for ServerKit",
+  "author": {
+    "name": "Marooned Software",
+    "url": "https://github.com/MaroonedSoftware/serverkit"
+  },
+  "bugs": {
+    "url": "https://github.com/MaroonedSoftware/serverkit/issues"
+  },
+  "homepage": "https://github.com/MaroonedSoftware/serverkit/packages/fastify#readme",
+  "keywords": [
+    "backend",
+    "fastify",
+    "sse",
+    "streaming",
+    "serverkit",
+    "typescript"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MaroonedSoftware/serverkit.git"
+  },
+  "private": false,
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./serverfeed": {
+      "types": "./dist/serverfeed.d.ts",
+      "import": "./dist/serverfeed.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "license": "MIT",
+  "files": [
+    "AGENTS.md",
+    "dist/**"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts src/serverfeed.ts --format esm --sourcemap && tsc --emitDeclarationOnly --declaration",
+    "build:ci": "eslint --max-warnings=0 && pnpm run build",
+    "lint": "eslint --fix",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:ci": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@maroonedsoftware/appconfig": "workspace:*",
+    "@maroonedsoftware/authentication": "workspace:*",
+    "@maroonedsoftware/errors": "workspace:*",
+    "@maroonedsoftware/logger": "workspace:*",
+    "@maroonedsoftware/policies": "workspace:*",
+    "@maroonedsoftware/servercore": "workspace:*",
+    "injectkit": "^1.7.1",
+    "type-is": "^2.1.0"
+  },
+  "peerDependencies": {
+    "@fastify/cors": "^11.0.0",
+    "@maroonedsoftware/serverfeed": "workspace:*",
+    "fastify": "^5.0.0"
+  },
+  "devDependencies": {
+    "@fastify/cors": "^11.3.0",
+    "@maroonedsoftware/serverfeed": "workspace:*",
+    "@repo/config-eslint": "workspace:*",
+    "@repo/config-typescript": "workspace:*",
+    "@types/type-is": "^1.6.7",
+    "fastify": "^5.12.1",
+    "rate-limiter-flexible": "^11.2.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "peerDependenciesMeta": {
+    "@maroonedsoftware/serverfeed": {
+      "optional": true
+    }
+  }
+}

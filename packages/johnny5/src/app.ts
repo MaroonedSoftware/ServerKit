@@ -8,8 +8,8 @@ import { loadWorkspacePlugins, type WorkspacePluginOptions } from './plugin/work
 import type { CliLogger } from './util/logger.js';
 
 // Opaque ServerKit module shape — the concrete `ServerKitModule` type lives in
-// `@maroonedsoftware/koa`. Importing it here would force every johnny5 consumer
-// to pull koa as a hard dep even when not using ServerKit. The serverkit
+// `@maroonedsoftware/servercore`. Importing it here would force every johnny5 consumer
+// to pull servercore as a hard dep even when not using ServerKit. The serverkit
 // integration is responsible for the actual setup() / shutdown() calls.
 interface ServerKitModuleLike<ConfigT> {
   name?: string;

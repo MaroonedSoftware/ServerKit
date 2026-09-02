@@ -52,21 +52,14 @@
     "test:ci": "vitest run --coverage"
   },
   "dependencies": {
-    "@hapi/bourne": "^4.0.1",
     "@maroonedsoftware/appconfig": "workspace:*",
     "@maroonedsoftware/authentication": "workspace:*",
     "@maroonedsoftware/errors": "workspace:*",
     "@maroonedsoftware/logger": "workspace:*",
-    "@maroonedsoftware/multipart": "workspace:*",
     "@maroonedsoftware/policies": "workspace:*",
-    "@maroonedsoftware/utilities": "workspace:*",
-    "co-body": "^6.2.0",
-    "inflation": "^2.1.0",
+    "@maroonedsoftware/servercore": "workspace:*",
     "injectkit": "^1.7.1",
-    "luxon": "^3.7.2",
-    "qs": "^6.16.0",
-    "rate-limiter-flexible": "^11.2.0",
-    "raw-body": "^4.0.0"
+    "luxon": "^3.7.2"
   },
   "peerDependencies": {
     "@koa/cors": "^5.0.0",
@@ -85,13 +78,11 @@
     "@maroonedsoftware/serverfeed": "workspace:*",
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
-    "@types/co-body": "^6.1.3",
-    "@types/inflation": "^2.0.4",
     "@types/koa": "^3.0.3",
     "@types/koa__cors": "^5.0.1",
     "@types/luxon": "^3.7.5",
-    "@types/qs": "^6.15.1",
-    "koa": "^3.2.1"
+    "koa": "^3.2.1",
+    "rate-limiter-flexible": "^11.2.0"
   },
   "engines": {
     "node": ">=22"

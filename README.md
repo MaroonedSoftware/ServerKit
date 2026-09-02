@@ -95,6 +95,20 @@ Comprehensive error handling with fluent API design and database integration.
 
 ---
 
+### Fastify
+
+Fastify server builder, request context, hooks, body parsing, SSE streaming, and utilities for ServerKit.
+
+- The Fastify counterpart of the Koa package, sharing `ServerCore`
+- Request context on `FastifyRequest` with a request-scoped DI container
+- Error rendering, context, CORS, rate limiting, and authentication as Fastify hooks
+- Koa-style `ServerKitRouter` mounted as an encapsulated plugin with `preHandler` guards
+- Lazy per-route body parsing with the shared status contract
+
+[View documentation →](./packages/fastify/README.md)
+
+---
+
 ### EventBus
 
 Synchronous, in-process fan-out event dispatch.
@@ -246,6 +260,20 @@ SCIM 2.0 (RFC 7643/7644) server toolkit — schemas, filter parser, PATCH applie
 - Bearer-scope guard that integrates with `@maroonedsoftware/authentication`
 
 [View documentation →](./packages/scim/README.md)
+
+---
+
+### ServerCore
+
+Framework-agnostic ServerKit core shared by the Koa and Fastify adapters.
+
+- `ServerKitModule` lifecycle contract
+- Content-type-driven body parsers and the per-route body status contract
+- `renderError`, the single error-rendering boundary
+- Request identity, rate limiting, CORS origin matching, and HMAC signature policy
+- Server-Sent Events transport over a raw Node response
+
+[View documentation →](./packages/servercore/README.md)
 
 ---
 

@@ -11,10 +11,10 @@ Most internal CLIs grow the same way: a `commander` skeleton, a sprawling `docto
 ```bash
 pnpm add @maroonedsoftware/johnny5
 # Optional peers — install only what your checks/commands need:
-pnpm add pg ioredis kysely @maroonedsoftware/koa
+pnpm add pg ioredis kysely @maroonedsoftware/servercore
 ```
 
-`pg`, `ioredis`, `kysely`, and `@maroonedsoftware/koa` are declared as optional peers. The Postgres / Redis / ServerKit integrations are lazy-loaded, so packages you don't install are never required at runtime.
+`pg`, `ioredis`, `kysely`, and `@maroonedsoftware/servercore` are declared as optional peers. The Postgres / Redis / ServerKit integrations are lazy-loaded, so packages you don't install are never required at runtime.
 
 ## Quickstart
 

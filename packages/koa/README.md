@@ -10,6 +10,11 @@ pnpm add @maroonedsoftware/koa koa @koa/router @koa/cors
 
 Peer dependencies: `koa`, `@koa/router`, `@koa/cors`.
 
+The body parsers, SSE transport, signature policy, and `RateLimiter` token come from
+[`@maroonedsoftware/servercore`](../servercore/README.md), the framework-neutral core shared with
+`@maroonedsoftware/fastify`, and are re-exported here so a Koa app imports everything from this
+package.
+
 ## Features
 
 - **ServerKitServerBuilder** — Fluent builder that wires an injectkit container, body parsers, middleware, and routes, then runs the module lifecycle (`setup`/`start`/`ready`/`shutdown`) around a Koa server

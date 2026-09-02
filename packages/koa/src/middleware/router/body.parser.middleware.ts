@@ -1,6 +1,5 @@
-import { httpError, IsHttpError } from '@maroonedsoftware/errors';
 import { ServerKitRouterMiddleware } from '../../serverkit.middleware.js';
-import { ServerKitBodyParser } from '../../serverkit.bodyparser.js';
+import { assertBodyExpectation, parseRouteBody, ServerKitBodyParser } from '@maroonedsoftware/servercore';
 
 /**
  * Parses the request body based on `Content-Type` and assigns it to `ctx.parsedBody`
@@ -12,7 +11,9 @@ import { ServerKitBodyParser } from '../../serverkit.bodyparser.js';
  * client on any handler path that doesn't overwrite it.
  *
  * Supported types: JSON, URL-encoded form, text, multipart, PDF (raw buffer).
- * Requires a body when `contentTypes` is non-empty; otherwise rejects bodies.
+ * Requires a body when `contentTypes` is non-empty; otherwise rejects bodies. The status
+ * contract is `assertBodyExpectation` / `parseRouteBody` from `@maroonedsoftware/servercore`,
+ * shared with every other adapter.
  *
  * @param contentTypes - Allowed MIME types (e.g. `['application/json', 'application/x-www-form-urlencoded']`).
  *   Use an empty array to disallow any request body.
@@ -24,35 +25,15 @@ import { ServerKitBodyParser } from '../../serverkit.bodyparser.js';
  */
 export const bodyParserMiddleware = (contentTypes: string[]): ServerKitRouterMiddleware => {
   return async (ctx, next) => {
-    if (contentTypes.length === 0) {
-      if (ctx.request.length > 0) {
-        throw httpError(400).withDetails({ body: 'Unexpected body' });
-      }
-    } else {
-      if (ctx.request.length > 0) {
-        if (!ctx.request.is(contentTypes)) {
-          throw httpError(415).withDetails({
-            'content-type': `must be ${contentTypes.length > 1 ? 'one of ' : ''}${contentTypes.join(', ')}`,
-            value: ctx.request.type,
-          });
-        }
-
-        try {
-          const parser = ctx.container.get(ServerKitBodyParser);
-          const result = await parser.parse(ctx);
-          ctx.parsedBody = result.parsed;
-          ctx.rawBody = result.raw;
-        } catch (error) {
-          if (IsHttpError(error)) {
-            throw error;
-          }
-          throw httpError(422)
-            .withCause(error as Error)
-            .withDetails({ body: 'Invalid request body format' });
-        }
-      } else {
-        throw httpError(411);
-      }
+    const shouldParse = assertBodyExpectation(
+      { length: ctx.request.length, type: ctx.request.type, is: types => ctx.request.is(types) },
+      contentTypes,
+    );
+    if (shouldParse) {
+      const parser = ctx.container.get(ServerKitBodyParser);
+      const result = await parseRouteBody(parser, ctx);
+      ctx.parsedBody = result.parsed;
+      ctx.rawBody = result.raw;
     }
     await next();
   };
