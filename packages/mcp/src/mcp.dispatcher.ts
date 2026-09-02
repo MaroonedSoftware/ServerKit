@@ -24,17 +24,19 @@ export const MCP_DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
  *
  * @example Koa route (mode selected by config)
  * ```ts
- * router.post('/mcp', requireSignature<McpAuthOptions>('mcp', { policy: MCP_AUTH_POLICY }), async (ctx) => {
+ * // `bodyParserMiddleware` is what populates `ctx.parsedBody` and `ctx.rawBody`; koa's own
+ * // `ctx.request.body` is never set by ServerKit.
+ * router.post('/mcp', bodyParserMiddleware(['application/json']), requireSignature<McpAuthOptions>('mcp', { policy: MCP_AUTH_POLICY }), async (ctx) => {
  *   const dispatcher = ctx.container.get(McpDispatcher);
  *   const context = createMcpRequestContext({ requestId: ctx.requestId, logger: ctx.logger });
  *
  *   if (dispatcher.sessionMode === 'stateful') {
  *     ctx.respond = false; // hand the raw response stream to the SDK transport (SSE)
- *     await dispatcher.dispatchStateful({ req: ctx.req, res: ctx.res, body: ctx.request.body, sessionId: ctx.get('mcp-session-id') }, context);
+ *     await dispatcher.dispatchStateful({ req: ctx.req, res: ctx.res, body: ctx.parsedBody, sessionId: ctx.get('mcp-session-id') }, context);
  *     return;
  *   }
  *
- *   const response = await dispatcher.dispatch(JSON.parse(ctx.rawBody), context);
+ *   const response = await dispatcher.dispatch(ctx.parsedBody as JSONRPCMessage, context);
  *   if (response) ctx.body = response;
  *   else ctx.status = 202; // a notification — nothing to return
  * });

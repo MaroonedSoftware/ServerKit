@@ -87,7 +87,7 @@ export type CreateMcpRequestContextInput = {
  * @example
  * ```ts
  * const context = createMcpRequestContext({ requestId: ctx.requestId, logger: ctx.logger });
- * const response = await ctx.container.get(McpDispatcher).dispatch(JSON.parse(ctx.rawBody), context);
+ * const response = await ctx.container.get(McpDispatcher).dispatch(ctx.parsedBody as JSONRPCMessage, context);
  * ```
  */
 export const createMcpRequestContext = (input: CreateMcpRequestContextInput): McpRequestContext => {

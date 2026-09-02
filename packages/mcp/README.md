@@ -100,26 +100,27 @@ Resources follow the same shape with `McpResourceHandler` (`read(uri, context)`)
 
 ## Serving MCP
 
-You own the route. Gate it with the auth policy, build an `McpRequestContext` from `ctx`, and dispatch. The mode is chosen from `McpConfig.sessionMode`:
+You own the route. Add `bodyParserMiddleware(['application/json'])` first (ServerKit puts the parsed payload on `ctx.parsedBody`, never on koa's `ctx.request.body`), gate it with the auth policy, build an `McpRequestContext` from `ctx`, and dispatch. The mode is chosen from `McpConfig.sessionMode`:
 
 ```ts
-import { requireSignature } from '@maroonedsoftware/koa';
+import { bodyParserMiddleware, requireSignature } from '@maroonedsoftware/koa';
 import { McpDispatcher, createMcpRequestContext, MCP_AUTH_POLICY, type McpAuthOptions } from '@maroonedsoftware/mcp';
+import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 
-router.post('/mcp', requireSignature<McpAuthOptions>('mcp', { policy: MCP_AUTH_POLICY }), async ctx => {
+router.post('/mcp', bodyParserMiddleware(['application/json']), requireSignature<McpAuthOptions>('mcp', { policy: MCP_AUTH_POLICY }), async ctx => {
   const dispatcher = ctx.container.get(McpDispatcher);
   const context = createMcpRequestContext({ requestId: ctx.requestId, logger: ctx.logger });
 
   if (dispatcher.sessionMode === 'stateful') {
     ctx.respond = false; // hand the raw response stream to the SDK transport (SSE)
     await dispatcher.dispatchStateful(
-      { req: ctx.req, res: ctx.res, body: ctx.request.body, sessionId: ctx.get('mcp-session-id') || undefined },
+      { req: ctx.req, res: ctx.res, body: ctx.parsedBody, sessionId: ctx.get('mcp-session-id') || undefined },
       context,
     );
     return;
   }
 
-  const response = await dispatcher.dispatch(JSON.parse(ctx.rawBody), context);
+  const response = await dispatcher.dispatch(ctx.parsedBody as JSONRPCMessage, context);
   if (response) ctx.body = response;
   else ctx.status = 202; // a notification — nothing to return
 });

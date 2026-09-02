@@ -138,20 +138,20 @@ registry.register(McpConfig).useValue(appConfig.getAs<McpConfig>('mcp'));
 policies.set(MCP_AUTH_POLICY, McpAuthPolicy);
 ```
 
-The route — one shape, both modes:
+The route — one shape, both modes. `bodyParserMiddleware` must run first: it is what populates `ctx.parsedBody` and `ctx.rawBody`. Koa's own `ctx.request.body` is never populated by ServerKit, so reading it yields `undefined`.
 
 ```typescript
-router.post('/mcp', requireSignature<McpAuthOptions>('mcp', { policy: MCP_AUTH_POLICY }), async ctx => {
+router.post('/mcp', bodyParserMiddleware(['application/json']), requireSignature<McpAuthOptions>('mcp', { policy: MCP_AUTH_POLICY }), async ctx => {
   const dispatcher = ctx.container.get(McpDispatcher);
   const context = createMcpRequestContext({ requestId: ctx.requestId, logger: ctx.logger });
 
   if (dispatcher.sessionMode === 'stateful') {
     ctx.respond = false; // hand the raw response stream to the SDK transport
-    await dispatcher.dispatchStateful({ req: ctx.req, res: ctx.res, body: ctx.request.body, sessionId: ctx.get('mcp-session-id') }, context);
+    await dispatcher.dispatchStateful({ req: ctx.req, res: ctx.res, body: ctx.parsedBody, sessionId: ctx.get('mcp-session-id') }, context);
     return;
   }
 
-  const response = await dispatcher.dispatch(JSON.parse(ctx.rawBody as string), context);
+  const response = await dispatcher.dispatch(ctx.parsedBody as JSONRPCMessage, context);
   if (response) ctx.body = response;
   else ctx.status = 202; // notification — nothing to return
 });

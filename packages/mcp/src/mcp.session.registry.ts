@@ -17,7 +17,7 @@ export type McpStatefulExchange = {
   req: IncomingMessage;
   /** Outbound node response (koa's `ctx.res`). The transport writes to it directly. */
   res: ServerResponse;
-  /** Parsed JSON body (koa's parsed body / `JSON.parse(ctx.rawBody)`). */
+  /** Parsed JSON body — `ctx.parsedBody` on koa, `request.parsedBody` on fastify. */
   body: unknown;
   /** Value of the `Mcp-Session-Id` request header, if the client sent one. */
   sessionId?: string;
