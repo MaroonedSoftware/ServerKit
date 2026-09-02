@@ -462,15 +462,15 @@ importers:
         specifier: ^3.7.2
         version: 3.7.2
     devDependencies:
-      '@maroonedsoftware/koa':
-        specifier: workspace:*
-        version: link:../koa
       '@maroonedsoftware/permissions':
         specifier: workspace:*
         version: link:../permissions
       '@maroonedsoftware/permissions-dsl':
         specifier: workspace:*
         version: link:../permissions-dsl
+      '@maroonedsoftware/servercore':
+        specifier: workspace:*
+        version: link:../servercore
       '@napi-rs/keyring':
         specifier: ^1.3.0
         version: 1.3.0

@@ -23,29 +23,29 @@ pnpm add @maroonedsoftware/johnny5
 
 Runtime dependencies: `@clack/prompts`, `@maroonedsoftware/appconfig`, `@maroonedsoftware/logger`,
 `commander`, `execa`, `injectkit`, `luxon`. **Eight optional peers**, one per integration subpath:
-`@maroonedsoftware/koa`, `@maroonedsoftware/permissions`, `@maroonedsoftware/permissions-dsl`,
+`@maroonedsoftware/servercore`, `@maroonedsoftware/permissions`, `@maroonedsoftware/permissions-dsl`,
 `@napi-rs/keyring`, `@swc-node/register`, `ioredis`, `kysely`, `pg`.
 
 ## Position in the graph
 
-- **Depends on:** `appconfig`, `logger`. `koa`, `permissions`, and `permissions-dsl` are **optional**
+- **Depends on:** `appconfig`, `logger`. `servercore`, `permissions`, and `permissions-dsl` are **optional**
   peers reached only through their subpaths.
 - **Depended on by:** nothing internal.
 - **Subpath exports:** ten, and every one exists to keep an optional peer off the core install.
 
-| Subpath         | Exports                                                                                                                                                        | Optional peer pulled in                                              |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `.`             | The framework: `createCliApp`, `defineCommand`, types, utilities                                                                                               | none                                                                 |
-| `./bin`         | `registerTypescriptLoader`, `runTypescriptBin` (+ their options types)                                                                                         | `@swc-node/register`                                                 |
-| `./serverkit`   | `bootstrapForCli`, `configureServerKitModules`, `getOrBootstrapContainer`, `requireContainer`, `CliContainer`, `BootstrapForCliOptions`, `RequireContainerCtx` | `@maroonedsoftware/koa`                                              |
-| `./postgres`    | `postgresReachable`, `PostgresReachableOptions`                                                                                                                | `pg`                                                                 |
-| `./redis`       | `redisReachable`, `RedisReachableOptions`                                                                                                                      | `ioredis`                                                            |
-| `./docker`      | `dockerServicesUp`, `DockerServicesOptions`                                                                                                                    | none (shells out)                                                    |
-| `./versions`    | `nodeVersion`, `pnpmVersion` (+ options)                                                                                                                       | none                                                                 |
-| `./filesystem`  | `envFile`, `portsFree` (+ options)                                                                                                                             | none                                                                 |
-| `./kysely`      | `kyselyTableExists`, `KyselyTableExistsOptions`                                                                                                                | `kysely`                                                             |
-| `./permissions` | `permissionsSchemaCompiled`, `permissionsFixturesPass`, `permissionsModelLoads` (+ options)                                                                    | `@maroonedsoftware/permissions`, `@maroonedsoftware/permissions-dsl` |
-| `./keyring`     | `keyringEntry`, `KeyringEntry`, `resolveSecret`, `PromptStorePolicy`, `ResolveSecretOptions`                                                                   | `@napi-rs/keyring`                                                   |
+| Subpath         | Exports                                                                                                                                                        | Optional peer pulled in                                                                                      |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `.`             | The framework: `createCliApp`, `defineCommand`, types, utilities                                                                                               | none                                                                                                         |
+| `./bin`         | `registerTypescriptLoader`, `runTypescriptBin` (+ their options types)                                                                                         | `@swc-node/register`                                                                                         |
+| `./serverkit`   | `bootstrapForCli`, `configureServerKitModules`, `getOrBootstrapContainer`, `requireContainer`, `CliContainer`, `BootstrapForCliOptions`, `RequireContainerCtx` | `@maroonedsoftware/servercore` (type-only: `ServerKitModule`; works with the koa and fastify adapters alike) |
+| `./postgres`    | `postgresReachable`, `PostgresReachableOptions`                                                                                                                | `pg`                                                                                                         |
+| `./redis`       | `redisReachable`, `RedisReachableOptions`                                                                                                                      | `ioredis`                                                                                                    |
+| `./docker`      | `dockerServicesUp`, `DockerServicesOptions`                                                                                                                    | none (shells out)                                                                                            |
+| `./versions`    | `nodeVersion`, `pnpmVersion` (+ options)                                                                                                                       | none                                                                                                         |
+| `./filesystem`  | `envFile`, `portsFree` (+ options)                                                                                                                             | none                                                                                                         |
+| `./kysely`      | `kyselyTableExists`, `KyselyTableExistsOptions`                                                                                                                | `kysely`                                                                                                     |
+| `./permissions` | `permissionsSchemaCompiled`, `permissionsFixturesPass`, `permissionsModelLoads` (+ options)                                                                    | `@maroonedsoftware/permissions`, `@maroonedsoftware/permissions-dsl`                                         |
+| `./keyring`     | `keyringEntry`, `KeyringEntry`, `resolveSecret`, `PromptStorePolicy`, `ResolveSecretOptions`                                                                   | `@napi-rs/keyring`                                                                                           |
 
 Everything under `./postgres` through `./permissions` returns a `Check` for the doctor runner.
 

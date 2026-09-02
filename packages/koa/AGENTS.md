@@ -32,7 +32,7 @@ and `RateLimiter` token are `servercore`'s and are re-exported here by name.
 
 - **Depends on:** `servercore` (the framework-neutral core), `appconfig`, `authentication`,
   `errors`, `logger`, `policies`.
-- **Depended on by:** `scim`, `johnny5`.
+- **Depended on by:** `scim`.
 - **Subpath exports:**
   - `.` — everything below.
   - `./serverfeed` — the SSE adapter for `@maroonedsoftware/serverfeed`, which is an **optional**

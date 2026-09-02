@@ -29,7 +29,7 @@ plus `@hapi/bourne`, `inflation`, `injectkit`, `luxon`, `qs`, `rate-limiter-flex
 
 - **Depends on:** `appconfig`, `errors`, `logger`, `multipart`, `policies`, `utilities`.
   Deliberately **not** `authentication` (L2): the session-aware pieces stay in each adapter.
-- **Depended on by:** `koa`, `fastify`.
+- **Depended on by:** `koa`, `fastify`, and `johnny5` (type-only optional peer for `ServerKitModule`).
 - **Subpath exports:** `./serverfeed` — `handleServerFeed` and the query filter for the
   `@maroonedsoftware/serverfeed` bus. A subpath so the bus stays an optional peer: nothing
   reachable from the root barrel imports it.

@@ -1,7 +1,7 @@
 import { InjectKitRegistry, type Container, type ScopedContainer } from 'injectkit';
 import { AppConfig } from '@maroonedsoftware/appconfig';
 import { ConsoleLogger, Logger } from '@maroonedsoftware/logger';
-import type { ServerKitModule } from '@maroonedsoftware/koa';
+import type { ServerKitModule } from '@maroonedsoftware/servercore';
 import type { CliContext, CommandModule } from '../../types.js';
 
 /** Options accepted by `bootstrapForCli`. */
