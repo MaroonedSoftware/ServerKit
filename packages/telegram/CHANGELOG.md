@@ -1,5 +1,14 @@
 # @maroonedsoftware/telegram
 
+## 2.0.11
+
+### Patch Changes
+
+- Updated dependencies [97a75be]
+  - @maroonedsoftware/errors@1.9.1
+  - @maroonedsoftware/comms@0.2.11
+  - @maroonedsoftware/policies@0.6.9
+
 ## 2.0.10
 
 ### Patch Changes

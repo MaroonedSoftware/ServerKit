@@ -1,5 +1,12 @@
 # @maroonedsoftware/zod
 
+## 0.7.1
+
+### Patch Changes
+
+- Updated dependencies [97a75be]
+  - @maroonedsoftware/errors@1.9.1
+
 ## 0.7.0
 
 ### Minor Changes

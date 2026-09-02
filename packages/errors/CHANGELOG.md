@@ -1,5 +1,12 @@
 # @maroonedsoftware/errors
 
+## 1.9.1
+
+### Patch Changes
+
+- 97a75be: Export `HttpStatusMap`, the status-code-to-message table `HttpError` already uses for its default
+  messages, so callers can check whether a numeric status is one `httpError` accepts.
+
 ## 1.9.0
 
 ### Minor Changes

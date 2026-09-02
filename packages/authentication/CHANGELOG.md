@@ -1,5 +1,14 @@
 # @maroonedsoftware/authentication
 
+## 4.30.11
+
+### Patch Changes
+
+- Updated dependencies [97a75be]
+  - @maroonedsoftware/errors@1.9.1
+  - @maroonedsoftware/encryption@0.5.13
+  - @maroonedsoftware/policies@0.6.9
+
 ## 4.30.10
 
 ### Patch Changes

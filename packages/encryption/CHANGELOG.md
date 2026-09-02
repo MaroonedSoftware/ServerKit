@@ -1,5 +1,12 @@
 # @maroonedsoftware/encryption
 
+## 0.5.13
+
+### Patch Changes
+
+- Updated dependencies [97a75be]
+  - @maroonedsoftware/errors@1.9.1
+
 ## 0.5.12
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@maroonedsoftware/telegram",
-  "version": "2.0.10",
+  "version": "2.0.11",
   "description": "Telegram Bot API utilities for ServerKit.",
   "author": {
     "name": "Marooned Software",
