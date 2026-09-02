@@ -13,7 +13,8 @@ an adapter for another framework, or a library that must work under either adapt
 ## Features
 
 - **Module lifecycle**: the `ServerKitModule` contract (`setup`, `start`, `ready`, `shutdown`)
-  every ServerKit server runs.
+  and `ServerKitServerBuilderBase`, the abstract server builder that runs it with signal handling
+  and bounded graceful shutdown. An adapter implements only `listen`.
 - **Body parsing**: `ServerKitBodyParser` dispatching by `Content-Type` to injectable parsers for
   JSON (prototype-pollution safe, bigint reviver), URL-encoded forms, text, multipart, and binary,
   with `defaultParserMappings` and the per-route status contract in `assertBodyExpectation` /
@@ -41,6 +42,28 @@ Applications normally do not install this package directly; it arrives as a depe
 `@maroonedsoftware/koa` or `@maroonedsoftware/fastify`.
 
 ## Quick start
+
+### Writing an adapter
+
+```typescript
+import http from 'node:http';
+import { ServerKitServerBuilderBase } from '@maroonedsoftware/servercore';
+
+class MyServerBuilder extends ServerKitServerBuilderBase {
+  private readonly server = http.createServer((req, res) => this.handle(req, res));
+
+  protected listen(port: number, signal: AbortSignal): Promise<http.Server> {
+    return new Promise((resolve, reject) => {
+      const instance = this.server.listen({ port, signal }, () => resolve(instance));
+      instance.once('error', reject);
+    });
+  }
+}
+
+const builder = new MyServerBuilder();
+await builder.setup(config, logger, modules); // Logger, AppConfig, parsers, module setup hooks
+await builder.start(3000); // listen, start hooks, then the ready phase in the background
+```
 
 ### Rendering an error in a custom adapter
 
@@ -102,6 +125,9 @@ stream.onClose(() => clearInterval(timer));
 ### Lifecycle
 
 - `ServerKitModule<ConfigT>`: `{ name?, setup?(registry, config), start?(container, signal), ready?(container, signal), shutdown?(container) }`.
+- `ServerKitServerBuilderBase`: `setup(config, logger, modules, parserMappings?)`, `start(port, options?)`,
+  `whenReady()`, `lifecycleSignal`, `protected abstract listen(port, signal)`, `protected shutdown()`.
+- `ServerKitStartOptions`, `DEFAULT_SHUTDOWN_GRACE_MS`.
 
 ### Body parsing
 

@@ -35,9 +35,12 @@ plus `@hapi/bourne`, `inflation`, `injectkit`, `luxon`, `qs`, `rate-limiter-flex
 
 ### Lifecycle
 
-| Export                     | Kind      | Shape                                          | Notes                                          |
-| -------------------------- | --------- | ---------------------------------------------- | ---------------------------------------------- |
-| `ServerKitModule<ConfigT>` | interface | `{ name?, setup?, start?, ready?, shutdown? }` | See the lifecycle table in the root AGENTS.md. |
+| Export                       | Kind           | Shape                                                                                                                                                                               | Notes                                                                                                                               |
+| ---------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `ServerKitModule<ConfigT>`   | interface      | `{ name?, setup?, start?, ready?, shutdown? }`                                                                                                                                      | See the lifecycle table in the root AGENTS.md.                                                                                      |
+| `ServerKitServerBuilderBase` | abstract class | `setup(config, logger, modules, parserMappings?)`, `start(port, options?)`, `whenReady()`, `get lifecycleSignal`, `protected abstract listen(port, signal)`, `protected shutdown()` | The shared lifecycle. Sets Luxon's default zone to UTC on construction. `start` awaits the `start` hooks and rejects if one throws. |
+| `ServerKitStartOptions`      | interface      | `{ shutdownGraceMs?: number }`                                                                                                                                                      | Default 10 s. `0` force-closes immediately.                                                                                         |
+| `DEFAULT_SHUTDOWN_GRACE_MS`  | constant       | `10_000`                                                                                                                                                                            | —                                                                                                                                   |
 
 ### Body parsing
 
@@ -123,6 +126,9 @@ if (assertBodyExpectation({ length, type, is: types => typeis(req, types) }, ['a
 
 ## Rules for generated code
 
+- Subclass `ServerKitServerBuilderBase` for a new adapter and implement only `listen`: bind the
+  framework's server, resolve with the Node `http.Server` once listening, and make an abort of
+  `signal` call `server.close()`. Do not reimplement the hook ordering or the shutdown drain.
 - Call `renderError` for every error response. Never re-derive which details reach the client.
 - Enforce a route's body contract with `assertBodyExpectation` before `parseRouteBody`, so the
   400/411/415/422 statuses stay identical across adapters.
@@ -144,6 +150,10 @@ if (assertBodyExpectation({ length, type, is: types => typeis(req, types) }, ['a
   result should reach `parseRouteBody`.
 - **`RateLimiter` is a declaration-merged token**, because `rate-limiter-flexible` exports
   `RateLimiterAbstract` as a type only. Do not split it.
+- **`ServerKitServerBuilderBase.shutdown` calls `process.exit()`** once the hooks finish, and it
+  runs off the Node server's `close` event. Tests must spy on `process.exit`.
+- **`start()` leaves the server listening if a `start` hook throws.** The rejection is the
+  caller's signal to close it; boot failed and nothing else is unwound automatically.
 - **`openSseStream` sets `ctx.status`/`ctx.respond` unconditionally** (they are harmless extra
   properties on a non-Koa context) and calls `hijack` exactly once before any write.
 
@@ -153,6 +163,7 @@ if (assertBodyExpectation({ length, type, is: types => typeis(req, types) }, ['a
 src/
   index.ts                         Root barrel
   serverkit.module.ts              ServerKitModule
+  serverkit.server.builder.base.ts ServerKitServerBuilderBase, ServerKitStartOptions, DEFAULT_SHUTDOWN_GRACE_MS
   serverkit.bodyparser.ts          ServerKitBodyParser, ServerKitParserMappings, ServerKitBodySource
   body.gate.ts                     assertBodyExpectation, parseRouteBody
   parsers/                         serverkit.parser, json, text, form, multipart, binary, serverkit.default.parsers
@@ -176,6 +187,8 @@ Invariants a change must not break:
 - Signature comparison must stay constant-time (`timingSafeEqual`), and the secret must never
   reach `details` or the response.
 - The SSE stream must keep owning the socket and swallowing disconnect teardown.
+- Graceful shutdown must remain bounded: long-lived connections are force-closed once the grace
+  period elapses so `close()` can never hang.
 - No import of `@maroonedsoftware/authentication`; this package is L1.
 
 User-visible changes need a changeset in `.changeset/`. A new export must also land in the
