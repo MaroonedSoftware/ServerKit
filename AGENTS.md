@@ -14,8 +14,8 @@ A modular TypeScript monorepo of independent server-side packages, published ind
 under `@maroonedsoftware/*`. Every package is meant to be usable on its own, so anything one package
 assumes about another is a real API contract, not an internal detail.
 
-The centre of gravity is a Koa HTTP API assembled from injectkit DI modules: `koa` gives you the
-server, router, context, and middleware stack; `appconfig` supplies typed config; `errors` defines
+The centre of gravity is an HTTP API assembled from injectkit DI modules: `koa` or `fastify` gives
+you the server, router, context, and middleware stack (both are thin adapters over `servercore`); `appconfig` supplies typed config; `errors` defines
 how failures render; `logger`, `policies`, `authentication`, `permissions`, and `jobbroker` fill in
 the cross-cutting concerns. Nothing forces you to take the whole stack — a downstream app can depend
 on `errors` alone.
@@ -51,6 +51,7 @@ Two audiences use these files:
 | `servercore`        | L1      | Framework-agnostic HTTP core: module lifecycle, body parsers, error rendering, SSE        | [servercore](./packages/servercore/AGENTS.md)               |
 | `authentication`    | L2      | Auth factors, scheme handlers, sessions, JWT issuance, and account recovery               | [authentication](./packages/authentication/AGENTS.md)       |
 | `koa`               | L2      | Server builder, typed context, middleware stack, body parsing, SSE                        | [koa](./packages/koa/AGENTS.md)                             |
+| `fastify`           | L2      | Fastify server builder, request context, hooks, body parsing, SSE                         | [fastify](./packages/fastify/AGENTS.md)                     |
 | `mcp`               | L2      | Model Context Protocol server over Streamable HTTP, wrapping the official SDK             | [mcp](./packages/mcp/AGENTS.md)                             |
 | `discord`           | L3      | Discord interaction dispatcher with Ed25519 signature verification                        | [discord](./packages/discord/AGENTS.md)                     |
 | `slack`             | L3      | Slack command/event/interaction dispatcher with signature verification                    | [slack](./packages/slack/AGENTS.md)                         |
@@ -68,7 +69,7 @@ Arrows point downward. A package may depend on any lower layer and never on a hi
 
 ```
 L3  discord  slack  telegram  whatsapp  scim  johnny5
-L2  authentication  koa  mcp
+L2  authentication  fastify  koa  mcp
 L1  appconfig  policies  encryption  multipart  zod  storage
     jobbroker  serverfeed  comms  cache  kysely  permissions-dsl  servercore
 L0  errors  logger  utilities  permissions  eventbus

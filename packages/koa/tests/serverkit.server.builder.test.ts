@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net';
 import http, { type Server } from 'node:http';
 import { Settings } from 'luxon';
 import Koa from 'koa';
-import { InjectKitContainerNoop, type Container } from 'injectkit';
+import { Injectable, InjectKitContainerNoop, type Container } from 'injectkit';
 import type { ServerKitRouterType } from '../src/serverkit.router.js';
 import { ServerKitServerBuilder } from '../src/serverkit.server.builder.js';
 import { BinaryParser, openSseStream, ServerKitBodyParser, ServerKitParserMappings, type SseContext } from '@maroonedsoftware/servercore';
@@ -13,6 +13,8 @@ import { AppConfig } from '@maroonedsoftware/appconfig';
 import { ServerkitError } from '@maroonedsoftware/errors';
 import type { ServerKitModule } from '@maroonedsoftware/servercore';
 import type { ServerKitMiddleware } from '../src/serverkit.middleware.js';
+import { ServerKitContext } from '../src/serverkit.context.js';
+import { serverKitContextMiddleware } from '../src/middleware/server/serverkit.context.middleware.js';
 
 /** Reaches into the builder's private fields for white-box assertions. */
 interface Internals {
@@ -136,6 +138,42 @@ describe('ServerKitServerBuilder', () => {
       const mappings = container.get(ServerKitParserMappings);
       expect(mappings.has('application/custom')).toBe(true);
       expect(mappings.get('application/custom')).toBeInstanceOf(BinaryParser);
+    });
+
+    it('registers ServerKitContext as a scoped placeholder that only resolves inside a request', async () => {
+      @Injectable()
+      class NeedsContext {
+        constructor(public readonly ctx: ServerKitContext) {}
+      }
+      const builder = new ServerKitServerBuilder();
+
+      const container = await builder.setup(config, logger, [
+        { name: 'm', setup: async registry => void registry.register(NeedsContext).useClass(NeedsContext).asScoped() },
+      ]);
+
+      expect(() => container.get(ServerKitContext)).toThrow(ServerkitError);
+      expect(() => container.get(ServerKitContext)).toThrow('only available inside a request scope');
+
+      const ctx = {
+        path: '/',
+        get: vi.fn(() => ''),
+        set: vi.fn(),
+        headers: {},
+        res: { once: vi.fn() },
+      } as unknown as Parameters<ServerKitMiddleware>[0];
+      await serverKitContextMiddleware(container)(ctx, async () => {});
+      expect(ctx.container.get(NeedsContext).ctx).toBe(ctx);
+    });
+
+    it('leaves a ServerKitContext registration a module made in place', async () => {
+      const builder = new ServerKitServerBuilder();
+      const own = {} as ServerKitContext;
+
+      const container = await builder.setup(config, logger, [
+        { name: 'm', setup: async registry => void registry.register(ServerKitContext).useInstance(own) },
+      ]);
+
+      expect(container.get(ServerKitContext)).toBe(own);
     });
   });
 

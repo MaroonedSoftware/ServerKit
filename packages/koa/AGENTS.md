@@ -249,6 +249,9 @@ See [.claude/skills/koa-route](../../.claude/skills/koa-route) and
   (header, algorithm, digest, both signatures) go to `internalDetails`; the secret never does.
 - **`ServerKitContext` is declaration-merged** (interface + abstract class) so one symbol is both
   the type and the DI token, like `Logger` and `JobContext`. Do not split it.
+- **`setup` registers `ServerKitContext` as a scoped placeholder** so services can inject it;
+  resolving it outside a request scope throws, and a singleton that depends on it fails
+  validation at `setup`. Inject it only into scoped or transient services.
 - **The parsers, SSE transport, signature policy, and `RateLimiter` are `servercore`'s.** Edit
   them in `packages/servercore`; this package only re-exports them. Adapter-only helpers such as
   `renderError`, `consumeRateLimit`, and the body gate are not re-exported here.

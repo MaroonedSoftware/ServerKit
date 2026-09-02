@@ -26,6 +26,12 @@ class TestServerBuilder extends ServerKitServerBuilderBase {
     });
   }
 
+  public readonly finalized: string[] = [];
+
+  protected override finalizeRegistry(registry: import('injectkit').Registry): void {
+    this.finalized.push(registry.isRegistered(Logger) ? 'after-core' : 'before-core');
+  }
+
   /** Expose the protected lifecycle members for white-box assertions. */
   public get internals() {
     return { container: this.container, modules: this.modules, shutdown: () => this.shutdown() };
@@ -104,6 +110,22 @@ describe('ServerKitServerBuilderBase', () => {
       const mappings = container.get(ServerKitParserMappings);
       expect(mappings.has('json')).toBe(true);
       expect(mappings.has('multipart')).toBe(true);
+    });
+
+    it('calls finalizeRegistry after the module setup hooks and before the container is built', async () => {
+      const calls: string[] = [];
+      const module = createModule({ setup: vi.fn(async () => void calls.push('module')) });
+      const builder = new TestServerBuilder();
+      const original = builder['finalizeRegistry'].bind(builder);
+      builder['finalizeRegistry'] = registry => {
+        calls.push('finalize');
+        original(registry);
+      };
+
+      await builder.setup(config, logger, [module]);
+
+      expect(calls).toEqual(['module', 'finalize']);
+      expect(builder.finalized).toEqual(['after-core']);
     });
 
     it('honors a custom parser mapping', async () => {

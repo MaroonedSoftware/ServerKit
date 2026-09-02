@@ -23,6 +23,10 @@ Behavioural notes:
 - `@maroonedsoftware/koa/serverfeed` keeps `serverFeedRouter` and re-exports `handleServerFeed`,
   `ServerFeedContext`, and `serverFeedFilterFromQuery` from
   `@maroonedsoftware/servercore/serverfeed`.
+- `ServerKitServerBuilder.setup` registers `ServerKitContext` as a scoped placeholder (unless a
+  module registered it), so a service may declare `ServerKitContext` as a constructor dependency
+  and the request scope's override supplies the live context. Resolving it outside a request
+  throws, and a singleton depending on it fails container validation.
 - `ServerKitServerBuilder` now extends `ServerKitServerBuilderBase` from servercore. `start()`
   resolves after the socket is bound **and** every module's `start` hook has run, and rejects if
   one throws (previously it resolved before the hooks ran and a throwing hook was an unhandled

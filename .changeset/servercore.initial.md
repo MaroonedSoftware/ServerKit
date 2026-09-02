@@ -25,5 +25,5 @@ adapter can share it:
   `status` field is now optional.
 - `ServerKitServerBuilderBase`, the abstract server lifecycle (DI registration, parser wiring,
   module hooks, signal handling, bounded graceful shutdown). An adapter implements `listen(port,
-signal)` and inherits everything else. `DEFAULT_SHUTDOWN_GRACE_MS` and `ServerKitStartOptions`
+signal)` and inherits everything else; `finalizeRegistry(registry)` lets it register defaults after the module `setup` hooks. `DEFAULT_SHUTDOWN_GRACE_MS` and `ServerKitStartOptions`
   live here too.

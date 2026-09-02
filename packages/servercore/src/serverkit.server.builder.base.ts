@@ -81,8 +81,9 @@ export abstract class ServerKitServerBuilderBase {
    * Registers core dependencies, runs each module's `setup` hook, and builds the DI container.
    *
    * Registers the {@link Logger} and {@link AppConfig} instances, wires the body parsers from
-   * `parserMappings`, then awaits every module's optional `setup` hook before building the
-   * container. Must run before {@link start} or {@link shutdown}.
+   * `parserMappings`, awaits every module's optional `setup` hook, gives the adapter a last
+   * word via {@link finalizeRegistry}, then builds the container. Must run before {@link start}
+   * or {@link shutdown}.
    *
    * @param config - Application configuration, registered and passed to each module's `setup` hook.
    * @param logger - Logger registered in the container and used for lifecycle logging.
@@ -110,8 +111,22 @@ export abstract class ServerKitServerBuilderBase {
       }
     }
 
+    this.finalizeRegistry(this.registry);
+
     this.container = this.registry.build();
     return this.container;
+  }
+
+  /**
+   * Called by {@link setup} after every module's `setup` hook has run and before the container
+   * is built. An adapter overrides it to register defaults a module did not supply — checked
+   * with `registry.isRegistered` so a module's own registration always wins. The base
+   * registers nothing.
+   *
+   * @param registry - The registry about to be built.
+   */
+  protected finalizeRegistry(_registry: Registry): void {
+    // Adapters register their defaults here.
   }
 
   /**

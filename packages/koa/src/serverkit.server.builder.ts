@@ -1,7 +1,9 @@
-import { Container } from 'injectkit';
+import { Container, Registry } from 'injectkit';
 import Koa from 'koa';
 import type { Server } from 'node:http';
+import { ServerkitError } from '@maroonedsoftware/errors';
 import { ServerKitServerBuilderBase } from '@maroonedsoftware/servercore';
+import { ServerKitContext } from './serverkit.context.js';
 import { ServerKitMiddleware } from './serverkit.middleware.js';
 import { serverKitDefaultMiddleware } from './middleware/server/serverkit.default.middlewares.js';
 import { ServerKitRouterType } from './serverkit.router.js';
@@ -35,6 +37,24 @@ export class ServerKitServerBuilder extends ServerKitServerBuilderBase {
   constructor() {
     super();
     this.server = new Koa();
+  }
+
+  /**
+   * Registers {@link ServerKitContext} as a **scoped** placeholder, after the modules have had
+   * their say, so services may declare it as a constructor dependency: the request-scoped
+   * container overrides it with the live request context, and resolving it outside a request
+   * scope throws. A singleton that depends on it fails validation at build time, as it should.
+   * Skipped when a module registered its own.
+   */
+  protected override finalizeRegistry(registry: Registry): void {
+    if (!registry.isRegistered(ServerKitContext)) {
+      registry
+        .register(ServerKitContext)
+        .useFactory(() => {
+          throw new ServerkitError('ServerKitContext is only available inside a request scope');
+        })
+        .asScoped();
+    }
   }
 
   /**

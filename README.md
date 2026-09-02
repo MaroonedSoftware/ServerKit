@@ -95,6 +95,20 @@ Comprehensive error handling with fluent API design and database integration.
 
 ---
 
+### Fastify
+
+Fastify server builder, request context, hooks, body parsing, SSE streaming, and utilities for ServerKit.
+
+- The Fastify counterpart of the Koa package, sharing `ServerCore`
+- Request context on `FastifyRequest` with a request-scoped DI container
+- Error rendering, context, CORS, rate limiting, and authentication as Fastify hooks
+- Koa-style `ServerKitRouter` mounted as an encapsulated plugin with `preHandler` guards
+- Lazy per-route body parsing with the shared status contract
+
+[View documentation →](./packages/fastify/README.md)
+
+---
+
 ### EventBus
 
 Synchronous, in-process fan-out event dispatch.

@@ -207,6 +207,8 @@ Extends `ServerkitError`. Inherits all of the above and adds:
 | `statusCode` | `HttpStatusCodes`        | The HTTP status code                |
 | `headers`    | `Record<string, string>` | HTTP headers to include in response |
 
+`HttpStatusMap` (the code-to-message table those defaults come from) is exported too, so a numeric status from another library can be checked with `code in HttpStatusMap` before it is passed to `httpError`.
+
 | Method                  | Description                                  |
 | ----------------------- | -------------------------------------------- |
 | `withHeaders(headers)`  | Replace the headers map                      |
