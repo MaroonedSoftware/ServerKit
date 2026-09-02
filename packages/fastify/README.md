@@ -28,6 +28,11 @@ Peer dependencies: `fastify` (v5), `@fastify/cors`.
 - `bodyParserMiddleware`: per-route, content-type-driven body parsing into `request.parsedBody`
   with the shared 400 / 411 / 415 / 422 contract. Fastify's eager parsers are replaced by a lazy
   catch-all so the raw stream is untouched until a route asks for it.
+- `corsMiddleware` (`@fastify/cors` with `'*'`, exact, and RegExp origins), `rateLimiterMiddleware`
+  (per-IP `rate-limiter-flexible`, 429 with `retry-after` / `x-ratelimit-*`), and
+  `authenticationMiddleware` (resolves `Authorization` through the registered
+  `AuthenticationSchemeHandler` into `request.authenticationSession`, skipping `anonymousPaths`).
+- `requirePolicy` and `requireSignature` route guards, with the same semantics as the Koa package.
 - `sendJson`: send a pre-serialized JSON string with the right content type.
 - Re-exports of the shared core: `ServerKitModule`, the parsers and `defaultParserMappings`,
   `ServerKitBodyParser`, the signature policy, `RateLimiter`, and the SSE transport.
@@ -52,8 +57,10 @@ builder.setupMiddleware().setupRoutes([router]);
 await builder.start(3000, { shutdownGraceMs: 15_000 });
 ```
 
-`setupMiddleware()` applies the default stack: `errorMiddleware` then `serverKitContextMiddleware`.
-Handlers receive `(request, reply)`; return a value to send it, or write through `reply`.
+`setupMiddleware()` applies the default stack: `errorMiddleware` → `serverKitContextMiddleware` →
+`rateLimiterMiddleware` (only when a `RateLimiter` is registered) → `corsMiddleware` →
+`authenticationMiddleware`. Handlers receive `(request, reply)`; return a value to send it, or
+write through `reply`.
 
 ### Middleware on Fastify
 
@@ -78,6 +85,31 @@ route's own, then the handler. Throw an `HttpError` to reject.
 `builder.app` is the underlying `FastifyInstance` for plugins ServerKit does not wrap (OpenAPI,
 static files, websockets) and for `app.inject()` in tests. Requests reaching routes registered
 there still carry the ServerKit context once `setupMiddleware` has run.
+
+### Authentication and authorization
+
+```typescript
+builder.setupMiddleware(container => serverKitDefaultMiddleware(container, { authentication: { anonymousPaths: ['/health', /^\/public\//] } }));
+
+router.get('/profile', requirePolicy(), handler); // default 'auth.session.mfa.satisfied' gate
+router.post('/mfa/enroll', requirePolicy({ policy: false }), handler); // valid session only
+router.post('/webhooks/github', bodyParserMiddleware(['application/json']), requireSignature('webhook'), handler);
+```
+
+`requireSignature` needs `request.rawBody`, so `bodyParserMiddleware` goes first on the route.
+`SignatureOptions` (`header`, `secret`, `algorithm`, `digest`) live in `AppConfig` under the key
+you pass.
+
+### CORS and rate limiting
+
+```typescript
+corsMiddleware({ origin: ['https://app.example.com', /\.example\.com$/], credentials: true });
+registry.register(RateLimiter).useInstance(new RateLimiterMemory({ points: 100, duration: 60 }));
+```
+
+The default stack inserts `rateLimiterMiddleware` only when a `RateLimiter` is registered. The
+CORS plugin is applied synchronously so its hook stays ahead of authentication and a preflight is
+answered before any scheme handler runs.
 
 ### Body parsing
 
@@ -115,9 +147,10 @@ reads `request.raw` when the route allows a body. Consequences:
 
 ### Middleware and guards
 
-- `errorMiddleware(container)`, `serverKitContextMiddleware(container)`,
+- `errorMiddleware(container)`, `serverKitContextMiddleware(container)`, `corsMiddleware(options?)`,
+  `rateLimiterMiddleware(rateLimiter)`, `authenticationMiddleware(options?)`,
   `serverKitDefaultMiddleware(container, options?)`.
-- `bodyParserMiddleware(contentTypes)`.
+- `bodyParserMiddleware(contentTypes)`, `requirePolicy(options?)`, `requireSignature(optionsKey, options?)`.
 - `normalizeFastifyError(error)`: the Fastify-to-`HttpError` mapping the error handler applies.
 
 ### Helpers

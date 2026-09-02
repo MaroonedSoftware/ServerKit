@@ -51,18 +51,28 @@ plus `injectkit` and `type-is`.
 
 ### Server middleware
 
-| Export                       | Kind     | Shape                                             | Notes                                                                                                                                                                                                      |
-| ---------------------------- | -------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `errorMiddleware`            | function | `(container: Container) => ServerKitMiddleware`   | **Must be first.** Installs `setErrorHandler` (via `renderError`) and `setNotFoundHandler`; logs through the request logger, falling back to the root `Logger`.                                            |
-| `normalizeFastifyError`      | function | `(error: unknown) => unknown`                     | Maps a Fastify-raised 4xx to `httpError(status).withDetails({ reason })`; everything else passes through.                                                                                                  |
-| `serverKitContextMiddleware` | function | `(container: Container) => ServerKitMiddleware`   | **Must be second.** Declares the request decorators and installs the `onRequest` hook that creates the scope. The scope is disposed when `reply.raw` closes, so a hijacked SSE reply outlives the handler. |
-| `serverKitDefaultMiddleware` | function | `(container: Container) => ServerKitMiddleware[]` | The canonical stack in canonical order: error → context.                                                                                                                                                   |
+| Export                              | Kind      | Shape                                                                                          | Notes                                                                                                                                                                                                      |
+| ----------------------------------- | --------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `errorMiddleware`                   | function  | `(container: Container) => ServerKitMiddleware`                                                | **Must be first.** Installs `setErrorHandler` (via `renderError`) and `setNotFoundHandler`; logs through the request logger, falling back to the root `Logger`.                                            |
+| `normalizeFastifyError`             | function  | `(error: unknown) => unknown`                                                                  | Maps a Fastify-raised 4xx to `httpError(status).withDetails({ reason })`; everything else passes through.                                                                                                  |
+| `serverKitContextMiddleware`        | function  | `(container: Container) => ServerKitMiddleware`                                                | **Must be second.** Declares the request decorators and installs the `onRequest` hook that creates the scope. The scope is disposed when `reply.raw` closes, so a hijacked SSE reply outlives the handler. |
+| `corsMiddleware`                    | function  | `(options?: CorsOptions) => ServerKitMiddleware`                                               | `@fastify/cors`, applied synchronously so its hook keeps stack order. `origin` accepts `'*'`, a string, or a list of strings/RegExps.                                                                      |
+| `CorsOptions`                       | interface | `Omit<FastifyCorsOptions, 'origin'> & { origin?: CorsOrigin }`                                 | —                                                                                                                                                                                                          |
+| `rateLimiterMiddleware`             | function  | `(rateLimiter: RateLimiter) => ServerKitMiddleware`                                            | Per-IP `onRequest` hook; 429 when exceeded.                                                                                                                                                                |
+| `authenticationMiddleware`          | function  | `(options?: AuthenticationMiddlewareOptions) => ServerKitMiddleware`                           | `onRequest` hook resolving `Authorization` via `AuthenticationSchemeHandler` into `request.authenticationSession`; strips the header; `anonymousPaths` skips the handler.                                  |
+| `AuthenticationMiddlewareOptions`   | interface | `{ anonymousPaths?: (string \| RegExp)[] }`                                                    | Strings match the path exactly; RegExp is the escape hatch.                                                                                                                                                |
+| `serverKitDefaultMiddleware`        | function  | `(container: Container, options?: ServerKitDefaultMiddlewareOptions) => ServerKitMiddleware[]` | error → context → rate limiter (**only if a `RateLimiter` is registered**) → cors (`exposedHeaders: ['WWW-Authenticate']`) → authentication.                                                               |
+| `ServerKitDefaultMiddlewareOptions` | interface | `{ authentication?: AuthenticationMiddlewareOptions }`                                         | Forwarded to `authenticationMiddleware`.                                                                                                                                                                   |
 
 ### Router middleware
 
-| Export                 | Kind     | Shape                                                   | Notes                                                                                           |
-| ---------------------- | -------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `bodyParserMiddleware` | function | `(contentTypes: string[]) => ServerKitRouterMiddleware` | Parses per `Content-Type` into `request.parsedBody` / `request.rawBody`. 400 / 411 / 415 / 422. |
+| Export                    | Kind      | Shape                                                                                                       | Notes                                                                                                                             |
+| ------------------------- | --------- | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `bodyParserMiddleware`    | function  | `(contentTypes: string[]) => ServerKitRouterMiddleware`                                                     | Parses per `Content-Type` into `request.parsedBody` / `request.rawBody`. 400 / 411 / 415 / 422.                                   |
+| `requirePolicy`           | function  | `(options?: RequirePolicyOptions) => ServerKitRouterMiddleware`                                             | 401 on an invalid session; then asserts a policy (403 on deny). Default `'auth.session.mfa.satisfied'`; `false` skips the policy. |
+| `RequirePolicyOptions`    | interface | `{ policy?: string \| false }`                                                                              | —                                                                                                                                 |
+| `requireSignature`        | function  | `<TOptions = SignatureOptions>(optionsKey, options?: RequireSignatureOptions) => ServerKitRouterMiddleware` | Reads `SignatureOptions` from `AppConfig` by key; asserts with 401. Needs `request.rawBody`, so `bodyParserMiddleware` first.     |
+| `RequireSignatureOptions` | type      | `{ policy?: string }`                                                                                       | Default `REQUIRE_SIGNATURE_POLICY`.                                                                                               |
 
 ### Lifecycle
 
@@ -123,6 +133,10 @@ builder.setupMiddleware(container => [
   log through `request.logger`.
 - Add `bodyParserMiddleware([...])` per route with the content types that route accepts. It is
   not global.
+- Guard authenticated routes with `requirePolicy()`. Use `{ policy: false }` for
+  authenticated-but-ungated routes and a named policy for step-up or AAL2 gates.
+- Store `SignatureOptions` in `AppConfig` and pass `requireSignature` the config key, after
+  `bodyParserMiddleware` on the same route. Never inline a secret.
 - Return the response body from a handler, or call `reply.send`; a handler that does neither
   leaves the request hanging.
 - Use `ServerKitRouter` and `setupRoutes` for routes; use `builder.app` only for third-party
@@ -155,6 +169,16 @@ builder.setupMiddleware(container => [
   `{ host: '0.0.0.0' }`.
 - **`start()` resolves after the `start` hooks** and rejects if one throws, leaving the server
   listening for the caller to close.
+- **The default stack resolves `AuthenticationSchemeHandler` on every non-anonymous request.**
+  A server built with `setupMiddleware()` and no scheme handler registered answers 500. Register
+  one, or list the route under `anonymousPaths`.
+- **The rate limiter is inserted only when a `RateLimiter` is registered.** No registration means
+  no rate limiting, silently.
+- **`requirePolicy()` defaults to `'auth.session.mfa.satisfied'`.** Pass `{ policy: false }` for
+  session-only routes.
+- **`corsMiddleware` bypasses `register`** and applies `@fastify/cors` to the root instance
+  synchronously, so it can be applied once per server only; a second application throws on the
+  duplicate request decorator.
 - **Fastify auto-registers `HEAD` for every `GET`.** Declaring an explicit `head()` on the same
   path throws at registration.
 
@@ -170,8 +194,9 @@ src/
   serverkit.server.builder.ts  ServerKitServerBuilder, ServerKitFastifyOptions
   send.json.ts                 sendJson
   middleware/
-    server/                    error (+ normalizeFastifyError), serverkit.context, serverkit.default.middlewares
-    router/                    body.parser
+    server/                    error (+ normalizeFastifyError), serverkit.context, cors, rate.limiter,
+                               authentication, serverkit.default.middlewares
+    router/                    body.parser, require.policy, require.signature
 ```
 
 Tests are in `tests/`, mirroring `src/`; `tests/test.app.ts` builds a server for `app.inject()`.

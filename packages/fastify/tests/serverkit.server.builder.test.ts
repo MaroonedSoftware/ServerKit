@@ -9,8 +9,9 @@ import { ServerKitBodyParser, ServerKitParserMappings, type ServerKitModule, ope
 import { ServerKitServerBuilder } from '../src/serverkit.server.builder.js';
 import { ServerKitRouter } from '../src/serverkit.router.js';
 import type { ServerKitMiddleware } from '../src/serverkit.middleware.js';
-import { createLogger } from './test.app.js';
+import { createLogger, minimalMiddleware } from './test.app.js';
 import { ServerKitContext } from '../src/serverkit.context.js';
+import { AuthenticationSchemeHandler, invalidAuthenticationSession } from '@maroonedsoftware/authentication';
 
 interface Internals {
   container?: Container;
@@ -97,7 +98,7 @@ describe('ServerKitServerBuilder (fastify)', () => {
       const container = await builder.setup(config, logger, [
         { name: 'm', setup: async registry => void registry.register(NeedsContext).useClass(NeedsContext).asScoped() },
       ]);
-      builder.setupMiddleware();
+      builder.setupMiddleware(minimalMiddleware);
       let sameRequest = false;
       builder.app.get('/', async request => {
         sameRequest = request.container.get(NeedsContext).context === request;
@@ -149,14 +150,27 @@ describe('ServerKitServerBuilder (fastify)', () => {
 
     it('applies the default stack so requests carry the ServerKit context', async () => {
       const builder = new ServerKitServerBuilder();
-      await builder.setup(config, logger, []);
+      const handle = vi.fn(async () => invalidAuthenticationSession);
+      await builder.setup(config, logger, [
+        {
+          name: 'auth',
+          setup: async registry =>
+            void registry.register(AuthenticationSchemeHandler).useInstance({ handle } as unknown as AuthenticationSchemeHandler),
+        },
+      ]);
       builder.setupMiddleware();
-      builder.app.get('/', async request => ({ hasContainer: request.container !== undefined, requestId: request.requestId }));
+      builder.app.get('/', async request => ({
+        hasContainer: request.container !== undefined,
+        requestId: request.requestId,
+        session: request.authenticationSession === invalidAuthenticationSession,
+      }));
 
-      const response = await builder.app.inject({ method: 'GET', url: '/', headers: { 'x-request-id': 'r1' } });
+      const response = await builder.app.inject({ method: 'GET', url: '/', headers: { 'x-request-id': 'r1', origin: 'https://x.com' } });
 
-      expect(response.json()).toEqual({ hasContainer: true, requestId: 'r1' });
+      expect(response.json()).toEqual({ hasContainer: true, requestId: 'r1', session: true });
       expect(response.headers['x-request-id']).toBe('r1');
+      expect(response.headers['access-control-allow-origin']).toBe('https://x.com');
+      expect(handle).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -164,7 +178,7 @@ describe('ServerKitServerBuilder (fastify)', () => {
     it('mounts each router under its prefix and returns the builder', async () => {
       const builder = new ServerKitServerBuilder();
       await builder.setup(config, logger, []);
-      builder.setupMiddleware();
+      builder.setupMiddleware(minimalMiddleware);
       const api = ServerKitRouter({ prefix: '/api' }).get('/ping', async () => ({ pong: true }));
       const root = ServerKitRouter().get('/health', async () => 'ok');
 
@@ -233,7 +247,7 @@ describe('ServerKitServerBuilder (fastify)', () => {
       const module = createModule();
       const builder = new ServerKitServerBuilder({ host: '127.0.0.1' });
       await builder.setup(config, logger, [module]);
-      builder.setupMiddleware().setupRoutes([ServerKitRouter().get('/', async () => ({ ok: true }))]);
+      builder.setupMiddleware(minimalMiddleware).setupRoutes([ServerKitRouter().get('/', async () => ({ ok: true }))]);
 
       server = await builder.start(0);
 
@@ -284,7 +298,7 @@ describe('ServerKitServerBuilder (fastify)', () => {
       const module = createModule();
       const builder = new ServerKitServerBuilder({ host: '127.0.0.1' });
       await builder.setup(config, logger, [module]);
-      builder.setupMiddleware().setupRoutes([
+      builder.setupMiddleware(minimalMiddleware).setupRoutes([
         ServerKitRouter().get('/feed', async (_request, reply) => {
           const stream = openSseStream({ res: reply.raw, hijack: () => reply.hijack() }, { heartbeatMs: 0, signal: builder.lifecycleSignal });
           stream.comment('open');
@@ -310,7 +324,7 @@ describe('ServerKitServerBuilder (fastify)', () => {
       const module = createModule();
       const builder = new ServerKitServerBuilder({ host: '127.0.0.1' });
       await builder.setup(config, logger, [module]);
-      builder.setupMiddleware().setupRoutes([ServerKitRouter().get('/hang', () => new Promise(() => {}))]);
+      builder.setupMiddleware(minimalMiddleware).setupRoutes([ServerKitRouter().get('/hang', () => new Promise(() => {}))]);
 
       server = await builder.start(0, { shutdownGraceMs: 50 });
       const { port } = server.address() as AddressInfo;

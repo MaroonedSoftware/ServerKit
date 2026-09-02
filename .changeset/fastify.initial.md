@@ -19,6 +19,10 @@ New package: the Fastify counterpart of `@maroonedsoftware/koa`, built on
 - `bodyParserMiddleware`, lazy per-route body parsing with the shared 400 / 411 / 415 / 422
   contract; Fastify's eager parsers are replaced so `request.raw` stays unread until a route
   parses it.
+- `corsMiddleware`, `rateLimiterMiddleware`, `authenticationMiddleware`, and the `requirePolicy` /
+  `requireSignature` route guards, with the same semantics as `@maroonedsoftware/koa`;
+  `serverKitDefaultMiddleware` builds the canonical stack (error → context → optional rate limiter
+  → cors → authentication).
 - `sendJson` and the `requestPath` / `requestMediaType` / `requestBodyLength` / `requestHeader`
   helpers.
 - Re-exports of the shared core, the same set `@maroonedsoftware/koa` exposes.
