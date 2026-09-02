@@ -23,6 +23,9 @@ New package: the Fastify counterpart of `@maroonedsoftware/koa`, built on
   `requireSignature` route guards, with the same semantics as `@maroonedsoftware/koa`;
   `serverKitDefaultMiddleware` builds the canonical stack (error → context → optional rate limiter
   → cors → authentication).
+- `openSseReply` for Server-Sent Events over a hijacked reply, and a `./serverfeed` subpath with
+  `serverFeedRouter` over the `@maroonedsoftware/serverfeed` bus (optional peer), re-exporting
+  the shared handler from `@maroonedsoftware/servercore/serverfeed`.
 - `sendJson` and the `requestPath` / `requestMediaType` / `requestBodyLength` / `requestHeader`
   helpers.
 - Re-exports of the shared core, the same set `@maroonedsoftware/koa` exposes.

@@ -33,7 +33,7 @@ export interface SseResponse {
   write(chunk: string): boolean;
   end(): void;
   destroy(): void;
-  setTimeout(ms: number): unknown;
+  setTimeout(ms: number, callback?: () => void): unknown;
   on(event: string, listener: () => void): unknown;
   /** Bytes buffered but not yet flushed to the socket (Node's `Writable.writableLength`). */
   readonly writableLength?: number;
@@ -133,7 +133,9 @@ export function openSseStream(ctx: SseContext, options: SseStreamOptions = {}): 
   ctx.status = 200;
   ctx.respond = false;
   ctx.hijack?.();
-  ctx.res.setTimeout(0);
+  // The no-op callback matters: Node tolerates a missing one, but light-my-request's injected
+  // response (Fastify's `app.inject`) registers it unconditionally and throws on `undefined`.
+  ctx.res.setTimeout(0, () => {});
   ctx.res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache, no-transform',

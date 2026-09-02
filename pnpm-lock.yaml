@@ -385,6 +385,9 @@ importers:
       '@fastify/cors':
         specifier: ^11.3.0
         version: 11.3.0
+      '@maroonedsoftware/serverfeed':
+        specifier: workspace:*
+        version: link:../serverfeed
       '@repo/config-eslint':
         specifier: workspace:*
         version: link:../config-eslint

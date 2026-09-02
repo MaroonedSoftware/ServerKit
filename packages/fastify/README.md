@@ -34,6 +34,10 @@ Peer dependencies: `fastify` (v5), `@fastify/cors`.
   `AuthenticationSchemeHandler` into `request.authenticationSession`, skipping `anonymousPaths`).
 - `requirePolicy` and `requireSignature` route guards, with the same semantics as the Koa package.
 - `sendJson`: send a pre-serialized JSON string with the right content type.
+- `openSseReply`: Server-Sent Events over a hijacked reply, with heartbeat, backpressure, and
+  lifecycle-signal drain from the shared transport.
+- `@maroonedsoftware/fastify/serverfeed`: `serverFeedRouter`, an authenticated SSE endpoint over
+  the `@maroonedsoftware/serverfeed` realtime bus (optional peer).
 - Re-exports of the shared core: `ServerKitModule`, the parsers and `defaultParserMappings`,
   `ServerKitBodyParser`, the signature policy, `RateLimiter`, and the SSE transport.
 
@@ -121,6 +125,37 @@ reads `request.raw` when the route allows a body. Consequences:
 - Fastify's `bodyLimit` does not apply; the parser options (`JsonParserOptions.limit`, ...) do.
 - A route without `bodyParserMiddleware` never reads its body.
 
+## Server-Sent Events
+
+```typescript
+import { openSseReply } from '@maroonedsoftware/fastify';
+
+router.get('/events', async (_request, reply) => {
+  const stream = openSseReply(reply, { signal: builder.lifecycleSignal });
+  const timer = setInterval(() => stream.event({ event: 'tick', data: { at: DateTime.now().toISO() } }), 1000);
+  stream.onClose(() => clearInterval(timer));
+});
+```
+
+`openSseReply` hijacks the reply and hands the raw socket to the shared SSE transport. Do not
+`send` afterwards. Always pass `builder.lifecycleSignal` so shutdown drains open streams instead
+of waiting out the grace period, and register cleanup with `stream.onClose`. Headers are flushed
+on the first write (an event, a comment, or the heartbeat), not when the stream opens.
+
+## Server feed SSE endpoint
+
+```typescript
+import { serverFeedRouter } from '@maroonedsoftware/fastify/serverfeed';
+
+builder.setupRoutes([serverFeedRouter({ signal: builder.lifecycleSignal })]);
+```
+
+Mounts `GET /server/feed` (configurable via `path`), guarded by `requirePolicy` (`policy` to
+change or `false` for session-only), streaming the `ServerFeed` bus registered in DI (or one from
+`resolveFeed`). Clients resume with `Last-Event-ID` or `?lastEventId=` and filter with
+`?source=a,b&kind=progress,status&level=warn&correlationId=…`. Requires the optional peer
+`@maroonedsoftware/serverfeed`.
+
 ## API
 
 ### Request context
@@ -157,6 +192,10 @@ reads `request.raw` when the route allows a body. Consequences:
 
 - `ServerKitRouter(options?)` and `ServerKitRouterType`.
 - `sendJson(reply, serialized, status?)`.
+- `openSseReply(reply, options?)`; the SSE types and frame helpers are re-exported from servercore.
+- `@maroonedsoftware/fastify/serverfeed`: `serverFeedRouter(options?)`, `ServerFeedRouterOptions`,
+  plus `handleServerFeed`, `ServerFeedContext`, and `serverFeedFilterFromQuery` re-exported from
+  `@maroonedsoftware/servercore/serverfeed`.
 - `requestPath`, `requestMediaType`, `requestBodyLength`, `requestHeader`: Koa-equivalent request
   accessors over a `FastifyRequest`.
 

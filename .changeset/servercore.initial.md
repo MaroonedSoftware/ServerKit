@@ -18,6 +18,8 @@ adapter can share it:
 - `normalizeCorsOrigins`, `createOriginMatcher`, and `createAnonymousPathMatcher`.
 - `SignatureOptions`, `SignaturePolicyContext`, `DefaultSignaturePolicy`, and
   `assertRequestSignature`.
+- `openSseStream` passes a no-op callback to `res.setTimeout(0)`, so the transport also works on
+  an injected response (Fastify's `app.inject`) whose `setTimeout` requires one.
 - A `./serverfeed` subpath with `handleServerFeed`, `ServerFeedContext`, and
   `serverFeedFilterFromQuery`; `@maroonedsoftware/serverfeed` is an optional peer.
 - The SSE transport (`openSseStream`, frames, `resolveLastEventId`). `SseContext` gains an optional

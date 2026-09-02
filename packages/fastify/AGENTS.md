@@ -18,7 +18,8 @@ existing Koa app; pick one adapter per server.
 pnpm add @maroonedsoftware/fastify fastify @fastify/cors
 ```
 
-Required peers: `fastify` (^5), `@fastify/cors` (^11).
+Required peers: `fastify` (^5), `@fastify/cors` (^11). Optional peer: `@maroonedsoftware/serverfeed`
+— unlocks the `./serverfeed` subpath.
 
 Runtime dependencies: `appconfig`, `authentication`, `errors`, `logger`, `policies`, `servercore`,
 plus `injectkit` and `type-is`.
@@ -28,7 +29,8 @@ plus `injectkit` and `type-is`.
 - **Depends on:** `servercore` (the framework-neutral core), `appconfig`, `authentication`,
   `errors`, `logger`, `policies`.
 - **Depended on by:** nothing internal.
-- **Subpath exports:** none yet.
+- **Subpath exports:** `./serverfeed` — the SSE adapter for `@maroonedsoftware/serverfeed`, an
+  **optional** peer. A subpath so nothing reachable from the root barrel imports the bus.
 
 ## API surface
 
@@ -73,6 +75,24 @@ plus `injectkit` and `type-is`.
 | `RequirePolicyOptions`    | interface | `{ policy?: string \| false }`                                                                              | —                                                                                                                                 |
 | `requireSignature`        | function  | `<TOptions = SignatureOptions>(optionsKey, options?: RequireSignatureOptions) => ServerKitRouterMiddleware` | Reads `SignatureOptions` from `AppConfig` by key; asserts with 401. Needs `request.rawBody`, so `bodyParserMiddleware` first.     |
 | `RequireSignatureOptions` | type      | `{ policy?: string }`                                                                                       | Default `REQUIRE_SIGNATURE_POLICY`.                                                                                               |
+
+### SSE
+
+| Export         | Kind     | Shape                                                            | Notes                                                                                     |
+| -------------- | -------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `openSseReply` | function | `(reply: FastifyReply, options?: SseStreamOptions) => SseStream` | Hijacks the reply, then `openSseStream` owns `reply.raw`. Pass `builder.lifecycleSignal`. |
+
+The stream and frame types (`SseStream`, `SseStreamOptions`, `SseFrame`, `frameEvent`, ...) are re-exported from `servercore`.
+
+### `./serverfeed`
+
+| Export                      | Kind      | Shape                                                              | Notes                                                                 |
+| --------------------------- | --------- | ------------------------------------------------------------------ | --------------------------------------------------------------------- |
+| `serverFeedRouter`          | function  | `(options?: ServerFeedRouterOptions) => ServerKitRouterType`       | Mounts `GET /server/feed` (configurable), guarded by `requirePolicy`. |
+| `ServerFeedRouterOptions`   | interface | `extends SseStreamOptions` with `{ path?, policy?, resolveFeed? }` | `resolveFeed` defaults to `request.container.get(ServerFeed)`.        |
+| `handleServerFeed`          | function  | re-export                                                          | From `@maroonedsoftware/servercore/serverfeed`.                       |
+| `ServerFeedContext`         | interface | re-export                                                          | From `@maroonedsoftware/servercore/serverfeed`.                       |
+| `serverFeedFilterFromQuery` | function  | re-export                                                          | From `@maroonedsoftware/servercore/serverfeed`.                       |
 
 ### Lifecycle
 
@@ -141,6 +161,10 @@ builder.setupMiddleware(container => [
   leaves the request hanging.
 - Use `ServerKitRouter` and `setupRoutes` for routes; use `builder.app` only for third-party
   Fastify plugins.
+- Always pass `signal: builder.lifecycleSignal` to `openSseReply` and `serverFeedRouter`, and
+  register cleanup with `stream.onClose(...)` for every timer and subscription an SSE handler
+  creates. Never `send` on a reply after `openSseReply`.
+- Import `serverFeedRouter` from `@maroonedsoftware/fastify/serverfeed`, never from the root.
 - Put slow start-up work in a module's `ready` hook, not `start`.
 
 ## Gotchas
@@ -179,6 +203,11 @@ builder.setupMiddleware(container => [
 - **`corsMiddleware` bypasses `register`** and applies `@fastify/cors` to the root instance
   synchronously, so it can be applied once per server only; a second application throws on the
   duplicate request decorator.
+- **An SSE stream flushes its headers on the first write, not when it opens.** A client sees no
+  response until an event, a comment, or the heartbeat is written; `serverFeedRouter` with no
+  backlog and `heartbeatMs: 0` is silent until the first live event.
+- **An SSE stream never ends on its own.** Without `options.signal`, every connected client holds
+  `server.close()` open until the grace period force-closes it.
 - **Fastify auto-registers `HEAD` for every `GET`.** Declaring an explicit `head()` on the same
   path throws at registration.
 
@@ -193,6 +222,9 @@ src/
   serverkit.request.ts         requestPath, requestMediaType, requestBodyLength, requestHeader
   serverkit.server.builder.ts  ServerKitServerBuilder, ServerKitFastifyOptions
   send.json.ts                 sendJson
+  sse/sse.reply.ts             openSseReply
+  serverfeed.ts                Subpath entry for ./serverfeed
+  serverfeed/server.feed.stream.ts  serverFeedRouter
   middleware/
     server/                    error (+ normalizeFastifyError), serverkit.context, cors, rate.limiter,
                                authentication, serverkit.default.middlewares
@@ -210,6 +242,8 @@ Invariants a change must not break:
   `bodyParserMiddleware` reads an already-consumed stream.
 - Scope disposal must stay on `reply.raw` `close`, or hijacked SSE replies lose their services.
 - Graceful shutdown stays the shared base's; `listen` must honour the abort `signal`.
+- **Nothing reachable from `src/index.ts` may import `@maroonedsoftware/serverfeed`.** It is an
+  optional peer reachable only through `./serverfeed`; the `build` script lists both tsup entries.
 
 User-visible changes need a changeset in `.changeset/`. A new export must also land in the
 `README.md` feature list, the API surface table above, and (for a subpath) `package.json`

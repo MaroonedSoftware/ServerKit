@@ -3,6 +3,7 @@ export * from './serverkit.middleware.js';
 export * from './serverkit.router.js';
 export * from './serverkit.request.js';
 export * from './send.json.js';
+export * from './sse/sse.reply.js';
 export * from './middleware/server/cors.middleware.js';
 export * from './middleware/server/error.middleware.js';
 export * from './middleware/server/rate.limiter.middleware.js';
