@@ -1,5 +1,16 @@
 # @maroonedsoftware/johnny5
 
+## 8.1.3
+
+### Patch Changes
+
+- 709934d: The `./serverkit` integration takes its `ServerKitModule` type from `@maroonedsoftware/servercore`
+  instead of `@maroonedsoftware/koa`, so the optional peer is now `servercore`. The integration
+  works unchanged with modules written for either the Koa or the Fastify adapter.
+- Updated dependencies [7c99aba]
+  - @maroonedsoftware/servercore@0.2.0
+  - @maroonedsoftware/appconfig@2.6.1
+
 ## 8.1.2
 
 ### Patch Changes

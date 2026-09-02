@@ -1,5 +1,12 @@
 # @maroonedsoftware/multipart
 
+## 1.3.8
+
+### Patch Changes
+
+- Updated dependencies [97a75be]
+  - @maroonedsoftware/errors@1.9.1
+
 ## 1.3.7
 
 ### Patch Changes

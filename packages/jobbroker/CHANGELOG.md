@@ -1,5 +1,12 @@
 # @maroonedsoftware/jobbroker
 
+## 1.12.2
+
+### Patch Changes
+
+- Updated dependencies [97a75be]
+  - @maroonedsoftware/errors@1.9.1
+
 ## 1.12.1
 
 ### Patch Changes
