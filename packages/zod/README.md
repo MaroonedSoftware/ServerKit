@@ -93,6 +93,27 @@ const row = await parseAndValidate(upstreamPayload, schema, 502);
 
 ---
 
+### `zodErrorDetails(error)`
+
+Flattens a `ZodError` into the same field map `parseAndValidate` attaches to the error it throws:
+dot-notation paths to messages, `'_root'` for root-level issues, and an array when one field has
+several violations.
+
+Use it when the schema has already been run and only the formatting is needed, which is what a
+synchronous validator has to do. `@maroonedsoftware/fastify/zod` builds Fastify's validator
+compiler on it, so a schema failure there renders exactly as one from `parseAndValidate`.
+
+```typescript
+const result = CreateInvoice.safeParse(input);
+if (!result.success) {
+  throw httpError(400).withDetails(zodErrorDetails(result.error));
+}
+```
+
+**Parameters**
+
+- `error` - The Zod error to format.
+
 ### `parseAndValidateArray(data, schema, statusCode?)`
 
 Parses and validates every element of `data` against a Zod schema, returning the typed array on success. `schema` describes a single **element**, not the array.
