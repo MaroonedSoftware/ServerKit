@@ -272,7 +272,7 @@ Framework-agnostic ServerKit core shared by the Koa and Fastify adapters.
 - `ServerKitModule` lifecycle contract
 - Content-type-driven body parsers and the per-route body status contract
 - `renderError`, the single error-rendering boundary
-- Request identity, rate limiting, CORS origin matching, and HMAC signature policy
+- Request identity, rate limiting, CORS origin matching (Koa), and HMAC signature policy
 - Server-Sent Events transport over a raw Node response
 
 [View documentation →](./packages/servercore/README.md)

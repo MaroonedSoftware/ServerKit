@@ -25,7 +25,9 @@ an adapter for another framework, or a library that must work under either adapt
 - **Rate limiting**: the `RateLimiter` DI token and `consumeRateLimit`, producing a 429 with
   `retry-after` and `x-ratelimit-*` headers.
 - **CORS origins**: `normalizeCorsOrigins` and `createOriginMatcher` for `'*'`, exact, and RegExp
-  allow-lists.
+  allow-lists. Used by the Koa adapter only, since `@koa/cors` takes a string or a resolver
+  function; `@fastify/cors` matches strings, RegExps, and arrays itself, so the Fastify adapter
+  passes `origin` straight through.
 - **Anonymous paths**: `createAnonymousPathMatcher` for routes that skip authentication.
 - **Request signatures**: `DefaultSignaturePolicy`, `SignaturePolicyContext`, and
   `assertRequestSignature`, verifying an HMAC over the raw body in constant time.
@@ -149,7 +151,7 @@ stream.onClose(() => clearInterval(timer));
 ### Guards
 
 - `RateLimiter` (DI token), `consumeRateLimit(rateLimiter, key)`.
-- `CorsOrigin`, `normalizeCorsOrigins(origin)`, `createOriginMatcher(matchers)`.
+- `CorsOrigin`, `normalizeCorsOrigins(origin)`, `createOriginMatcher(matchers)` (Koa adapter only).
 - `createAnonymousPathMatcher(paths)`.
 - `REQUIRE_SIGNATURE_POLICY`, `SignatureOptions`, `SignaturePolicyContext`, `DefaultSignaturePolicy`,
   `SignatureRequest`, `assertRequestSignature(container, request, optionsKey, policy?)`.
@@ -177,7 +179,8 @@ handleServerFeed({ res: reply.raw, hijack: () => reply.hijack(), query: request.
 ```
 
 Both adapters ship a ready-made guarded route on top of it: `serverFeedRouter` from
-`@maroonedsoftware/koa/serverfeed` and `@maroonedsoftware/fastify/serverfeed`.
+`@maroonedsoftware/koa/serverfeed`, and `serverFeedRoutes` (a Fastify route plugin) from
+`@maroonedsoftware/fastify/serverfeed`.
 
 ## License
 

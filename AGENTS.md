@@ -183,11 +183,17 @@ service needs to observe reloads.
 ## Building an app on ServerKit
 
 The composition root is a `ServerKitServerBuilder` plus a list of `ServerKitModule`s. Two
-adapters offer it with the same method names: `@maroonedsoftware/koa` and
-`@maroonedsoftware/fastify`. Both are thin layers over `@maroonedsoftware/servercore`, which owns
-the module lifecycle, body parsers, error rendering, and SSE transport. Pick one adapter per
-server; the snippet below is Koa, and the Fastify version differs only in its import and in
-handlers receiving `(request, reply)` instead of `ctx`.
+adapters offer it: `@maroonedsoftware/koa` and `@maroonedsoftware/fastify`. Both are thin layers
+over `@maroonedsoftware/servercore`, which owns the module lifecycle, body parsers, error
+rendering, and SSE transport, so `setup`, `start`, `whenReady`, `lifecycleSignal`, and the module
+hooks behave identically on either. Pick one adapter per server.
+
+Only the composition root is shared. Above it the two diverge, so a Koa snippet is **not** a
+Fastify snippet with the import swapped. Koa mounts `(ctx, next)` middleware and a
+`ServerKitRouter`; Fastify registers ordered plugins through `setupPlugins`, routes as Fastify
+plugins, guards as `preHandler` hooks, and a route's accepted content types in `config.body`. The
+snippet below is Koa. For Fastify, follow the canonical usage in
+[fastify/AGENTS.md](./packages/fastify/AGENTS.md) rather than translating this one.
 
 ```typescript
 import { ServerKitServerBuilder, ServerKitRouter } from '@maroonedsoftware/koa';

@@ -84,9 +84,9 @@ plus `@hapi/bourne`, `inflation`, `injectkit`, `luxon`, `qs`, `rate-limiter-flex
 | ---------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | `RateLimiter`                | interface + abstract class | `extends RateLimiterAbstract`                                                                  | DI token for a `rate-limiter-flexible` limiter.                              |
 | `consumeRateLimit`           | function                   | `(rateLimiter: RateLimiter, key: string) => Promise<void>`                                     | Throws 429 with `retry-after` / `x-ratelimit-*` headers.                     |
-| `CorsOrigin`                 | type                       | `string \| (string \| RegExp)[]`                                                               | —                                                                            |
-| `normalizeCorsOrigins`       | function                   | `(origin?: CorsOrigin) => (string \| RegExp)[]`                                                | `undefined` → `['*']`; a string is one origin.                               |
-| `createOriginMatcher`        | function                   | `(matchers) => (requestOrigin: string) => string`                                              | Reflects the origin on match, `''` otherwise.                                |
+| `CorsOrigin`                 | type                       | `string \| (string \| RegExp)[]`                                                               | Koa adapter only; see the note below the table.                              |
+| `normalizeCorsOrigins`       | function                   | `(origin?: CorsOrigin) => (string \| RegExp)[]`                                                | `undefined` → `['*']`; a string is one origin. Koa only.                     |
+| `createOriginMatcher`        | function                   | `(matchers) => (requestOrigin: string) => string`                                              | Reflects the origin on match, `''` otherwise. Koa only.                      |
 | `createAnonymousPathMatcher` | function                   | `(paths?: (string \| RegExp)[]) => (path: string) => boolean`                                  | Strings exact, RegExps tested.                                               |
 | `REQUIRE_SIGNATURE_POLICY`   | constant                   | `'request.signature.valid'`                                                                    | —                                                                            |
 | `SignatureOptions`           | type                       | `{ header, secret, algorithm, digest }`                                                        | Stored in `AppConfig`, resolved by key.                                      |
@@ -162,6 +162,10 @@ if (assertBodyExpectation({ length, type, is: types => typeis(req, types) }, ['a
   result should reach `parseRouteBody`.
 - **`RateLimiter` is a declaration-merged token**, because `rate-limiter-flexible` exports
   `RateLimiterAbstract` as a type only. Do not split it.
+- **The CORS origin helpers are Koa-only**, unlike everything else here. `@koa/cors` takes a
+  string or a resolver function, so a RegExp allow-list has to be matched in ServerKit;
+  `@fastify/cors` matches strings, RegExps, and arrays itself, so `corsPlugin` passes `origin`
+  through untouched. Do not "restore parity" by reintroducing the matcher on the Fastify side.
 - **`ServerKitServerBuilderBase.shutdown` calls `process.exit()`** once the hooks finish, and it
   runs off the Node server's `close` event. Tests must spy on `process.exit`.
 - **`start()` leaves the server listening if a `start` hook throws.** The rejection is the
