@@ -1,5 +1,13 @@
 # @maroonedsoftware/servercore
 
+## 0.2.1
+
+### Patch Changes
+
+- 0dd2dbb: Update the documentation that named the Fastify adapter's body parsing. The shared body gate and
+  parser mappings are now used by `bodyParserPlugin` on Fastify, not a `bodyParserMiddleware`. No
+  runtime change.
+
 ## 0.2.0
 
 ### Minor Changes

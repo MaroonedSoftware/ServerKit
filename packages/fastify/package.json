@@ -1,6 +1,6 @@
 {
   "name": "@maroonedsoftware/fastify",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Fastify server builder, plugin stack, request context, body parsing, zod schemas, and SSE streaming for ServerKit",
   "author": {
     "name": "Marooned Software",
