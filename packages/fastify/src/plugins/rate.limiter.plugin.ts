@@ -1,5 +1,5 @@
 import { consumeRateLimit, RateLimiter } from '@maroonedsoftware/servercore';
-import { ServerKitMiddleware } from '../../serverkit.middleware.js';
+import { serverKitPlugin, type ServerKitPlugin } from '../serverkit.plugin.js';
 
 /**
  * Enforces rate limiting per client IP using a `rate-limiter-flexible` instance.
@@ -7,12 +7,12 @@ import { ServerKitMiddleware } from '../../serverkit.middleware.js';
  * and `x-ratelimit-*` headers) when the limit is exceeded.
  *
  * @param rateLimiter - A {@link RateLimiter} instance (e.g. `RateLimiterMemory`, `RateLimiterRedis`).
- * @returns {@link ServerKitMiddleware} that installs the hook.
+ * @returns A {@link ServerKitPlugin} that installs the hook.
  */
-export const rateLimiterMiddleware = (rateLimiter: RateLimiter): ServerKitMiddleware => {
-  return app => {
+export const rateLimiterPlugin = (rateLimiter: RateLimiter): ServerKitPlugin => {
+  return serverKitPlugin('serverkit.rate.limiter', async app => {
     app.addHook('onRequest', async request => {
       await consumeRateLimit(rateLimiter, request.ip);
     });
-  };
+  });
 };

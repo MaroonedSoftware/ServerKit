@@ -1,14 +1,14 @@
 import { describe, it, expect, vi } from 'vitest';
 import { AuthenticationSchemeHandler, invalidAuthenticationSession, type AuthenticationSession } from '@maroonedsoftware/authentication';
 import type { ServerKitModule } from '@maroonedsoftware/servercore';
-import { errorMiddleware } from '../../../src/middleware/server/error.middleware.js';
-import { serverKitContextMiddleware } from '../../../src/middleware/server/serverkit.context.middleware.js';
-import { authenticationMiddleware, type AuthenticationMiddlewareOptions } from '../../../src/middleware/server/authentication.middleware.js';
-import { createTestApp } from '../../test.app.js';
+import { errorPlugin } from '../../src/plugins/error.plugin.js';
+import { serverKitContextPlugin } from '../../src/plugins/serverkit.context.plugin.js';
+import { authenticationPlugin, type AuthenticationPluginOptions } from '../../src/plugins/authentication.plugin.js';
+import { createTestApp } from '../test.app.js';
 
 const session = { sessionToken: 't', subject: 'alice', factors: [], claims: {} } as unknown as AuthenticationSession;
 
-const build = async (options?: AuthenticationMiddlewareOptions, handle = vi.fn(async () => session)) => {
+const build = async (options?: AuthenticationPluginOptions, handle = vi.fn(async () => session)) => {
   const schemeHandler = { handle } as unknown as AuthenticationSchemeHandler;
   const module: ServerKitModule = {
     name: 'auth',
@@ -16,7 +16,7 @@ const build = async (options?: AuthenticationMiddlewareOptions, handle = vi.fn(a
   };
   const { app } = await createTestApp({
     modules: [module],
-    middleware: container => [errorMiddleware(container), serverKitContextMiddleware(container), authenticationMiddleware(options)],
+    plugins: container => [errorPlugin(container), serverKitContextPlugin(container), authenticationPlugin(options)],
   });
   let seen: { session: AuthenticationSession; header: string | undefined; rawHeader: string | undefined } | undefined;
   app.get('/*', async request => {
@@ -26,7 +26,7 @@ const build = async (options?: AuthenticationMiddlewareOptions, handle = vi.fn(a
   return { app, handle, seen: () => seen };
 };
 
-describe('authenticationMiddleware (fastify)', () => {
+describe('authenticationPlugin (fastify)', () => {
   it('resolves the Authorization header through the scheme handler and strips it from the request', async () => {
     const { app, handle, seen } = await build();
 

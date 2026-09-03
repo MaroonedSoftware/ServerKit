@@ -1,13 +1,5 @@
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { FastifyReply } from 'fastify';
 import type { ServerKitContext } from './serverkit.context.js';
-
-/**
- * A server-level middleware on Fastify: a registration step run once against the root instance
- * while the server is being built. Fastify has no Koa-style `(ctx, next)` chain, so a
- * "middleware" here installs what the chain would have been — an `onRequest` hook, an error
- * handler, a plugin — and the canonical stack stays an ordered list of these.
- */
-export type ServerKitMiddleware = (app: FastifyInstance) => void;
 
 /**
  * A route-level guard, run as a Fastify `preHandler` before the route handler. Throw (an

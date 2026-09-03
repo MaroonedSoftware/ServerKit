@@ -375,6 +375,9 @@ importers:
       '@maroonedsoftware/servercore':
         specifier: workspace:*
         version: link:../servercore
+      fastify-plugin:
+        specifier: ^6.0.0
+        version: 6.0.0
       injectkit:
         specifier: ^1.7.1
         version: 1.7.1

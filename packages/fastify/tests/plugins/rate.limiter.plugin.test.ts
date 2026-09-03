@@ -1,15 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { RateLimiterMemory } from 'rate-limiter-flexible';
-import { errorMiddleware } from '../../../src/middleware/server/error.middleware.js';
-import { serverKitContextMiddleware } from '../../../src/middleware/server/serverkit.context.middleware.js';
-import { rateLimiterMiddleware } from '../../../src/middleware/server/rate.limiter.middleware.js';
-import { createTestApp } from '../../test.app.js';
+import { errorPlugin } from '../../src/plugins/error.plugin.js';
+import { serverKitContextPlugin } from '../../src/plugins/serverkit.context.plugin.js';
+import { rateLimiterPlugin } from '../../src/plugins/rate.limiter.plugin.js';
+import { createTestApp } from '../test.app.js';
 
-describe('rateLimiterMiddleware (fastify)', () => {
+describe('rateLimiterPlugin (fastify)', () => {
   it('lets requests through while points remain, then answers 429 with the rate-limit headers', async () => {
     const limiter = new RateLimiterMemory({ points: 2, duration: 60 });
     const { app } = await createTestApp({
-      middleware: container => [errorMiddleware(container), serverKitContextMiddleware(container), rateLimiterMiddleware(limiter)],
+      plugins: container => [errorPlugin(container), serverKitContextPlugin(container), rateLimiterPlugin(limiter)],
     });
     app.get('/', async () => 'ok');
 
@@ -27,7 +27,7 @@ describe('rateLimiterMiddleware (fastify)', () => {
   it('keys the bucket by client ip', async () => {
     const limiter = new RateLimiterMemory({ points: 1, duration: 60 });
     const { app } = await createTestApp({
-      middleware: container => [errorMiddleware(container), serverKitContextMiddleware(container), rateLimiterMiddleware(limiter)],
+      plugins: container => [errorPlugin(container), serverKitContextPlugin(container), rateLimiterPlugin(limiter)],
     });
     app.get('/', async () => 'ok');
 

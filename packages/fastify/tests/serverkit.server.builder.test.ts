@@ -8,8 +8,9 @@ import { ServerkitError } from '@maroonedsoftware/errors';
 import { ServerKitBodyParser, ServerKitParserMappings, type ServerKitModule, openSseStream } from '@maroonedsoftware/servercore';
 import { ServerKitServerBuilder } from '../src/serverkit.server.builder.js';
 import { ServerKitRouter } from '../src/serverkit.router.js';
-import type { ServerKitMiddleware } from '../src/serverkit.middleware.js';
-import { createLogger, minimalMiddleware } from './test.app.js';
+import type { ServerKitPlugin } from '../src/serverkit.plugin.js';
+import { serverKitPlugin } from '../src/serverkit.plugin.js';
+import { createLogger, minimalPlugins } from './test.app.js';
 import { ServerKitContext } from '../src/serverkit.context.js';
 import { AuthenticationSchemeHandler, invalidAuthenticationSession } from '@maroonedsoftware/authentication';
 
@@ -98,7 +99,7 @@ describe('ServerKitServerBuilder (fastify)', () => {
       const container = await builder.setup(config, logger, [
         { name: 'm', setup: async registry => void registry.register(NeedsContext).useClass(NeedsContext).asScoped() },
       ]);
-      builder.setupMiddleware(minimalMiddleware);
+      builder.setupPlugins(minimalPlugins);
       let sameRequest = false;
       builder.app.get('/', async request => {
         sameRequest = request.container.get(NeedsContext).context === request;
@@ -122,24 +123,24 @@ describe('ServerKitServerBuilder (fastify)', () => {
     });
   });
 
-  describe('setupMiddleware', () => {
+  describe('setupPlugins', () => {
     it('throws when called before setup initializes the container', () => {
       const builder = new ServerKitServerBuilder();
 
-      expect(() => builder.setupMiddleware(() => [])).toThrow(ServerkitError);
-      expect(() => builder.setupMiddleware(() => [])).toThrow('Container not initialized');
+      expect(() => builder.setupPlugins(() => [])).toThrow(ServerkitError);
+      expect(() => builder.setupPlugins(() => [])).toThrow('Container not initialized');
     });
 
-    it('passes the built container to the factory and applies each step in order', async () => {
+    it('passes the built container to the factory and registers each plugin in order', async () => {
       const builder = new ServerKitServerBuilder();
       await builder.setup(config, logger, []);
       const order: string[] = [];
-      const factory = vi.fn((_container: Container): ServerKitMiddleware[] => [
-        app => app.addHook('onRequest', async () => void order.push('first')),
-        app => app.addHook('onRequest', async () => void order.push('second')),
+      const factory = vi.fn((_container: Container): ServerKitPlugin[] => [
+        serverKitPlugin('first', async app => app.addHook('onRequest', async () => void order.push('first'))),
+        serverKitPlugin('second', async app => app.addHook('onRequest', async () => void order.push('second'))),
       ]);
 
-      const result = builder.setupMiddleware(factory);
+      const result = builder.setupPlugins(factory);
       builder.app.get('/', async () => 'ok');
       await builder.app.inject({ method: 'GET', url: '/' });
 
@@ -158,7 +159,7 @@ describe('ServerKitServerBuilder (fastify)', () => {
             void registry.register(AuthenticationSchemeHandler).useInstance({ handle } as unknown as AuthenticationSchemeHandler),
         },
       ]);
-      builder.setupMiddleware();
+      builder.setupPlugins();
       builder.app.get('/', async request => ({
         hasContainer: request.container !== undefined,
         requestId: request.requestId,
@@ -178,7 +179,7 @@ describe('ServerKitServerBuilder (fastify)', () => {
     it('mounts each router under its prefix and returns the builder', async () => {
       const builder = new ServerKitServerBuilder();
       await builder.setup(config, logger, []);
-      builder.setupMiddleware(minimalMiddleware);
+      builder.setupPlugins(minimalPlugins);
       const api = ServerKitRouter({ prefix: '/api' }).get('/ping', async () => ({ pong: true }));
       const root = ServerKitRouter().get('/health', async () => 'ok');
 
@@ -247,7 +248,7 @@ describe('ServerKitServerBuilder (fastify)', () => {
       const module = createModule();
       const builder = new ServerKitServerBuilder({ host: '127.0.0.1' });
       await builder.setup(config, logger, [module]);
-      builder.setupMiddleware(minimalMiddleware).setupRoutes([ServerKitRouter().get('/', async () => ({ ok: true }))]);
+      builder.setupPlugins(minimalPlugins).setupRoutes([ServerKitRouter().get('/', async () => ({ ok: true }))]);
 
       server = await builder.start(0);
 
@@ -298,7 +299,7 @@ describe('ServerKitServerBuilder (fastify)', () => {
       const module = createModule();
       const builder = new ServerKitServerBuilder({ host: '127.0.0.1' });
       await builder.setup(config, logger, [module]);
-      builder.setupMiddleware(minimalMiddleware).setupRoutes([
+      builder.setupPlugins(minimalPlugins).setupRoutes([
         ServerKitRouter().get('/feed', async (_request, reply) => {
           const stream = openSseStream({ res: reply.raw, hijack: () => reply.hijack() }, { heartbeatMs: 0, signal: builder.lifecycleSignal });
           stream.comment('open');
@@ -324,7 +325,7 @@ describe('ServerKitServerBuilder (fastify)', () => {
       const module = createModule();
       const builder = new ServerKitServerBuilder({ host: '127.0.0.1' });
       await builder.setup(config, logger, [module]);
-      builder.setupMiddleware(minimalMiddleware).setupRoutes([ServerKitRouter().get('/hang', () => new Promise(() => {}))]);
+      builder.setupPlugins(minimalPlugins).setupRoutes([ServerKitRouter().get('/hang', () => new Promise(() => {}))]);
 
       server = await builder.start(0, { shutdownGraceMs: 50 });
       const { port } = server.address() as AddressInfo;

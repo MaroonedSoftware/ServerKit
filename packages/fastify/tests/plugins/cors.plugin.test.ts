@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { corsMiddleware, type CorsOptions } from '../../../src/middleware/server/cors.middleware.js';
-import { errorMiddleware } from '../../../src/middleware/server/error.middleware.js';
-import { serverKitContextMiddleware } from '../../../src/middleware/server/serverkit.context.middleware.js';
-import { createTestApp } from '../../test.app.js';
+import { corsPlugin, type CorsOptions } from '../../src/plugins/cors.plugin.js';
+import { errorPlugin } from '../../src/plugins/error.plugin.js';
+import { serverKitContextPlugin } from '../../src/plugins/serverkit.context.plugin.js';
+import { createTestApp } from '../test.app.js';
 
 const build = async (options?: CorsOptions) => {
   const { app } = await createTestApp({
-    middleware: container => [errorMiddleware(container), serverKitContextMiddleware(container), corsMiddleware(options)],
+    plugins: container => [errorPlugin(container), serverKitContextPlugin(container), corsPlugin(options)],
   });
   app.get('/', async () => 'ok');
   app.post('/', async () => 'ok');
@@ -15,7 +15,7 @@ const build = async (options?: CorsOptions) => {
 
 const allowOrigin = (response: { headers: Record<string, unknown> }) => response.headers['access-control-allow-origin'];
 
-describe('corsMiddleware (fastify)', () => {
+describe('corsPlugin (fastify)', () => {
   it('reflects any origin by default and advertises the default methods on preflight', async () => {
     const app = await build();
 
@@ -60,9 +60,9 @@ describe('corsMiddleware (fastify)', () => {
   });
 
   it('throws at construction when a wildcard origin is combined with credentials', () => {
-    expect(() => corsMiddleware({ origin: '*', credentials: true })).toThrow(/credentials/);
-    expect(() => corsMiddleware({ credentials: true })).toThrow(/credentials/);
-    expect(() => corsMiddleware({ origin: 'https://app.example.com', credentials: true })).not.toThrow();
+    expect(() => corsPlugin({ origin: '*', credentials: true })).toThrow(/credentials/);
+    expect(() => corsPlugin({ credentials: true })).toThrow(/credentials/);
+    expect(() => corsPlugin({ origin: 'https://app.example.com', credentials: true })).not.toThrow();
   });
 
   it('forwards methods and allowed headers to the preflight response', async () => {

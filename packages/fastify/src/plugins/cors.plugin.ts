@@ -1,9 +1,9 @@
 import fastifyCors from '@fastify/cors';
 import { CorsOrigin, createOriginMatcher, normalizeCorsOrigins } from '@maroonedsoftware/servercore';
-import { ServerKitMiddleware } from '../../serverkit.middleware.js';
+import { serverKitPlugin, type ServerKitPlugin } from '../serverkit.plugin.js';
 
 /**
- * CORS options for {@link corsMiddleware}.
+ * CORS options for {@link corsPlugin}.
  * Extends `@fastify/cors` options with an `origin` that may be a string or array of strings/RegExps.
  */
 export interface CorsOptions extends Omit<fastifyCors.FastifyCorsOptions, 'origin'> {
@@ -15,14 +15,14 @@ export interface CorsOptions extends Omit<fastifyCors.FastifyCorsOptions, 'origi
  * Adds CORS headers to responses using `@fastify/cors` with ServerKit-compatible origin matching.
  * Supports `'*'`, exact string origins, and RegExp patterns.
  *
- * The plugin is applied to the root instance synchronously rather than through `register`, which
- * defers loading until the server is ready: that keeps its `onRequest` hook in stack order, so a
- * preflight is answered before the authentication hook runs, as in the Koa stack.
+ * `@fastify/cors` is registered from inside this plugin, so it loads in stack order: a preflight
+ * is answered before the authentication hook runs, as long as this plugin is registered ahead of
+ * {@link authenticationPlugin}.
  *
  * @param options - Optional {@link CorsOptions}; defaults to `GET,HEAD,PUT,POST,DELETE,PATCH` methods.
- * @returns {@link ServerKitMiddleware} that applies CORS handling.
+ * @returns A {@link ServerKitPlugin} that applies CORS handling.
  */
-export const corsMiddleware = (options?: CorsOptions): ServerKitMiddleware => {
+export const corsPlugin = (options?: CorsOptions): ServerKitPlugin => {
   // Normalize origin to an array up front. A plain string would otherwise be iterated
   // character-by-character, so a single-origin string could never match.
   const matchers = normalizeCorsOrigins(options?.origin);
@@ -31,7 +31,7 @@ export const corsMiddleware = (options?: CorsOptions): ServerKitMiddleware => {
   // credentials produces a universal credentialed CORS policy, which browsers forbid
   // and which defeats the purpose of same-origin protection. Fail fast at construction.
   if (options?.credentials && matchers.some(matcher => matcher === '*')) {
-    throw new Error('corsMiddleware: origin "*" cannot be combined with credentials: true — specify explicit origin(s) instead.');
+    throw new Error('corsPlugin: origin "*" cannot be combined with credentials: true — specify explicit origin(s) instead.');
   }
 
   // Reflect the request origin as its own matcher to support RegExp allow-lists; `false`
@@ -42,15 +42,11 @@ export const corsMiddleware = (options?: CorsOptions): ServerKitMiddleware => {
     callback(null, reflected === '' ? false : reflected);
   };
 
-  return app => {
-    fastifyCors(
-      app,
-      {
-        ...options,
-        origin,
-        methods: options?.methods ?? 'GET,HEAD,PUT,POST,DELETE,PATCH',
-      },
-      () => {},
-    );
-  };
+  return serverKitPlugin('serverkit.cors', async app => {
+    await app.register(fastifyCors, {
+      ...options,
+      origin,
+      methods: options?.methods ?? 'GET,HEAD,PUT,POST,DELETE,PATCH',
+    });
+  });
 };

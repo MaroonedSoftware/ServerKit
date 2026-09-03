@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { httpError, ServerkitError } from '@maroonedsoftware/errors';
-import { errorMiddleware, normalizeFastifyError } from '../../../src/middleware/server/error.middleware.js';
-import { createTestApp } from '../../test.app.js';
+import { errorPlugin, normalizeFastifyError } from '../../src/plugins/error.plugin.js';
+import { serverKitPlugin } from '../../src/serverkit.plugin.js';
+import { createTestApp } from '../test.app.js';
 
-describe('errorMiddleware (fastify)', () => {
+describe('errorPlugin (fastify)', () => {
   it('renders an HttpError with its status, message, details, and headers', async () => {
     const { app, logger } = await createTestApp();
     const error = httpError(403).withDetails({ reason: 'nope' }).withHeaders({ 'www-authenticate': 'Bearer error="mfa_required"' });
@@ -69,12 +70,13 @@ describe('errorMiddleware (fastify)', () => {
 
   it('renders an error thrown before the context hook through the root logger', async () => {
     const { app, logger } = await createTestApp({
-      middleware: container => [
-        errorMiddleware(container),
-        app =>
+      plugins: container => [
+        errorPlugin(container),
+        serverKitPlugin('throws', async app =>
           app.addHook('onRequest', async () => {
             throw httpError(418);
           }),
+        ),
       ],
     });
     app.get('/', async () => 'ok');

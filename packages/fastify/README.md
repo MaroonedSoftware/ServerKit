@@ -21,16 +21,17 @@ Peer dependencies: `fastify` (v5), `@fastify/cors`.
 - Request context on `FastifyRequest`: request-scoped `container`, `logger`, `requestId`,
   `correlationId`, `userAgent`, `ipAddress`, `parsedBody`, `rawBody`, `authenticationSession`, and
   `reply`, with `ServerKitContext` as the DI token for the live request.
-- `errorMiddleware`: ServerKit's error rendering as Fastify's error and not-found handlers, with
+- `errorPlugin`: ServerKit's error rendering as Fastify's error and not-found handlers, with
   Fastify's own 4xx errors mapped to `HttpError`.
+- `serverKitPlugin`: wraps a custom stack step with `fastify-plugin` so its hooks reach every route.
 - `ServerKitRouter`: a Koa-style route collector (`get`, `post`, `use`, ...) that mounts as an
   encapsulated Fastify plugin with `preHandler` guards.
 - `bodyParserMiddleware`: per-route, content-type-driven body parsing into `request.parsedBody`
   with the shared 400 / 411 / 415 / 422 contract. Fastify's eager parsers are replaced by a lazy
   catch-all so the raw stream is untouched until a route asks for it.
-- `corsMiddleware` (`@fastify/cors` with `'*'`, exact, and RegExp origins), `rateLimiterMiddleware`
+- `corsPlugin` (`@fastify/cors` with `'*'`, exact, and RegExp origins), `rateLimiterPlugin`
   (per-IP `rate-limiter-flexible`, 429 with `retry-after` / `x-ratelimit-*`), and
-  `authenticationMiddleware` (resolves `Authorization` through the registered
+  `authenticationPlugin` (resolves `Authorization` through the registered
   `AuthenticationSchemeHandler` into `request.authenticationSession`, skipping `anonymousPaths`).
 - `requirePolicy` and `requireSignature` route guards, with the same semantics as the Koa package.
 - `sendJson`: send a pre-serialized JSON string with the right content type.
@@ -57,28 +58,31 @@ router.post('/invoices', bodyParserMiddleware(['application/json']), async reque
 
 const builder = new ServerKitServerBuilder();
 await builder.setup(config, logger, modules);
-builder.setupMiddleware().setupRoutes([router]);
+builder.setupPlugins().setupRoutes([router]);
 await builder.start(3000, { shutdownGraceMs: 15_000 });
 ```
 
-`setupMiddleware()` applies the default stack: `errorMiddleware` → `serverKitContextMiddleware` →
-`rateLimiterMiddleware` (only when a `RateLimiter` is registered) → `corsMiddleware` →
-`authenticationMiddleware`. Handlers receive `(request, reply)`; return a value to send it, or
+`setupPlugins()` registers the default stack: `errorPlugin` → `serverKitContextPlugin` →
+`rateLimiterPlugin` (only when a `RateLimiter` is registered) → `corsPlugin` →
+`authenticationPlugin`. Handlers receive `(request, reply)`; return a value to send it, or
 write through `reply`.
 
-### Middleware on Fastify
+### The plugin stack
 
-Fastify has no `(ctx, next)` chain. A `ServerKitMiddleware` here is a registration step,
-`(app: FastifyInstance) => void`, that installs a hook, an error handler, or a plugin on the root
-instance. `setupMiddleware` applies them in order, so the canonical stack is still an ordered list:
+Fastify has no `(ctx, next)` chain. Each step of the ServerKit stack is a Fastify plugin, wrapped
+with `fastify-plugin` so its hooks apply to every route rather than being encapsulated. Plugins
+load in registration order, so the canonical stack is an ordered list:
 
 ```typescript
-builder.setupMiddleware(container => [
-  errorMiddleware(container),
-  serverKitContextMiddleware(container),
-  app => app.addHook('onRequest', async request => request.logger.info('hello')),
+builder.setupPlugins(container => [
+  errorPlugin(container),
+  serverKitContextPlugin(container),
+  serverKitPlugin('greeting', async app => app.addHook('onRequest', async request => request.logger.info('hello'))),
 ]);
 ```
+
+Use `serverKitPlugin(name, fn)` for your own steps. A plain plugin passed here would be
+encapsulated and its hooks would never run.
 
 Route guards are `ServerKitRouterMiddleware`, `(request, reply) => Promise<void>`, run as
 `preHandler` hooks in the order given: router-wide guards from `router.use(...)` first, then the
@@ -88,12 +92,12 @@ route's own, then the handler. Throw an `HttpError` to reject.
 
 `builder.app` is the underlying `FastifyInstance` for plugins ServerKit does not wrap (OpenAPI,
 static files, websockets) and for `app.inject()` in tests. Requests reaching routes registered
-there still carry the ServerKit context once `setupMiddleware` has run.
+there still carry the ServerKit context once `setupPlugins` has run.
 
 ### Authentication and authorization
 
 ```typescript
-builder.setupMiddleware(container => serverKitDefaultMiddleware(container, { authentication: { anonymousPaths: ['/health', /^\/public\//] } }));
+builder.setupPlugins(container => serverKitDefaultPlugins(container, { authentication: { anonymousPaths: ['/health', /^\/public\//] } }));
 
 router.get('/profile', requirePolicy(), handler); // default 'auth.session.mfa.satisfied' gate
 router.post('/mfa/enroll', requirePolicy({ policy: false }), handler); // valid session only
@@ -107,13 +111,13 @@ you pass.
 ### CORS and rate limiting
 
 ```typescript
-corsMiddleware({ origin: ['https://app.example.com', /\.example\.com$/], credentials: true });
+corsPlugin({ origin: ['https://app.example.com', /\.example\.com$/], credentials: true });
 registry.register(RateLimiter).useInstance(new RateLimiterMemory({ points: 100, duration: 60 }));
 ```
 
-The default stack inserts `rateLimiterMiddleware` only when a `RateLimiter` is registered. The
-CORS plugin is applied synchronously so its hook stays ahead of authentication and a preflight is
-answered before any scheme handler runs.
+The default stack inserts `rateLimiterPlugin` only when a `RateLimiter` is registered. The CORS
+plugin is registered ahead of authentication, so a preflight is answered before any scheme handler
+runs.
 
 ### Body parsing
 
@@ -171,20 +175,21 @@ change or `false` for session-only), streaming the `ServerFeed` bus registered i
 | `requestId`             | `string`                | From `X-Request-Id` or generated             |
 | `rawBody`               | `BinaryLike`            | Raw body bytes, after `bodyParserMiddleware` |
 | `parsedBody`            | `unknown`               | Parsed body, after `bodyParserMiddleware`    |
-| `authenticationSession` | `AuthenticationSession` | Set by `authenticationMiddleware`            |
+| `authenticationSession` | `AuthenticationSession` | Set by `authenticationPlugin`            |
 | `reply`                 | `FastifyReply`          | The paired reply, for injected services      |
 
 ### Server builder
 
 - `new ServerKitServerBuilder(options?)`: `{ host?: string; fastify?: FastifyServerOptions }`.
-- `setup(config, logger, modules, parserMappings?)`, `setupMiddleware(factory?)`,
+- `setup(config, logger, modules, parserMappings?)`, `setupPlugins(factory?)`,
   `setupRoutes(routers)`, `start(port, options?)`, `whenReady()`, `lifecycleSignal`, `app`.
 
-### Middleware and guards
+### Plugins and guards
 
-- `errorMiddleware(container)`, `serverKitContextMiddleware(container)`, `corsMiddleware(options?)`,
-  `rateLimiterMiddleware(rateLimiter)`, `authenticationMiddleware(options?)`,
-  `serverKitDefaultMiddleware(container, options?)`.
+- `serverKitPlugin(name, plugin)` for a custom stack step.
+- `errorPlugin(container)`, `serverKitContextPlugin(container)`, `corsPlugin(options?)`,
+  `rateLimiterPlugin(rateLimiter)`, `authenticationPlugin(options?)`,
+  `serverKitDefaultPlugins(container, options?)`.
 - `bodyParserMiddleware(contentTypes)`, `requirePolicy(options?)`, `requireSignature(optionsKey, options?)`.
 - `normalizeFastifyError(error)`: the Fastify-to-`HttpError` mapping the error handler applies.
 

@@ -3,8 +3,9 @@ import { invalidAuthenticationSession, type AuthenticationSession } from '@maroo
 import { PolicyService } from '@maroonedsoftware/policies';
 import { httpError } from '@maroonedsoftware/errors';
 import type { ServerKitModule } from '@maroonedsoftware/servercore';
-import { errorMiddleware } from '../../../src/middleware/server/error.middleware.js';
-import { serverKitContextMiddleware } from '../../../src/middleware/server/serverkit.context.middleware.js';
+import { errorPlugin } from '../../../src/plugins/error.plugin.js';
+import { serverKitPlugin } from '../../../src/serverkit.plugin.js';
+import { serverKitContextPlugin } from '../../../src/plugins/serverkit.context.plugin.js';
 import { requirePolicy, type RequirePolicyOptions } from '../../../src/middleware/router/require.policy.middleware.js';
 import { ServerKitRouter } from '../../../src/serverkit.router.js';
 import { createTestApp } from '../../test.app.js';
@@ -16,13 +17,14 @@ const build = async (current: AuthenticationSession, options?: RequirePolicyOpti
   const module: ServerKitModule = { name: 'policies', setup: async registry => void registry.register(PolicyService).useInstance(policyService) };
   const { app, builder } = await createTestApp({
     modules: [module],
-    middleware: container => [
-      errorMiddleware(container),
-      serverKitContextMiddleware(container),
-      app =>
+    plugins: container => [
+      errorPlugin(container),
+      serverKitContextPlugin(container),
+      serverKitPlugin('test.session', async app =>
         app.addHook('onRequest', async request => {
           request.authenticationSession = current;
         }),
+      ),
     ],
   });
   builder.setupRoutes([ServerKitRouter().get('/', requirePolicy(options), async () => 'ok')]);

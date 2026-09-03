@@ -1,11 +1,11 @@
 import { Container } from 'injectkit';
 import { Logger } from '@maroonedsoftware/logger';
 import { CORRELATION_ID_HEADER, REQUEST_ID_HEADER, resolveRequestIdentity } from '@maroonedsoftware/servercore';
-import { ServerKitMiddleware } from '../../serverkit.middleware.js';
-import { ServerKitContext } from '../../serverkit.context.js';
-import { requestPath } from '../../serverkit.request.js';
+import { serverKitPlugin, type ServerKitPlugin } from '../serverkit.plugin.js';
+import { ServerKitContext } from '../serverkit.context.js';
+import { requestPath } from '../serverkit.request.js';
 
-/** Every field {@link serverKitContextMiddleware} populates, declared up front as request decorators. */
+/** Every field {@link serverKitContextPlugin} populates, declared up front as request decorators. */
 const CONTEXT_FIELDS = [
   'container',
   'logger',
@@ -27,8 +27,8 @@ const CONTEXT_FIELDS = [
  * Registers the live request against the {@link ServerKitContext} injection token in the
  * request-scoped container so downstream services can inject the current context.
  *
- * Installs an `onRequest` hook, so it runs before body parsing, routing guards, and handlers.
- * Register it second, right after `errorMiddleware`, so every later hook can use
+ * Installs an `onRequest` hook, so it runs before body parsing, route guards, and handlers.
+ * Register it second, right after `errorPlugin`, so every later plugin can use
  * `request.container` and `request.logger`.
  *
  * The scoped container is disposed when the raw response closes (after the body is flushed, or
@@ -37,10 +37,10 @@ const CONTEXT_FIELDS = [
  * `request.container` after the response has closed throws.
  *
  * @param container - Root injectkit {@link Container} used to create a scoped container and resolve {@link Logger}.
- * @returns {@link ServerKitMiddleware} that decorates the request and installs the hook.
+ * @returns A {@link ServerKitPlugin} that decorates the request and installs the hook.
  */
-export const serverKitContextMiddleware = (container: Container): ServerKitMiddleware => {
-  return app => {
+export const serverKitContextPlugin = (container: Container): ServerKitPlugin => {
+  return serverKitPlugin('serverkit.context', async app => {
     // Declared without a value: Fastify forbids reference-type defaults on request decorators
     // (they would be shared across requests), and declaring the keys keeps the request's
     // hidden class stable.
@@ -79,5 +79,5 @@ export const serverKitContextMiddleware = (container: Container): ServerKitMiddl
       request.headers[REQUEST_ID_HEADER] = requestId;
       void reply.header(CORRELATION_ID_HEADER, correlationId).header(REQUEST_ID_HEADER, requestId);
     });
-  };
+  });
 };

@@ -1,14 +1,15 @@
 import { describe, it, expect, vi } from 'vitest';
 import { Injectable, type Container } from 'injectkit';
 import { Logger } from '@maroonedsoftware/logger';
-import { ServerKitContext } from '../../../src/serverkit.context.js';
-import { errorMiddleware } from '../../../src/middleware/server/error.middleware.js';
-import { serverKitContextMiddleware } from '../../../src/middleware/server/serverkit.context.middleware.js';
-import { createTestApp } from '../../test.app.js';
+import { ServerKitContext } from '../../src/serverkit.context.js';
+import { errorPlugin } from '../../src/plugins/error.plugin.js';
+import { serverKitContextPlugin } from '../../src/plugins/serverkit.context.plugin.js';
+import { serverKitPlugin } from '../../src/serverkit.plugin.js';
+import { createTestApp } from '../test.app.js';
 
 const UUID = /^[0-9a-f-]{36}$/;
 
-describe('serverKitContextMiddleware (fastify)', () => {
+describe('serverKitContextPlugin (fastify)', () => {
   it('populates the request context and echoes the ids on the reply', async () => {
     const { app, logger } = await createTestApp();
     let seen: Record<string, unknown> = {};
@@ -97,12 +98,12 @@ describe('serverKitContextMiddleware (fastify)', () => {
     await vi.waitFor(() => expect(() => scoped!.get(Logger)).toThrow());
   });
 
-  it('is usable from an onRequest hook registered after it', async () => {
+  it('is usable from a plugin registered after it', async () => {
     const { app, logger } = await createTestApp({
-      middleware: container => [
-        errorMiddleware(container),
-        serverKitContextMiddleware(container),
-        app => app.addHook('onRequest', async request => request.logger.info('hook')),
+      plugins: container => [
+        errorPlugin(container),
+        serverKitContextPlugin(container),
+        serverKitPlugin('uses.context', async app => app.addHook('onRequest', async request => request.logger.info('hook'))),
       ],
     });
     app.get('/', async () => 'ok');

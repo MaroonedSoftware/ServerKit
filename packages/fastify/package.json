@@ -58,6 +58,7 @@
     "@maroonedsoftware/logger": "workspace:*",
     "@maroonedsoftware/policies": "workspace:*",
     "@maroonedsoftware/servercore": "workspace:*",
+    "fastify-plugin": "^6.0.0",
     "injectkit": "^1.7.1",
     "type-is": "^2.1.0"
   },

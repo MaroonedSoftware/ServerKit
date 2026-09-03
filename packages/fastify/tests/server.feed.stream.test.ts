@@ -7,7 +7,8 @@ import type { ServerKitModule } from '@maroonedsoftware/servercore';
 import { serverFeedRouter } from '../src/serverfeed/server.feed.stream.js';
 import * as subpath from '../src/serverfeed.js';
 import { ServerKitServerBuilder } from '../src/serverkit.server.builder.js';
-import { createLogger, createTestApp, minimalMiddleware } from './test.app.js';
+import { serverKitPlugin } from '../src/serverkit.plugin.js';
+import { createLogger, createTestApp, minimalPlugins } from './test.app.js';
 
 const session = { sessionToken: 't', subject: 'alice', factors: [], claims: {} } as unknown as AuthenticationSession;
 
@@ -16,12 +17,13 @@ const feedModule = (feed: ServerFeed): ServerKitModule => ({
   setup: async registry => void registry.register(ServerFeed).useInstance(feed),
 });
 
-const withSession = (current: AuthenticationSession) => (container: Parameters<typeof minimalMiddleware>[0]) => [
-  ...minimalMiddleware(container),
-  (app: import('fastify').FastifyInstance) =>
+const withSession = (current: AuthenticationSession) => (container: Parameters<typeof minimalPlugins>[0]) => [
+  ...minimalPlugins(container),
+  serverKitPlugin('test.session', async app =>
     app.addHook('onRequest', async request => {
       request.authenticationSession = current;
     }),
+  ),
 ];
 
 describe('serverFeedRouter (fastify)', () => {
@@ -29,7 +31,7 @@ describe('serverFeedRouter (fastify)', () => {
     const feed = new ServerFeed();
     feed.status('render', 'a', 'r1');
     const controller = new AbortController();
-    const { app, builder } = await createTestApp({ modules: [feedModule(feed)], middleware: withSession(session) });
+    const { app, builder } = await createTestApp({ modules: [feedModule(feed)], plugins: withSession(session) });
     builder.setupRoutes([serverFeedRouter({ policy: false, heartbeatMs: 0, signal: controller.signal })]);
 
     const pending = app.inject({ method: 'GET', url: '/server/feed?source=render' });
@@ -46,7 +48,7 @@ describe('serverFeedRouter (fastify)', () => {
   it('honors a custom path', async () => {
     const feed = new ServerFeed();
     const controller = new AbortController();
-    const { app, builder } = await createTestApp({ modules: [feedModule(feed)], middleware: withSession(session) });
+    const { app, builder } = await createTestApp({ modules: [feedModule(feed)], plugins: withSession(session) });
     builder.setupRoutes([serverFeedRouter({ path: '/ops/events', policy: false, heartbeatMs: 0, signal: controller.signal })]);
 
     const pending = app.inject({ method: 'GET', url: '/ops/events' });
@@ -59,7 +61,7 @@ describe('serverFeedRouter (fastify)', () => {
 
   it('rejects an invalid session with 401 before opening the stream', async () => {
     const feed = new ServerFeed();
-    const { app, builder } = await createTestApp({ modules: [feedModule(feed)], middleware: withSession(invalidAuthenticationSession) });
+    const { app, builder } = await createTestApp({ modules: [feedModule(feed)], plugins: withSession(invalidAuthenticationSession) });
     builder.setupRoutes([serverFeedRouter({ policy: false })]);
 
     const response = await app.inject({ method: 'GET', url: '/server/feed' });
@@ -72,7 +74,7 @@ describe('serverFeedRouter (fastify)', () => {
     feed.status('llm', 'b', 'custom');
     const controller = new AbortController();
     const resolveFeed = vi.fn(() => feed);
-    const { app, builder } = await createTestApp({ middleware: withSession(session) });
+    const { app, builder } = await createTestApp({ plugins: withSession(session) });
     builder.setupRoutes([serverFeedRouter({ policy: false, heartbeatMs: 0, signal: controller.signal, resolveFeed })]);
 
     const pending = app.inject({ method: 'GET', url: '/server/feed' });
@@ -114,7 +116,7 @@ describe('serverFeedRouter (fastify)', () => {
       const builder = new ServerKitServerBuilder({ host: '127.0.0.1' });
       await builder.setup({} as never, createLogger(), [feedModule(feed)]);
       builder
-        .setupMiddleware(withSession(session))
+        .setupPlugins(withSession(session))
         .setupRoutes([serverFeedRouter({ policy: false, heartbeatMs: 0, signal: builder.lifecycleSignal })]);
 
       // A backlog event makes the replay write immediately, which flushes the response headers;

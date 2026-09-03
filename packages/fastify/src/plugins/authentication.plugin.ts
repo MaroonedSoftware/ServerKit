@@ -1,12 +1,12 @@
 import { AuthenticationSchemeHandler, invalidAuthenticationSession } from '@maroonedsoftware/authentication';
 import { createAnonymousPathMatcher } from '@maroonedsoftware/servercore';
-import { ServerKitMiddleware } from '../../serverkit.middleware.js';
-import { requestPath } from '../../serverkit.request.js';
+import { serverKitPlugin, type ServerKitPlugin } from '../serverkit.plugin.js';
+import { requestPath } from '../serverkit.request.js';
 
 /**
- * Options for {@link authenticationMiddleware}.
+ * Options for {@link authenticationPlugin}.
  */
-export interface AuthenticationMiddlewareOptions {
+export interface AuthenticationPluginOptions {
   /**
    * Paths where the scheme handler is skipped entirely: `request.authenticationSession` stays
    * {@link invalidAuthenticationSession} and no handler is resolved or awaited. Strings match
@@ -35,22 +35,22 @@ export interface AuthenticationMiddlewareOptions {
  * {@link invalidAuthenticationSession} before delegation, ensuring that any error
  * thrown by the scheme handler leaves the request in a safe, unauthenticated state.
  *
- * Requires `serverKitContextMiddleware` to have been applied first, for `request.container`.
+ * Requires `serverKitContextPlugin` to have been registered first, for `request.container`.
  *
- * @param options - Optional {@link AuthenticationMiddlewareOptions}; `anonymousPaths` lists
+ * @param options - Optional {@link AuthenticationPluginOptions}; `anonymousPaths` lists
  * routes that skip scheme-handler resolution entirely.
- * @returns A {@link ServerKitMiddleware} that installs the hook.
+ * @returns A {@link ServerKitPlugin} that installs the hook.
  *
  * @example
  * ```typescript
- * builder.setupMiddleware(container => [...serverKitDefaultMiddleware(container, { authentication: { anonymousPaths: ['/health', /^\/public\//] } })]);
+ * builder.setupPlugins(container => serverKitDefaultPlugins(container, { authentication: { anonymousPaths: ['/health', /^\/public\//] } }));
  * ```
  */
-export const authenticationMiddleware = (options?: AuthenticationMiddlewareOptions): ServerKitMiddleware => {
+export const authenticationPlugin = (options?: AuthenticationPluginOptions): ServerKitPlugin => {
   // Precompiled once at construction: O(1) for exact paths, a linear scan only for patterns.
   const isAnonymous = createAnonymousPathMatcher(options?.anonymousPaths);
 
-  return app => {
+  return serverKitPlugin('serverkit.authentication', async app => {
     app.addHook('onRequest', async request => {
       request.authenticationSession = invalidAuthenticationSession; // bad initial state so it will fail verification
 
@@ -65,5 +65,5 @@ export const authenticationMiddleware = (options?: AuthenticationMiddlewareOptio
         request.authenticationSession = await schemeHandler.handle(authorizationHeader);
       }
     });
-  };
+  });
 };

@@ -4,8 +4,8 @@ import type { Server } from 'node:http';
 import { ServerkitError } from '@maroonedsoftware/errors';
 import { ServerKitServerBuilderBase } from '@maroonedsoftware/servercore';
 import { ServerKitContext } from './serverkit.context.js';
-import { ServerKitMiddleware } from './serverkit.middleware.js';
-import { serverKitDefaultMiddleware } from './middleware/server/serverkit.default.middlewares.js';
+import { ServerKitPlugin } from './serverkit.plugin.js';
+import { serverKitDefaultPlugins } from './plugins/serverkit.default.plugins.js';
 import { ServerKitRouterType } from './serverkit.router.js';
 
 export { DEFAULT_SHUTDOWN_GRACE_MS, type ServerKitStartOptions } from '@maroonedsoftware/servercore';
@@ -24,19 +24,19 @@ export interface ServerKitFastifyOptions {
 
 /**
  * Fluent builder that wires an InjectKit-backed Fastify server through its full lifecycle:
- * dependency registration, body-parser setup, middleware and route mounting, listening, and
+ * dependency registration, body-parser setup, plugin and route registration, listening, and
  * graceful shutdown.
  *
  * The lifecycle itself (module hooks, signal handling, bounded graceful shutdown) is
  * `ServerKitServerBuilderBase` from `@maroonedsoftware/servercore`; this class adds the Fastify
- * instance, its hook and route registration, and the `listen` binding.
+ * instance, its plugin and route registration, and the `listen` binding.
  *
  * Typical usage runs {@link setup} (which returns the built container), then chains
- * {@link setupMiddleware} → {@link setupRoutes}, then {@link start}:
+ * {@link setupPlugins} → {@link setupRoutes}, then {@link start}:
  * ```typescript
  * const builder = new ServerKitServerBuilder();
  * await builder.setup(config, logger, modules);
- * builder.setupMiddleware().setupRoutes([router]);
+ * builder.setupPlugins().setupRoutes([router]);
  * await builder.start(3000);
  * ```
  *
@@ -67,7 +67,7 @@ export class ServerKitServerBuilder extends ServerKitServerBuilderBase {
    * The underlying Fastify instance: the escape hatch for registering plugins ServerKit does
    * not wrap (OpenAPI, static files, ...) and for `app.inject()` in tests. Registrations made
    * here follow Fastify's own rules; a request that reaches them still carries the ServerKit
-   * context once {@link setupMiddleware} has run.
+   * context once {@link setupPlugins} has run.
    */
   public get app(): FastifyInstance {
     return this.server;
@@ -92,25 +92,29 @@ export class ServerKitServerBuilder extends ServerKitServerBuilderBase {
   }
 
   /**
-   * Applies the registration steps produced by the given factory to the Fastify instance, in order.
+   * Registers the plugins produced by the given factory on the Fastify instance, in order.
    *
-   * @param middlewares - Factory called with the built container; defaults to {@link serverKitDefaultMiddleware}.
+   * Every plugin is `fastify-plugin`-wrapped, so its hooks apply to the whole server, and Fastify
+   * loads them in registration order — which is what makes the canonical stack order a contract.
+   * Registration is queued, not awaited: a plugin that fails rejects the first `listen()`,
+   * `ready()`, or `inject()`. Call this before {@link setupRoutes}.
+   *
+   * @param plugins - Factory called with the built container; defaults to {@link serverKitDefaultPlugins}.
    * @returns This builder, for chaining.
    * @throws {ServerkitError} If called before {@link setup} has built the container.
    */
-  public setupMiddleware(middlewares: (container: Container) => ServerKitMiddleware[] = serverKitDefaultMiddleware): this {
+  public setupPlugins(plugins: (container: Container) => ServerKitPlugin[] = serverKitDefaultPlugins): this {
     this.assertInitialized();
-    for (const middleware of middlewares(this.container)) {
-      middleware(this.server);
+    for (const plugin of plugins(this.container)) {
+      void this.server.register(plugin);
     }
     return this;
   }
 
   /**
-   * Mounts routers onto the server, each as an encapsulated plugin under its own prefix. Root
-   * hooks installed by {@link setupMiddleware} still apply inside them.
+   * Mounts routers on the Fastify instance, after the plugin stack.
    *
-   * @param routes - Routers whose collected routes are registered in order.
+   * @param routes - Routers whose routes are registered, each under its own prefix when it has one.
    * @returns This builder, for chaining.
    */
   public setupRoutes(routes: ServerKitRouterType[]): this {

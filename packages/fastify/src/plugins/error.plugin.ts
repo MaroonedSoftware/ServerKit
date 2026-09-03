@@ -3,7 +3,7 @@ import { Container } from 'injectkit';
 import { Logger } from '@maroonedsoftware/logger';
 import { httpError, HttpStatusMap, IsServerkitError, type HttpStatusCodes } from '@maroonedsoftware/errors';
 import { notFoundBody, renderError } from '@maroonedsoftware/servercore';
-import { ServerKitMiddleware } from '../../serverkit.middleware.js';
+import { serverKitPlugin, type ServerKitPlugin } from '../serverkit.plugin.js';
 
 /** Narrows to an error Fastify itself raised (validation, body limit, unsupported media type, ...). */
 const isFastifyError = (error: unknown): error is FastifyError => {
@@ -38,33 +38,36 @@ export const normalizeFastifyError = (error: unknown): unknown => {
  * synthesises the 404 body for unmatched routes, logging each through the request logger.
  *
  * Installs Fastify's `setErrorHandler` and `setNotFoundHandler`. The status/body/headers split is
- * `renderError` from `@maroonedsoftware/servercore`, shared with every other adapter; a 4xx
- * error Fastify raised itself is first mapped to an `HttpError` (see
- * {@link normalizeFastifyError}). Register it **first**, before `serverKitContextMiddleware`.
+ * `renderError` from `@maroonedsoftware/servercore`, shared with every other adapter; a 4xx error
+ * Fastify raised itself is first mapped to an `HttpError` (see {@link normalizeFastifyError}).
+ * A validation error from `@maroonedsoftware/fastify/zod` is already an `HttpError`, so it renders
+ * with its own details.
+ *
+ * Register it **first**, before {@link serverKitContextPlugin}.
  *
  * @param container - Root container, used to resolve the {@link Logger} when a request failed
  *   before its own scoped logger existed.
- * @returns {@link ServerKitMiddleware} that installs both handlers.
+ * @returns A {@link ServerKitPlugin} that installs both handlers.
  */
-export const errorMiddleware = (container: Container): ServerKitMiddleware => {
-  return app => {
+export const errorPlugin = (container: Container): ServerKitPlugin => {
+  return serverKitPlugin('serverkit.error', async app => {
     // `request.logger` is declared non-optional but is only populated once the context hook has
     // run; an error thrown before that (or in the hook itself) falls back to the root logger.
     const loggerFor = (logger: Logger | undefined): Logger => logger ?? container.get(Logger);
 
-    app.setErrorHandler((error: unknown, request, reply) => {
+    app.setErrorHandler(async (error: unknown, request, reply) => {
       const rendered = renderError(normalizeFastifyError(error));
       loggerFor(request.logger).error(error);
-      void reply
+      return reply
         .headers(rendered.headers ?? {})
         .status(rendered.status)
         .send(rendered.body);
     });
 
-    app.setNotFoundHandler((request, reply) => {
+    app.setNotFoundHandler(async (request, reply) => {
       const body = notFoundBody(`${request.protocol}://${request.host}${request.url ?? ''}`);
       loggerFor(request.logger).warn(body);
-      void reply.status(404).send(body);
+      return reply.status(404).send(body);
     });
-  };
+  });
 };
