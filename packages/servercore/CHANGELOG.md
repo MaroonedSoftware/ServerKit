@@ -1,5 +1,15 @@
 # @maroonedsoftware/servercore
 
+## 0.2.2
+
+### Patch Changes
+
+- 6d66a27: Mark the CORS origin helpers (`CorsOrigin`, `normalizeCorsOrigins`, `createOriginMatcher`) as
+  Koa-only in the docs. `@fastify/cors` matches strings, RegExps, and arrays itself, so the Fastify
+  adapter passes `origin` through and no longer uses them, and a gotcha warns against reintroducing
+  the matcher there. The serverfeed line now names `serverFeedRoutes` for Fastify alongside Koa's
+  `serverFeedRouter`. No runtime change.
+
 ## 0.2.1
 
 ### Patch Changes
