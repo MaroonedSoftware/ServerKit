@@ -15,7 +15,6 @@ const CONTEXT_FIELDS = [
   'correlationId',
   'requestId',
   'rawBody',
-  'parsedBody',
   'authenticationSession',
   'reply',
 ] as const;

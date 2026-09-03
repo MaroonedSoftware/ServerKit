@@ -8,7 +8,7 @@ Repo-wide conventions live in the [root AGENTS.md](../../AGENTS.md).
 The Fastify HTTP layer, the sibling of `@maroonedsoftware/koa`. `ServerKitServerBuilder` wires an
 InjectKit container, body parsers, hooks, and routers, then runs the shared module lifecycle
 around a Fastify instance with graceful shutdown. The request context lives on `FastifyRequest`
-itself (`request.container`, `request.logger`, `request.parsedBody`, ...), with `ServerKitContext`
+itself (`request.container`, `request.logger`, `request.rawBody`, ...), with `ServerKitContext`
 as the DI token for the live request. Do not reach for this package to add Fastify to an
 existing Koa app; pick one adapter per server.
 
@@ -38,12 +38,13 @@ plus `injectkit` and `type-is`.
 
 | Export                      | Kind                       | Shape                                                                                                                                                                                                         | Notes                                                                                             |
 | --------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `ServerKitContext`          | interface + abstract class | `extends FastifyRequest`; the module augmentation adds `container`, `logger`, `loggerName`, `userAgent`, `ipAddress`, `correlationId`, `requestId`, `rawBody`, `parsedBody`, `authenticationSession`, `reply` | Declaration-merged so one symbol is both the type and a DI token. The request **is** the context. |
+| `ServerKitContext`          | interface + abstract class | `extends FastifyRequest`; the module augmentation adds `container`, `logger`, `loggerName`, `userAgent`, `ipAddress`, `correlationId`, `requestId`, `rawBody`, `authenticationSession`, `reply` | Declaration-merged so one symbol is both the type and a DI token. The request **is** the context. |
 | `ServerKitPlugin`           | type                       | `FastifyPluginAsync`                                                                                                                                                                                          | A server-stack plugin, registered in order by `setupPlugins`. Applies to the root instance.       |
 | `serverKitPlugin`           | function                   | `(name: string, plugin: (app: FastifyInstance) => void \| Promise<unknown>) => ServerKitPlugin`                                                                                                               | Wraps a plugin with `fastify-plugin` so its hooks escape encapsulation. Use it for custom steps.  |
 | `createFastifyLogger`       | function                   | `(logger: Logger, bindings?: Record<string, unknown>) => FastifyBaseLogger`                                                                                                                                    | Bridges Fastify's logging to a ServerKit `Logger`. `fatal` maps to `error`. Installed by default. |
 | `ServerKitRoutes`           | type                       | `FastifyPluginAsync`                                                                                                                                                                                          | A route plugin. Encapsulated, so its own hooks apply only to its routes.                          |
 | `ServerKitRouteMount`       | interface                  | `{ plugin: ServerKitRoutes; prefix?: string }`                                                                                                                                                                | A route plugin plus the path prefix to mount it under.                                            |
+| `FastifyContextConfig.body` | augmentation               | `body?: string[]`                                                                                                                                                                                             | Route `config` field: the content types this route accepts a body for. Read by `bodyParserPlugin`. |
 
 ### Server plugins
 
@@ -52,22 +53,22 @@ plus `injectkit` and `type-is`.
 | `errorPlugin`                   | function  | `(container: Container) => ServerKitPlugin`                                                | **Register first.** Installs `setErrorHandler` (via `renderError`) and `setNotFoundHandler`; logs through the request logger, falling back to the root `Logger`.                                            |
 | `normalizeFastifyError`             | function  | `(error: unknown) => unknown`                                                                  | Maps a Fastify-raised 4xx to `httpError(status).withDetails({ reason })`; everything else passes through.                                                                                                  |
 | `serverKitContextPlugin`        | function  | `(container: Container) => ServerKitPlugin`                                                | **Register second.** Declares the request decorators and installs the `onRequest` hook that creates the scope. The scope is disposed when `reply.raw` closes, so a hijacked SSE reply outlives the handler. |
+| `bodyParserPlugin`              | function  | `() => ServerKitPlugin`                                                                    | Replaces Fastify's parsers with ServerKit's, gated by each route's `config.body`. Parses into `request.body`, raw bytes on `request.rawBody`. 400 / 411 / 413 / 415 / 422. Register after the context plugin. |
 | `corsPlugin`                    | function  | `(options?: CorsOptions) => ServerKitPlugin`                                               | Registers `@fastify/cors` from inside the plugin, so its hook keeps stack order. `origin` accepts `'*'`, a string, or a list of strings/RegExps.                                                                      |
 | `CorsOptions`                       | interface | `Omit<FastifyCorsOptions, 'origin'> & { origin?: CorsOrigin }`                                 | —                                                                                                                                                                                                          |
 | `rateLimiterPlugin`             | function  | `(rateLimiter: RateLimiter) => ServerKitPlugin`                                            | Per-IP `onRequest` hook; 429 when exceeded.                                                                                                                                                                |
 | `authenticationPlugin`          | function  | `(options?: AuthenticationPluginOptions) => ServerKitPlugin`                           | `onRequest` hook resolving `Authorization` via `AuthenticationSchemeHandler` into `request.authenticationSession`; strips the header; `anonymousPaths` skips the handler.                                  |
 | `AuthenticationPluginOptions`   | interface | `{ anonymousPaths?: (string \| RegExp)[] }`                                                    | Strings match the path exactly; RegExp is the escape hatch.                                                                                                                                                |
-| `serverKitDefaultPlugins`        | function  | `(container: Container, options?: ServerKitDefaultPluginsOptions) => ServerKitPlugin[]` | error → context → rate limiter (**only if a `RateLimiter` is registered**) → cors (`exposedHeaders: ['WWW-Authenticate']`) → authentication.                                                               |
+| `serverKitDefaultPlugins`        | function  | `(container: Container, options?: ServerKitDefaultPluginsOptions) => ServerKitPlugin[]` | error → context → body parser → rate limiter (**only if a `RateLimiter` is registered**) → cors (`exposedHeaders: ['WWW-Authenticate']`) → authentication.                                                |
 | `ServerKitDefaultPluginsOptions` | interface | `{ authentication?: AuthenticationPluginOptions }`                                         | Forwarded to `authenticationPlugin`.                                                                                                                                                                   |
 
 ### Route guards
 
 | Export                    | Kind      | Shape                                                                                                       | Notes                                                                                                                             |
 | ------------------------- | --------- | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `bodyParserMiddleware`    | function  | `(contentTypes: string[]) => preHandlerAsyncHookHandler`                                                    | Parses per `Content-Type` into `request.parsedBody` / `request.rawBody`. 400 / 411 / 415 / 422.                                   |
 | `requirePolicy`           | function  | `(options?: RequirePolicyOptions) => preHandlerAsyncHookHandler`                                            | 401 on an invalid session; then asserts a policy (403 on deny). Default `'auth.session.mfa.satisfied'`; `false` skips the policy. Also usable in `onRequest`. |
 | `RequirePolicyOptions`    | interface | `{ policy?: string \| false }`                                                                              | —                                                                                                                                 |
-| `requireSignature`        | function  | `<TOptions = SignatureOptions>(optionsKey, options?: RequireSignatureOptions) => preHandlerAsyncHookHandler` | Reads `SignatureOptions` from `AppConfig` by key; asserts with 401. Needs `request.rawBody`, so `bodyParserMiddleware` first.     |
+| `requireSignature`        | function  | `<TOptions = SignatureOptions>(optionsKey, options?: RequireSignatureOptions) => preHandlerAsyncHookHandler` | Reads `SignatureOptions` from `AppConfig` by key; asserts with 401. Needs `request.rawBody`, so the route's `config.body` must allow the payload. |
 | `RequireSignatureOptions` | type      | `{ policy?: string }`                                                                                       | Default `REQUIRE_SIGNATURE_POLICY`.                                                                                               |
 
 ### SSE
@@ -111,12 +112,12 @@ The stream and frame types (`SseStream`, `SseStreamOptions`, `SseFrame`, `frameE
 ## Canonical usage
 
 ```typescript
-import { ServerKitServerBuilder, bodyParserMiddleware, requirePolicy } from '@maroonedsoftware/fastify';
+import { ServerKitServerBuilder, requirePolicy } from '@maroonedsoftware/fastify';
 import type { FastifyPluginAsync } from 'fastify';
 
 const invoiceRoutes: FastifyPluginAsync = async app => {
-  app.post('/invoices', { preHandler: [bodyParserMiddleware(['application/json']), requirePolicy()] }, async request => {
-    const body = await parseAndValidate(request.parsedBody, CreateInvoice);
+  app.post('/invoices', { config: { body: ['application/json'] }, preHandler: [requirePolicy()] }, async request => {
+    const body = await parseAndValidate(request.body, CreateInvoice);
     return request.container.get(InvoiceService).create(body);
   });
 };
@@ -146,16 +147,16 @@ follow the snippets here rather than translating the Koa skills, which describe 
   `serverKitDefaultPlugins` over assembling by hand, and wrap a custom step with `serverKitPlugin`
   so its hooks are not encapsulated.
 - Type handlers as `(request: ServerKitContext, reply: FastifyReply)`; the request is the context.
-- Read the parsed request body from **`request.parsedBody`**. Fastify's `request.body` is never
-  populated by ServerKit. Narrow `parsedBody` with `parseAndValidate` from `@maroonedsoftware/zod`.
+- Declare the content types a route accepts in its route `config.body`, e.g.
+  `{ config: { body: ['application/json'] } }`. A route without it rejects any body with 400.
+- Read the parsed body from **`request.body`**, as in any Fastify app. Narrow it with
+  `parseAndValidate` from `@maroonedsoftware/zod`. The raw bytes are on `request.rawBody`.
 - Resolve request-scoped services from `request.container`, never from the root container, and
   log through `request.logger`.
-- Add `bodyParserMiddleware([...])` per route with the content types that route accepts. It is
-  not global.
 - Guard authenticated routes with `requirePolicy()`. Use `{ policy: false }` for
   authenticated-but-ungated routes and a named policy for step-up or AAL2 gates.
-- Store `SignatureOptions` in `AppConfig` and pass `requireSignature` the config key, after
-  `bodyParserMiddleware` on the same route. Never inline a secret.
+- Store `SignatureOptions` in `AppConfig` and pass `requireSignature` the config key on a route
+  whose `config.body` allows the payload, so `request.rawBody` exists. Never inline a secret.
 - Return the response body from a handler, or `return reply.send(...)`; a handler that does
   neither leaves the request hanging. Fastify serializes a returned object as JSON.
 - Write routes as Fastify plugins (`async app => { app.get(...) }`) and pass them to
@@ -175,11 +176,21 @@ follow the snippets here rather than translating the Koa skills, which describe 
   → `preHandler` → handler. ServerKit's server plugins install `onRequest` hooks and its route
   guards are `preHandler` hooks, so a guard can never run before a server plugin. A hook
   registered on `builder.app` after `setupPlugins` still runs after the context hook.
-- **`request.body` is always `undefined`.** The builder removes Fastify's parsers so the raw
-  stream survives until `bodyParserMiddleware`. Fastify's `bodyLimit` therefore does nothing;
-  parser options (`JsonParserOptions.limit`) are the limit.
-- **A chunked body without `Content-Length` counts as "no body"** for the 411 check, exactly as
-  Koa's `ctx.request.length` behaves.
+- **A route without `config.body` rejects every body with 400**, including a route added directly
+  on `builder.app`. Declaring a `schema.body` without it fails the request with a 500 naming the
+  mistake, rather than an opaque 400.
+- **Fastify's `bodyLimit` is only a `Content-Length` pre-check here** (a 413). ServerKit's parsers
+  own the stream, so the enforced ceiling while reading is the parser's own option
+  (`JsonParserOptions.limit`, default 1mb).
+- **`GET`, `HEAD`, and `TRACE` never carry a parsed body.** Fastify does not parse them, so
+  `config.body` on such a route cannot be satisfied and no 411 is raised; a body sent to one is
+  still a 400.
+- **A `preParsing` hook that replaces the payload stream is not honoured.** `ServerKitBodyParser`
+  dispatches on the request headers and reads `request.raw` itself.
+- **Omitting `bodyParserPlugin` from a custom stack leaves Fastify's own parsers active**, so
+  `request.body` is parsed by Fastify with no route allow-list and no ServerKit status contract.
+- **A chunked body without `Content-Length` counts as "no body"** for the 411 check, the same rule
+  the Koa adapter applies.
 - **`errorPlugin` renders three different bodies**, the same security boundary as Koa's: an
   `HttpError` yields its status, message, details, and headers; a bare `ServerkitError` a 500
   **with** details; a plain `Error` a generic 500 with none. A Fastify-raised 4xx becomes an
@@ -227,12 +238,12 @@ src/
   logger/fastify.logger.ts     createFastifyLogger (Logger to FastifyBaseLogger bridge)
   serverkit.server.builder.ts  ServerKitServerBuilder, ServerKitFastifyOptions, ServerKitRoutes
   request/request.accessors.ts Internal header/path helpers (not exported)
-  hooks/                       body.parser, require.policy, require.signature (route guards)
+  hooks/                       require.policy, require.signature (route guards)
   sse/sse.reply.ts             openSseReply
   serverfeed.ts                Subpath entry for ./serverfeed
   serverfeed/server.feed.routes.ts  serverFeedRoutes
-  plugins/                     error (+ normalizeFastifyError), serverkit.context, cors, rate.limiter,
-                               authentication, serverkit.default.plugins
+  plugins/                     error (+ normalizeFastifyError), serverkit.context, body.parser, cors,
+                               rate.limiter, authentication, serverkit.default.plugins
 ```
 
 Tests are in `tests/`, mirroring `src/`; `tests/test.app.ts` builds a server for `app.inject()`.
@@ -243,8 +254,8 @@ Invariants a change must not break:
   registration order, so a step added out of order silently changes hook order.
 - `errorPlugin` must keep calling `renderError`; the three-way rendering split is a security
   boundary. `normalizeFastifyError` must never forward anything but `reason` for a Fastify 4xx.
-- The builder must keep Fastify's parsers removed and the `'*'` catch-all a no-op, or
-  `bodyParserMiddleware` reads an already-consumed stream.
+- `bodyParserPlugin` must keep Fastify's own parsers removed, or its catch-all reads a stream
+  Fastify has already consumed.
 - Scope disposal must stay on `reply.raw` `close`, or hijacked SSE replies lose their services.
 - Graceful shutdown stays the shared base's; `listen` must honour the abort `signal`.
 - **Nothing reachable from `src/index.ts` may import `@maroonedsoftware/serverfeed`.** It is an

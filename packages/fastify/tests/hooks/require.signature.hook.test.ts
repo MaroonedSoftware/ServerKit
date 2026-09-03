@@ -10,8 +10,10 @@ import {
   type SignatureOptions,
   type SignaturePolicyContext,
 } from '@maroonedsoftware/servercore';
-import { bodyParserMiddleware } from '../../src/hooks/body.parser.hook.js';
 import { requireSignature } from '../../src/hooks/require.signature.hook.js';
+import { bodyParserPlugin } from '../../src/plugins/body.parser.plugin.js';
+import { errorPlugin } from '../../src/plugins/error.plugin.js';
+import { serverKitContextPlugin } from '../../src/plugins/serverkit.context.plugin.js';
 import { createTestApp } from '../test.app.js';
 
 const OPTIONS_KEY = 'webhook';
@@ -30,10 +32,14 @@ const makePolicyService = () => {
 const build = async (policy?: string) => {
   const { service, assert } = makePolicyService();
   const module: ServerKitModule = { name: 'policies', setup: async registry => void registry.register(PolicyService).useInstance(service) };
-  const { app } = await createTestApp({ modules: [module], config: new AppConfig({ [OPTIONS_KEY]: OPTIONS }) });
+  const { app } = await createTestApp({
+    modules: [module],
+    config: new AppConfig({ [OPTIONS_KEY]: OPTIONS }),
+    plugins: container => [errorPlugin(container), serverKitContextPlugin(container), bodyParserPlugin()],
+  });
   app.post(
     '/hook',
-    { preHandler: [bodyParserMiddleware(['application/json']), requireSignature(OPTIONS_KEY, policy === undefined ? {} : { policy })] },
+    { config: { body: ['application/json'] }, preHandler: [requireSignature(OPTIONS_KEY, policy === undefined ? {} : { policy })] },
     async () => 'ok',
   );
   return { app, assert };

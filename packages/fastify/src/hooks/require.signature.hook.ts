@@ -24,8 +24,8 @@ export type RequireSignatureOptions = {
  * `request.container` via `PolicyService`, asserting with status `401` — the shared
  * `assertRequestSignature` from `@maroonedsoftware/servercore`.
  *
- * Requires `request.rawBody` to be populated before this guard runs, so the route must accept a
- * body (`bodyParserMiddleware` ahead of it on the route).
+ * Requires `request.rawBody`, which `bodyParserPlugin` populates, so the route must accept the
+ * payload through its `config.body`.
  *
  * @typeParam TOptions - Shape of the config resolved from `AppConfig`; defaults to {@link SignatureOptions}.
  * @param optionsKey - Key used to retrieve the options (`TOptions`) from `AppConfig` via `getAs`.
@@ -34,7 +34,7 @@ export type RequireSignatureOptions = {
  *
  * @example
  * ```typescript
- * app.post('/webhooks/github', { preHandler: [bodyParserMiddleware(['application/json']), requireSignature('webhook')] }, handler);
+ * app.post('/webhooks/github', { config: { body: ['application/json'] }, preHandler: [requireSignature('webhook')] }, handler);
  * ```
  */
 export const requireSignature = <TOptions = SignatureOptions>(

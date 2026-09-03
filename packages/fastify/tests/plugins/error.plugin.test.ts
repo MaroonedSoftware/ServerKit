@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { httpError, ServerkitError } from '@maroonedsoftware/errors';
 import { errorPlugin, normalizeFastifyError } from '../../src/plugins/error.plugin.js';
+import { serverKitContextPlugin } from '../../src/plugins/serverkit.context.plugin.js';
 import { serverKitPlugin } from '../../src/serverkit.plugin.js';
 import { createTestApp } from '../test.app.js';
 
@@ -57,7 +58,9 @@ describe('errorPlugin (fastify)', () => {
   });
 
   it('maps a Fastify-raised 4xx (malformed JSON in a Fastify parser) to an HttpError with the reason as a detail', async () => {
-    const { app } = await createTestApp();
+    // No body parser plugin here: this is about how a Fastify-raised error renders, so Fastify's
+    // own parsers are left in place rather than replaced by ServerKit's.
+    const { app } = await createTestApp({ plugins: container => [errorPlugin(container), serverKitContextPlugin(container)] });
     // Register Fastify's own strict JSON parser on one type so its 400 surfaces.
     app.addContentTypeParser('application/strict+json', { parseAs: 'string' }, app.getDefaultJsonParser('error', 'error'));
     app.post('/', async () => 'ok');

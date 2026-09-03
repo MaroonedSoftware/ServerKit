@@ -11,12 +11,12 @@ const schemeModule = (handle = vi.fn(async () => invalidAuthenticationSession)):
 });
 
 describe('serverKitDefaultPlugins (fastify)', () => {
-  it('builds error, context, cors, and authentication when no RateLimiter is registered', async () => {
+  it('builds error, context, body parser, cors, and authentication when no RateLimiter is registered', async () => {
     const handle = vi.fn(async () => invalidAuthenticationSession);
     const { app, container } = await createTestApp({ modules: [schemeModule(handle)], plugins: serverKitDefaultPlugins });
     app.get('/', async request => ({ requestId: request.requestId, session: request.authenticationSession === invalidAuthenticationSession }));
 
-    expect(serverKitDefaultPlugins(container)).toHaveLength(4);
+    expect(serverKitDefaultPlugins(container)).toHaveLength(5);
 
     const response = await app.inject({
       method: 'GET',
@@ -35,7 +35,7 @@ describe('serverKitDefaultPlugins (fastify)', () => {
     const { app, container } = await createTestApp({ modules: [schemeModule(), limiterModule], plugins: serverKitDefaultPlugins });
     app.get('/', async () => 'ok');
 
-    expect(serverKitDefaultPlugins(container)).toHaveLength(5);
+    expect(serverKitDefaultPlugins(container)).toHaveLength(6);
     expect((await app.inject({ method: 'GET', url: '/' })).statusCode).toBe(200);
     expect((await app.inject({ method: 'GET', url: '/' })).statusCode).toBe(429);
   });

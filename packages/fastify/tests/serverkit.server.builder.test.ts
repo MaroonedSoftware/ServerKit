@@ -47,24 +47,35 @@ describe('ServerKitServerBuilder (fastify)', () => {
       expect(internals(builder).container).toBeInstanceOf(InjectKitContainerNoop);
     });
 
-    it('removes the built-in parsers so bodies stay unread until a route parses them', async () => {
+    it('leaves Fastify parsing bodies its own way until bodyParserPlugin replaces it', async () => {
       const builder = new ServerKitServerBuilder();
       await builder.setup(config, logger, []);
-      let seen: unknown = 'not called';
-      builder.app.post('/echo', async request => {
-        seen = request.body;
-        return { ok: true };
-      });
+      builder.app.post('/echo', async request => ({ body: request.body }));
 
-      const response = await builder.app.inject({
+      const bare = await builder.app.inject({
         method: 'POST',
         url: '/echo',
         headers: { 'content-type': 'application/json' },
         payload: '{"a":1}',
       });
 
-      expect(response.statusCode).toBe(200);
-      expect(seen).toBeUndefined();
+      // No stack: Fastify's own JSON parser ran, unaware of any route allow-list.
+      expect(bare.json()).toEqual({ body: { a: 1 } });
+
+      const gated = new ServerKitServerBuilder();
+      await gated.setup(config, logger, []);
+      gated.setupPlugins(minimalPlugins);
+      gated.app.post('/echo', async request => ({ body: request.body }));
+
+      // With the ServerKit stack, the same request is gated by the route's config.body.
+      const response = await gated.app.inject({
+        method: 'POST',
+        url: '/echo',
+        headers: { 'content-type': 'application/json' },
+        payload: '{"a":1}',
+      });
+
+      expect(response.statusCode).toBe(400);
     });
 
     it('forwards Fastify options', () => {

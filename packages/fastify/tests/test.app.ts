@@ -7,9 +7,14 @@ import { ServerKitServerBuilder, type ServerKitFastifyOptions } from '../src/ser
 import type { ServerKitPlugin } from '../src/serverkit.plugin.js';
 import { errorPlugin } from '../src/plugins/error.plugin.js';
 import { serverKitContextPlugin } from '../src/plugins/serverkit.context.plugin.js';
+import { bodyParserPlugin } from '../src/plugins/body.parser.plugin.js';
 
-/** Error handling and the request context only: enough for most suites, and no scheme handler needed. */
-export const minimalPlugins = (container: Container): ServerKitPlugin[] => [errorPlugin(container), serverKitContextPlugin(container)];
+/** Errors, the request context, and body parsing: enough for most suites, and no scheme handler needed. */
+export const minimalPlugins = (container: Container): ServerKitPlugin[] => [
+  errorPlugin(container),
+  serverKitContextPlugin(container),
+  bodyParserPlugin(),
+];
 
 /** A silent, spy-able logger. */
 export const createLogger = (): Logger =>

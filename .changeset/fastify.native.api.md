@@ -35,3 +35,12 @@ re-create Koa's request API. `setupRoutes` now takes route plugins, each optiona
 are typed as Fastify hook handlers and go in a route's `preHandler` (or `onRequest`) array.
 `serverFeedRouter` becomes `serverFeedRoutes` and returns a route plugin, guarding the stream in
 `onRequest` so an unauthorised client is rejected before the socket is taken over.
+
+Bodies are parsed through Fastify's content-type parser rather than a per-route middleware.
+`bodyParserPlugin` installs ServerKit's DI parsers as the server's parser and gates each request
+on the route's `config.body` allow-list, so the parsed value arrives on Fastify's own
+`request.body` and `request.parsedBody` is gone. `bodyParserMiddleware` is removed; a route now
+declares `{ config: { body: ['application/json'] } }` instead. The 400 / 411 / 415 / 422 contract
+is unchanged, `GET`, `HEAD`, and `TRACE` are exempt from the 411 since Fastify never parses them,
+and Fastify's `bodyLimit` now acts as a `Content-Length` pre-check answering 413. The ceiling
+enforced while reading is still the parser's own option, such as `JsonParserOptions.limit`.

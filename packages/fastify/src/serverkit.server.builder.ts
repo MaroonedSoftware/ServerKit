@@ -62,10 +62,9 @@ export interface ServerKitFastifyOptions {
  * await builder.start(3000);
  * ```
  *
- * Body parsing is lazy and per route, as on Koa: Fastify's built-in JSON and text parsers are
- * removed at construction and a no-op catch-all is installed, so `request.raw` is left unread
- * until a route's `bodyParserMiddleware` consumes it. Fastify's `request.body` is therefore
- * never populated; handlers read `request.parsedBody`.
+ * Body parsing runs through ServerKit's own parsers, installed by `bodyParserPlugin`: a route
+ * declares the content types it accepts in its `config.body`, and the parsed value arrives on
+ * Fastify's `request.body` as usual.
  *
  * Construction sets Luxon's default zone to UTC and installs a noop container placeholder;
  * lifecycle methods that need the real container throw until {@link setup} has run.
@@ -109,11 +108,6 @@ export class ServerKitServerBuilder extends ServerKitServerBuilderBase {
     // Fastify closes before the Node server emits 'close', which is what drives the shared
     // shutdown; this only marks the boundary in the log.
     this.server.addHook('onClose', async () => this.logger.info('Fastify server closing'));
-
-    // ServerKit parses lazily per route (see the class docs). Every content type, including a
-    // missing one, resolves to this catch-all, which leaves the raw stream untouched.
-    this.server.removeAllContentTypeParsers();
-    this.server.addContentTypeParser('*', (_request, _payload, done) => done(null, undefined));
   }
 
   /**

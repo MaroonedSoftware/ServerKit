@@ -19,7 +19,7 @@ Peer dependencies: `fastify` (v5), `@fastify/cors`.
 - `ServerKitServerBuilder`: DI container setup, module lifecycle (`setup` / `start` / `ready` /
   `shutdown`), bounded graceful shutdown, and a `host` option that binds every interface by default.
 - Request context on `FastifyRequest`: request-scoped `container`, `logger`, `requestId`,
-  `correlationId`, `userAgent`, `ipAddress`, `parsedBody`, `rawBody`, `authenticationSession`, and
+  `correlationId`, `userAgent`, `ipAddress`, `rawBody`, `authenticationSession`, and
   `reply`, with `ServerKitContext` as the DI token for the live request.
 - `errorPlugin`: ServerKit's error rendering as Fastify's error and not-found handlers, with
   Fastify's own 4xx errors mapped to `HttpError`.
@@ -27,9 +27,9 @@ Peer dependencies: `fastify` (v5), `@fastify/cors`.
 - `createFastifyLogger`: bridges Fastify's own logging onto the ServerKit `Logger`, so startup
   lines, `request.log`, and plugin warnings land wherever the application logs.
 - Routes are plain Fastify plugins passed to `setupRoutes`, optionally mounted under a prefix.
-- `bodyParserMiddleware`: per-route, content-type-driven body parsing into `request.parsedBody`
-  with the shared 400 / 411 / 415 / 422 contract. Fastify's eager parsers are replaced by a lazy
-  catch-all so the raw stream is untouched until a route asks for it.
+- `bodyParserPlugin`: body parsing through ServerKit's DI parsers, gated by each route's
+  `config.body` allow-list, with the shared 400 / 411 / 415 / 422 contract. The parsed value lands
+  on Fastify's own `request.body`, the raw bytes on `request.rawBody`.
 - `corsPlugin` (`@fastify/cors` with `'*'`, exact, and RegExp origins), `rateLimiterPlugin`
   (per-IP `rate-limiter-flexible`, 429 with `retry-after` / `x-ratelimit-*`), and
   `authenticationPlugin` (resolves `Authorization` through the registered
@@ -47,12 +47,12 @@ Peer dependencies: `fastify` (v5), `@fastify/cors`.
 ### Basic setup
 
 ```typescript
-import { ServerKitServerBuilder, bodyParserMiddleware, requirePolicy } from '@maroonedsoftware/fastify';
+import { ServerKitServerBuilder, requirePolicy } from '@maroonedsoftware/fastify';
 import type { FastifyPluginAsync } from 'fastify';
 
 const invoiceRoutes: FastifyPluginAsync = async app => {
-  app.post('/invoices', { preHandler: [bodyParserMiddleware(['application/json']), requirePolicy()] }, async request => {
-    const body = await parseAndValidate(request.parsedBody, CreateInvoice);
+  app.post('/invoices', { config: { body: ['application/json'] }, preHandler: [requirePolicy()] }, async request => {
+    const body = await parseAndValidate(request.body, CreateInvoice);
     return request.container.get(InvoiceService).create(body);
   });
 };
@@ -64,7 +64,7 @@ await builder.start(3000, { shutdownGraceMs: 15_000 });
 ```
 
 `setupPlugins()` registers the default stack: `errorPlugin` → `serverKitContextPlugin` →
-`rateLimiterPlugin` (only when a `RateLimiter` is registered) → `corsPlugin` →
+`bodyParserPlugin` → `rateLimiterPlugin` (only when a `RateLimiter` is registered) → `corsPlugin` →
 `authenticationPlugin`. Handlers receive `(request, reply)`; return a value to send it, or
 write through `reply`.
 
@@ -125,10 +125,11 @@ builder.setupPlugins(container => serverKitDefaultPlugins(container, { authentic
 
 app.get('/profile', { preHandler: [requirePolicy()] }, handler); // default 'auth.session.mfa.satisfied' gate
 app.post('/mfa/enroll', { preHandler: [requirePolicy({ policy: false })] }, handler); // valid session only
-app.post('/webhooks/github', { preHandler: [bodyParserMiddleware(['application/json']), requireSignature('webhook')] }, handler);
+app.post('/webhooks/github', { config: { body: ['application/json'] }, preHandler: [requireSignature('webhook')] }, handler);
 ```
 
-`requireSignature` needs `request.rawBody`, so `bodyParserMiddleware` goes first on the route.
+`requireSignature` needs `request.rawBody`, so the route must accept the payload through
+`config.body`.
 `SignatureOptions` (`header`, `secret`, `algorithm`, `digest`) live in `AppConfig` under the key
 you pass.
 
@@ -145,13 +146,19 @@ runs.
 
 ### Body parsing
 
-Fastify normally parses JSON before any hook runs. ServerKit parses lazily and per route instead:
-the builder removes Fastify's parsers and installs a no-op catch-all, and `bodyParserMiddleware`
-reads `request.raw` when the route allows a body. Consequences:
+Bodies are parsed by ServerKit's own parsers, chosen by `Content-Type` from the DI-registered
+mappings, and each route declares what it accepts:
 
-- Read `request.parsedBody` (and `request.rawBody`). Fastify's `request.body` stays `undefined`.
-- Fastify's `bodyLimit` does not apply; the parser options (`JsonParserOptions.limit`, ...) do.
-- A route without `bodyParserMiddleware` never reads its body.
+```typescript
+app.post('/invoices', { config: { body: ['application/json'] } }, async request => request.body);
+```
+
+- The parsed value is on `request.body` and the raw bytes on `request.rawBody`.
+- A route with no `config.body` accepts no body: sending one is a 400. A missing required body is
+  a 411, a disallowed type a 415, an unreadable one a 422.
+- Fastify's `bodyLimit` acts only as a `Content-Length` pre-check (a 413). The ceiling enforced
+  while reading is the parser's own option, e.g. `JsonParserOptions.limit`.
+- `GET`, `HEAD`, and `TRACE` are never parsed by Fastify, so they carry no `request.body`.
 
 ## Server-Sent Events
 
@@ -197,8 +204,7 @@ change or `false` for session-only), streaming the `ServerFeed` bus registered i
 | `ipAddress`             | `string`                | Client IP                                    |
 | `correlationId`         | `string`                | From `X-Correlation-Id` or generated         |
 | `requestId`             | `string`                | Fastify's `request.id`, from `X-Request-Id` or generated |
-| `rawBody`               | `BinaryLike`            | Raw body bytes, after `bodyParserMiddleware` |
-| `parsedBody`            | `unknown`               | Parsed body, after `bodyParserMiddleware`    |
+| `rawBody`               | `BinaryLike`            | Raw body bytes, after `bodyParserPlugin`     |
 | `authenticationSession` | `AuthenticationSession` | Set by `authenticationPlugin`            |
 | `reply`                 | `FastifyReply`          | The paired reply, for injected services      |
 
@@ -212,9 +218,9 @@ change or `false` for session-only), streaming the `ServerFeed` bus registered i
 
 - `serverKitPlugin(name, plugin)` for a custom stack step.
 - `errorPlugin(container)`, `serverKitContextPlugin(container)`, `corsPlugin(options?)`,
-  `rateLimiterPlugin(rateLimiter)`, `authenticationPlugin(options?)`,
+  `rateLimiterPlugin(rateLimiter)`, `authenticationPlugin(options?)`, `bodyParserPlugin()`,
   `serverKitDefaultPlugins(container, options?)`.
-- `bodyParserMiddleware(contentTypes)`, `requirePolicy(options?)`, `requireSignature(optionsKey, options?)`.
+- `requirePolicy(options?)`, `requireSignature(optionsKey, options?)`.
 - `normalizeFastifyError(error)`: the Fastify-to-`HttpError` mapping the error handler applies.
 
 ### Helpers
