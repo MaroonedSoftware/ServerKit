@@ -1,5 +1,12 @@
 # @maroonedsoftware/koa
 
+## 3.2.1
+
+### Patch Changes
+
+- Updated dependencies [0dd2dbb]
+  - @maroonedsoftware/servercore@0.2.1
+
 ## 3.2.0
 
 ### Minor Changes
