@@ -1,7 +1,7 @@
 import { invalidAuthenticationSession } from '@maroonedsoftware/authentication';
 import { PolicyService } from '@maroonedsoftware/policies';
 import { unauthorizedError } from '@maroonedsoftware/errors';
-import { ServerKitRouterMiddleware } from '../../serverkit.middleware.js';
+import type { preHandlerAsyncHookHandler } from 'fastify';
 
 /**
  * Options for {@link requirePolicy}.
@@ -26,7 +26,7 @@ const DEFAULT_POLICY = 'auth.session.mfa.satisfied' as const;
  * Route guard that enforces a valid authentication session and, by
  * default, the `'auth.session.mfa.satisfied'` policy.
  *
- * Reads `request.authenticationSession` (set by `authenticationMiddleware`) and:
+ * Reads `request.authenticationSession` (set by `authenticationPlugin`) and:
  *
  * - Throws HTTP 401 with `WWW-Authenticate: Bearer error="invalid_token"`
  *   when the session is `invalidAuthenticationSession`.
@@ -40,7 +40,8 @@ const DEFAULT_POLICY = 'auth.session.mfa.satisfied' as const;
  * - Otherwise lets the request through.
  *
  * @param options - Optional. Defaults to `{ policy: 'auth.session.mfa.satisfied' }`.
- * @returns A {@link ServerKitRouterMiddleware} that guards the route.
+ * @returns A Fastify hook handler to put in a route's `preHandler` (or `onRequest`, to reject
+ *   before the body is read).
  * @throws {HttpError} 401 when the session is invalid.
  * @throws {HttpError} 403 when the policy denies (with `details`, `headers`,
  *   and `internalDetails` populated by the policy).
@@ -48,16 +49,16 @@ const DEFAULT_POLICY = 'auth.session.mfa.satisfied' as const;
  * @example
  * ```typescript
  * // Default MFA gate
- * router.get('/profile', requirePolicy(), handler);
+ * app.get('/profile', { preHandler: [requirePolicy()] }, handler);
  *
  * // AAL2 step-up gate
- * router.post('/admin/dangerous', requirePolicy({ policy: 'auth.session.assurance.level' }), handler);
+ * app.post('/admin/dangerous', { preHandler: [requirePolicy({ policy: 'auth.session.assurance.level' })] }, handler);
  *
  * // Authenticated-only (no policy)
- * router.post('/mfa/enroll', requirePolicy({ policy: false }), handler);
+ * app.post('/mfa/enroll', { preHandler: [requirePolicy({ policy: false })] }, handler);
  * ```
  */
-export const requirePolicy = (options: RequirePolicyOptions = {}): ServerKitRouterMiddleware => {
+export const requirePolicy = (options: RequirePolicyOptions = {}): preHandlerAsyncHookHandler => {
   const policy = options.policy === undefined ? DEFAULT_POLICY : options.policy;
 
   return async request => {

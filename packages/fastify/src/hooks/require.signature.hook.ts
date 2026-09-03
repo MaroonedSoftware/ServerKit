@@ -1,6 +1,6 @@
 import { assertRequestSignature, REQUIRE_SIGNATURE_POLICY, type SignatureOptions } from '@maroonedsoftware/servercore';
-import { ServerKitRouterMiddleware } from '../../serverkit.middleware.js';
-import { requestHeader } from '../../serverkit.request.js';
+import type { preHandlerAsyncHookHandler } from 'fastify';
+import { requestHeader } from '../request/request.accessors.js';
 
 /**
  * Options for {@link requireSignature}.
@@ -24,23 +24,23 @@ export type RequireSignatureOptions = {
  * `request.container` via `PolicyService`, asserting with status `401` — the shared
  * `assertRequestSignature` from `@maroonedsoftware/servercore`.
  *
- * Requires `request.rawBody` to be populated before this guard runs — put
- * `bodyParserMiddleware` ahead of it on the route.
+ * Requires `request.rawBody` to be populated before this guard runs, so the route must accept a
+ * body (`bodyParserMiddleware` ahead of it on the route).
  *
  * @typeParam TOptions - Shape of the config resolved from `AppConfig`; defaults to {@link SignatureOptions}.
  * @param optionsKey - Key used to retrieve the options (`TOptions`) from `AppConfig` via `getAs`.
  * @param opts - Optional. {@link RequireSignatureOptions} configuring the guard.
- * @returns A {@link ServerKitRouterMiddleware} that guards the route.
+ * @returns A Fastify hook handler to put in a route's `preHandler`.
  *
  * @example
  * ```typescript
- * router.post('/webhooks/github', bodyParserMiddleware(['application/json']), requireSignature('webhook'), handler);
+ * app.post('/webhooks/github', { preHandler: [bodyParserMiddleware(['application/json']), requireSignature('webhook')] }, handler);
  * ```
  */
 export const requireSignature = <TOptions = SignatureOptions>(
   optionsKey: string,
   { policy = REQUIRE_SIGNATURE_POLICY }: RequireSignatureOptions = {},
-): ServerKitRouterMiddleware => {
+): preHandlerAsyncHookHandler => {
   return async request => {
     await assertRequestSignature<TOptions>(
       request.container,

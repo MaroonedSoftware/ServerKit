@@ -26,8 +26,7 @@ Peer dependencies: `fastify` (v5), `@fastify/cors`.
 - `serverKitPlugin`: wraps a custom stack step with `fastify-plugin` so its hooks reach every route.
 - `createFastifyLogger`: bridges Fastify's own logging onto the ServerKit `Logger`, so startup
   lines, `request.log`, and plugin warnings land wherever the application logs.
-- `ServerKitRouter`: a Koa-style route collector (`get`, `post`, `use`, ...) that mounts as an
-  encapsulated Fastify plugin with `preHandler` guards.
+- Routes are plain Fastify plugins passed to `setupRoutes`, optionally mounted under a prefix.
 - `bodyParserMiddleware`: per-route, content-type-driven body parsing into `request.parsedBody`
   with the shared 400 / 411 / 415 / 422 contract. Fastify's eager parsers are replaced by a lazy
   catch-all so the raw stream is untouched until a route asks for it.
@@ -36,10 +35,9 @@ Peer dependencies: `fastify` (v5), `@fastify/cors`.
   `authenticationPlugin` (resolves `Authorization` through the registered
   `AuthenticationSchemeHandler` into `request.authenticationSession`, skipping `anonymousPaths`).
 - `requirePolicy` and `requireSignature` route guards, with the same semantics as the Koa package.
-- `sendJson`: send a pre-serialized JSON string with the right content type.
 - `openSseReply`: Server-Sent Events over a hijacked reply, with heartbeat, backpressure, and
   lifecycle-signal drain from the shared transport.
-- `@maroonedsoftware/fastify/serverfeed`: `serverFeedRouter`, an authenticated SSE endpoint over
+- `@maroonedsoftware/fastify/serverfeed`: `serverFeedRoutes`, an authenticated SSE endpoint over
   the `@maroonedsoftware/serverfeed` realtime bus (optional peer).
 - Re-exports of the shared core: `ServerKitModule`, the parsers and `defaultParserMappings`,
   `ServerKitBodyParser`, the signature policy, `RateLimiter`, and the SSE transport.
@@ -49,18 +47,19 @@ Peer dependencies: `fastify` (v5), `@fastify/cors`.
 ### Basic setup
 
 ```typescript
-import { ServerKitServerBuilder, ServerKitRouter, bodyParserMiddleware } from '@maroonedsoftware/fastify';
+import { ServerKitServerBuilder, bodyParserMiddleware, requirePolicy } from '@maroonedsoftware/fastify';
+import type { FastifyPluginAsync } from 'fastify';
 
-const router = ServerKitRouter({ prefix: '/api' });
-
-router.post('/invoices', bodyParserMiddleware(['application/json']), async request => {
-  const body = await parseAndValidate(request.parsedBody, CreateInvoice);
-  return request.container.get(InvoiceService).create(body);
-});
+const invoiceRoutes: FastifyPluginAsync = async app => {
+  app.post('/invoices', { preHandler: [bodyParserMiddleware(['application/json']), requirePolicy()] }, async request => {
+    const body = await parseAndValidate(request.parsedBody, CreateInvoice);
+    return request.container.get(InvoiceService).create(body);
+  });
+};
 
 const builder = new ServerKitServerBuilder();
 await builder.setup(config, logger, modules);
-builder.setupPlugins().setupRoutes([router]);
+builder.setupPlugins().setupRoutes([{ plugin: invoiceRoutes, prefix: '/api' }]);
 await builder.start(3000, { shutdownGraceMs: 15_000 });
 ```
 
@@ -86,9 +85,22 @@ builder.setupPlugins(container => [
 Use `serverKitPlugin(name, fn)` for your own steps. A plain plugin passed here would be
 encapsulated and its hooks would never run.
 
-Route guards are `ServerKitRouterMiddleware`, `(request, reply) => Promise<void>`, run as
-`preHandler` hooks in the order given: router-wide guards from `router.use(...)` first, then the
-route's own, then the handler. Throw an `HttpError` to reject.
+### Routes
+
+A route plugin is an ordinary Fastify plugin. Guards are Fastify hook handlers listed in the
+route's `preHandler`, in order, and throwing an `HttpError` rejects the request. Route plugins are
+encapsulated, so a hook one adds applies only to its own routes:
+
+```typescript
+const adminRoutes: FastifyPluginAsync = async app => {
+  app.addHook('onRequest', requirePolicy({ policy: 'auth.session.assurance.level' }));
+  app.get('/users', async request => request.container.get(UserService).list());
+};
+
+builder.setupRoutes([{ plugin: adminRoutes, prefix: '/admin' }]);
+```
+
+Use `onRequest` rather than `preHandler` when a request must be rejected before its body is read.
 
 ### Logging
 
@@ -111,9 +123,9 @@ there still carry the ServerKit context once `setupPlugins` has run.
 ```typescript
 builder.setupPlugins(container => serverKitDefaultPlugins(container, { authentication: { anonymousPaths: ['/health', /^\/public\//] } }));
 
-router.get('/profile', requirePolicy(), handler); // default 'auth.session.mfa.satisfied' gate
-router.post('/mfa/enroll', requirePolicy({ policy: false }), handler); // valid session only
-router.post('/webhooks/github', bodyParserMiddleware(['application/json']), requireSignature('webhook'), handler);
+app.get('/profile', { preHandler: [requirePolicy()] }, handler); // default 'auth.session.mfa.satisfied' gate
+app.post('/mfa/enroll', { preHandler: [requirePolicy({ policy: false })] }, handler); // valid session only
+app.post('/webhooks/github', { preHandler: [bodyParserMiddleware(['application/json']), requireSignature('webhook')] }, handler);
 ```
 
 `requireSignature` needs `request.rawBody`, so `bodyParserMiddleware` goes first on the route.
@@ -146,7 +158,7 @@ reads `request.raw` when the route allows a body. Consequences:
 ```typescript
 import { openSseReply } from '@maroonedsoftware/fastify';
 
-router.get('/events', async (_request, reply) => {
+app.get('/events', async (_request, reply) => {
   const stream = openSseReply(reply, { signal: builder.lifecycleSignal });
   const timer = setInterval(() => stream.event({ event: 'tick', data: { at: DateTime.now().toISO() } }), 1000);
   stream.onClose(() => clearInterval(timer));
@@ -161,9 +173,9 @@ on the first write (an event, a comment, or the heartbeat), not when the stream 
 ## Server feed SSE endpoint
 
 ```typescript
-import { serverFeedRouter } from '@maroonedsoftware/fastify/serverfeed';
+import { serverFeedRoutes } from '@maroonedsoftware/fastify/serverfeed';
 
-builder.setupRoutes([serverFeedRouter({ signal: builder.lifecycleSignal })]);
+builder.setupRoutes([serverFeedRoutes({ signal: builder.lifecycleSignal })]);
 ```
 
 Mounts `GET /server/feed` (configurable via `path`), guarded by `requirePolicy` (`policy` to
@@ -194,7 +206,7 @@ change or `false` for session-only), streaming the `ServerFeed` bus registered i
 
 - `new ServerKitServerBuilder(options?)`: `{ host?: string; fastify?: FastifyServerOptions }`.
 - `setup(config, logger, modules, parserMappings?)`, `setupPlugins(factory?)`,
-  `setupRoutes(routers)`, `start(port, options?)`, `whenReady()`, `lifecycleSignal`, `app`.
+  `setupRoutes(routes)`, `start(port, options?)`, `whenReady()`, `lifecycleSignal`, `app`.
 
 ### Plugins and guards
 
@@ -207,14 +219,11 @@ change or `false` for session-only), streaming the `ServerFeed` bus registered i
 
 ### Helpers
 
-- `ServerKitRouter(options?)` and `ServerKitRouterType`.
-- `sendJson(reply, serialized, status?)`.
+- `ServerKitRoutes` and `ServerKitRouteMount` for typing route plugins passed to `setupRoutes`.
 - `openSseReply(reply, options?)`; the SSE types and frame helpers are re-exported from servercore.
-- `@maroonedsoftware/fastify/serverfeed`: `serverFeedRouter(options?)`, `ServerFeedRouterOptions`,
+- `@maroonedsoftware/fastify/serverfeed`: `serverFeedRoutes(options?)`, `ServerFeedRoutesOptions`,
   plus `handleServerFeed`, `ServerFeedContext`, and `serverFeedFilterFromQuery` re-exported from
   `@maroonedsoftware/servercore/serverfeed`.
-- `requestPath`, `requestMediaType`, `requestBodyLength`, `requestHeader`: Koa-equivalent request
-  accessors over a `FastifyRequest`.
 
 ## License
 

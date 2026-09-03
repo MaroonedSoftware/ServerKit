@@ -26,3 +26,12 @@ separate pino instance, and Fastify's duplicate per-request lines are silenced. 
 resolved from `X-Request-Id` by the builder's `genReqId` and is the source of `request.requestId`,
 so Fastify's request logging and ServerKit's agree on the id. Pass `fastify.logger`,
 `fastify.loggerInstance`, or `fastify.genReqId` to override any of it.
+
+Routes are now ordinary Fastify plugins. `ServerKitRouter` and its types are removed, along with
+`ServerKitMiddleware`, `ServerKitRouteHandler`, `sendJson`, and the `requestPath` /
+`requestMediaType` / `requestBodyLength` / `requestHeader` accessors, which existed only to
+re-create Koa's request API. `setupRoutes` now takes route plugins, each optionally wrapped as
+`{ plugin, prefix }`. Route guards (`requirePolicy`, `requireSignature`, `bodyParserMiddleware`)
+are typed as Fastify hook handlers and go in a route's `preHandler` (or `onRequest`) array.
+`serverFeedRouter` becomes `serverFeedRoutes` and returns a route plugin, guarding the stream in
+`onRequest` so an unauthorised client is rejected before the socket is taken over.

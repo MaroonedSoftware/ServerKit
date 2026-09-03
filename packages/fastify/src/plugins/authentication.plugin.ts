@@ -1,7 +1,7 @@
 import { AuthenticationSchemeHandler, invalidAuthenticationSession } from '@maroonedsoftware/authentication';
 import { createAnonymousPathMatcher } from '@maroonedsoftware/servercore';
 import { serverKitPlugin, type ServerKitPlugin } from '../serverkit.plugin.js';
-import { requestPath } from '../serverkit.request.js';
+import { requestPath } from '../request/request.accessors.js';
 
 /**
  * Options for {@link authenticationPlugin}.

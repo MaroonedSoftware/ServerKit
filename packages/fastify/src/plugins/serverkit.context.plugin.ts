@@ -3,7 +3,7 @@ import { Logger } from '@maroonedsoftware/logger';
 import { CORRELATION_ID_HEADER, REQUEST_ID_HEADER, resolveRequestIdentity } from '@maroonedsoftware/servercore';
 import { serverKitPlugin, type ServerKitPlugin } from '../serverkit.plugin.js';
 import { ServerKitContext } from '../serverkit.context.js';
-import { requestPath } from '../serverkit.request.js';
+import { requestPath } from '../request/request.accessors.js';
 
 /** Every field {@link serverKitContextPlugin} populates, declared up front as request decorators. */
 const CONTEXT_FIELDS = [

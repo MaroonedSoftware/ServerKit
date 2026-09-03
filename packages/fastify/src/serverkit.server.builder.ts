@@ -1,4 +1,4 @@
-import Fastify, { LogController, type FastifyInstance, type FastifyServerOptions } from 'fastify';
+import Fastify, { LogController, type FastifyInstance, type FastifyPluginAsync, type FastifyServerOptions } from 'fastify';
 import { Container, Registry } from 'injectkit';
 import type { Server } from 'node:http';
 import { ServerkitError } from '@maroonedsoftware/errors';
@@ -8,9 +8,24 @@ import { createFastifyLogger } from './logger/fastify.logger.js';
 import { ServerKitContext } from './serverkit.context.js';
 import { ServerKitPlugin } from './serverkit.plugin.js';
 import { serverKitDefaultPlugins } from './plugins/serverkit.default.plugins.js';
-import { ServerKitRouterType } from './serverkit.router.js';
-
 export { DEFAULT_SHUTDOWN_GRACE_MS, type ServerKitStartOptions } from '@maroonedsoftware/servercore';
+
+/**
+ * A route plugin: an ordinary async Fastify plugin that registers this server's routes.
+ *
+ * Deliberately not a union with `FastifyPluginCallback`: two function types in the same union
+ * stop TypeScript from contextually typing an inline `async app => ...`, and every route plugin
+ * here is async anyway. Wrap a callback-style plugin in an async one if you have one.
+ */
+export type ServerKitRoutes = FastifyPluginAsync;
+
+/** A route plugin plus the prefix to mount it under. */
+export interface ServerKitRouteMount {
+  /** The plugin registering the routes. */
+  plugin: ServerKitRoutes;
+  /** Path prefix every route in the plugin is mounted under, e.g. `'/api'`. */
+  prefix?: string;
+}
 
 /** Options for {@link ServerKitServerBuilder}. */
 export interface ServerKitFastifyOptions {
@@ -43,7 +58,7 @@ export interface ServerKitFastifyOptions {
  * ```typescript
  * const builder = new ServerKitServerBuilder();
  * await builder.setup(config, logger, modules);
- * builder.setupPlugins().setupRoutes([router]);
+ * builder.setupPlugins().setupRoutes([routes]);
  * await builder.start(3000);
  * ```
  *
@@ -150,14 +165,24 @@ export class ServerKitServerBuilder extends ServerKitServerBuilderBase {
   }
 
   /**
-   * Mounts routers on the Fastify instance, after the plugin stack.
+   * Registers route plugins on the Fastify instance, after the plugin stack.
    *
-   * @param routes - Routers whose routes are registered, each under its own prefix when it has one.
+   * Each entry is an ordinary Fastify plugin, or a `{ plugin, prefix }` pair to mount one under a
+   * path prefix. Routes are encapsulated (unlike the stack plugins), so a hook a route plugin
+   * adds applies only to its own routes. Call this after {@link setupPlugins}.
+   *
+   * @param routes - The route plugins to register, in order.
    * @returns This builder, for chaining.
+   *
+   * @example
+   * ```typescript
+   * builder.setupRoutes([healthRoutes, { plugin: invoiceRoutes, prefix: '/api' }]);
+   * ```
    */
-  public setupRoutes(routes: ServerKitRouterType[]): this {
+  public setupRoutes(routes: (ServerKitRoutes | ServerKitRouteMount)[]): this {
     for (const route of routes) {
-      void this.server.register(route.routes(), route.prefix === undefined ? {} : { prefix: route.prefix });
+      const { plugin, prefix } = typeof route === 'function' ? { plugin: route, prefix: undefined } : route;
+      void this.server.register(plugin, prefix === undefined ? {} : { prefix });
     }
     return this;
   }

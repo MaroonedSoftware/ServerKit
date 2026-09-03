@@ -8,4 +8,4 @@
  */
 
 export * from '@maroonedsoftware/servercore/serverfeed';
-export * from './serverfeed/server.feed.stream.js';
+export * from './serverfeed/server.feed.routes.js';

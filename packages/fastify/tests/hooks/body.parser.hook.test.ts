@@ -1,21 +1,18 @@
 import { describe, it, expect } from 'vitest';
-import { bodyParserMiddleware } from '../../../src/middleware/router/body.parser.middleware.js';
-import { ServerKitRouter } from '../../../src/serverkit.router.js';
-import { createTestApp } from '../../test.app.js';
+import { bodyParserMiddleware } from '../../src/hooks/body.parser.hook.js';
+import { createTestApp } from '../test.app.js';
 
 const build = async (contentTypes: string[]) => {
-  const { app, builder } = await createTestApp();
-  builder.setupRoutes([
-    ServerKitRouter().post('/', bodyParserMiddleware(contentTypes), async request => ({
-      parsed: request.parsedBody ?? null,
-      raw:
-        typeof request.rawBody === 'string'
-          ? request.rawBody
-          : request.rawBody === undefined
-            ? ''
-            : Buffer.from(request.rawBody as Uint8Array).toString('utf8'),
-    })),
-  ]);
+  const { app } = await createTestApp();
+  app.post('/', { preHandler: [bodyParserMiddleware(contentTypes)] }, async request => ({
+    parsed: request.parsedBody ?? null,
+    raw:
+      typeof request.rawBody === 'string'
+        ? request.rawBody
+        : request.rawBody === undefined
+          ? ''
+          : Buffer.from(request.rawBody as Uint8Array).toString('utf8'),
+  }));
   return app;
 };
 

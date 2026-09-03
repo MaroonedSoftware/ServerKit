@@ -1,7 +1,7 @@
 import typeis from 'type-is';
 import { assertBodyExpectation, parseRouteBody, ServerKitBodyParser } from '@maroonedsoftware/servercore';
-import { ServerKitRouterMiddleware } from '../../serverkit.middleware.js';
-import { requestBodyLength, requestMediaType } from '../../serverkit.request.js';
+import type { preHandlerAsyncHookHandler } from 'fastify';
+import { requestBodyLength, requestMediaType } from '../request/request.accessors.js';
 
 /**
  * Parses the request body based on `Content-Type` and assigns it to `request.parsedBody`
@@ -19,13 +19,13 @@ import { requestBodyLength, requestMediaType } from '../../serverkit.request.js'
  *
  * @param contentTypes - Allowed MIME types (e.g. `['application/json', 'application/x-www-form-urlencoded']`).
  *   Use an empty array to disallow any request body.
- * @returns {@link ServerKitRouterMiddleware} that parses the body and sets `request.parsedBody`.
+ * @returns A Fastify hook handler to put in a route's `preHandler`.
  * @throws HTTP 400 if body is present when no content types are allowed.
  * @throws HTTP 411 if body is required but missing.
  * @throws HTTP 415 if `Content-Type` is not in `contentTypes`.
  * @throws HTTP 422 if body is invalid or media type is unsupported.
  */
-export const bodyParserMiddleware = (contentTypes: string[]): ServerKitRouterMiddleware => {
+export const bodyParserMiddleware = (contentTypes: string[]): preHandlerAsyncHookHandler => {
   return async request => {
     const shouldParse = assertBodyExpectation(
       { length: requestBodyLength(request), type: requestMediaType(request), is: types => typeis(request.raw, types) },

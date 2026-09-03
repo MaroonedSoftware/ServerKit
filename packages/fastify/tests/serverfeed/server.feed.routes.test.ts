@@ -4,11 +4,11 @@ import type { AddressInfo } from 'node:net';
 import { ServerFeed } from '@maroonedsoftware/serverfeed';
 import { invalidAuthenticationSession, type AuthenticationSession } from '@maroonedsoftware/authentication';
 import type { ServerKitModule } from '@maroonedsoftware/servercore';
-import { serverFeedRouter } from '../src/serverfeed/server.feed.stream.js';
-import * as subpath from '../src/serverfeed.js';
-import { ServerKitServerBuilder } from '../src/serverkit.server.builder.js';
-import { serverKitPlugin } from '../src/serverkit.plugin.js';
-import { createLogger, createTestApp, minimalPlugins } from './test.app.js';
+import { serverFeedRoutes } from '../../src/serverfeed/server.feed.routes.js';
+import * as subpath from '../../src/serverfeed.js';
+import { ServerKitServerBuilder } from '../../src/serverkit.server.builder.js';
+import { serverKitPlugin } from '../../src/serverkit.plugin.js';
+import { createLogger, createTestApp, minimalPlugins } from '../test.app.js';
 
 const session = { sessionToken: 't', subject: 'alice', factors: [], claims: {} } as unknown as AuthenticationSession;
 
@@ -26,13 +26,13 @@ const withSession = (current: AuthenticationSession) => (container: Parameters<t
   ),
 ];
 
-describe('serverFeedRouter (fastify)', () => {
+describe('serverFeedRoutes (fastify)', () => {
   it('streams the replayed backlog over SSE and drains on the signal', async () => {
     const feed = new ServerFeed();
     feed.status('render', 'a', 'r1');
     const controller = new AbortController();
     const { app, builder } = await createTestApp({ modules: [feedModule(feed)], plugins: withSession(session) });
-    builder.setupRoutes([serverFeedRouter({ policy: false, heartbeatMs: 0, signal: controller.signal })]);
+    builder.setupRoutes([serverFeedRoutes({ policy: false, heartbeatMs: 0, signal: controller.signal })]);
 
     const pending = app.inject({ method: 'GET', url: '/server/feed?source=render' });
     await new Promise(resolve => setTimeout(resolve, 20));
@@ -49,7 +49,7 @@ describe('serverFeedRouter (fastify)', () => {
     const feed = new ServerFeed();
     const controller = new AbortController();
     const { app, builder } = await createTestApp({ modules: [feedModule(feed)], plugins: withSession(session) });
-    builder.setupRoutes([serverFeedRouter({ path: '/ops/events', policy: false, heartbeatMs: 0, signal: controller.signal })]);
+    builder.setupRoutes([serverFeedRoutes({ path: '/ops/events', policy: false, heartbeatMs: 0, signal: controller.signal })]);
 
     const pending = app.inject({ method: 'GET', url: '/ops/events' });
     await new Promise(resolve => setTimeout(resolve, 20));
@@ -62,7 +62,7 @@ describe('serverFeedRouter (fastify)', () => {
   it('rejects an invalid session with 401 before opening the stream', async () => {
     const feed = new ServerFeed();
     const { app, builder } = await createTestApp({ modules: [feedModule(feed)], plugins: withSession(invalidAuthenticationSession) });
-    builder.setupRoutes([serverFeedRouter({ policy: false })]);
+    builder.setupRoutes([serverFeedRoutes({ policy: false })]);
 
     const response = await app.inject({ method: 'GET', url: '/server/feed' });
 
@@ -75,7 +75,7 @@ describe('serverFeedRouter (fastify)', () => {
     const controller = new AbortController();
     const resolveFeed = vi.fn(() => feed);
     const { app, builder } = await createTestApp({ plugins: withSession(session) });
-    builder.setupRoutes([serverFeedRouter({ policy: false, heartbeatMs: 0, signal: controller.signal, resolveFeed })]);
+    builder.setupRoutes([serverFeedRoutes({ policy: false, heartbeatMs: 0, signal: controller.signal, resolveFeed })]);
 
     const pending = app.inject({ method: 'GET', url: '/server/feed' });
     await new Promise(resolve => setTimeout(resolve, 20));
@@ -87,7 +87,7 @@ describe('serverFeedRouter (fastify)', () => {
   });
 
   it('re-exports the shared handler and filter from the subpath', () => {
-    expect(subpath.serverFeedRouter).toBeTypeOf('function');
+    expect(subpath.serverFeedRoutes).toBeTypeOf('function');
     expect(subpath.handleServerFeed).toBeTypeOf('function');
     expect(subpath.serverFeedFilterFromQuery).toBeTypeOf('function');
   });
@@ -117,7 +117,7 @@ describe('serverFeedRouter (fastify)', () => {
       await builder.setup({} as never, createLogger(), [feedModule(feed)]);
       builder
         .setupPlugins(withSession(session))
-        .setupRoutes([serverFeedRouter({ policy: false, heartbeatMs: 0, signal: builder.lifecycleSignal })]);
+        .setupRoutes([serverFeedRoutes({ policy: false, heartbeatMs: 0, signal: builder.lifecycleSignal })]);
 
       // A backlog event makes the replay write immediately, which flushes the response headers;
       // without it a client sees no response until the first live event or heartbeat.

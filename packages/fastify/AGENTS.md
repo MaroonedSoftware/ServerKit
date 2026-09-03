@@ -42,17 +42,8 @@ plus `injectkit` and `type-is`.
 | `ServerKitPlugin`           | type                       | `FastifyPluginAsync`                                                                                                                                                                                          | A server-stack plugin, registered in order by `setupPlugins`. Applies to the root instance.       |
 | `serverKitPlugin`           | function                   | `(name: string, plugin: (app: FastifyInstance) => void \| Promise<unknown>) => ServerKitPlugin`                                                                                                               | Wraps a plugin with `fastify-plugin` so its hooks escape encapsulation. Use it for custom steps.  |
 | `createFastifyLogger`       | function                   | `(logger: Logger, bindings?: Record<string, unknown>) => FastifyBaseLogger`                                                                                                                                    | Bridges Fastify's logging to a ServerKit `Logger`. `fatal` maps to `error`. Installed by default. |
-| `ServerKitRouterMiddleware` | type                       | `(request: ServerKitContext, reply: FastifyReply) => Promise<void>`                                                                                                                                           | A route guard, run as a `preHandler`. Throw to reject.                                            |
-| `ServerKitRouteHandler`     | type                       | `(request: ServerKitContext, reply: FastifyReply) => unknown`                                                                                                                                                 | Return a value to send it.                                                                        |
-| `ServerKitRouter`           | function                   | `(options?: { prefix? }) => ServerKitRouterType`                                                                                                                                                              | Factory, not a class.                                                                             |
-| `ServerKitRouterOptions`    | interface                  | `{ prefix?: string }`                                                                                                                                                                                         | Mount prefix applied by `setupRoutes`.                                                            |
-| `ServerKitRouterType`       | interface                  | `use(...guards)`, `get/post/put/patch/delete/head/options(path, ...guards, handler)`, `routes(): FastifyPluginAsync`, `readonly prefix?`                                                                      | `routes()` registers each route with `preHandler: [...routerGuards, ...routeGuards]`.             |
-| `ServerKitRouteHandlers`    | type                       | `[...ServerKitRouterMiddleware[], ServerKitRouteHandler]`                                                                                                                                                     | —                                                                                                 |
-| `sendJson`                  | function                   | `(reply: FastifyReply, serialized: string, status?: number) => void`                                                                                                                                          | Sets `application/json` explicitly (Fastify sends a string as `text/plain`).                      |
-| `requestPath`               | function                   | `(request: FastifyRequest) => string`                                                                                                                                                                         | Koa's `ctx.path`.                                                                                 |
-| `requestMediaType`          | function                   | `(request: FastifyRequest) => string`                                                                                                                                                                         | Koa's `ctx.request.type`.                                                                         |
-| `requestBodyLength`         | function                   | `(request: FastifyRequest) => number`                                                                                                                                                                         | Koa's `ctx.request.length`, `0` when absent.                                                      |
-| `requestHeader`             | function                   | `(request: FastifyRequest, name: string) => string`                                                                                                                                                           | Koa's `ctx.get`.                                                                                  |
+| `ServerKitRoutes`           | type                       | `FastifyPluginAsync`                                                                                                                                                                                          | A route plugin. Encapsulated, so its own hooks apply only to its routes.                          |
+| `ServerKitRouteMount`       | interface                  | `{ plugin: ServerKitRoutes; prefix?: string }`                                                                                                                                                                | A route plugin plus the path prefix to mount it under.                                            |
 
 ### Server plugins
 
@@ -69,14 +60,14 @@ plus `injectkit` and `type-is`.
 | `serverKitDefaultPlugins`        | function  | `(container: Container, options?: ServerKitDefaultPluginsOptions) => ServerKitPlugin[]` | error → context → rate limiter (**only if a `RateLimiter` is registered**) → cors (`exposedHeaders: ['WWW-Authenticate']`) → authentication.                                                               |
 | `ServerKitDefaultPluginsOptions` | interface | `{ authentication?: AuthenticationPluginOptions }`                                         | Forwarded to `authenticationPlugin`.                                                                                                                                                                   |
 
-### Router middleware
+### Route guards
 
 | Export                    | Kind      | Shape                                                                                                       | Notes                                                                                                                             |
 | ------------------------- | --------- | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `bodyParserMiddleware`    | function  | `(contentTypes: string[]) => ServerKitRouterMiddleware`                                                     | Parses per `Content-Type` into `request.parsedBody` / `request.rawBody`. 400 / 411 / 415 / 422.                                   |
-| `requirePolicy`           | function  | `(options?: RequirePolicyOptions) => ServerKitRouterMiddleware`                                             | 401 on an invalid session; then asserts a policy (403 on deny). Default `'auth.session.mfa.satisfied'`; `false` skips the policy. |
+| `bodyParserMiddleware`    | function  | `(contentTypes: string[]) => preHandlerAsyncHookHandler`                                                    | Parses per `Content-Type` into `request.parsedBody` / `request.rawBody`. 400 / 411 / 415 / 422.                                   |
+| `requirePolicy`           | function  | `(options?: RequirePolicyOptions) => preHandlerAsyncHookHandler`                                            | 401 on an invalid session; then asserts a policy (403 on deny). Default `'auth.session.mfa.satisfied'`; `false` skips the policy. Also usable in `onRequest`. |
 | `RequirePolicyOptions`    | interface | `{ policy?: string \| false }`                                                                              | —                                                                                                                                 |
-| `requireSignature`        | function  | `<TOptions = SignatureOptions>(optionsKey, options?: RequireSignatureOptions) => ServerKitRouterMiddleware` | Reads `SignatureOptions` from `AppConfig` by key; asserts with 401. Needs `request.rawBody`, so `bodyParserMiddleware` first.     |
+| `requireSignature`        | function  | `<TOptions = SignatureOptions>(optionsKey, options?: RequireSignatureOptions) => preHandlerAsyncHookHandler` | Reads `SignatureOptions` from `AppConfig` by key; asserts with 401. Needs `request.rawBody`, so `bodyParserMiddleware` first.     |
 | `RequireSignatureOptions` | type      | `{ policy?: string }`                                                                                       | Default `REQUIRE_SIGNATURE_POLICY`.                                                                                               |
 
 ### SSE
@@ -91,8 +82,8 @@ The stream and frame types (`SseStream`, `SseStreamOptions`, `SseFrame`, `frameE
 
 | Export                      | Kind      | Shape                                                              | Notes                                                                 |
 | --------------------------- | --------- | ------------------------------------------------------------------ | --------------------------------------------------------------------- |
-| `serverFeedRouter`          | function  | `(options?: ServerFeedRouterOptions) => ServerKitRouterType`       | Mounts `GET /server/feed` (configurable), guarded by `requirePolicy`. |
-| `ServerFeedRouterOptions`   | interface | `extends SseStreamOptions` with `{ path?, policy?, resolveFeed? }` | `resolveFeed` defaults to `request.container.get(ServerFeed)`.        |
+| `serverFeedRoutes`          | function  | `(options?: ServerFeedRoutesOptions) => FastifyPluginAsync`        | Mounts `GET /server/feed` (configurable), guarded by `requirePolicy` in `onRequest`. |
+| `ServerFeedRoutesOptions`   | interface | `extends SseStreamOptions` with `{ path?, policy?, resolveFeed? }` | `resolveFeed` defaults to `request.container.get(ServerFeed)`.        |
 | `handleServerFeed`          | function  | re-export                                                          | From `@maroonedsoftware/servercore/serverfeed`.                       |
 | `ServerFeedContext`         | interface | re-export                                                          | From `@maroonedsoftware/servercore/serverfeed`.                       |
 | `serverFeedFilterFromQuery` | function  | re-export                                                          | From `@maroonedsoftware/servercore/serverfeed`.                       |
@@ -101,7 +92,7 @@ The stream and frame types (`SseStream`, `SseStreamOptions`, `SseFrame`, `frameE
 
 | Export                      | Kind      | Shape                                                                                                                                                                                                                         | Notes                                                                                                                             |
 | --------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `ServerKitServerBuilder`    | class     | `constructor(options?: ServerKitFastifyOptions)`, `setup(config, logger, modules, parserMappings?)`, `setupPlugins(fn?)`, `setupRoutes(routers)`, `start(port, options?)`, `whenReady()`, `get lifecycleSignal`, `get app` | Extends `ServerKitServerBuilderBase` from `servercore`. Removes Fastify's parsers and installs a no-op catch-all at construction. |
+| `ServerKitServerBuilder`    | class     | `constructor(options?: ServerKitFastifyOptions)`, `setup(config, logger, modules, parserMappings?)`, `setupPlugins(fn?)`, `setupRoutes(routes)`, `start(port, options?)`, `whenReady()`, `get lifecycleSignal`, `get app` | Extends `ServerKitServerBuilderBase` from `servercore`. Removes Fastify's parsers and installs a no-op catch-all at construction. |
 | `ServerKitFastifyOptions`   | interface | `{ host?: string; fastify?: FastifyServerOptions }`                                                                                                                                                                           | `host` defaults to `'::'` (all interfaces), not Fastify's `localhost`.                                                            |
 | `ServerKitStartOptions`     | interface | `{ shutdownGraceMs?: number }`                                                                                                                                                                                                | Re-exported from `servercore`.                                                                                                    |
 | `DEFAULT_SHUTDOWN_GRACE_MS` | constant  | `10_000`                                                                                                                                                                                                                      | Re-exported from `servercore`.                                                                                                    |
@@ -120,18 +111,19 @@ The stream and frame types (`SseStream`, `SseStreamOptions`, `SseFrame`, `frameE
 ## Canonical usage
 
 ```typescript
-import { ServerKitServerBuilder, ServerKitRouter, bodyParserMiddleware } from '@maroonedsoftware/fastify';
+import { ServerKitServerBuilder, bodyParserMiddleware, requirePolicy } from '@maroonedsoftware/fastify';
+import type { FastifyPluginAsync } from 'fastify';
 
-const router = ServerKitRouter({ prefix: '/api' });
-
-router.post('/invoices', bodyParserMiddleware(['application/json']), async request => {
-  const body = await parseAndValidate(request.parsedBody, CreateInvoice);
-  return request.container.get(InvoiceService).create(body);
-});
+const invoiceRoutes: FastifyPluginAsync = async app => {
+  app.post('/invoices', { preHandler: [bodyParserMiddleware(['application/json']), requirePolicy()] }, async request => {
+    const body = await parseAndValidate(request.parsedBody, CreateInvoice);
+    return request.container.get(InvoiceService).create(body);
+  });
+};
 
 const builder = new ServerKitServerBuilder();
 await builder.setup(config, logger, modules);
-builder.setupPlugins().setupRoutes([router]);
+builder.setupPlugins().setupRoutes([{ plugin: invoiceRoutes, prefix: '/api' }]);
 await builder.start(3000, { shutdownGraceMs: 15_000 });
 ```
 
@@ -145,11 +137,8 @@ builder.setupPlugins(container => [
 ]);
 ```
 
-There is no `.claude/skills/` example for this package yet. When generating a route or a hook,
-mirror [.claude/skills/koa-route](../../.claude/skills/koa-route) and
-[.claude/skills/koa-middleware](../../.claude/skills/koa-middleware) with the substitutions above:
-`(request, reply)` for `ctx`, `request.parsedBody` for `ctx.parsedBody`, return-or-`reply.send`
-for `ctx.body`, and a `serverKitPlugin(...)` step for a `(ctx, next)` middleware.
+There is no `.claude/skills/` example for this package yet. Routes are plain Fastify plugins, so
+follow the snippets here rather than translating the Koa skills, which describe a different model.
 
 ## Rules for generated code
 
@@ -167,14 +156,17 @@ for `ctx.body`, and a `serverKitPlugin(...)` step for a `(ctx, next)` middleware
   authenticated-but-ungated routes and a named policy for step-up or AAL2 gates.
 - Store `SignatureOptions` in `AppConfig` and pass `requireSignature` the config key, after
   `bodyParserMiddleware` on the same route. Never inline a secret.
-- Return the response body from a handler, or call `reply.send`; a handler that does neither
-  leaves the request hanging.
-- Use `ServerKitRouter` and `setupRoutes` for routes; use `builder.app` only for third-party
-  Fastify plugins.
-- Always pass `signal: builder.lifecycleSignal` to `openSseReply` and `serverFeedRouter`, and
+- Return the response body from a handler, or `return reply.send(...)`; a handler that does
+  neither leaves the request hanging. Fastify serializes a returned object as JSON.
+- Write routes as Fastify plugins (`async app => { app.get(...) }`) and pass them to
+  `setupRoutes`, mounting under a prefix with `{ plugin, prefix }`. Use `builder.app` only for
+  third-party Fastify plugins.
+- Put guards in a route's `preHandler` array, in order. Use `onRequest` instead when the request
+  must be rejected before its body is read.
+- Always pass `signal: builder.lifecycleSignal` to `openSseReply` and `serverFeedRoutes`, and
   register cleanup with `stream.onClose(...)` for every timer and subscription an SSE handler
   creates. Never `send` on a reply after `openSseReply`.
-- Import `serverFeedRouter` from `@maroonedsoftware/fastify/serverfeed`, never from the root.
+- Import `serverFeedRoutes` from `@maroonedsoftware/fastify/serverfeed`, never from the root.
 - Put slow start-up work in a module's `ready` hook, not `start`.
 
 ## Gotchas
@@ -218,12 +210,12 @@ for `ctx.body`, and a `serverKitPlugin(...)` step for a `(ctx, next)` middleware
 - **`corsPlugin` can be applied once per server only.** `@fastify/cors` decorates the request,
   so a second application throws on the duplicate decorator.
 - **An SSE stream flushes its headers on the first write, not when it opens.** A client sees no
-  response until an event, a comment, or the heartbeat is written; `serverFeedRouter` with no
+  response until an event, a comment, or the heartbeat is written; `serverFeedRoutes` with no
   backlog and `heartbeatMs: 0` is silent until the first live event.
 - **An SSE stream never ends on its own.** Without `options.signal`, every connected client holds
   `server.close()` open until the grace period force-closes it.
-- **Fastify auto-registers `HEAD` for every `GET`.** Declaring an explicit `head()` on the same
-  path throws at registration.
+- **Fastify auto-registers `HEAD` for every `GET`.** Declaring an explicit `HEAD` route on the
+  same path throws at registration; pass `exposeHeadRoute: false` on the `GET` if you need your own.
 
 ## Working inside this package
 
@@ -233,18 +225,14 @@ src/
   serverkit.context.ts         FastifyRequest augmentation, ServerKitContext (interface + token)
   serverkit.plugin.ts          ServerKitPlugin, serverKitPlugin (fastify-plugin wrapper)
   logger/fastify.logger.ts     createFastifyLogger (Logger to FastifyBaseLogger bridge)
-  serverkit.middleware.ts      ServerKitRouterMiddleware, ServerKitRouteHandler
-  serverkit.router.ts          ServerKitRouter, ServerKitRouterType
-  serverkit.request.ts         requestPath, requestMediaType, requestBodyLength, requestHeader
-  serverkit.server.builder.ts  ServerKitServerBuilder, ServerKitFastifyOptions
-  send.json.ts                 sendJson
+  serverkit.server.builder.ts  ServerKitServerBuilder, ServerKitFastifyOptions, ServerKitRoutes
+  request/request.accessors.ts Internal header/path helpers (not exported)
+  hooks/                       body.parser, require.policy, require.signature (route guards)
   sse/sse.reply.ts             openSseReply
   serverfeed.ts                Subpath entry for ./serverfeed
-  serverfeed/server.feed.stream.ts  serverFeedRouter
+  serverfeed/server.feed.routes.ts  serverFeedRoutes
   plugins/                     error (+ normalizeFastifyError), serverkit.context, cors, rate.limiter,
                                authentication, serverkit.default.plugins
-  middleware/
-    router/                    body.parser, require.policy, require.signature
 ```
 
 Tests are in `tests/`, mirroring `src/`; `tests/test.app.ts` builds a server for `app.inject()`.

@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import http, { type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import type { FastifyPluginAsync } from 'fastify';
 import { Injectable, InjectKitContainerNoop, type Container } from 'injectkit';
 import { Logger } from '@maroonedsoftware/logger';
 import { AppConfig } from '@maroonedsoftware/appconfig';
 import { ServerkitError } from '@maroonedsoftware/errors';
 import { ServerKitBodyParser, ServerKitParserMappings, type ServerKitModule, openSseStream } from '@maroonedsoftware/servercore';
 import { ServerKitServerBuilder } from '../src/serverkit.server.builder.js';
-import { ServerKitRouter } from '../src/serverkit.router.js';
 import type { ServerKitPlugin } from '../src/serverkit.plugin.js';
 import { serverKitPlugin } from '../src/serverkit.plugin.js';
 import { createLogger, minimalPlugins } from './test.app.js';
@@ -217,19 +217,52 @@ describe('ServerKitServerBuilder (fastify)', () => {
   });
 
   describe('setupRoutes', () => {
-    it('mounts each router under its prefix and returns the builder', async () => {
+    it('registers a bare route plugin and one mounted under a prefix, and returns the builder', async () => {
       const builder = new ServerKitServerBuilder();
       await builder.setup(config, logger, []);
       builder.setupPlugins(minimalPlugins);
-      const api = ServerKitRouter({ prefix: '/api' }).get('/ping', async () => ({ pong: true }));
-      const root = ServerKitRouter().get('/health', async () => 'ok');
+      const api: FastifyPluginAsync = async app => void app.get('/ping', async () => ({ pong: true }));
+      const root: FastifyPluginAsync = async app => void app.get('/health', async () => 'ok');
 
-      const result = builder.setupRoutes([api, root]);
+      const result = builder.setupRoutes([{ plugin: api, prefix: '/api' }, root]);
 
       expect(result).toBe(builder);
       expect((await builder.app.inject({ method: 'GET', url: '/api/ping' })).json()).toEqual({ pong: true });
       expect((await builder.app.inject({ method: 'GET', url: '/health' })).body).toBe('ok');
       expect((await builder.app.inject({ method: 'GET', url: '/ping' })).statusCode).toBe(404);
+    });
+
+    it('gives route plugins the ServerKit context from the stack registered before them', async () => {
+      const builder = new ServerKitServerBuilder();
+      await builder.setup(config, logger, []);
+      builder.setupPlugins(minimalPlugins);
+      builder.setupRoutes([
+        async app =>
+          void app.get('/who', async request => ({ requestId: request.requestId, hasContainer: request.container !== undefined })),
+      ]);
+
+      const response = await builder.app.inject({ method: 'GET', url: '/who', headers: { 'x-request-id': 'r2' } });
+
+      expect(response.json()).toEqual({ requestId: 'r2', hasContainer: true });
+    });
+
+    it('keeps a hook added by a route plugin encapsulated to its own routes', async () => {
+      const builder = new ServerKitServerBuilder();
+      await builder.setup(config, logger, []);
+      builder.setupPlugins(minimalPlugins);
+      const seen: string[] = [];
+      builder.setupRoutes([
+        async app => {
+          app.addHook('onRequest', async request => void seen.push(request.url));
+          app.get('/guarded', async () => 'ok');
+        },
+        async app => void app.get('/open', async () => 'ok'),
+      ]);
+
+      await builder.app.inject({ method: 'GET', url: '/open' });
+      await builder.app.inject({ method: 'GET', url: '/guarded' });
+
+      expect(seen).toEqual(['/guarded']);
     });
   });
 
@@ -289,7 +322,7 @@ describe('ServerKitServerBuilder (fastify)', () => {
       const module = createModule();
       const builder = new ServerKitServerBuilder({ host: '127.0.0.1' });
       await builder.setup(config, logger, [module]);
-      builder.setupPlugins(minimalPlugins).setupRoutes([ServerKitRouter().get('/', async () => ({ ok: true }))]);
+      builder.setupPlugins(minimalPlugins).setupRoutes([async app => void app.get('/', async () => ({ ok: true }))]);
 
       server = await builder.start(0);
 
@@ -341,10 +374,11 @@ describe('ServerKitServerBuilder (fastify)', () => {
       const builder = new ServerKitServerBuilder({ host: '127.0.0.1' });
       await builder.setup(config, logger, [module]);
       builder.setupPlugins(minimalPlugins).setupRoutes([
-        ServerKitRouter().get('/feed', async (_request, reply) => {
-          const stream = openSseStream({ res: reply.raw, hijack: () => reply.hijack() }, { heartbeatMs: 0, signal: builder.lifecycleSignal });
-          stream.comment('open');
-        }),
+        async app =>
+          void app.get('/feed', async (_request, reply) => {
+            const stream = openSseStream({ res: reply.raw, hijack: () => reply.hijack() }, { heartbeatMs: 0, signal: builder.lifecycleSignal });
+            stream.comment('open');
+          }),
       ]);
 
       server = await builder.start(0, { shutdownGraceMs: 10_000 });
@@ -366,7 +400,7 @@ describe('ServerKitServerBuilder (fastify)', () => {
       const module = createModule();
       const builder = new ServerKitServerBuilder({ host: '127.0.0.1' });
       await builder.setup(config, logger, [module]);
-      builder.setupPlugins(minimalPlugins).setupRoutes([ServerKitRouter().get('/hang', () => new Promise(() => {}))]);
+      builder.setupPlugins(minimalPlugins).setupRoutes([async app => void app.get('/hang', () => new Promise(() => {}))]);
 
       server = await builder.start(0, { shutdownGraceMs: 50 });
       const { port } = server.address() as AddressInfo;
