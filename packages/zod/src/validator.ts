@@ -74,7 +74,25 @@ function processIssue(issue: z.core.$ZodIssue, basePath: PropertyKey[], details:
   addDetail(details, key, describeIssue(issue));
 }
 
-function formatZodErrors(error: ZodError) {
+/**
+ * Flattens a `ZodError` into the field map ServerKit renders as an `HttpError`'s `details`: dot-
+ * notation paths to human-readable messages, `'_root'` for root-level issues, and an array when
+ * one field has several violations.
+ *
+ * This is the formatting {@link parseAndValidate} applies, exported so a validator that has
+ * already run a schema itself can produce an identical error body — the Fastify adapter's zod
+ * validator compiler does exactly that, since Fastify's compilers are synchronous.
+ *
+ * @param error - The Zod error to format.
+ * @returns Field paths mapped to their error message, or messages.
+ *
+ * @example
+ * ```typescript
+ * const result = schema.safeParse(data);
+ * if (!result.success) throw httpError(400).withDetails(zodErrorDetails(result.error));
+ * ```
+ */
+export function zodErrorDetails(error: ZodError): Record<string, string | string[]> {
   const details: Record<string, string | string[]> = {};
 
   for (const issue of error.issues) {
@@ -132,9 +150,9 @@ export const parseAndValidate = async <T extends ZodType>(data: unknown, schema:
   const payload = result instanceof Promise ? await result : result;
 
   if (payload.issues.length > 0) {
-    // Same finalization `safeParseAsync` performs, so `formatZodErrors` sees identical issues.
+    // Same finalization `safeParseAsync` performs, so `zodErrorDetails` sees identical issues.
     const error = new ZodRealError(payload.issues.map(issue => z.core.util.finalizeIssue(issue, runCtx, z.core.config())));
-    const details = formatZodErrors(error);
+    const details = zodErrorDetails(error);
     if (statusCode >= 500) {
       throw httpError(statusCode).withInternalDetails(details);
     } else {

@@ -28,7 +28,8 @@ export type ServerKitParserMapping = {
 const jsonParserOptions = (): JsonParserOptions => Object.assign(new JsonParserOptions(), { reviver: bigIntReviver });
 
 /**
- * Built-in MIME-subtype-to-parser mappings used by {@link bodyParserMiddleware}.
+ * Built-in MIME-subtype-to-parser mappings used by each adapter's body parsing:
+ * koa's `bodyParserMiddleware`, fastify's `bodyParserPlugin`.
  *
  * Each key is a MIME subtype (matched against `Content-Type` with `type-is` semantics)
  * and the value is a {@link ServerKitParserMapping} pairing the {@link ServerKitParser} class

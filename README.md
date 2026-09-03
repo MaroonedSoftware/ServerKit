@@ -97,13 +97,15 @@ Comprehensive error handling with fluent API design and database integration.
 
 ### Fastify
 
-Fastify server builder, request context, hooks, body parsing, SSE streaming, and utilities for ServerKit.
+Fastify server builder, plugin stack, request context, body parsing, zod schemas, and SSE streaming for ServerKit.
 
 - The Fastify counterpart of the Koa package, sharing `ServerCore`
 - Request context on `FastifyRequest` with a request-scoped DI container
-- Error rendering, context, CORS, rate limiting, and authentication as Fastify hooks
-- Koa-style `ServerKitRouter` mounted as an encapsulated plugin with `preHandler` guards
-- Lazy per-route body parsing with the shared status contract
+- Error rendering, context, CORS, rate limiting, and authentication as an ordered plugin stack
+- Routes are plain Fastify plugins; guards are hook handlers in a route's `preHandler`
+- Body parsing through ServerKit's parsers, gated by each route's `config.body`
+- Fastify's logging bridged onto the ServerKit `Logger`, sharing one request id
+- Optional `/zod` subpath wiring Zod schemas into Fastify's validator and serializer
 
 [View documentation →](./packages/fastify/README.md)
 

@@ -15,7 +15,8 @@ under `@maroonedsoftware/*`. Every package is meant to be usable on its own, so 
 assumes about another is a real API contract, not an internal detail.
 
 The centre of gravity is an HTTP API assembled from injectkit DI modules: `koa` or `fastify` gives
-you the server, router, context, and middleware stack (both are thin adapters over `servercore`); `appconfig` supplies typed config; `errors` defines
+you the server, request context, and cross-cutting stack, each in its own framework's idiom over
+the shared `servercore`; `appconfig` supplies typed config; `errors` defines
 how failures render; `logger`, `policies`, `authentication`, `permissions`, and `jobbroker` fill in
 the cross-cutting concerns. Nothing forces you to take the whole stack — a downstream app can depend
 on `errors` alone.
@@ -51,7 +52,7 @@ Two audiences use these files:
 | `servercore`        | L1      | Framework-agnostic HTTP core: module lifecycle, body parsers, error rendering, SSE        | [servercore](./packages/servercore/AGENTS.md)               |
 | `authentication`    | L2      | Auth factors, scheme handlers, sessions, JWT issuance, and account recovery               | [authentication](./packages/authentication/AGENTS.md)       |
 | `koa`               | L2      | Server builder, typed context, middleware stack, body parsing, SSE                        | [koa](./packages/koa/AGENTS.md)                             |
-| `fastify`           | L2      | Fastify server builder, request context, hooks, body parsing, SSE                         | [fastify](./packages/fastify/AGENTS.md)                     |
+| `fastify`           | L2      | Fastify server builder, plugin stack, request context, body parsing, zod schemas, SSE     | [fastify](./packages/fastify/AGENTS.md)                     |
 | `mcp`               | L2      | Model Context Protocol server over Streamable HTTP, wrapping the official SDK             | [mcp](./packages/mcp/AGENTS.md)                             |
 | `discord`           | L3      | Discord interaction dispatcher with Ed25519 signature verification                        | [discord](./packages/discord/AGENTS.md)                     |
 | `slack`             | L3      | Slack command/event/interaction dispatcher with signature verification                    | [slack](./packages/slack/AGENTS.md)                         |
@@ -89,7 +90,8 @@ exposed as a subpath export, with the other side declared an **optional** peer d
 internal. Framing and connection handling are a transport concern, so the framework-neutral SSE
 handler lives in `servercore` behind `@maroonedsoftware/servercore/serverfeed`, and each HTTP
 adapter mounts it on a guarded route behind `@maroonedsoftware/koa/serverfeed` and
-`@maroonedsoftware/fastify/serverfeed`, with `serverfeed` as an optional peer of all three. The
+`@maroonedsoftware/fastify/serverfeed`, with `serverfeed` as an optional peer of all three.
+`@maroonedsoftware/fastify/zod` follows the same shape for Zod schema compilers. The
 logger bridge goes the other way — `@maroonedsoftware/serverfeed/logger`, with `logger` as an
 optional peer of `serverfeed` — specifically so `logger` stays dependency-free.
 
@@ -226,8 +228,10 @@ down a half-wired server.
 ### Middleware order is load-bearing
 
 If you build the stack by hand instead of using `serverKitDefaultMiddleware`, this order is not
-stylistic (on Fastify the same steps are `onRequest` hooks applied in this order, and the error
-step installs `setErrorHandler` / `setNotFoundHandler`):
+stylistic. The Fastify adapter has the same ordering contract in its own idiom:
+`serverKitDefaultPlugins` registers `errorPlugin` first (it installs `setErrorHandler` and
+`setNotFoundHandler`), then `serverKitContextPlugin`, then `bodyParserPlugin`, then the rest, with
+routes registered last.
 
 1. `errorMiddleware()` — **first**; it catches everything downstream.
 2. `serverKitContextMiddleware(container)` — creates the request-scoped DI container and attaches
@@ -279,8 +283,8 @@ repo, not just yours. Add the changeset file and let the release automation do t
 ### Skills
 
 `.claude/skills/` holds vetted, working examples for the most commonly generated code:
-`config`, `error-handler`, `job`, `koa-middleware`, `koa-route`, `logger-setup`, `multipart-upload`.
-When generating code of one of those shapes, use the skill's example as the starting point rather
-than writing a fresh one — the examples are kept in sync with the packages. There is no Fastify
-skill yet; for a Fastify route or hook, follow the canonical usage in
-[fastify/AGENTS.md](./packages/fastify/AGENTS.md) and mirror the shape of the Koa skill.
+`config`, `error-handler`, `job`, `koa-middleware`, `koa-route`, `fastify-plugin`, `fastify-route`,
+`logger-setup`, `multipart-upload`. When generating code of one of those shapes, use the skill's
+example as the starting point rather than writing a fresh one — the examples are kept in sync with
+the packages. The Koa and Fastify skills are not interchangeable: the two adapters have different
+models, so use the one matching the adapter the app installed.

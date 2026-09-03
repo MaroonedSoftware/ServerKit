@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
 import { HttpError } from '@maroonedsoftware/errors';
-import { parseAndValidate, parseAndValidateArray } from '../src/validator.js';
+import { parseAndValidate, parseAndValidateArray, zodErrorDetails } from '../src/validator.js';
 
 describe('parseAndValidate', () => {
   it('should return parsed data for valid input', async () => {
@@ -689,5 +689,26 @@ describe('parseAndValidateArray', () => {
       expect((err as HttpError).details).toBeUndefined();
       expect((err as HttpError).internalDetails).toEqual({ _root: 'Expected array' });
     }
+  });
+});
+
+describe('zodErrorDetails', () => {
+  it('formats issues the way parseAndValidate does', async () => {
+    const schema = z.object({ email: z.email(), age: z.number().min(0) });
+    const input = { email: 'nope', age: -1 };
+
+    const result = schema.safeParse(input);
+    const thrown = await parseAndValidate(input, schema).catch((error: unknown) => error);
+
+    expect(result.success).toBe(false);
+    expect(zodErrorDetails(result.error!)).toEqual((thrown as HttpError).details);
+  });
+
+  it('keys root-level issues as _root and collects repeated violations into an array', () => {
+    const scalar = z.string().safeParse(42);
+    expect(zodErrorDetails(scalar.error!)).toEqual({ _root: 'Expected string' });
+
+    const multiple = z.object({ name: z.string().min(5).regex(/^[a-z]+$/) }).safeParse({ name: 'A1' });
+    expect(zodErrorDetails(multiple.error!).name).toBeInstanceOf(Array);
   });
 });

@@ -5,9 +5,19 @@ import { AuthenticationSession } from '@maroonedsoftware/authentication';
 import { BinaryLike } from 'node:crypto';
 
 declare module 'fastify' {
+  /** Per-route configuration ServerKit reads, merged into Fastify's own route `config`. */
+  interface FastifyContextConfig {
+    /**
+     * Content types this route accepts a body for, e.g. `['application/json']`. Read by
+     * `bodyParserPlugin`, which parses a matching body into `request.body`. A route without it
+     * accepts no body, and a request that sends one is rejected with 400.
+     */
+    body?: string[];
+  }
+
   /**
    * Fastify's request, extended with ServerKit's request-scoped services and metadata.
-   * Populated by `serverKitContextMiddleware` on every request; the fields are declared as
+   * Populated by `serverKitContextPlugin` on every request; the fields are declared as
    * request decorators so they exist on every request object with a stable shape.
    */
   interface FastifyRequest {
@@ -25,15 +35,12 @@ declare module 'fastify' {
     correlationId: string;
     /** Request ID; from `X-Request-Id` header or generated. */
     requestId: string;
-    /** Raw request body bytes, captured by `bodyParserMiddleware`. */
-    rawBody: BinaryLike;
     /**
-     * Parsed request body, populated by `bodyParserMiddleware` from the request's
-     * `Content-Type`. ServerKit parses lazily per route, so Fastify's own `request.body` stays
-     * `undefined`; read this instead. Typed as `unknown`; narrow it in handlers.
+     * Raw request body bytes, captured by `bodyParserPlugin` alongside the parsed value on
+     * `request.body`. Needed by `requireSignature`, which hashes the bytes as they arrived.
      */
-    parsedBody: unknown;
-    /** Authentication session, populated by `authenticationMiddleware`. */
+    rawBody: BinaryLike;
+    /** Authentication session, populated by `authenticationPlugin`. */
     authenticationSession: AuthenticationSession;
     /** The reply paired with this request, so an injected context can set response headers. */
     reply: FastifyReply;
@@ -42,7 +49,7 @@ declare module 'fastify' {
 
 /**
  * The ServerKit request context on Fastify: the request itself, carrying the request-scoped
- * container, logger, IDs, parsed body, and authentication session declared above.
+ * container, logger, IDs, raw body, and authentication session declared above.
  *
  * Route handlers receive `(request, reply)`; `request` is this type. Services can also declare
  * `ServerKitContext` as a constructor dependency and receive the live request, because
