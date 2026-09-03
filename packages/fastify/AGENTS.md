@@ -18,8 +18,9 @@ existing Koa app; pick one adapter per server.
 pnpm add @maroonedsoftware/fastify fastify @fastify/cors
 ```
 
-Required peers: `fastify` (^5), `@fastify/cors` (^11). Optional peer: `@maroonedsoftware/serverfeed`
-— unlocks the `./serverfeed` subpath.
+Required peers: `fastify` (^5), `@fastify/cors` (^11). Optional peers: `@maroonedsoftware/serverfeed`
+unlocks the `./serverfeed` subpath; `@maroonedsoftware/zod`, `zod`, and `fast-json-stringify`
+unlock `./zod` (the last only for response serialization).
 
 Runtime dependencies: `appconfig`, `authentication`, `errors`, `logger`, `policies`, `servercore`,
 plus `injectkit` and `type-is`.
@@ -30,7 +31,8 @@ plus `injectkit` and `type-is`.
   `errors`, `logger`, `policies`.
 - **Depended on by:** nothing internal.
 - **Subpath exports:** `./serverfeed` — the SSE adapter for `@maroonedsoftware/serverfeed`, an
-  **optional** peer. A subpath so nothing reachable from the root barrel imports the bus.
+  **optional** peer. `./zod` — Fastify's schema compilers backed by `@maroonedsoftware/zod`, also
+  optional peers. Both are subpaths so nothing reachable from the root barrel imports either.
 
 ## API surface
 
@@ -88,6 +90,16 @@ The stream and frame types (`SseStream`, `SseStreamOptions`, `SseFrame`, `frameE
 | `handleServerFeed`          | function  | re-export                                                          | From `@maroonedsoftware/servercore/serverfeed`.                       |
 | `ServerFeedContext`         | interface | re-export                                                          | From `@maroonedsoftware/servercore/serverfeed`.                       |
 | `serverFeedFilterFromQuery` | function  | re-export                                                          | From `@maroonedsoftware/servercore/serverfeed`.                       |
+
+### `./zod`
+
+| Export                  | Kind      | Shape                                                                  | Notes                                                                                                          |
+| ----------------------- | --------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `zodPlugin`             | function  | `(options?: ZodPluginOptions) => ServerKitPlugin`                      | Installs both compilers. Register after `errorPlugin`.                                                          |
+| `ZodPluginOptions`      | interface | `{ serializer?: CompileSerializerOptions }`                            | Forwarded to `compileSerializer` for every response schema.                                                     |
+| `zodValidatorCompiler`  | function  | `() => FastifySchemaCompiler<ZodType>`                                 | `safeParse`; the parsed **output** replaces the input. Failure is an `HttpError` with `zodErrorDetails`.        |
+| `zodSerializerCompiler` | function  | `(options?: CompileSerializerOptions) => FastifySerializerCompiler<ZodType>` | Compiles each `response[status]` with `fast-json-stringify` at boot.                                        |
+| `ZodTypeProvider`       | interface | `extends FastifyTypeProvider`                                          | `validator` is `z.output`, `serializer` is `z.input`. Apply with `app.withTypeProvider<ZodTypeProvider>()`.     |
 
 ### Lifecycle
 
@@ -167,7 +179,11 @@ follow the snippets here rather than translating the Koa skills, which describe 
 - Always pass `signal: builder.lifecycleSignal` to `openSseReply` and `serverFeedRoutes`, and
   register cleanup with `stream.onClose(...)` for every timer and subscription an SSE handler
   creates. Never `send` on a reply after `openSseReply`.
-- Import `serverFeedRoutes` from `@maroonedsoftware/fastify/serverfeed`, never from the root.
+- Import `serverFeedRoutes` from `@maroonedsoftware/fastify/serverfeed`, and the zod compilers
+  from `@maroonedsoftware/fastify/zod`, never from the root.
+- With `zodPlugin`, declare route schemas as Zod schemas and type the instance with
+  `withTypeProvider<ZodTypeProvider>()` rather than casting `request.body`. A route with a
+  `schema.body` still needs its `config.body` content types.
 - Put slow start-up work in a module's `ready` hook, not `start`.
 
 ## Gotchas
@@ -225,6 +241,11 @@ follow the snippets here rather than translating the Koa skills, which describe 
   backlog and `heartbeatMs: 0` is silent until the first live event.
 - **An SSE stream never ends on its own.** Without `options.signal`, every connected client holds
   `server.close()` open until the grace period force-closes it.
+- **The zod validator is synchronous**, as Fastify requires. A schema with async refinements or
+  transforms cannot be a route schema; validate those in the handler with `parseAndValidate`.
+- **The zod serializer does not validate.** A handler returning something the response schema does
+  not describe has unknown properties dropped silently. A schema JSON Schema cannot express
+  (a transform, `z.custom`, `z.date`, `z.bigint`) fails at boot, from `ready()`, not per request.
 - **Fastify auto-registers `HEAD` for every `GET`.** Declaring an explicit `HEAD` route on the
   same path throws at registration; pass `exposeHeadRoute: false` on the `GET` if you need your own.
 
@@ -242,6 +263,9 @@ src/
   sse/sse.reply.ts             openSseReply
   serverfeed.ts                Subpath entry for ./serverfeed
   serverfeed/server.feed.routes.ts  serverFeedRoutes
+  zod.ts                       Subpath entry for ./zod
+  zod/                         zod.plugin, zod.validator.compiler, zod.serializer.compiler,
+                               zod.type.provider
   plugins/                     error (+ normalizeFastifyError), serverkit.context, body.parser, cors,
                                rate.limiter, authentication, serverkit.default.plugins
 ```
@@ -258,8 +282,10 @@ Invariants a change must not break:
   Fastify has already consumed.
 - Scope disposal must stay on `reply.raw` `close`, or hijacked SSE replies lose their services.
 - Graceful shutdown stays the shared base's; `listen` must honour the abort `signal`.
-- **Nothing reachable from `src/index.ts` may import `@maroonedsoftware/serverfeed`.** It is an
-  optional peer reachable only through `./serverfeed`; the `build` script lists both tsup entries.
+- **Nothing reachable from `src/index.ts` may import `@maroonedsoftware/serverfeed`,
+  `@maroonedsoftware/zod`, `zod`, or `fast-json-stringify.`** They are optional peers reachable
+  only through `./serverfeed` and `./zod`; the `build` script lists all three tsup entries. Check
+  the built bundle and its chunks, not just the source.
 
 User-visible changes need a changeset in `.changeset/`. A new export must also land in the
 `README.md` feature list, the API surface table above, and (for a subpath) `package.json`

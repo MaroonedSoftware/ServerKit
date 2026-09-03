@@ -12,7 +12,9 @@ Fastify hooks and plugins instead of Koa middleware. Both adapters share
 pnpm add @maroonedsoftware/fastify fastify @fastify/cors
 ```
 
-Peer dependencies: `fastify` (v5), `@fastify/cors`.
+Peer dependencies: `fastify` (v5), `@fastify/cors`. Optional: `@maroonedsoftware/serverfeed` for
+the `/serverfeed` subpath, and `@maroonedsoftware/zod` plus `zod` (and `fast-json-stringify` for
+response serialization) for the `/zod` subpath.
 
 ## Features
 
@@ -39,6 +41,8 @@ Peer dependencies: `fastify` (v5), `@fastify/cors`.
   lifecycle-signal drain from the shared transport.
 - `@maroonedsoftware/fastify/serverfeed`: `serverFeedRoutes`, an authenticated SSE endpoint over
   the `@maroonedsoftware/serverfeed` realtime bus (optional peer).
+- `@maroonedsoftware/fastify/zod`: `zodPlugin` and a `ZodTypeProvider`, so routes declare their
+  schemas as Zod schemas and get typed request and response shapes (optional peers).
 - Re-exports of the shared core: `ServerKitModule`, the parsers and `defaultParserMappings`,
   `ServerKitBodyParser`, the signature policy, `RateLimiter`, and the SSE transport.
 
@@ -177,6 +181,32 @@ app.get('/events', async (_request, reply) => {
 of waiting out the grace period, and register cleanup with `stream.onClose`. Headers are flushed
 on the first write (an event, a comment, or the heartbeat), not when the stream opens.
 
+## Zod schemas
+
+```typescript
+import { zodPlugin, type ZodTypeProvider } from '@maroonedsoftware/fastify/zod';
+
+builder.setupPlugins(container => [...serverKitDefaultPlugins(container), zodPlugin()]);
+
+const userRoutes: FastifyPluginAsync = async instance => {
+  const app = instance.withTypeProvider<ZodTypeProvider>();
+
+  app.post('/users', { config: { body: ['application/json'] }, schema: { body: CreateUser, response: { 200: User } } }, async request => {
+    return request.container.get(UserService).create(request.body); // request.body is typed
+  });
+};
+```
+
+`zodPlugin` installs Fastify's validator and serializer compilers. Validation runs the schema and
+hands the handler its **output** type, so coercions and transforms apply, and a failure renders
+through `errorPlugin` with the same field map `parseAndValidate` produces. Responses are compiled
+once at boot into a `fast-json-stringify` serializer per status code.
+
+Two limits worth knowing: the validator is synchronous, as Fastify requires, so a schema with async
+refinements has to be validated in the handler instead; and the serializer does not validate, so a
+value the response schema does not describe has its unknown properties dropped silently. A schema
+JSON Schema cannot express, such as `z.date()`, fails at boot rather than per request.
+
 ## Server feed SSE endpoint
 
 ```typescript
@@ -230,6 +260,8 @@ change or `false` for session-only), streaming the `ServerFeed` bus registered i
 - `@maroonedsoftware/fastify/serverfeed`: `serverFeedRoutes(options?)`, `ServerFeedRoutesOptions`,
   plus `handleServerFeed`, `ServerFeedContext`, and `serverFeedFilterFromQuery` re-exported from
   `@maroonedsoftware/servercore/serverfeed`.
+- `@maroonedsoftware/fastify/zod`: `zodPlugin(options?)`, `ZodPluginOptions`, `zodValidatorCompiler()`,
+  `zodSerializerCompiler(options?)`, and `ZodTypeProvider`.
 
 ## License
 

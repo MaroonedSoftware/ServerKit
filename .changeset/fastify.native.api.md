@@ -44,3 +44,10 @@ declares `{ config: { body: ['application/json'] } }` instead. The 400 / 411 / 4
 is unchanged, `GET`, `HEAD`, and `TRACE` are exempt from the 411 since Fastify never parses them,
 and Fastify's `bodyLimit` now acts as a `Content-Length` pre-check answering 413. The ceiling
 enforced while reading is still the parser's own option, such as `JsonParserOptions.limit`.
+
+Add the `@maroonedsoftware/fastify/zod` subpath: `zodPlugin` installs Fastify's validator and
+serializer compilers backed by `@maroonedsoftware/zod`, and `ZodTypeProvider` infers a route's
+request and response types from its Zod schemas. Validation hands the handler the schema's output
+type and renders a failure through `errorPlugin` with the same field map `parseAndValidate`
+produces; responses are compiled once at boot with `fast-json-stringify`. `@maroonedsoftware/zod`,
+`zod`, and `fast-json-stringify` are optional peers, reachable only through the subpath.

@@ -391,6 +391,9 @@ importers:
       '@maroonedsoftware/serverfeed':
         specifier: workspace:*
         version: link:../serverfeed
+      '@maroonedsoftware/zod':
+        specifier: workspace:*
+        version: link:../zod
       '@repo/config-eslint':
         specifier: workspace:*
         version: link:../config-eslint
@@ -400,12 +403,18 @@ importers:
       '@types/type-is':
         specifier: ^1.6.7
         version: 1.6.7
+      fast-json-stringify:
+        specifier: ^7.0.0
+        version: 7.0.1
       fastify:
         specifier: ^5.12.1
         version: 5.12.1
       rate-limiter-flexible:
         specifier: ^11.2.0
         version: 11.2.0
+      zod:
+        specifier: ^4.5.4
+        version: 4.5.4
 
   packages/jobbroker:
     dependencies:
