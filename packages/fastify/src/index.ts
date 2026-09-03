@@ -1,5 +1,6 @@
 export * from './serverkit.context.js';
 export * from './serverkit.plugin.js';
+export * from './logger/fastify.logger.js';
 export * from './serverkit.middleware.js';
 export * from './serverkit.router.js';
 export * from './serverkit.request.js';

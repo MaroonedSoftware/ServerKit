@@ -1,8 +1,10 @@
-import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
+import Fastify, { LogController, type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import { Container, Registry } from 'injectkit';
 import type { Server } from 'node:http';
 import { ServerkitError } from '@maroonedsoftware/errors';
-import { ServerKitServerBuilderBase } from '@maroonedsoftware/servercore';
+import type { Logger } from '@maroonedsoftware/logger';
+import { ServerKitServerBuilderBase, resolveRequestIdentity } from '@maroonedsoftware/servercore';
+import { createFastifyLogger } from './logger/fastify.logger.js';
 import { ServerKitContext } from './serverkit.context.js';
 import { ServerKitPlugin } from './serverkit.plugin.js';
 import { serverKitDefaultPlugins } from './plugins/serverkit.default.plugins.js';
@@ -18,7 +20,12 @@ export interface ServerKitFastifyOptions {
    * unreachable from outside a container; pass `'0.0.0.0'` on a host without IPv6.
    */
   host?: string;
-  /** Options forwarded to `Fastify()`. Logging is off by default; ServerKit logs through `Logger`. */
+  /**
+   * Options forwarded to `Fastify()`. By default the builder supplies a `loggerInstance` bridging
+   * Fastify's output to the ServerKit `Logger`, a `genReqId` reading `X-Request-Id`, and a
+   * `logController` that silences Fastify's per-request lines. Setting `logger` or
+   * `loggerInstance` here opts out of the bridge, and any key set here wins.
+   */
   fastify?: FastifyServerOptions;
 }
 
@@ -55,7 +62,38 @@ export class ServerKitServerBuilder extends ServerKitServerBuilderBase {
   constructor(options: ServerKitFastifyOptions = {}) {
     super();
     this.host = options.host ?? '::';
-    this.server = Fastify({ logger: false, ...options.fastify });
+
+    // Fastify's logger is fixed at construction, but the application's Logger only arrives in
+    // `setup`. Forward through `this.logger` so the bridge always writes to whichever logger is
+    // current: the base class's ConsoleLogger until setup, the application's one afterwards.
+    const forwarding: Logger = {
+      error: (message, ...params) => this.logger.error(message, ...params),
+      warn: (message, ...params) => this.logger.warn(message, ...params),
+      info: (message, ...params) => this.logger.info(message, ...params),
+      debug: (message, ...params) => this.logger.debug(message, ...params),
+      trace: (message, ...params) => this.logger.trace(message, ...params),
+    };
+    const bridgedLogger =
+      options.fastify?.logger === undefined && options.fastify?.loggerInstance === undefined
+        ? { loggerInstance: createFastifyLogger(forwarding) }
+        : {};
+
+    this.server = Fastify({
+      // ServerKit logs requests through its own context and error handling; Fastify's per-request
+      // lines would double every one of them. Set via `logController`, not the deprecated
+      // top-level `disableRequestLogging`.
+      logController: new LogController({ disableRequestLogging: true }),
+      // One source of truth for the id: servercore's resolver reads the header (or generates a
+      // UUID), and `requestIdHeader: false` stops Fastify reading it a second way of its own.
+      requestIdHeader: false,
+      genReqId: request => resolveRequestIdentity(request.headers).requestId,
+      ...bridgedLogger,
+      ...options.fastify,
+    });
+
+    // Fastify closes before the Node server emits 'close', which is what drives the shared
+    // shutdown; this only marks the boundary in the log.
+    this.server.addHook('onClose', async () => this.logger.info('Fastify server closing'));
 
     // ServerKit parses lazily per route (see the class docs). Every content type, including a
     // missing one, resolves to this catch-all, which leaves the raw stream untouched.

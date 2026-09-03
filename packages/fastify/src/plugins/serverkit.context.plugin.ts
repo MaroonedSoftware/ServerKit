@@ -71,13 +71,17 @@ export const serverKitContextPlugin = (container: Container): ServerKitPlugin =>
       request.userAgent = request.headers['user-agent'] ?? '';
       request.ipAddress = request.ip;
 
-      const { correlationId, requestId } = resolveRequestIdentity(request.headers);
+      // The request id is Fastify's own `request.id`, which the builder's `genReqId` resolves from
+      // `X-Request-Id`. Taking it from there rather than re-reading the header keeps
+      // `request.logger` and Fastify's `request.log` on the same id, and honours a custom
+      // `genReqId` passed through the builder's Fastify options.
+      const { correlationId } = resolveRequestIdentity(request.headers);
       request.correlationId = correlationId;
-      request.requestId = requestId;
+      request.requestId = request.id;
 
       request.headers[CORRELATION_ID_HEADER] = correlationId;
-      request.headers[REQUEST_ID_HEADER] = requestId;
-      void reply.header(CORRELATION_ID_HEADER, correlationId).header(REQUEST_ID_HEADER, requestId);
+      request.headers[REQUEST_ID_HEADER] = request.requestId;
+      void reply.header(CORRELATION_ID_HEADER, correlationId).header(REQUEST_ID_HEADER, request.requestId);
     });
   });
 };

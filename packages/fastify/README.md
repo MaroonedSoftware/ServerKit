@@ -24,6 +24,8 @@ Peer dependencies: `fastify` (v5), `@fastify/cors`.
 - `errorPlugin`: ServerKit's error rendering as Fastify's error and not-found handlers, with
   Fastify's own 4xx errors mapped to `HttpError`.
 - `serverKitPlugin`: wraps a custom stack step with `fastify-plugin` so its hooks reach every route.
+- `createFastifyLogger`: bridges Fastify's own logging onto the ServerKit `Logger`, so startup
+  lines, `request.log`, and plugin warnings land wherever the application logs.
 - `ServerKitRouter`: a Koa-style route collector (`get`, `post`, `use`, ...) that mounts as an
   encapsulated Fastify plugin with `preHandler` guards.
 - `bodyParserMiddleware`: per-route, content-type-driven body parsing into `request.parsedBody`
@@ -87,6 +89,16 @@ encapsulated and its hooks would never run.
 Route guards are `ServerKitRouterMiddleware`, `(request, reply) => Promise<void>`, run as
 `preHandler` hooks in the order given: router-wide guards from `router.use(...)` first, then the
 route's own, then the handler. Throw an `HttpError` to reject.
+
+### Logging
+
+Fastify's logger is the ServerKit `Logger`, bridged by `createFastifyLogger`, so there is no second
+pino instance to configure. `request.log` is Fastify's per-request child logger and
+`request.logger` is the request-scoped injectkit `Logger`; both carry the same request id, because
+`request.id` is resolved from `X-Request-Id` (or generated) by the same servercore helper the
+context plugin uses. Fastify's own per-request lines are silenced, since ServerKit logs requests
+itself. Pass `fastify: { logger: ... }` or `fastify: { loggerInstance: ... }` to opt out, and
+`fastify: { genReqId: ... }` to control the id.
 
 ### Reaching the Fastify instance
 
@@ -172,7 +184,7 @@ change or `false` for session-only), streaming the `ServerFeed` bus registered i
 | `userAgent`             | `string`                | `User-Agent` header or `''`                  |
 | `ipAddress`             | `string`                | Client IP                                    |
 | `correlationId`         | `string`                | From `X-Correlation-Id` or generated         |
-| `requestId`             | `string`                | From `X-Request-Id` or generated             |
+| `requestId`             | `string`                | Fastify's `request.id`, from `X-Request-Id` or generated |
 | `rawBody`               | `BinaryLike`            | Raw body bytes, after `bodyParserMiddleware` |
 | `parsedBody`            | `unknown`               | Parsed body, after `bodyParserMiddleware`    |
 | `authenticationSession` | `AuthenticationSession` | Set by `authenticationPlugin`            |

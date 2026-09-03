@@ -50,6 +50,15 @@ describe('serverKitContextPlugin (fastify)', () => {
     expect(response.headers['x-request-id']).toBe('req-1');
   });
 
+  it('uses Fastify request.id as the request id, so request.log and request.logger agree', async () => {
+    const { app } = await createTestApp();
+    app.get('/', async request => ({ requestId: request.requestId, id: request.id }));
+
+    const response = await app.inject({ method: 'GET', url: '/', headers: { 'x-request-id': 'req-7' } });
+
+    expect(response.json()).toEqual({ requestId: 'req-7', id: 'req-7' });
+  });
+
   it('generates ids when the headers are absent', async () => {
     const { app } = await createTestApp();
     app.get('/', async request => ({ correlationId: request.correlationId, requestId: request.requestId }));

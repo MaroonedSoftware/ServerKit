@@ -41,6 +41,7 @@ plus `injectkit` and `type-is`.
 | `ServerKitContext`          | interface + abstract class | `extends FastifyRequest`; the module augmentation adds `container`, `logger`, `loggerName`, `userAgent`, `ipAddress`, `correlationId`, `requestId`, `rawBody`, `parsedBody`, `authenticationSession`, `reply` | Declaration-merged so one symbol is both the type and a DI token. The request **is** the context. |
 | `ServerKitPlugin`           | type                       | `FastifyPluginAsync`                                                                                                                                                                                          | A server-stack plugin, registered in order by `setupPlugins`. Applies to the root instance.       |
 | `serverKitPlugin`           | function                   | `(name: string, plugin: (app: FastifyInstance) => void \| Promise<unknown>) => ServerKitPlugin`                                                                                                               | Wraps a plugin with `fastify-plugin` so its hooks escape encapsulation. Use it for custom steps.  |
+| `createFastifyLogger`       | function                   | `(logger: Logger, bindings?: Record<string, unknown>) => FastifyBaseLogger`                                                                                                                                    | Bridges Fastify's logging to a ServerKit `Logger`. `fatal` maps to `error`. Installed by default. |
 | `ServerKitRouterMiddleware` | type                       | `(request: ServerKitContext, reply: FastifyReply) => Promise<void>`                                                                                                                                           | A route guard, run as a `preHandler`. Throw to reject.                                            |
 | `ServerKitRouteHandler`     | type                       | `(request: ServerKitContext, reply: FastifyReply) => unknown`                                                                                                                                                 | Return a value to send it.                                                                        |
 | `ServerKitRouter`           | function                   | `(options?: { prefix? }) => ServerKitRouterType`                                                                                                                                                              | Factory, not a class.                                                                             |
@@ -191,6 +192,11 @@ for `ctx.body`, and a `serverKitPlugin(...)` step for a `(ctx, next)` middleware
   `HttpError` yields its status, message, details, and headers; a bare `ServerkitError` a 500
   **with** details; a plain `Error` a generic 500 with none. A Fastify-raised 4xx becomes an
   `HttpError` whose only detail is `reason: error.message`.
+- **`request.requestId` is Fastify's `request.id`**, resolved from `X-Request-Id` by the builder's
+  `genReqId`. A custom `genReqId` in `fastify` options therefore changes both, and the echoed
+  `x-request-id` response header. `correlationId` is still read straight from its own header.
+- **Fastify's logging is bridged to the ServerKit `Logger`** and its per-request lines are
+  silenced. Passing `fastify.logger` or `fastify.loggerInstance` opts out of the bridge entirely.
 - **`ServerKitContext` is a module augmentation of `FastifyRequest`.** Importing this package
   adds the ServerKit fields to every `FastifyRequest` type in the consumer's program.
 - **`setup` registers `ServerKitContext` as a scoped placeholder** so services can inject it;
@@ -226,6 +232,7 @@ src/
   index.ts                     Root barrel (plus named re-exports from servercore)
   serverkit.context.ts         FastifyRequest augmentation, ServerKitContext (interface + token)
   serverkit.plugin.ts          ServerKitPlugin, serverKitPlugin (fastify-plugin wrapper)
+  logger/fastify.logger.ts     createFastifyLogger (Logger to FastifyBaseLogger bridge)
   serverkit.middleware.ts      ServerKitRouterMiddleware, ServerKitRouteHandler
   serverkit.router.ts          ServerKitRouter, ServerKitRouterType
   serverkit.request.ts         requestPath, requestMediaType, requestBodyLength, requestHeader

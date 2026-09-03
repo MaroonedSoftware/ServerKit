@@ -19,3 +19,10 @@ hook ahead of authentication, so a preflight is still answered before any scheme
 
 The error and not-found handlers are async and return the reply, so Fastify tracks completion,
 instead of firing `reply.send` and discarding the result.
+
+Fastify's own logging is bridged onto the ServerKit `Logger` by the new `createFastifyLogger`, so
+startup lines, `request.log`, and plugin warnings go where the application logs instead of to a
+separate pino instance, and Fastify's duplicate per-request lines are silenced. `request.id` is now
+resolved from `X-Request-Id` by the builder's `genReqId` and is the source of `request.requestId`,
+so Fastify's request logging and ServerKit's agree on the id. Pass `fastify.logger`,
+`fastify.loggerInstance`, or `fastify.genReqId` to override any of it.

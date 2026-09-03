@@ -68,9 +68,50 @@ describe('ServerKitServerBuilder (fastify)', () => {
     });
 
     it('forwards Fastify options', () => {
-      const builder = new ServerKitServerBuilder({ fastify: { caseSensitive: false } });
+      const builder = new ServerKitServerBuilder({ fastify: { routerOptions: { caseSensitive: false } } });
 
-      expect(builder.app.initialConfig.caseSensitive).toBe(false);
+      expect(builder.app.initialConfig.routerOptions?.caseSensitive).toBe(false);
+    });
+
+    it('bridges Fastify logging to the ServerKit logger, following it across setup', async () => {
+      const builder = new ServerKitServerBuilder();
+
+      builder.app.log.warn('before setup');
+
+      await builder.setup(config, logger, []);
+      builder.app.log.warn('after setup');
+
+      expect(logger.warn).toHaveBeenCalledWith('after setup');
+    });
+
+    it('leaves Fastify logging alone when the caller supplies a logger', async () => {
+      const builder = new ServerKitServerBuilder({ fastify: { logger: false } });
+      await builder.setup(config, logger, []);
+
+      builder.app.log.warn('ignored');
+
+      expect(logger.warn).not.toHaveBeenCalled();
+    });
+
+    it('takes the request id from the X-Request-Id header and honours a custom genReqId', async () => {
+      const builder = new ServerKitServerBuilder();
+      await builder.setup(config, logger, []);
+      builder.setupPlugins(minimalPlugins);
+      builder.app.get('/', async request => ({ id: request.id, requestId: request.requestId }));
+
+      const response = await builder.app.inject({ method: 'GET', url: '/', headers: { 'x-request-id': 'req-9' } });
+
+      expect(response.json()).toEqual({ id: 'req-9', requestId: 'req-9' });
+
+      const custom = new ServerKitServerBuilder({ fastify: { genReqId: () => 'fixed' } });
+      await custom.setup(config, logger, []);
+      custom.setupPlugins(minimalPlugins);
+      custom.app.get('/', async request => ({ requestId: request.requestId }));
+
+      const overridden = await custom.app.inject({ method: 'GET', url: '/', headers: { 'x-request-id': 'ignored' } });
+
+      expect(overridden.json()).toEqual({ requestId: 'fixed' });
+      expect(overridden.headers['x-request-id']).toBe('fixed');
     });
   });
 
