@@ -1,13 +1,19 @@
 ---
 user-invocable: true
 allowed-tools: Read, Write, Edit, Grep, Glob
-description: Generate a route handler for multipart/form-data file uploads with proper typing
+description: Generate a Koa route handler for multipart/form-data file uploads with proper typing. On @maroonedsoftware/fastify use /fastify-route instead, since this skill emits Koa-only code.
 argument-hint: <path> [file]
 ---
 
 # /multipart-upload - Generate Multipart Upload Route
 
-Generate a route handler for multipart/form-data file uploads with proper typing and validation.
+Generate a Koa route handler for multipart/form-data file uploads with proper typing and validation.
+
+**Koa only.** The generated code imports `ServerKitRouter` and `bodyParserMiddleware` from
+`@maroonedsoftware/koa`, neither of which exists in `@maroonedsoftware/fastify`. In a Fastify app
+run `/fastify-route post <path> <file> multipart/form-data` instead: the route declares
+`config: { body: ['multipart/form-data'] }` and reads the `MultipartBody` from `request.body`.
+Check which adapter the app installed before generating.
 
 ## Arguments
 

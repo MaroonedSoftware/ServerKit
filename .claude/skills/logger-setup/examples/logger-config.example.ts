@@ -18,6 +18,8 @@ export const configureLogger = (registry: InjectKitRegistry): void => {
 // import { InjectKitRegistry } from 'injectkit';
 // import { configureLogger } from './config/logger.config';
 // import { serverKitContextMiddleware } from '@maroonedsoftware/koa';
+// // On Fastify the same step is a plugin:
+// // import { serverKitContextPlugin } from '@maroonedsoftware/fastify';
 //
 // const registry = new InjectKitRegistry();
 // configureLogger(registry);

@@ -6,6 +6,10 @@ ServerKit ships two HTTP adapters with different models, so the route and middle
 in pairs. Use the `koa-*` skills in an app built on `@maroonedsoftware/koa` and the `fastify-*`
 skills in one built on `@maroonedsoftware/fastify`. Their output is not interchangeable.
 
+`/multipart-upload` is Koa-only for the same reason; on Fastify use `/fastify-route` with
+`multipart/form-data`. The remaining skills (`/config`, `/error-handler`, `/job`, `/logger-setup`)
+are adapter-neutral.
+
 ## Available Skills
 
 ### 1. `/koa-route` - Generate Koa Route Handler
@@ -207,7 +211,8 @@ Generate logger registration and configuration for dependency injection.
 
 ### 9. `/multipart-upload` - Generate Multipart Upload Route
 
-Generate a route handler for multipart/form-data file uploads.
+Generate a **Koa** route handler for multipart/form-data file uploads. On Fastify run
+`/fastify-route post <path> <file> multipart/form-data` instead.
 
 **Usage:**
 ```

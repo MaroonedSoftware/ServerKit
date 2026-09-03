@@ -106,7 +106,8 @@ When this skill is invoked:
 6. **Add advanced notes:**
    - Explain that Logger is an interface, ConsoleLogger is implementation
    - Can be replaced with custom logger (e.g., PinoLogger, WinstonLogger)
-   - Logger is automatically scoped in ServerKit context middleware
+   - Logger is automatically scoped by the ServerKit context step: `serverKitContextPlugin` on
+     Fastify, `serverKitContextMiddleware` on Koa
 
 7. **Write file:**
    - Create the complete logger config file
