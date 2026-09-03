@@ -17,7 +17,7 @@ export interface BodyGateRequest {
 
 /**
  * Enforces a route's body expectation before any bytes are parsed. This is the status contract
- * every adapter's `bodyParserMiddleware` shares:
+ * every adapter shares (koa's `bodyParserMiddleware`, fastify's `bodyParserPlugin`):
  *
  * - `contentTypes` empty: a body is not allowed. Throws **400** when one is present.
  * - `contentTypes` non-empty: a body is required. Throws **411** when absent and **415** when its

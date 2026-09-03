@@ -14,10 +14,13 @@ pnpm add @maroonedsoftware/zod
 import { parseAndValidate, parseAndValidateArray, zBigint } from '@maroonedsoftware/zod';
 ```
 
-The examples below validate a request payload, which on ServerKit comes from `ctx.parsedBody` (koa)
-or `request.parsedBody` (fastify), populated by that route's `bodyParserMiddleware`. The frameworks'
-own `ctx.request.body` and `request.body` are never populated by ServerKit, so a route that reads
-them hands `undefined` to `parseAndValidate` and gets a 400 listing every field as missing.
+The examples below validate a request payload. On Koa that is `ctx.parsedBody`, populated by the
+route's `bodyParserMiddleware`; Koa's own `ctx.request.body` is never populated by ServerKit, so a
+route that reads it hands `undefined` to `parseAndValidate` and gets a 400 listing every field as
+missing. On Fastify it is the ordinary `request.body`, populated by `bodyParserPlugin` for the
+content types the route declares in its `config.body`, and
+[`@maroonedsoftware/fastify/zod`](../fastify/README.md) can run the schema as the route's schema
+instead of in the handler.
 
 ```typescript
 router.post('/users', bodyParserMiddleware(['application/json']), async ctx => {

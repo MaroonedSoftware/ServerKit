@@ -75,7 +75,7 @@ const wildcardTypeMatches = (pattern: string, type: string): boolean => {
  * @throws HTTP 415 if the request's `Content-Type` does not match any registered parser.
  *
  * @see {@link defaultParserMappings} – convenience map for the standard parsers
- * @see {@link bodyParserMiddleware} – the middleware that invokes this class
+ * @see the adapters that invoke this class: `bodyParserMiddleware` on koa, `bodyParserPlugin` on fastify
  */
 @Injectable()
 export class ServerKitBodyParser {

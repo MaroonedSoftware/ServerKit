@@ -2,6 +2,10 @@
 
 Custom Claude Code skills for scaffolding ServerKit applications.
 
+ServerKit ships two HTTP adapters with different models, so the route and middleware skills come
+in pairs. Use the `koa-*` skills in an app built on `@maroonedsoftware/koa` and the `fastify-*`
+skills in one built on `@maroonedsoftware/fastify`. Their output is not interchangeable.
+
 ## Available Skills
 
 ### 1. `/koa-route` - Generate Koa Route Handler
@@ -54,7 +58,55 @@ Generate custom ServerKit middleware with proper typing and error handling.
 
 ---
 
-### 3. `/job` - Generate Background Job
+### 3. `/fastify-route` - Generate Fastify Route Plugin
+
+Generate a route on a Fastify plugin with ServerKit patterns.
+
+**Usage:**
+```
+/fastify-route <method> <path> [file] [content-types]
+```
+
+**Examples:**
+```
+/fastify-route get /api/users
+/fastify-route post /api/users src/routes/users.routes.ts application/json
+```
+
+**What it generates:**
+- A `FastifyPluginAsync` for `builder.setupRoutes`
+- `config.body` content-type allow-list when the route takes a body
+- `requirePolicy()` guard in `preHandler`
+- Error handling with httpError
+- Logger integration and request ID tracking
+- DI container access, and an optional Zod schema variant
+
+---
+
+### 4. `/fastify-plugin` - Generate Fastify Plugin or Guard
+
+Generate a step for the Fastify plugin stack, or a guard for one route.
+
+**Usage:**
+```
+/fastify-plugin <name> [file]
+```
+
+**Examples:**
+```
+/fastify-plugin apiVersion
+/fastify-plugin requireTenant src/hooks/require.tenant.hook.ts
+```
+
+**What it generates:**
+- `serverKitPlugin(name, fn)` wrapping, so hooks are not encapsulated
+- The right hook phase for the job, `onRequest` or `preHandler`
+- Request context access and `HttpError` rejection
+- JSDoc saying where in the stack it belongs
+
+---
+
+### 5. `/job` - Generate Background Job
 
 Generate a background job class with typed payload and JobBroker integration.
 
@@ -79,7 +131,7 @@ Generate a background job class with typed payload and JobBroker integration.
 
 ---
 
-### 4. `/config` - Generate AppConfig Setup
+### 6. `/config` - Generate AppConfig Setup
 
 Generate AppConfig setup with sources and providers for configuration management.
 
@@ -103,7 +155,7 @@ Generate AppConfig setup with sources and providers for configuration management
 
 ---
 
-### 5. `/error-handler` - Add Error Handling Decorator
+### 7. `/error-handler` - Add Error Handling Decorator
 
 Add error handling decorators to a class for automatic error conversion.
 
@@ -130,7 +182,7 @@ Add error handling decorators to a class for automatic error conversion.
 
 ---
 
-### 6. `/logger-setup` - Generate Logger DI Setup
+### 8. `/logger-setup` - Generate Logger DI Setup
 
 Generate logger registration and configuration for dependency injection.
 
@@ -153,7 +205,7 @@ Generate logger registration and configuration for dependency injection.
 
 ---
 
-### 7. `/multipart-upload` - Generate Multipart Upload Route
+### 9. `/multipart-upload` - Generate Multipart Upload Route
 
 Generate a route handler for multipart/form-data file uploads.
 
@@ -205,15 +257,22 @@ Typical workflow using these skills:
    /logger-setup
    ```
 
-2. **Create routes:**
+2. **Create routes** (pick the pair matching your adapter):
    ```
    /koa-route post /api/users src/routes/users.routes.ts application/json
    /koa-route get /api/users/:id src/routes/users.routes.ts
    ```
+   ```
+   /fastify-route post /api/users src/routes/users.routes.ts application/json
+   /fastify-route get /api/users/:id src/routes/users.routes.ts
+   ```
 
-3. **Add middleware:**
+3. **Add middleware or plugins:**
    ```
    /koa-middleware auth src/middleware/auth.middleware.ts
+   ```
+   ```
+   /fastify-plugin requireTenant src/hooks/require.tenant.hook.ts
    ```
 
 4. **Create background jobs:**
