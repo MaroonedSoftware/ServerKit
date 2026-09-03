@@ -15,10 +15,14 @@ export const normalizeCorsOrigins = (origin: CorsOrigin | undefined): (string | 
 };
 
 /**
- * Builds the origin resolver both CORS adapters share: given the request's `Origin`, return it
+ * Builds the origin resolver the Koa adapter uses: given the request's `Origin`, return it
  * verbatim when a matcher accepts it (`'*'` accepts anything, a string must match exactly, a
  * RegExp must test true) and `''` otherwise, which every CORS library treats as "no match".
  * Reflecting the origin rather than returning `'*'` is what lets RegExp allow-lists work.
+ *
+ * Koa-only: `@koa/cors` takes a string or a resolver function, so a RegExp allow-list has to be
+ * matched here. `@fastify/cors` matches strings, RegExps, and arrays itself, so the Fastify
+ * adapter passes `origin` straight through instead of using this.
  *
  * @param matchers - The normalised matcher list from {@link normalizeCorsOrigins}.
  * @returns A resolver from request origin to the value to reflect, or `''` to deny.

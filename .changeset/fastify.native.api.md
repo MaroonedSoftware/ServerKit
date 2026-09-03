@@ -51,3 +51,17 @@ request and response types from its Zod schemas. Validation hands the handler th
 type and renders a failure through `errorPlugin` with the same field map `parseAndValidate`
 produces; responses are compiled once at boot with `fast-json-stringify`. `@maroonedsoftware/zod`,
 `zod`, and `fast-json-stringify` are optional peers, reachable only through the subpath.
+
+`corsPlugin` no longer wraps `@fastify/cors` with its own origin matcher, since that plugin already
+matches strings, RegExps, and arrays. Options now pass through unchanged, which changes two
+behaviours: with no `origin` the response header is a literal `*` rather than the reflected caller
+origin, and a fixed `origin` string is sent on every response rather than only when it equals the
+caller's. Pass a one-element array to match instead of sending a fixed value. `CorsOptions` is now
+an alias for `FastifyCorsOptions`. The guard refusing `credentials: true` alongside a `'*'` origin
+stays, and now also catches the case where `origin` is omitted entirely.
+
+Document and test `trustProxy`. `request.ipAddress` and the rate limiter's bucket key are Fastify's
+`request.ip`, so behind a load balancer every client shares one bucket until
+`fastify: { trustProxy: true }` is set. The option already worked through the builder's Fastify
+options; it now has tests covering both the address and the rate-limit bucketing, and the README
+explains why it stays off by default.

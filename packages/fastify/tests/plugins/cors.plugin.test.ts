@@ -16,12 +16,12 @@ const build = async (options?: CorsOptions) => {
 const allowOrigin = (response: { headers: Record<string, unknown> }) => response.headers['access-control-allow-origin'];
 
 describe('corsPlugin (fastify)', () => {
-  it('reflects any origin by default and advertises the default methods on preflight', async () => {
+  it('allows any origin with a literal wildcard by default and advertises the default methods on preflight', async () => {
     const app = await build();
 
     const response = await app.inject({ method: 'GET', url: '/', headers: { origin: 'https://example.com' } });
     expect(response.statusCode).toBe(200);
-    expect(allowOrigin(response)).toBe('https://example.com');
+    expect(allowOrigin(response)).toBe('*');
 
     const preflight = await app.inject({
       method: 'OPTIONS',
@@ -41,13 +41,35 @@ describe('corsPlugin (fastify)', () => {
     expect(allowOrigin(await app.inject({ method: 'GET', url: '/', headers: { origin: 'https://evil.example.com' } }))).toBeUndefined();
   });
 
-  it('treats a bare string as one origin', async () => {
+  it('sends a bare string origin verbatim, leaving the browser to enforce it', async () => {
     const app = await build({ origin: 'https://single.example.com' });
+
+    // A fixed origin is not a match test: the header is the configured value on every response,
+    // and a caller from anywhere else is blocked by its own browser. Use an array of one to match.
+    expect(allowOrigin(await app.inject({ method: 'GET', url: '/', headers: { origin: 'https://single.example.com' } }))).toBe(
+      'https://single.example.com',
+    );
+    expect(allowOrigin(await app.inject({ method: 'GET', url: '/', headers: { origin: 'https://other.example.com' } }))).toBe(
+      'https://single.example.com',
+    );
+  });
+
+  it('matches a one-element array against the caller origin instead', async () => {
+    const app = await build({ origin: ['https://single.example.com'] });
 
     expect(allowOrigin(await app.inject({ method: 'GET', url: '/', headers: { origin: 'https://single.example.com' } }))).toBe(
       'https://single.example.com',
     );
     expect(allowOrigin(await app.inject({ method: 'GET', url: '/', headers: { origin: 'https://other.example.com' } }))).toBeUndefined();
+  });
+
+  it('reflects the caller origin when configured with true', async () => {
+    const app = await build({ origin: true, credentials: true });
+
+    const response = await app.inject({ method: 'GET', url: '/', headers: { origin: 'https://anywhere.example.com' } });
+
+    expect(allowOrigin(response)).toBe('https://anywhere.example.com');
+    expect(response.headers['access-control-allow-credentials']).toBe('true');
   });
 
   it('matches RegExp origins', async () => {

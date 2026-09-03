@@ -222,7 +222,7 @@ describe('ServerKitServerBuilder (fastify)', () => {
 
       expect(response.json()).toEqual({ hasContainer: true, requestId: 'r1', session: true });
       expect(response.headers['x-request-id']).toBe('r1');
-      expect(response.headers['access-control-allow-origin']).toBe('https://x.com');
+      expect(response.headers['access-control-allow-origin']).toBe('*');
       expect(handle).toHaveBeenCalledTimes(1);
     });
   });

@@ -50,6 +50,35 @@ describe('serverKitContextPlugin (fastify)', () => {
     expect(response.headers['x-request-id']).toBe('req-1');
   });
 
+  it('takes ipAddress from the socket, ignoring a forwarded header, until trustProxy is set', async () => {
+    const { app } = await createTestApp();
+    app.get('/', async request => ({ ip: request.ipAddress }));
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/',
+      remoteAddress: '10.0.0.1',
+      headers: { 'x-forwarded-for': '203.0.113.7' },
+    });
+
+    // Trusting the header by default would let any caller spoof its address.
+    expect(response.json()).toEqual({ ip: '10.0.0.1' });
+  });
+
+  it('takes ipAddress from the forwarded header when trustProxy is set', async () => {
+    const { app } = await createTestApp({ builder: { fastify: { trustProxy: true } } });
+    app.get('/', async request => ({ ip: request.ipAddress }));
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/',
+      remoteAddress: '10.0.0.1',
+      headers: { 'x-forwarded-for': '203.0.113.7' },
+    });
+
+    expect(response.json()).toEqual({ ip: '203.0.113.7' });
+  });
+
   it('uses Fastify request.id as the request id, so request.log and request.logger agree', async () => {
     const { app } = await createTestApp();
     app.get('/', async request => ({ requestId: request.requestId, id: request.id }));

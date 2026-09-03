@@ -148,6 +148,27 @@ The default stack inserts `rateLimiterPlugin` only when a `RateLimiter` is regis
 plugin is registered ahead of authentication, so a preflight is answered before any scheme handler
 runs.
 
+`corsPlugin` passes its options to `@fastify/cors` unchanged, so that plugin's origin semantics
+apply: a fixed string is sent on every response and left for the browser to enforce, an array or
+RegExp reflects the caller's origin only when it matches, and no `origin` at all means a literal
+`*`. The one thing added is a guard that refuses `credentials: true` alongside a `*` origin, which
+no browser honours.
+
+### Running behind a proxy
+
+`request.ipAddress` and the rate limiter's bucket key are both Fastify's `request.ip`, which is the
+socket address. Behind a load balancer that is the proxy, so every client shares one rate-limit
+bucket. Turn on Fastify's proxy support to read the forwarded address instead:
+
+```typescript
+new ServerKitServerBuilder({ fastify: { trustProxy: true } });
+```
+
+This is off by default deliberately. If nothing in front of the app strips `X-Forwarded-For`, any
+caller can set it and take a fresh rate-limit bucket per request, so enable it only when a proxy
+you control sets the header. `trustProxy` also accepts an address, a subnet, a list, or a hop
+count when you need to be specific about which proxies to believe.
+
 ### Body parsing
 
 Bodies are parsed by ServerKit's own parsers, chosen by `Content-Type` from the DI-registered
@@ -231,7 +252,7 @@ change or `false` for session-only), streaming the `ServerFeed` bus registered i
 | `logger`                | `Logger`                | Request-scoped logger                        |
 | `loggerName`            | `string`                | The request path                             |
 | `userAgent`             | `string`                | `User-Agent` header or `''`                  |
-| `ipAddress`             | `string`                | Client IP                                    |
+| `ipAddress`             | `string`                | Client IP, forwarded-aware only with `trustProxy` |
 | `correlationId`         | `string`                | From `X-Correlation-Id` or generated         |
 | `requestId`             | `string`                | Fastify's `request.id`, from `X-Request-Id` or generated |
 | `rawBody`               | `BinaryLike`            | Raw body bytes, after `bodyParserPlugin`     |

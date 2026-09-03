@@ -35,4 +35,34 @@ describe('rateLimiterPlugin (fastify)', () => {
     expect((await app.inject({ method: 'GET', url: '/', remoteAddress: '10.0.0.1' })).statusCode).toBe(429);
     expect((await app.inject({ method: 'GET', url: '/', remoteAddress: '10.0.0.2' })).statusCode).toBe(200);
   });
+
+  it('buckets every client together behind a proxy until trustProxy is set', async () => {
+    const limiter = new RateLimiterMemory({ points: 1, duration: 60 });
+    const { app } = await createTestApp({
+      plugins: container => [errorPlugin(container), serverKitContextPlugin(container), rateLimiterPlugin(limiter)],
+    });
+    app.get('/', async () => 'ok');
+
+    // Same proxy socket, two different real clients. Without trustProxy the key is the proxy's
+    // address, so the second client is rate limited for the first one's request.
+    const proxied = (forwardedFor: string) => app.inject({ method: 'GET', url: '/', remoteAddress: '10.0.0.1', headers: { 'x-forwarded-for': forwardedFor } });
+
+    expect((await proxied('203.0.113.7')).statusCode).toBe(200);
+    expect((await proxied('198.51.100.4')).statusCode).toBe(429);
+  });
+
+  it('keys the bucket by the forwarded client ip when trustProxy is set', async () => {
+    const limiter = new RateLimiterMemory({ points: 1, duration: 60 });
+    const { app } = await createTestApp({
+      builder: { fastify: { trustProxy: true } },
+      plugins: container => [errorPlugin(container), serverKitContextPlugin(container), rateLimiterPlugin(limiter)],
+    });
+    app.get('/', async () => 'ok');
+
+    const proxied = (forwardedFor: string) => app.inject({ method: 'GET', url: '/', remoteAddress: '10.0.0.1', headers: { 'x-forwarded-for': forwardedFor } });
+
+    expect((await proxied('203.0.113.7')).statusCode).toBe(200);
+    expect((await proxied('198.51.100.4')).statusCode).toBe(200);
+    expect((await proxied('203.0.113.7')).statusCode).toBe(429);
+  });
 });

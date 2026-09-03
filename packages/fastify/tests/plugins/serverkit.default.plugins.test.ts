@@ -24,7 +24,7 @@ describe('serverKitDefaultPlugins (fastify)', () => {
       headers: { origin: 'https://x.com', 'x-request-id': 'r1', authorization: 'Bearer t' },
     });
     expect(response.json()).toEqual({ requestId: 'r1', session: true });
-    expect(response.headers['access-control-allow-origin']).toBe('https://x.com');
+    expect(response.headers['access-control-allow-origin']).toBe('*');
     expect(response.headers['access-control-expose-headers']).toBe('WWW-Authenticate');
     expect(handle).toHaveBeenCalledWith('Bearer t');
   });

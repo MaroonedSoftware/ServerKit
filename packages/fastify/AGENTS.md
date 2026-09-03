@@ -56,8 +56,8 @@ plus `injectkit` and `type-is`.
 | `normalizeFastifyError`             | function  | `(error: unknown) => unknown`                                                                  | Maps a Fastify-raised 4xx to `httpError(status).withDetails({ reason })`; everything else passes through.                                                                                                  |
 | `serverKitContextPlugin`        | function  | `(container: Container) => ServerKitPlugin`                                                | **Register second.** Declares the request decorators and installs the `onRequest` hook that creates the scope. The scope is disposed when `reply.raw` closes, so a hijacked SSE reply outlives the handler. |
 | `bodyParserPlugin`              | function  | `() => ServerKitPlugin`                                                                    | Replaces Fastify's parsers with ServerKit's, gated by each route's `config.body`. Parses into `request.body`, raw bytes on `request.rawBody`. 400 / 411 / 413 / 415 / 422. Register after the context plugin. |
-| `corsPlugin`                    | function  | `(options?: CorsOptions) => ServerKitPlugin`                                               | Registers `@fastify/cors` from inside the plugin, so its hook keeps stack order. `origin` accepts `'*'`, a string, or a list of strings/RegExps.                                                                      |
-| `CorsOptions`                       | interface | `Omit<FastifyCorsOptions, 'origin'> & { origin?: CorsOrigin }`                                 | —                                                                                                                                                                                                          |
+| `corsPlugin`                    | function  | `(options?: CorsOptions) => ServerKitPlugin`                                               | Registers `@fastify/cors` from inside the plugin, so its hook keeps stack order. Options pass through untouched; `methods` defaults wider. Throws when `credentials` is paired with a `'*'` origin.                   |
+| `CorsOptions`                       | type      | `FastifyCorsOptions`                                                                           | `@fastify/cors`'s own options, unchanged. Alias only, so the plugin adds no matching of its own.                                                                                                            |
 | `rateLimiterPlugin`             | function  | `(rateLimiter: RateLimiter) => ServerKitPlugin`                                            | Per-IP `onRequest` hook; 429 when exceeded.                                                                                                                                                                |
 | `authenticationPlugin`          | function  | `(options?: AuthenticationPluginOptions) => ServerKitPlugin`                           | `onRequest` hook resolving `Authorization` via `AuthenticationSchemeHandler` into `request.authenticationSession`; strips the header; `anonymousPaths` skips the handler.                                  |
 | `AuthenticationPluginOptions`   | interface | `{ anonymousPaths?: (string \| RegExp)[] }`                                                    | Strings match the path exactly; RegExp is the escape hatch.                                                                                                                                                |
@@ -223,6 +223,14 @@ follow the snippets here rather than translating the Koa skills, which describe 
   validation at `setup`. Inject it only into scoped or transient services.
 - **The scoped container is disposed on `reply.raw` `close`, not `onResponse`.** Resolving from
   `request.container` after the response has closed throws. Resolve before responding.
+- **Behind a proxy, set `fastify: { trustProxy: true }`.** `request.ipAddress` and the rate
+  limiter's bucket key are both Fastify's `request.ip`, which is the socket address unless
+  `trustProxy` is set. Behind a load balancer that means every client shares one bucket. It is off
+  by default on purpose: trusting `X-Forwarded-For` when nothing strips it lets any caller spoof
+  its address and evade rate limiting, so enable it only when a proxy you control sets the header.
+- **`corsPlugin` passes `origin` to `@fastify/cors` unchanged**, so its semantics apply: a fixed
+  string is sent verbatim on every response, while an array or RegExp reflects the caller's origin
+  only when it matches. With no `origin` the header is a literal `*`.
 - **`host` defaults to `'::'`**, not Fastify's `localhost`. On a host without IPv6 pass
   `{ host: '0.0.0.0' }`.
 - **`start()` resolves after the `start` hooks** and rejects if one throws, leaving the server
