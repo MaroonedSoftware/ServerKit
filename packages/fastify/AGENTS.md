@@ -244,6 +244,13 @@ follow the snippets here rather than translating the Koa skills, which describe 
   session-only routes. The name is `MFA_SATISFIED_POLICY`, exported from
   `@maroonedsoftware/authentication`; reference it instead of the literal when code off the route
   path has to mirror this default.
+- **`authenticationPlugin` deletes `Authorization` from both `request.headers` and
+  `request.raw.headers`** once the scheme handler has read it, on every route including anonymous
+  ones, so it cannot be captured by logging. Nothing downstream can re-read the credential: a
+  `preHandler` or route that needs it must instead be an `AuthenticationHandler` registered for its
+  scheme (chain it with `ChainedAuthenticationHandler` when the scheme is already taken). The
+  deprecated `assertMcpAuth` in `@maroonedsoftware/mcp` is the cautionary case. Note the value does
+  survive in `request.raw.rawHeaders`, which Node populates separately — do not serialize that array.
 - **`corsPlugin` can be applied once per server only.** `@fastify/cors` decorates the request,
   so a second application throws on the duplicate decorator.
 - **An SSE stream flushes its headers on the first write, not when it opens.** A client sees no

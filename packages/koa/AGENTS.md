@@ -246,6 +246,13 @@ See [.claude/skills/koa-route](../../.claude/skills/koa-route) and
   only needs authentication rejects sessions that have not stepped up. Pass `{ policy: false }`.
   The name is `MFA_SATISFIED_POLICY`, exported from `@maroonedsoftware/authentication`; reference
   it instead of the literal when code off the route path has to mirror this default.
+- **`authenticationMiddleware` deletes `ctx.req.headers.authorization`** once the scheme handler has
+  read it, on every route including anonymous ones, so it cannot be captured by logging. Nothing
+  downstream can re-read the credential: a guard or route that needs it must instead be an
+  `AuthenticationHandler` registered for its scheme (chain it with `ChainedAuthenticationHandler`
+  when the scheme is already taken). The deprecated `assertMcpAuth` in `@maroonedsoftware/mcp` is
+  the cautionary case. Note the value does survive in `ctx.req.rawHeaders`, which Node populates
+  separately — do not serialize that array.
 - **`DefaultSignaturePolicy` denies on a length mismatch too**, which is how a missing or empty
   header is handled without tripping `timingSafeEqual`'s equal-length requirement. Diagnostics
   (header, algorithm, digest, both signatures) go to `internalDetails`; the secret never does.

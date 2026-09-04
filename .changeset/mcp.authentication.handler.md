@@ -43,3 +43,14 @@ every gated handler was writing by hand. It narrows the session (401), asserts t
 `MFA_SATISFIED_POLICY` as the HTTP `requirePolicy()` does, precisely because the scaffold session has
 no factors. It takes a `PolicyService` rather than a `Container`, since a handler context is
 transport-neutral and carries no injectkit types while handlers are `@Injectable()`.
+
+**Deprecated:** the header-reading path, all still functional and removed in a later major —
+`assertMcpAuth`, `McpAuthPolicy`, `MCP_AUTH_POLICY`, `McpAuthPolicyContext`, `verifyMcpBearer`,
+`VerifyMcpBearerInput`, `McpAuthInfo`, `McpAuthOptions`, `MCP_AUTHORIZATION_HEADER`, and
+`McpContextBase.auth`. Two reasons. It cannot see the `Authorization` header behind the
+authentication stack, as above; and it carries a second identity model, `context.auth`, alongside
+`context.authenticationSession`, so a handler reading the wrong one fails open or closed depending on
+how the route was wired. The replacement for each is `McpAuthenticationHandler` plus
+`authenticationSession`; for `verifyMcpBearer` specifically it is `compareMcpToken` and
+`isBlankBearerToken`, which is what the handler uses.
+

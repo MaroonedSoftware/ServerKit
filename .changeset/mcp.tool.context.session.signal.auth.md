@@ -32,6 +32,10 @@ identity for `createMcpRequestContext`. It replaces `requireSignature` on the MC
 handler needs `context.auth`; `requireSignature` still works where it does not. A policy subclass
 that swaps the static token for real validation should call `onResolved` with its claims.
 
+That whole header-reading path ships **deprecated** in this same release, superseded by
+`McpAuthenticationHandler` — see the accompanying changeset. It is described here because the code
+is present and functional, not because it is the path to build on.
+
 Extract `McpContextBase`, the request-scoped fields `McpRequestContext`, `McpToolContext`, and
 `McpResourceContext` all carry, and have the three extend it. `CreateMcpRequestContextInput` is now
 an alias for it, since the factory takes exactly those fields. This is a type-authoring change with

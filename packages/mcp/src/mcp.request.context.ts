@@ -17,7 +17,16 @@ export interface McpContextBase {
   requestId: string;
   /** Request-scoped logger (from `ctx.logger`). */
   logger: Logger;
-  /** Authenticated subject, if the auth policy resolved one. */
+  /**
+   * Authenticated subject, if the auth policy resolved one.
+   *
+   * @deprecated Read {@link McpContextBase.authenticationSession} instead, and
+   *   authenticate with
+   *   {@link import('./mcp.authentication.handler.js').McpAuthenticationHandler}.
+   *   This field is only ever populated by the header-reading
+   *   {@link import('./mcp.auth.assert.js').assertMcpAuth} path, which cannot run
+   *   behind `authenticationPlugin` / `authenticationMiddleware`.
+   */
   auth?: McpAuthInfo;
   /**
    * ServerKit authentication session for the request, when the route ran the
