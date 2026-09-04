@@ -1,5 +1,46 @@
 # @maroonedsoftware/authentication
 
+## 4.31.0
+
+### Minor Changes
+
+- 892a28b: Add `ChainedAuthenticationHandler` and `AuthenticationHandlerChain`, so several handlers can share
+  one `Authorization` scheme.
+
+  `AuthenticationHandlerMap` holds exactly one handler per scheme, but a scheme can carry more than one
+  kind of credential. `Bearer` is the case that matters: a session JWT for end users alongside a static
+  token for a machine client such as an MCP server. Until now the two could not coexist, since both
+  want the `'bearer'` slot.
+
+  Register `ChainedAuthenticationHandler` for the scheme and list the real handlers in an
+  `AuthenticationHandlerChain` (an injectkit array, so members are added by token with
+  `useArray(…).push(…)` and registration order is try order):
+
+  ```ts
+  registry.register(AuthenticationHandlerChain).useArray(AuthenticationHandlerChain).push(McpAuthenticationHandler).push(JwtAuthenticationHandler);
+  registry.register(ChainedAuthenticationHandler).useClass(ChainedAuthenticationHandler).asSingleton();
+  registry.register(AuthenticationHandlerMap).useMap(AuthenticationHandlerMap).set('bearer', ChainedAuthenticationHandler);
+  ```
+
+  Handlers are tried in order and the first session that is not `invalidAuthenticationSession` wins.
+  This relies on the contract every bundled handler already follows: decline by returning the sentinel,
+  throw only for misconfiguration. A sentinel moves to the next handler; a throw stops the chain and
+  propagates, so an operator error is not swallowed by the next handler declining.
+
+- b2c37da: Export `MFA_SATISFIED_POLICY` (`'auth.session.mfa.satisfied'`) from
+  `@maroonedsoftware/authentication`, and use it as the `requirePolicy()` default in
+  `@maroonedsoftware/koa` and `@maroonedsoftware/fastify` instead of the private literal each package
+  declared for itself.
+
+  The default gate is unchanged; only its source moved. What changes is that code mirroring the HTTP
+  default from off the route path — a background job, or a `@maroonedsoftware/mcp` tool enforcing the
+  same rule its route does — can reference the constant rather than carrying a copy of the string that
+  silently diverges if the default ever changes.
+
+  `MFA_SATISFIED_POLICY` is the only one of the eleven bundled policy names exported this way, because
+  it is the only one that is a default rather than an explicit choice at the call site. The others stay
+  literals.
+
 ## 4.30.11
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@maroonedsoftware/servercore",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Framework-agnostic ServerKit core: module lifecycle, body parsers, SSE transport, error rendering, and guard helpers shared by the Koa and Fastify adapters",
   "author": {
     "name": "Marooned Software",
