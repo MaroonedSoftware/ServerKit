@@ -46,7 +46,7 @@ an injectkit `Container` and a header accessor — still no koa import.
 
 | Export                           | Kind                       | Shape                                                                                           | Notes                                                                                              |
 | -------------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `McpConfig`                      | interface + abstract class | `{ serverName, version, sessionMode?, bearerToken?, allowUnauthenticated?, requestTimeoutMs? }` | Declaration-merged so one symbol is type and DI token. `requestTimeoutMs` aborts `context.signal`. |
+| `McpConfig`                      | interface + abstract class | `{ serverName, version, sessionMode?, bearerToken?, allowUnauthenticated?, subject?, requestTimeoutMs? }` | Declaration-merged so one symbol is type and DI token. `requestTimeoutMs` aborts `context.signal`; `subject` names the MCP client on the session. |
 | `McpSessionMode`                 | type                       | `'stateless' \| 'stateful'`                                                                     | Default `'stateless'`.                                                                             |
 | `MCP_DEFAULT_REQUEST_TIMEOUT_MS` | constant                   | `30_000`                                                                                        | Applied when `requestTimeoutMs` is unset.                                                          |
 | `McpError`                       | class                      | `extends ServerkitError`                                                                        | —                                                                                                  |
@@ -62,6 +62,9 @@ an injectkit `Container` and a header accessor — still no koa import.
 | `McpAuthFailureReason`            | type      | `'missing_token' \| 'invalid_token'`                                                                       | Lands in `internalDetails.reason`.                                                                                                            |
 | `McpAuthOptions`                  | type      | `Pick<McpConfig, 'bearerToken' \| 'allowUnauthenticated'>`                                                 | Structural subset, so an `McpConfig` value satisfies it directly.                                                                             |
 | `MCP_AUTHORIZATION_HEADER`        | constant  | `'Authorization'`                                                                                          | —                                                                                                                                             |
+| `McpAuthenticationHandler`        | class     | `@Injectable() implements AuthenticationHandler`                                                           | **The supported way to authenticate.** Resolves the shared token into an `AuthenticationSession`. Register under `bearer`.                    |
+| `MCP_DEFAULT_SUBJECT`             | constant  | `'mcp'`                                                                                                    | `session.subject` when `McpConfig.subject` is unset.                                                                                          |
+| `compareMcpToken`                 | function  | `(provided: string, expected: string) => boolean`                                                          | Constant-time, with the length guard. Blank either side is `false`. The token-level half of `verifyMcpBearer`.                                |
 | `isBlankBearerToken`              | function  | `(bearerToken: string \| undefined) => boolean`                                                            | `true` only when a token was configured **and** is blank. `undefined` needs `allowUnauthenticated`; blank is refused either way.              |
 | `MCP_AUTH_POLICY`                 | constant  | `'mcp.auth.valid'`                                                                                         | The `PolicyRegistryMap` key.                                                                                                                  |
 | `McpAuthPolicy`                   | class     | `extends Policy<McpAuthPolicyContext>`                                                                     | Policy form of the verifier — denies rather than throwing.                                                                                    |
@@ -308,8 +311,10 @@ src/
   mcp.config.ts             McpConfig (interface + token), McpSessionMode,
                             MCP_DEFAULT_REQUEST_TIMEOUT_MS
   mcp.error.ts              McpError, IsMcpError
-  mcp.auth.ts               verifyMcpBearer, isBlankBearerToken, McpAuthInfo, McpAuthOptions,
-                            header constant
+  mcp.auth.ts               compareMcpToken, isBlankBearerToken, verifyMcpBearer,
+                            McpAuthInfo, McpAuthOptions, header constant
+  mcp.authentication.handler.ts
+                            McpAuthenticationHandler, MCP_DEFAULT_SUBJECT
   mcp.auth.policy.ts        MCP_AUTH_POLICY, McpAuthPolicy, McpAuthPolicyContext
   mcp.auth.assert.ts        assertMcpAuth
   mcp.request.context.ts    McpContextBase, McpRequestContext, McpToolContext,

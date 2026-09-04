@@ -61,6 +61,33 @@ export type McpAuthOptions = Pick<McpConfig, 'bearerToken' | 'allowUnauthenticat
  */
 export const isBlankBearerToken = (bearerToken: string | undefined): boolean => bearerToken !== undefined && bearerToken.trim().length === 0;
 
+/**
+ * Constant-time comparison of a presented token against the configured one.
+ *
+ * The token-level half of {@link verifyMcpBearer}, split out for callers that are
+ * handed the credential already separated from its scheme —
+ * {@link import('./mcp.authentication.handler.js').McpAuthenticationHandler} gets
+ * `value` from `AuthenticationSchemeHandler`, which has already stripped `Bearer `.
+ *
+ * A blank side answers `false` rather than throwing. That is defensive only:
+ * callers check {@link isBlankBearerToken} first, so a blank *configuration*
+ * surfaces as the misconfiguration it is instead of an authentication failure.
+ *
+ * @param provided - The token presented on the request.
+ * @param expected - The configured {@link McpConfig.bearerToken}.
+ * @returns `true` when the two match.
+ */
+export const compareMcpToken = (provided: string, expected: string): boolean => {
+  if (!provided || !expected) return false;
+
+  const presented = Buffer.from(provided);
+  const configured = Buffer.from(expected);
+
+  // Length guard covers an empty/mismatched token without tripping timingSafeEqual's
+  // equal-length requirement.
+  return presented.length === configured.length && timingSafeEqual(presented, configured);
+};
+
 /** Extracts the token from an `Authorization: Bearer <token>` header value. */
 const extractBearer = (authorization: string | undefined): string | undefined => {
   if (!authorization) return undefined;
@@ -107,11 +134,7 @@ export const verifyMcpBearer = (input: VerifyMcpBearerInput): McpAuthInfo => {
     });
   }
 
-  const provided = Buffer.from(token);
-  const expected = Buffer.from(input.expectedToken);
-  // Length guard covers an empty/mismatched token without tripping timingSafeEqual's
-  // equal-length requirement.
-  if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {
+  if (!compareMcpToken(token, input.expectedToken)) {
     throw new McpError('MCP bearer token is invalid').withInternalDetails({
       reason: 'invalid_token' satisfies McpAuthFailureReason,
     });

@@ -18,7 +18,10 @@ pnpm add @maroonedsoftware/mcp @modelcontextprotocol/sdk
 
 | Symbol                                          | Purpose                                                                                                                                                                                  |
 | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `McpConfig`                                     | Abstract `@Injectable()` token; carries `serverName`, `version`, optional `sessionMode`, `bearerToken`, `allowUnauthenticated`, `requestTimeoutMs`. Consumer registers a concrete value. |
+| `McpConfig`                                     | Abstract `@Injectable()` token; carries `serverName`, `version`, optional `sessionMode`, `bearerToken`, `allowUnauthenticated`, `subject`, `requestTimeoutMs`. Consumer registers a concrete value. |
+| `McpAuthenticationHandler`                      | `AuthenticationHandler` resolving the shared token into an `AuthenticationSession`. Register under the `bearer` scheme — the supported way to authenticate MCP.                          |
+| `MCP_DEFAULT_SUBJECT`                           | `'mcp'` — the `session.subject` assigned when `McpConfig.subject` is unset.                                                                                                              |
+| `compareMcpToken(provided, expected)`           | Constant-time token comparison with a length guard. A blank side is `false`.                                                                                                            |
 | `McpDispatcher`                                 | Entry point. `dispatch(message, context)` for stateless mode; `dispatchStateful(exchange, context)` for stateful. Selects the mode from `McpConfig.sessionMode`.                         |
 | `McpServerFactory`                              | Builds SDK `Server` instances wired to the handler maps — memoizes the `tools/list` payload and uses stable, ALS-backed request handlers.                                                |
 | `McpToolHandler` / `McpToolHandlerMap`          | One-method tool handler interface (`handle(args, context)`) + its `Map<toolName, handler>` DI token.                                                                                     |
@@ -68,6 +71,7 @@ registry.register(McpConfig).useValue(mcpConfig);
 | `sessionMode`          | no       | `'stateless'` (default) or `'stateful'` — see [session modes](#session-modes).                                                                                |
 | `bearerToken`          | no       | Shared token accepted by `McpAuthPolicy`. Unset requires `allowUnauthenticated`.                                                                              |
 | `allowUnauthenticated` | no       | Run with no authentication, deliberately. Required when `bearerToken` is unset; ignored when it is set. Development only.                                     |
+| `subject`              | no       | `session.subject` for a caller presenting the token. Defaults to `MCP_DEFAULT_SUBJECT` (`'mcp'`). Policies and permission tuples key on it.                   |
 | `requestTimeoutMs`     | no       | Milliseconds after which `context.signal` aborts. Defaults to `MCP_DEFAULT_REQUEST_TIMEOUT_MS` (30s). Cooperative: forward the signal or the handler runs on. |
 
 ## Defining tools

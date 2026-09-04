@@ -71,6 +71,17 @@ export interface McpConfig {
    */
   allowUnauthenticated?: boolean;
   /**
+   * `AuthenticationSession.subject` assigned to a caller who presents the
+   * {@link bearerToken}, by
+   * {@link import('./mcp.authentication.handler.js').McpAuthenticationHandler}.
+   * Defaults to {@link import('./mcp.authentication.handler.js').MCP_DEFAULT_SUBJECT}.
+   *
+   * Worth setting: policies and permission tuples key on `subject`, so this is the
+   * name the MCP client goes by everywhere authorization is decided. One shared
+   * token means one subject — it identifies the client, not a user.
+   */
+  subject?: string;
+  /**
    * Per-request timeout (in milliseconds) after which the `signal` on a
    * tool/resource handler context aborts. Defaults to
    * {@link MCP_DEFAULT_REQUEST_TIMEOUT_MS} (30s).

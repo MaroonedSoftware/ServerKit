@@ -639,6 +639,9 @@ importers:
       injectkit:
         specifier: ^1.7.1
         version: 1.7.1
+      luxon:
+        specifier: ^3.7.2
+        version: 3.7.2
     devDependencies:
       '@maroonedsoftware/cache':
         specifier: workspace:*
@@ -649,6 +652,9 @@ importers:
       '@repo/config-typescript':
         specifier: workspace:*
         version: link:../config-typescript
+      '@types/luxon':
+        specifier: ^3.7.5
+        version: 3.7.5
 
   packages/multipart:
     dependencies:

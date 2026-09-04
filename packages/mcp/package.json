@@ -52,12 +52,14 @@
     "@maroonedsoftware/logger": "workspace:*",
     "@maroonedsoftware/policies": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "injectkit": "^1.7.1"
+    "injectkit": "^1.7.1",
+    "luxon": "^3.7.2"
   },
   "devDependencies": {
     "@maroonedsoftware/cache": "workspace:*",
     "@repo/config-eslint": "workspace:*",
-    "@repo/config-typescript": "workspace:*"
+    "@repo/config-typescript": "workspace:*",
+    "@types/luxon": "^3.7.5"
   },
   "peerDependencies": {
     "@maroonedsoftware/cache": "workspace:*"
