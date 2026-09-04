@@ -38,8 +38,9 @@ export interface McpAuthPolicyContext {
   /**
    * Called with the resolved identity when the policy allows an authenticated
    * request, so the route can put it on the request context without verifying
-   * the credential a second time. Not called in open mode (no configured
-   * token), which authenticates nobody.
+   * the credential a second time. Not called when the endpoint runs
+   * unauthenticated (no configured token, `allowUnauthenticated` set), which
+   * authenticates nobody.
    *
    * {@link import('./mcp.auth.assert.js').assertMcpAuth} supplies it. Driven by
    * koa's `requireSignature` the field is simply absent, which is why it is

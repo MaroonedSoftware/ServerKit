@@ -72,6 +72,25 @@ describe('isBlankBearerToken', () => {
     expect(isBlankBearerToken('   ')).toBe(true);
     expect(isBlankBearerToken(TOKEN)).toBe(false);
   });
+
+  it('leaves a usable token usable after the guards, rather than narrowing it away', () => {
+    // Typed, not just executed. Were this a `bearerToken is string` predicate,
+    // ruling out blank and then undefined would narrow `configured` to `never`
+    // and this assignment would be the only thing to notice.
+    const usableToken = (configured: string | undefined): string => {
+      if (isBlankBearerToken(configured)) throw new Error('blank');
+      if (configured === undefined) throw new Error('unset');
+      // Assigning *into* the narrowed type is the assertion that bites. Returning
+      // it would not: `never` is assignable to `string`, so a bad narrowing sails
+      // through. A plain string is assignable to `never` only if it isn't `never`.
+      const stillAString: typeof configured = TOKEN;
+      return configured === stillAString ? configured : configured;
+    };
+
+    expect(usableToken(TOKEN)).toBe(TOKEN);
+    expect(() => usableToken('')).toThrow('blank');
+    expect(() => usableToken(undefined)).toThrow('unset');
+  });
 });
 
 describe('McpAuthPolicy', () => {

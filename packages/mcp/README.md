@@ -150,15 +150,26 @@ Start stateless; it covers request/response tool servers and scales horizontally
 `verifyMcpBearer` is a pure helper: it extracts the `Authorization: Bearer <token>` header and compares it, in constant time, against the configured `bearerToken`.
 
 ```ts
-import { verifyMcpBearer, McpError } from '@maroonedsoftware/mcp';
+import { httpError } from '@maroonedsoftware/errors';
+import { isBlankBearerToken, verifyMcpBearer, McpError } from '@maroonedsoftware/mcp';
+
+// `McpConfig.bearerToken` is optional, so settle what it is before verifying against
+// it. There is nothing to compare an unset or blank token to, and that is a server
+// fault rather than a rejected request.
+const { bearerToken } = mcpConfig;
+if (bearerToken === undefined || isBlankBearerToken(bearerToken)) {
+  throw httpError(500).withInternalDetails({ field: 'bearerToken' });
+}
 
 try {
-  const auth = verifyMcpBearer({ authorization: req.headers.authorization, expectedToken: mcpConfig.bearerToken });
+  const auth = verifyMcpBearer({ authorization: req.headers.authorization, expectedToken: bearerToken });
   // auth.token — extend verifyMcpBearer to resolve auth.subject / auth.scopes from real claims
 } catch (err) {
   if (err instanceof McpError) throw httpError(401).withCause(err); // reason: 'missing_token' | 'invalid_token'
 }
 ```
+
+`McpAuthPolicy` does all of that for you, including deciding what an unset token means. Reach for `verifyMcpBearer` directly only outside a policy.
 
 The endpoint is never open by omission. `McpAuthPolicy` throws unless the config says something definite: a `bearerToken` to enforce, or `allowUnauthenticated: true` to run with none. A missing key and a blank string both fail closed, since neither shows that anyone chose to run unauthenticated. Setting both enforces the token, the more restrictive of the two.
 

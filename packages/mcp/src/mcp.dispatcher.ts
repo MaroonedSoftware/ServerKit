@@ -23,9 +23,10 @@ import { mcpContext, type McpRequestContext } from './mcp.request.context.js';
  * ```ts
  * // `bodyParserMiddleware` is what populates `ctx.parsedBody` and `ctx.rawBody`; koa's own
  * // `ctx.request.body` is never set by ServerKit.
- * router.post('/mcp', bodyParserMiddleware(['application/json']), requireSignature<McpAuthOptions>('mcp', { policy: MCP_AUTH_POLICY }), async (ctx) => {
+ * router.post('/mcp', bodyParserMiddleware(['application/json']), async (ctx) => {
+ *   const auth = await assertMcpAuth(ctx.container, name => ctx.get(name));
  *   const dispatcher = ctx.container.get(McpDispatcher);
- *   const context = createMcpRequestContext({ requestId: ctx.requestId, logger: ctx.logger, authenticationSession: ctx.authenticationSession });
+ *   const context = createMcpRequestContext({ requestId: ctx.requestId, logger: ctx.logger, authenticationSession: ctx.authenticationSession, auth });
  *
  *   if (dispatcher.sessionMode === 'stateful') {
  *     ctx.respond = false; // hand the raw response stream to the SDK transport (SSE)

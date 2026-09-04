@@ -41,22 +41,25 @@ export type McpAuthOptions = Pick<McpConfig, 'bearerToken' | 'allowUnauthenticat
 /**
  * Whether a configured shared token is present but blank.
  *
- * The two falsy states mean opposite things and must not be collapsed.
+ * The two falsy states mean different things and must not be collapsed.
  * `undefined` is "no token configured", which the bundled
- * {@link import('./mcp.auth.policy.js').McpAuthPolicy} treats as an
- * intentionally open development endpoint. A blank string is "a token was
- * configured and it is empty", which is a misconfiguration — a blank
- * environment variable, usually — and must fail closed instead of silently
- * opening the endpoint the operator believed they had locked.
+ * {@link import('./mcp.auth.policy.js').McpAuthPolicy} serves only when
+ * {@link McpConfig.allowUnauthenticated} opts into it. A blank string is "a
+ * token was configured and it is empty", which is a misconfiguration — a blank
+ * environment variable, usually — and is refused outright, `allowUnauthenticated`
+ * or not, because a config asking for both a token and no token states nothing.
  *
  * Whitespace counts as blank: `MCP_BEARER_TOKEN=" "` is the same accident as
  * `MCP_BEARER_TOKEN=`.
  *
+ * Deliberately **not** a type predicate. `bearerToken is string` would be true of
+ * the blank case and so narrow the *false* branch to `undefined`, typing a
+ * perfectly good token as impossible at the one call site that matters.
+ *
  * @param bearerToken - The configured {@link McpConfig.bearerToken}.
  * @returns `true` when a token was configured and is blank.
  */
-export const isBlankBearerToken = (bearerToken: string | undefined): bearerToken is string =>
-  bearerToken !== undefined && bearerToken.trim().length === 0;
+export const isBlankBearerToken = (bearerToken: string | undefined): boolean => bearerToken !== undefined && bearerToken.trim().length === 0;
 
 /** Extracts the token from an `Authorization: Bearer <token>` header value. */
 const extractBearer = (authorization: string | undefined): string | undefined => {

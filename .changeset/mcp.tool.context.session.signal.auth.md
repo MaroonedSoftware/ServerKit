@@ -58,3 +58,8 @@ default, typically local development, needs `allowUnauthenticated: true` added, 
 `McpAuthOptions` widens to include the flag. The check runs on the first MCP request rather than at
 boot, since the package has no module lifecycle and validating in the dispatcher would wrongly
 refuse to boot a server that swapped in its own auth policy.
+
+Correct the signature of `isBlankBearerToken`, which shipped in this same release as a
+`bearerToken is string` type predicate. That is true of the blank case, so ruling blank out and
+then `undefined` narrowed a perfectly good token to `never`. It compiled only because `never` is
+assignable to everything. It returns a plain `boolean` now, and a typed test pins the narrowing.

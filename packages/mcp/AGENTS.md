@@ -62,7 +62,7 @@ an injectkit `Container` and a header accessor — still no koa import.
 | `McpAuthFailureReason`            | type      | `'missing_token' \| 'invalid_token'`                                                                       | Lands in `internalDetails.reason`.                                                                                                            |
 | `McpAuthOptions`                  | type      | `Pick<McpConfig, 'bearerToken' \| 'allowUnauthenticated'>`                                                 | Structural subset, so an `McpConfig` value satisfies it directly.                                                                             |
 | `MCP_AUTHORIZATION_HEADER`        | constant  | `'Authorization'`                                                                                          | —                                                                                                                                             |
-| `isBlankBearerToken`              | predicate | `(bearerToken: string \| undefined) => bearerToken is string`                                              | `true` only when a token was configured **and** is blank. `undefined` is open mode; blank is a misconfiguration.                              |
+| `isBlankBearerToken`              | function  | `(bearerToken: string \| undefined) => boolean`                                                            | `true` only when a token was configured **and** is blank. `undefined` needs `allowUnauthenticated`; blank is refused either way.              |
 | `MCP_AUTH_POLICY`                 | constant  | `'mcp.auth.valid'`                                                                                         | The `PolicyRegistryMap` key.                                                                                                                  |
 | `McpAuthPolicy`                   | class     | `extends Policy<McpAuthPolicyContext>`                                                                     | Policy form of the verifier — denies rather than throwing.                                                                                    |
 | `McpAuthPolicyContext`            | interface | `{ getHeader: (name) => string; options: McpAuthOptions; rawBody?: unknown; onResolved?: (auth) => void }` | `rawBody` is accepted and ignored, purely for koa structural compatibility. `onResolved` is how the verified identity gets back to the route. |
@@ -278,8 +278,8 @@ router.post('/mcp', bodyParserMiddleware(['application/json']), async ctx => {
   free of a `koa` dependency.
 - **`context.auth` is only populated when the route asks for it.** A route gated with
   `requireSignature` never passes `onResolved`, so the identity is verified and discarded. Use
-  `assertMcpAuth` when a handler needs `context.auth`. In open mode (no configured token) it is
-  `undefined` even then: allowing everyone is not authenticating anyone.
+  `assertMcpAuth` when a handler needs `context.auth`. Running unauthenticated it is `undefined`
+  even then: allowing everyone is not authenticating anyone.
 - **`verifyMcpBearer` throws while `McpAuthPolicy` denies.** Same logic, two shapes. Pick the one
   that matches your call site.
 - **An error thrown from a handler becomes a JSON-RPC error on a 200 response.** That covers
