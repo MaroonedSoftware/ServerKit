@@ -1,7 +1,7 @@
 import { Injectable } from 'injectkit';
 import { Policy, PolicyEnvelope, PolicyResult } from '@maroonedsoftware/policies';
 import { IsMcpError } from './mcp.error.js';
-import { MCP_AUTHORIZATION_HEADER, verifyMcpBearer, type McpAuthFailureReason, type McpAuthOptions } from './mcp.auth.js';
+import { MCP_AUTHORIZATION_HEADER, verifyMcpBearer, type McpAuthFailureReason, type McpAuthInfo, type McpAuthOptions } from './mcp.auth.js';
 
 /**
  * Policy name under which {@link McpAuthPolicy} is registered. Use as the key
@@ -28,6 +28,18 @@ export interface McpAuthPolicyContext {
   options: McpAuthOptions;
   /** Present when driven by `requireSignature`; unused by bearer auth. */
   rawBody?: unknown;
+  /**
+   * Called with the resolved identity when the policy allows an authenticated
+   * request, so the route can put it on the request context without verifying
+   * the credential a second time. Not called in open mode (no configured
+   * token), which authenticates nobody.
+   *
+   * {@link import('./mcp.auth.assert.js').assertMcpAuth} supplies it. Driven by
+   * koa's `requireSignature` the field is simply absent, which is why it is
+   * optional and why the context stays structurally compatible with
+   * `SignaturePolicyContext`.
+   */
+  onResolved?: (auth: McpAuthInfo) => void;
 }
 
 /**
@@ -39,12 +51,14 @@ export interface McpAuthPolicyContext {
  *
  * Registered by default under {@link MCP_AUTH_POLICY}. Subclass and re-register
  * under the same name to swap the scaffold's static-token check for real OAuth
- * resource-server validation without touching the route wiring.
+ * resource-server validation without touching the route wiring. A subclass
+ * should call `context.onResolved?.(auth)` with the identity it resolved, so the
+ * route can thread it onto the request context.
  */
 @Injectable()
 export class McpAuthPolicy extends Policy<McpAuthPolicyContext> {
   async evaluate(context: McpAuthPolicyContext, _envelope: PolicyEnvelope): Promise<PolicyResult> {
-    const { getHeader, options } = context;
+    const { getHeader, options, onResolved } = context;
 
     if (!options.bearerToken) {
       // No token configured → endpoint is intentionally open (development). Allow.
@@ -52,7 +66,8 @@ export class McpAuthPolicy extends Policy<McpAuthPolicyContext> {
     }
 
     try {
-      verifyMcpBearer({ authorization: getHeader(MCP_AUTHORIZATION_HEADER), expectedToken: options.bearerToken });
+      const auth = verifyMcpBearer({ authorization: getHeader(MCP_AUTHORIZATION_HEADER), expectedToken: options.bearerToken });
+      onResolved?.(auth);
       return this.allow();
     } catch (error) {
       if (!IsMcpError(error)) throw error;

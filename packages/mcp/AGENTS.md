@@ -36,7 +36,9 @@ stateful mode).
 **Deliberately not a dependency: `koa`.** The package is transport-neutral. Your route extracts the
 request, builds an `McpRequestContext`, and calls the dispatcher. The auth policy context is
 _structurally_ compatible with koa's `SignaturePolicyContext<McpAuthOptions>`, which is what lets
-koa's `requireSignature` drive MCP bearer auth without either package depending on the other.
+koa's `requireSignature` drive MCP bearer auth without either package depending on the other. The
+package's own `assertMcpAuth` drives the same policy through `PolicyService` directly, taking only
+an injectkit `Container` and a header accessor — still no koa import.
 
 ## API surface
 
@@ -52,19 +54,20 @@ koa's `requireSignature` drive MCP bearer auth without either package depending 
 
 ### Auth
 
-| Export                            | Kind      | Shape                                                                         | Notes                                                                                     |
-| --------------------------------- | --------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `verifyMcpBearer`                 | function  | `(input: VerifyMcpBearerInput) => McpAuthInfo`                                | Pure. Constant-time compare. **Throws** `McpError` on failure.                            |
-| `VerifyMcpBearerInput`            | type      | `{ authorization: string \| undefined; expectedToken: string }`               | —                                                                                         |
-| `McpAuthInfo`                     | interface | `{ token: string; subject?: string; scopes?: string[] }`                      | The scaffold fills only `token`.                                                          |
-| `McpAuthFailureReason`            | type      | `'missing_token' \| 'invalid_token'`                                          | Lands in `internalDetails.reason`.                                                        |
-| `McpAuthOptions`                  | type      | `Pick<McpConfig, 'bearerToken'>`                                              | Structural subset, so an `McpConfig` value satisfies it directly.                         |
-| `MCP_AUTHORIZATION_HEADER`        | constant  | `'Authorization'`                                                             | —                                                                                         |
-| `MCP_AUTH_POLICY`                 | constant  | `'mcp.auth.valid'`                                                            | The `PolicyRegistryMap` key.                                                              |
-| `McpAuthPolicy`                   | class     | `extends Policy<McpAuthPolicyContext>`                                        | Policy form of the verifier — denies rather than throwing.                                |
-| `McpAuthPolicyContext`            | interface | `{ getHeader: (name) => string; options: McpAuthOptions; rawBody?: unknown }` | `rawBody` is accepted and ignored, purely for koa structural compatibility.               |
-| `requireMcpAuthenticationSession` | function  | `(context: McpAuthenticatedContext) => AuthenticationSession`                 | Narrows a handler context or **throws** 401. Treats a missing session as unauthenticated. |
-| `McpAuthenticatedContext`         | type      | `{ authenticationSession?: AuthenticationSession }`                           | Structural, so a tool, resource, or request context all satisfy it.                       |
+| Export                            | Kind      | Shape                                                                                                      | Notes                                                                                                                                         |
+| --------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `verifyMcpBearer`                 | function  | `(input: VerifyMcpBearerInput) => McpAuthInfo`                                                             | Pure. Constant-time compare. **Throws** `McpError` on failure.                                                                                |
+| `VerifyMcpBearerInput`            | type      | `{ authorization: string \| undefined; expectedToken: string }`                                            | —                                                                                                                                             |
+| `McpAuthInfo`                     | interface | `{ token: string; subject?: string; scopes?: string[] }`                                                   | The scaffold fills only `token`.                                                                                                              |
+| `McpAuthFailureReason`            | type      | `'missing_token' \| 'invalid_token'`                                                                       | Lands in `internalDetails.reason`.                                                                                                            |
+| `McpAuthOptions`                  | type      | `Pick<McpConfig, 'bearerToken'>`                                                                           | Structural subset, so an `McpConfig` value satisfies it directly.                                                                             |
+| `MCP_AUTHORIZATION_HEADER`        | constant  | `'Authorization'`                                                                                          | —                                                                                                                                             |
+| `MCP_AUTH_POLICY`                 | constant  | `'mcp.auth.valid'`                                                                                         | The `PolicyRegistryMap` key.                                                                                                                  |
+| `McpAuthPolicy`                   | class     | `extends Policy<McpAuthPolicyContext>`                                                                     | Policy form of the verifier — denies rather than throwing.                                                                                    |
+| `McpAuthPolicyContext`            | interface | `{ getHeader: (name) => string; options: McpAuthOptions; rawBody?: unknown; onResolved?: (auth) => void }` | `rawBody` is accepted and ignored, purely for koa structural compatibility. `onResolved` is how the verified identity gets back to the route. |
+| `assertMcpAuth`                   | function  | `(container, getHeader) => Promise<McpAuthInfo \| undefined>`                                              | Gates on `MCP_AUTH_POLICY`, returns the resolved identity. **Throws** 401 on denial. `undefined` = allowed without authenticating anyone.     |
+| `requireMcpAuthenticationSession` | function  | `(context: McpAuthenticatedContext) => AuthenticationSession`                                              | Narrows a handler context or **throws** 401. Treats a missing session as unauthenticated.                                                     |
+| `McpAuthenticatedContext`         | type      | `{ authenticationSession?: AuthenticationSession }`                                                        | Structural, so a tool, resource, or request context all satisfy it.                                                                           |
 
 ### Request context
 
@@ -109,10 +112,11 @@ import {
   McpResourceHandlerMap,
   McpAuthPolicy,
   MCP_AUTH_POLICY,
+  assertMcpAuth,
   createMcpRequestContext,
+  requireMcpAuthenticationSession,
   type McpToolHandler,
   type McpToolContext,
-  type McpAuthOptions,
 } from '@maroonedsoftware/mcp';
 
 @Injectable()
@@ -141,12 +145,16 @@ registry.register(McpConfig).useValue(appConfig.getAs<McpConfig>('mcp'));
 policies.set(MCP_AUTH_POLICY, McpAuthPolicy);
 ```
 
-The route — one shape, both modes. `bodyParserMiddleware` must run first: it is what populates `ctx.parsedBody` and `ctx.rawBody`. Koa's own `ctx.request.body` is never populated by ServerKit, so reading it yields `undefined`.
+The route — one shape, both modes. `assertMcpAuth` runs the same `MCP_AUTH_POLICY` that
+`requireSignature<McpAuthOptions>('mcp', { policy: MCP_AUTH_POLICY })` would, and additionally
+returns the identity for the context; use `requireSignature` instead when the route does not need
+`context.auth`. `bodyParserMiddleware` must run first: it is what populates `ctx.parsedBody` and `ctx.rawBody`. Koa's own `ctx.request.body` is never populated by ServerKit, so reading it yields `undefined`.
 
 ```typescript
-router.post('/mcp', bodyParserMiddleware(['application/json']), requireSignature<McpAuthOptions>('mcp', { policy: MCP_AUTH_POLICY }), async ctx => {
+router.post('/mcp', bodyParserMiddleware(['application/json']), async ctx => {
+  const auth = await assertMcpAuth(ctx.container, name => ctx.get(name));
   const dispatcher = ctx.container.get(McpDispatcher);
-  const context = createMcpRequestContext({ requestId: ctx.requestId, logger: ctx.logger, authenticationSession: ctx.authenticationSession });
+  const context = createMcpRequestContext({ requestId: ctx.requestId, logger: ctx.logger, authenticationSession: ctx.authenticationSession, auth });
 
   if (dispatcher.sessionMode === 'stateful') {
     ctx.respond = false; // hand the raw response stream to the SDK transport
@@ -182,7 +190,9 @@ router.post('/mcp', bodyParserMiddleware(['application/json']), requireSignature
   SDK transport owns the response.
 - Read `dispatcher.sessionMode` rather than duplicating the config check in the route.
 - Replace `verifyMcpBearer` (or subclass `McpAuthPolicy` and re-register under `MCP_AUTH_POLICY`)
-  before production. Keep the `(request) → McpAuthInfo | throw` shape so the wiring is unchanged.
+  before production. Keep the `(request) → McpAuthInfo | throw` shape so the wiring is unchanged,
+  and call `context.onResolved?.(auth)` with the identity you resolved, or `context.auth` stays
+  empty for every route using `assertMcpAuth`.
 - **A tool whose operation declares a policy must enforce it itself.** The guard on the `/mcp`
   route gates the mount, not the individual tool, so every exposed tool is otherwise callable by
   anyone who clears that one guard. Inject `PolicyService` through the constructor and open
@@ -230,6 +240,10 @@ router.post('/mcp', bodyParserMiddleware(['application/json']), requireSignature
 - **`McpAuthPolicyContext.rawBody` exists only for structural compatibility** with koa's
   `SignaturePolicyContext`. It is accepted and ignored. That is the trick that keeps this package
   free of a `koa` dependency.
+- **`context.auth` is only populated when the route asks for it.** A route gated with
+  `requireSignature` never passes `onResolved`, so the identity is verified and discarded. Use
+  `assertMcpAuth` when a handler needs `context.auth`. In open mode (no configured token) it is
+  `undefined` even then: allowing everyone is not authenticating anyone.
 - **`verifyMcpBearer` throws while `McpAuthPolicy` denies.** Same logic, two shapes. Pick the one
   that matches your call site.
 - **An error thrown from a handler becomes a JSON-RPC error on a 200 response.** That covers
@@ -260,6 +274,7 @@ src/
   mcp.error.ts              McpError, IsMcpError
   mcp.auth.ts               verifyMcpBearer, McpAuthInfo, McpAuthOptions, header constant
   mcp.auth.policy.ts        MCP_AUTH_POLICY, McpAuthPolicy, McpAuthPolicyContext
+  mcp.auth.assert.ts        assertMcpAuth
   mcp.request.context.ts    McpRequestContext, mcpContext (ALS), createMcpRequestContext,
                             McpToolContext, McpResourceContext
   mcp.authentication.session.ts

@@ -23,3 +23,11 @@ handler. Both now abort the signal a handler receives. Cancellation stays cooper
 that does not forward the signal still runs to completion. `MCP_DEFAULT_REQUEST_TIMEOUT_MS` moved
 from the dispatcher module to the config module, next to the field it documents; the exported name
 is unchanged.
+
+Populate `context.auth`. `McpAuthPolicy` used to verify the bearer token and discard the
+`McpAuthInfo` it produced, so the field was never set by any bundled wiring. The policy context now
+carries an optional `onResolved` callback the policy invokes with the identity it resolved, and the
+new `assertMcpAuth(container, getHeader)` gates a route on `MCP_AUTH_POLICY` and returns that
+identity for `createMcpRequestContext`. It replaces `requireSignature` on the MCP route when a
+handler needs `context.auth`; `requireSignature` still works where it does not. A policy subclass
+that swaps the static token for real validation should call `onResolved` with its claims.

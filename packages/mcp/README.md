@@ -27,6 +27,7 @@ pnpm add @maroonedsoftware/mcp @modelcontextprotocol/sdk
 | `KoaMcpTransport`                               | Minimal single-exchange `Transport` for stateless mode (one JSON-RPC message in, one response out).                                                              |
 | `McpRequestContext` / `createMcpRequestContext` | Request-scoped context threaded to handlers (request id, logger, auth info, authentication session), plus the factory that builds one from your `ctx`.           |
 | `verifyMcpBearer(input)`                        | Pure bearer-token verifier. Returns `McpAuthInfo` or throws `McpError`. **Scaffold-grade** — swap for OAuth resource-server JWT validation.                      |
+| `assertMcpAuth(container, getHeader)`           | Gates a request on `MCP_AUTH_POLICY` and returns the identity it resolved, for `context.auth`. Throws 401 on denial.                                             |
 | `McpAuthPolicy`                                 | `@maroonedsoftware/policies` form of `verifyMcpBearer` (registered under `MCP_AUTH_POLICY`). Slots into koa's `requireSignature`.                                |
 | `requireMcpAuthenticationSession(context)`      | Narrows a handler context to an authenticated `AuthenticationSession`, or throws 401. Use it before evaluating a policy in a tool.                               |
 | `McpError` / `IsMcpError`                       | `ServerkitError` subclass for non-HTTP domain failures, plus its type guard.                                                                                     |
@@ -111,6 +112,7 @@ import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 router.post('/mcp', bodyParserMiddleware(['application/json']), requireSignature<McpAuthOptions>('mcp', { policy: MCP_AUTH_POLICY }), async ctx => {
   const dispatcher = ctx.container.get(McpDispatcher);
   const context = createMcpRequestContext({ requestId: ctx.requestId, logger: ctx.logger, authenticationSession: ctx.authenticationSession });
+  // Add `auth` too when a handler needs it — see Authentication, below.
 
   if (dispatcher.sessionMode === 'stateful') {
     ctx.respond = false; // hand the raw response stream to the SDK transport (SSE)
@@ -167,6 +169,15 @@ import { McpAuthPolicy, MCP_AUTH_POLICY } from '@maroonedsoftware/mcp';
 registry.set(MCP_AUTH_POLICY, McpAuthPolicy);
 router.post('/mcp', requireSignature<McpAuthOptions>('mcp', { policy: MCP_AUTH_POLICY }), handler);
 ```
+
+`requireSignature` can only allow or deny, so the identity the policy verified is discarded. When a handler needs it on `context.auth`, call `assertMcpAuth` in the route instead. It evaluates the same policy through `PolicyService` and returns what the policy resolved, verifying the credential once:
+
+```ts
+const auth = await assertMcpAuth(ctx.container, name => ctx.get(name));
+const context = createMcpRequestContext({ requestId: ctx.requestId, logger: ctx.logger, authenticationSession: ctx.authenticationSession, auth });
+```
+
+The identity travels back through an `onResolved` callback on the policy context, so a subclass that swaps the static token for real OAuth validation should call `context.onResolved?.(auth)` with the claims it resolved. `assertMcpAuth` returns `undefined` when the policy allowed the request without authenticating anyone, which is what the bundled scaffold does with no `bearerToken` configured.
 
 ### Per-tool enforcement
 
