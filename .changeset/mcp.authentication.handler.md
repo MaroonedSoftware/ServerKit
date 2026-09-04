@@ -44,7 +44,8 @@ every gated handler was writing by hand. It narrows the session (401), asserts t
 no factors. It takes a `PolicyService` rather than a `Container`, since a handler context is
 transport-neutral and carries no injectkit types while handlers are `@Injectable()`.
 
-**Deprecated:** the header-reading path, all still functional and removed in a later major —
+**Deprecated:** the header-reading path shipped in 0.2.0, all still functional and removed in a later
+major —
 `assertMcpAuth`, `McpAuthPolicy`, `MCP_AUTH_POLICY`, `McpAuthPolicyContext`, `verifyMcpBearer`,
 `VerifyMcpBearerInput`, `McpAuthInfo`, `McpAuthOptions`, `MCP_AUTHORIZATION_HEADER`, and
 `McpContextBase.auth`. Two reasons. It cannot see the `Authorization` header behind the
