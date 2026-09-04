@@ -38,6 +38,26 @@ export const MCP_AUTHORIZATION_HEADER = 'Authorization';
  */
 export type McpAuthOptions = Pick<McpConfig, 'bearerToken'>;
 
+/**
+ * Whether a configured shared token is present but blank.
+ *
+ * The two falsy states mean opposite things and must not be collapsed.
+ * `undefined` is "no token configured", which the bundled
+ * {@link import('./mcp.auth.policy.js').McpAuthPolicy} treats as an
+ * intentionally open development endpoint. A blank string is "a token was
+ * configured and it is empty", which is a misconfiguration — a blank
+ * environment variable, usually — and must fail closed instead of silently
+ * opening the endpoint the operator believed they had locked.
+ *
+ * Whitespace counts as blank: `MCP_BEARER_TOKEN=" "` is the same accident as
+ * `MCP_BEARER_TOKEN=`.
+ *
+ * @param bearerToken - The configured {@link McpConfig.bearerToken}.
+ * @returns `true` when a token was configured and is blank.
+ */
+export const isBlankBearerToken = (bearerToken: string | undefined): bearerToken is string =>
+  bearerToken !== undefined && bearerToken.trim().length === 0;
+
 /** Extracts the token from an `Authorization: Bearer <token>` header value. */
 const extractBearer = (authorization: string | undefined): string | undefined => {
   if (!authorization) return undefined;
@@ -66,10 +86,17 @@ export type VerifyMcpBearerInput = {
  * it in.
  *
  * @returns The resolved {@link McpAuthInfo} on success.
- * @throws {@link McpError} on any failure. The error's `internalDetails.reason`
- *   is one of {@link McpAuthFailureReason}; map to HTTP 401 at the route boundary.
+ * @throws {@link McpError} on any failure. For an authentication failure the
+ *   error's `internalDetails.reason` is one of {@link McpAuthFailureReason};
+ *   map those to HTTP 401 at the route boundary. A blank `expectedToken` throws
+ *   with `internalDetails.kind === 'misconfiguration'` instead, since no
+ *   credential can satisfy it and the fault is the server's, not the caller's.
  */
 export const verifyMcpBearer = (input: VerifyMcpBearerInput): McpAuthInfo => {
+  if (isBlankBearerToken(input.expectedToken)) {
+    throw new McpError('MCP bearer token is configured but blank').withInternalDetails({ kind: 'misconfiguration', field: 'bearerToken' });
+  }
+
   const token = extractBearer(input.authorization);
   if (!token) {
     throw new McpError('MCP request missing bearer token').withInternalDetails({

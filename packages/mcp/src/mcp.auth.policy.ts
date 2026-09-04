@@ -1,7 +1,14 @@
 import { Injectable } from 'injectkit';
 import { Policy, PolicyEnvelope, PolicyResult } from '@maroonedsoftware/policies';
-import { IsMcpError } from './mcp.error.js';
-import { MCP_AUTHORIZATION_HEADER, verifyMcpBearer, type McpAuthFailureReason, type McpAuthInfo, type McpAuthOptions } from './mcp.auth.js';
+import { IsMcpError, McpError } from './mcp.error.js';
+import {
+  isBlankBearerToken,
+  MCP_AUTHORIZATION_HEADER,
+  verifyMcpBearer,
+  type McpAuthFailureReason,
+  type McpAuthInfo,
+  type McpAuthOptions,
+} from './mcp.auth.js';
 
 /**
  * Policy name under which {@link McpAuthPolicy} is registered. Use as the key
@@ -60,8 +67,19 @@ export class McpAuthPolicy extends Policy<McpAuthPolicyContext> {
   async evaluate(context: McpAuthPolicyContext, _envelope: PolicyEnvelope): Promise<PolicyResult> {
     const { getHeader, options, onResolved } = context;
 
-    if (!options.bearerToken) {
-      // No token configured → endpoint is intentionally open (development). Allow.
+    if (isBlankBearerToken(options.bearerToken)) {
+      // A token was configured and is empty — a blank environment variable, not a
+      // decision to run open. Fail closed and surface it as the server fault it is,
+      // rather than letting it read as the `undefined` open-mode case below.
+      throw new McpError('McpConfig.bearerToken is configured but blank').withInternalDetails({ kind: 'misconfiguration', field: 'bearerToken' });
+    }
+
+    if (options.bearerToken === undefined) {
+      // No token configured → endpoint is intentionally open (development). Allow,
+      // but resolve nobody: `onResolved` stays uncalled on purpose. Presenting a
+      // token to an endpoint that has none configured proves nothing, so passing it
+      // to `onResolved` here would put an unverified credential on `context.auth`
+      // and every handler gating on that field would let the caller through.
       return this.allow();
     }
 

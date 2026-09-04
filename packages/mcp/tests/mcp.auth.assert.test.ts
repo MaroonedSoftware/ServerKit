@@ -49,4 +49,8 @@ describe('assertMcpAuth', () => {
   it('resolves to undefined in open mode, since no token configured authenticates nobody', async () => {
     await expect(assertMcpAuth(makeContainer(undefined), getHeader(undefined))).resolves.toBeUndefined();
   });
+
+  it('rejects rather than falling through to open mode when the configured token is blank', async () => {
+    await expect(assertMcpAuth(makeContainer(''), getHeader(`Bearer ${TOKEN}`))).rejects.toThrow('blank');
+  });
 });

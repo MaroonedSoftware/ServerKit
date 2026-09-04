@@ -38,3 +38,12 @@ an alias for it, since the factory takes exactly those fields. This is a type-au
 no effect on consumers, TypeScript being structural: the three context types resolve to the same
 shapes they had before. It means the next request-scoped value is declared once rather than four
 times.
+
+Stop a blank `McpConfig.bearerToken` from silently opening the MCP endpoint. `McpAuthPolicy` tested
+the configured token for falsiness, so an empty or whitespace-only string, typically a blank
+environment variable, took the same branch as leaving the key out and allowed every request. An
+unset token still means "intentionally open" and allows; a configured-but-blank one now throws as
+the server misconfiguration it is. `verifyMcpBearer` rejects a blank `expectedToken` the same way,
+with `internalDetails.kind` of `misconfiguration` rather than an authentication reason code, since
+no credential can satisfy it. The new `isBlankBearerToken` predicate exposes the distinction for
+consumers validating their own config at bootstrap.

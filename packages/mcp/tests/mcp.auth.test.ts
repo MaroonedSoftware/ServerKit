@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { isPolicyResultAllowed, isPolicyResultDenied, type PolicyEnvelope } from '@maroonedsoftware/policies';
-import { verifyMcpBearer, MCP_AUTHORIZATION_HEADER, type McpAuthFailureReason, type McpAuthInfo } from '../src/mcp.auth.js';
+import { isBlankBearerToken, verifyMcpBearer, MCP_AUTHORIZATION_HEADER, type McpAuthFailureReason, type McpAuthInfo } from '../src/mcp.auth.js';
 import { McpAuthPolicy, MCP_AUTH_POLICY, type McpAuthPolicyContext } from '../src/mcp.auth.policy.js';
 import { IsMcpError } from '../src/mcp.error.js';
 
@@ -41,6 +41,30 @@ describe('verifyMcpBearer', () => {
   it('rejects a token of a different length without throwing on the constant-time compare', () => {
     expectReason(() => verifyMcpBearer({ authorization: 'Bearer x', expectedToken: TOKEN }), 'invalid_token');
   });
+
+  it('refuses a blank expected token as a misconfiguration, not an auth failure', () => {
+    try {
+      verifyMcpBearer({ authorization: `Bearer ${TOKEN}`, expectedToken: '' });
+    } catch (error) {
+      expect(IsMcpError(error)).toBe(true);
+      if (IsMcpError(error)) {
+        expect(error.internalDetails?.kind).toBe('misconfiguration');
+        // Not a reason code: a blank config is not a client-correctable 401.
+        expect(error.internalDetails?.reason).toBeUndefined();
+      }
+      return;
+    }
+    throw new Error('expected verifyMcpBearer to throw');
+  });
+});
+
+describe('isBlankBearerToken', () => {
+  it('separates "no token configured" from "token configured and empty"', () => {
+    expect(isBlankBearerToken(undefined)).toBe(false);
+    expect(isBlankBearerToken('')).toBe(true);
+    expect(isBlankBearerToken('   ')).toBe(true);
+    expect(isBlankBearerToken(TOKEN)).toBe(false);
+  });
 });
 
 describe('McpAuthPolicy', () => {
@@ -65,6 +89,14 @@ describe('McpAuthPolicy', () => {
 
   it('allows any request when no token is configured (open endpoint)', async () => {
     expect(isPolicyResultAllowed(await evaluate(undefined, undefined))).toBe(true);
+  });
+
+  it('throws rather than opening the endpoint when the configured token is blank', async () => {
+    await expect(evaluate(`Bearer ${TOKEN}`, '')).rejects.toThrow('blank');
+  });
+
+  it('treats a whitespace-only configured token the same way', async () => {
+    await expect(evaluate(undefined, '   ')).rejects.toThrow('blank');
   });
 
   it('denies a missing token with a WWW-Authenticate challenge', async () => {

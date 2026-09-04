@@ -62,6 +62,7 @@ an injectkit `Container` and a header accessor — still no koa import.
 | `McpAuthFailureReason`            | type      | `'missing_token' \| 'invalid_token'`                                                                       | Lands in `internalDetails.reason`.                                                                                                            |
 | `McpAuthOptions`                  | type      | `Pick<McpConfig, 'bearerToken'>`                                                                           | Structural subset, so an `McpConfig` value satisfies it directly.                                                                             |
 | `MCP_AUTHORIZATION_HEADER`        | constant  | `'Authorization'`                                                                                          | —                                                                                                                                             |
+| `isBlankBearerToken`              | predicate | `(bearerToken: string \| undefined) => bearerToken is string`                                              | `true` only when a token was configured **and** is blank. `undefined` is open mode; blank is a misconfiguration.                              |
 | `MCP_AUTH_POLICY`                 | constant  | `'mcp.auth.valid'`                                                                                         | The `PolicyRegistryMap` key.                                                                                                                  |
 | `McpAuthPolicy`                   | class     | `extends Policy<McpAuthPolicyContext>`                                                                     | Policy form of the verifier — denies rather than throwing.                                                                                    |
 | `McpAuthPolicyContext`            | interface | `{ getHeader: (name) => string; options: McpAuthOptions; rawBody?: unknown; onResolved?: (auth) => void }` | `rawBody` is accepted and ignored, purely for koa structural compatibility. `onResolved` is how the verified identity gets back to the route. |
@@ -210,10 +211,18 @@ router.post('/mcp', bodyParserMiddleware(['application/json']), async ctx => {
 
 ## Gotchas
 
-- **The bundled auth is scaffold-grade, and it fails open.** `McpAuthPolicy` **allows** every
-  request when `McpConfig.bearerToken` is unset, on the reasoning that an unset token means
-  "development, intentionally open". Ship a config without a token and the endpoint is wide open
-  with no warning. A real deployment is an OAuth 2.0 resource server validating a JWT.
+- **The bundled auth is scaffold-grade, and it fails open on an _unset_ token.** `McpAuthPolicy`
+  **allows** every request when `McpConfig.bearerToken` is `undefined`, on the reasoning that an
+  unset token means "development, intentionally open". Ship a config without a token and the
+  endpoint is wide open with no warning. A real deployment is an OAuth 2.0 resource server
+  validating a JWT. A token configured as a **blank string** is the opposite case and throws: that
+  is a blank environment variable, not a decision, so it fails closed as a server misconfiguration
+  rather than reading as the open-mode branch.
+- **Open mode resolves nobody, deliberately.** The `undefined` branch allows without calling
+  `onResolved`, so `context.auth` stays empty. Passing the presented header there would put an
+  unverified credential on the context, and every handler gating on `context.auth` would admit any
+  caller. `verifyMcpBearer` is the only thing that may construct an `McpAuthInfo`, because
+  `McpAuthInfo` carries no marker saying it was checked.
 - **Stateful mode requires session affinity.** `McpSessionRegistry` is an in-memory `Map`, so a
   session lives in one process. Behind a load balancer you need sticky routing, or externalised
   session/event state (the SDK's `eventStore`, backed by the optional `@maroonedsoftware/cache`
@@ -275,7 +284,8 @@ src/
   mcp.config.ts             McpConfig (interface + token), McpSessionMode,
                             MCP_DEFAULT_REQUEST_TIMEOUT_MS
   mcp.error.ts              McpError, IsMcpError
-  mcp.auth.ts               verifyMcpBearer, McpAuthInfo, McpAuthOptions, header constant
+  mcp.auth.ts               verifyMcpBearer, isBlankBearerToken, McpAuthInfo, McpAuthOptions,
+                            header constant
   mcp.auth.policy.ts        MCP_AUTH_POLICY, McpAuthPolicy, McpAuthPolicyContext
   mcp.auth.assert.ts        assertMcpAuth
   mcp.request.context.ts    McpContextBase, McpRequestContext, McpToolContext,
