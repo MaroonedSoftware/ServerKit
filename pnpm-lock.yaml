@@ -621,6 +621,9 @@ importers:
 
   packages/mcp:
     dependencies:
+      '@maroonedsoftware/authentication':
+        specifier: workspace:*
+        version: link:../authentication
       '@maroonedsoftware/errors':
         specifier: workspace:*
         version: link:../errors

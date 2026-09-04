@@ -22,15 +22,16 @@ static shared token.
 pnpm add @maroonedsoftware/mcp @modelcontextprotocol/sdk
 ```
 
-Runtime dependencies: `@maroonedsoftware/errors`, `@maroonedsoftware/logger`,
-`@maroonedsoftware/policies`, `@modelcontextprotocol/sdk`, `injectkit`. Optional peer:
-`@maroonedsoftware/cache` (for externalising session/event state in stateful mode).
+Runtime dependencies: `@maroonedsoftware/authentication`, `@maroonedsoftware/errors`,
+`@maroonedsoftware/logger`, `@maroonedsoftware/policies`, `@modelcontextprotocol/sdk`,
+`injectkit`. Optional peer: `@maroonedsoftware/cache` (for externalising session/event state in
+stateful mode).
 
 ## Position in the graph
 
-- **Depends on:** `errors`, `logger`, `policies`. `cache` is an **optional** peer.
+- **Depends on:** `authentication`, `errors`, `logger`, `policies`. `cache` is an **optional** peer.
 - **Depended on by:** nothing internal. It is a leaf that applications wire up directly.
-- **Subpath exports:** none. The package has no `exports` map at all.
+- **Subpath exports:** none. `exports` maps only `.` and `./package.json`.
 
 **Deliberately not a dependency: `koa`.** The package is transport-neutral. Your route extracts the
 request, builds an `McpRequestContext`, and calls the dispatcher. The auth policy context is
@@ -64,14 +65,14 @@ koa's `requireSignature` drive MCP bearer auth without either package depending 
 
 ### Request context
 
-| Export                         | Kind      | Shape                                                                             | Notes                                                       |
-| ------------------------------ | --------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| `McpRequestContext`            | interface | `{ requestId, logger, auth?, forTool(name, signal?), forResource(uri, signal?) }` | Transport-neutral — no koa or injectkit types.              |
-| `createMcpRequestContext`      | function  | `(input: CreateMcpRequestContextInput) => McpRequestContext`                      | Build it from `ctx` in your route.                          |
-| `CreateMcpRequestContextInput` | type      | `{ requestId: string; logger: Logger; auth?: McpAuthInfo }`                       | —                                                           |
-| `mcpContext`                   | constant  | `AsyncLocalStorage<McpRequestContext>`                                            | Set by the dispatcher. **Handlers never read it directly.** |
-| `McpToolContext`               | interface | `{ requestId, logger, auth?, toolName, signal? }`                                 | What a tool handler receives.                               |
-| `McpResourceContext`           | interface | `{ requestId, logger, auth?, uri, signal? }`                                      | What a resource handler receives.                           |
+| Export                         | Kind      | Shape                                                                                                      | Notes                                                       |
+| ------------------------------ | --------- | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `McpRequestContext`            | interface | `{ requestId, logger, auth?, authenticationSession?, forTool(name, signal?), forResource(uri, signal?) }`  | Transport-neutral — no koa or injectkit types.              |
+| `createMcpRequestContext`      | function  | `(input: CreateMcpRequestContextInput) => McpRequestContext`                                               | Build it from `ctx` in your route.                          |
+| `CreateMcpRequestContextInput` | type      | `{ requestId: string; logger: Logger; auth?: McpAuthInfo; authenticationSession?: AuthenticationSession }` | —                                                           |
+| `mcpContext`                   | constant  | `AsyncLocalStorage<McpRequestContext>`                                                                     | Set by the dispatcher. **Handlers never read it directly.** |
+| `McpToolContext`               | interface | `{ requestId, logger, auth?, authenticationSession?, toolName, signal? }`                                  | What a tool handler receives.                               |
+| `McpResourceContext`           | interface | `{ requestId, logger, auth?, authenticationSession?, uri, signal? }`                                       | What a resource handler receives.                           |
 
 ### Handlers
 
@@ -143,7 +144,7 @@ The route — one shape, both modes. `bodyParserMiddleware` must run first: it i
 ```typescript
 router.post('/mcp', bodyParserMiddleware(['application/json']), requireSignature<McpAuthOptions>('mcp', { policy: MCP_AUTH_POLICY }), async ctx => {
   const dispatcher = ctx.container.get(McpDispatcher);
-  const context = createMcpRequestContext({ requestId: ctx.requestId, logger: ctx.logger });
+  const context = createMcpRequestContext({ requestId: ctx.requestId, logger: ctx.logger, authenticationSession: ctx.authenticationSession });
 
   if (dispatcher.sessionMode === 'stateful') {
     ctx.respond = false; // hand the raw response stream to the SDK transport
@@ -166,8 +167,9 @@ router.post('/mcp', bodyParserMiddleware(['application/json']), requireSignature
   bootstrap, so a definition computed per access is silently ignored after the first read.
 - Register handlers in the maps at bootstrap under `definition.name` / `definition.uri`. The maps
   are frozen from the factory's point of view once it is constructed.
-- Build the `McpRequestContext` per request from `ctx.requestId` and `ctx.logger`. Never reuse one
-  across requests.
+- Build the `McpRequestContext` per request from `ctx.requestId`, `ctx.logger`, and
+  `ctx.authenticationSession`. Never reuse one across requests. On Fastify the same three values
+  come from `request.requestId`, `request.logger`, and `request.authenticationSession`.
 - Use `context.logger` and `context.requestId` inside handlers, not an injected `Logger`.
 - Forward `context.signal` to any async work so the request timeout can actually cancel it.
 - Throw to surface a JSON-RPC error; set `isError: true` on a `CallToolResult` for a tool-level
@@ -210,6 +212,11 @@ router.post('/mcp', bodyParserMiddleware(['application/json']), requireSignature
   free of a `koa` dependency.
 - **`verifyMcpBearer` throws while `McpAuthPolicy` denies.** Same logic, two shapes. Pick the one
   that matches your call site.
+- **`context.authenticationSession` is the ServerKit auth session, not the MCP transport session.**
+  Two unrelated things share the word: `Mcp-Session-Id`, `McpSessionRegistry`, and `sessionMode`
+  are the protocol's connection session; `authenticationSession` is who the caller is. A stateful
+  MCP session is not evidence of authentication, and a request carrying a session token is not a
+  stateful MCP session.
 - **`McpConfig` is declaration-merged** (interface + abstract class), like `Logger` and
   `ServerKitContext`. Do not split it.
 

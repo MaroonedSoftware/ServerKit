@@ -4,7 +4,7 @@ Transport-agnostic [Model Context Protocol](https://modelcontextprotocol.io) **s
 
 - tools and resources are DI-registered `@Injectable()` handler maps (like the Discord/Slack dispatchers), not imperative `server.tool()` calls;
 - the SDK's low-level `Server` stays the protocol engine (JSON-RPC framing, capability negotiation, `initialize`), while registration and transport are ServerKit-native seams;
-- request context (request id, logger, auth subject) is threaded to handlers via `AsyncLocalStorage`, so one set of handlers serves concurrent requests safely.
+- request context (request id, logger, auth subject, authentication session) is threaded to handlers via `AsyncLocalStorage`, so one set of handlers serves concurrent requests safely.
 
 The package owns no HTTP routes — wire `McpDispatcher` from your own Koa (or Express/Fastify/Lambda) handler. It targets MCP over **Streamable HTTP**; stdio transport is out of scope.
 
@@ -25,7 +25,7 @@ pnpm add @maroonedsoftware/mcp @modelcontextprotocol/sdk
 | `McpResourceHandler` / `McpResourceHandlerMap`  | Resource handler interface (`read(uri, context)`) + its `Map<uri, handler>` DI token.                                                                            |
 | `McpSessionRegistry`                            | Stateful-mode registry: one SDK `Server` + `StreamableHTTPServerTransport` per `Mcp-Session-Id`, reused across the session.                                      |
 | `KoaMcpTransport`                               | Minimal single-exchange `Transport` for stateless mode (one JSON-RPC message in, one response out).                                                              |
-| `McpRequestContext` / `createMcpRequestContext` | Request-scoped context threaded to handlers, plus the factory that builds one from your `ctx`.                                                                   |
+| `McpRequestContext` / `createMcpRequestContext` | Request-scoped context threaded to handlers (request id, logger, auth info, authentication session), plus the factory that builds one from your `ctx`.           |
 | `verifyMcpBearer(input)`                        | Pure bearer-token verifier. Returns `McpAuthInfo` or throws `McpError`. **Scaffold-grade** — swap for OAuth resource-server JWT validation.                      |
 | `McpAuthPolicy`                                 | `@maroonedsoftware/policies` form of `verifyMcpBearer` (registered under `MCP_AUTH_POLICY`). Slots into koa's `requireSignature`.                                |
 | `McpError` / `IsMcpError`                       | `ServerkitError` subclass for non-HTTP domain failures, plus its type guard.                                                                                     |
@@ -100,7 +100,7 @@ Resources follow the same shape with `McpResourceHandler` (`read(uri, context)`)
 
 ## Serving MCP
 
-You own the route. Add `bodyParserMiddleware(['application/json'])` first (ServerKit puts the parsed payload on `ctx.parsedBody`, never on koa's `ctx.request.body`), gate it with the auth policy, build an `McpRequestContext` from `ctx`, and dispatch. The mode is chosen from `McpConfig.sessionMode`:
+You own the route. Add `bodyParserMiddleware(['application/json'])` first (ServerKit puts the parsed payload on `ctx.parsedBody`, never on koa's `ctx.request.body`), gate it with the auth policy, build an `McpRequestContext` from `ctx`, and dispatch. The mode is chosen from `McpConfig.sessionMode`. On Fastify the same three context values come from `request.requestId`, `request.logger`, and `request.authenticationSession`:
 
 ```ts
 import { bodyParserMiddleware, requireSignature } from '@maroonedsoftware/koa';
@@ -109,7 +109,7 @@ import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 
 router.post('/mcp', bodyParserMiddleware(['application/json']), requireSignature<McpAuthOptions>('mcp', { policy: MCP_AUTH_POLICY }), async ctx => {
   const dispatcher = ctx.container.get(McpDispatcher);
-  const context = createMcpRequestContext({ requestId: ctx.requestId, logger: ctx.logger });
+  const context = createMcpRequestContext({ requestId: ctx.requestId, logger: ctx.logger, authenticationSession: ctx.authenticationSession });
 
   if (dispatcher.sessionMode === 'stateful') {
     ctx.respond = false; // hand the raw response stream to the SDK transport (SSE)

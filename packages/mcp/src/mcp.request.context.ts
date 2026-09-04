@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import type { AuthenticationSession } from '@maroonedsoftware/authentication';
 import type { Logger } from '@maroonedsoftware/logger';
 import type { McpAuthInfo } from './mcp.auth.js';
 
@@ -14,6 +15,14 @@ export interface McpToolContext {
   logger: Logger;
   /** Authenticated subject, if the auth policy resolved one. */
   auth?: McpAuthInfo;
+  /**
+   * ServerKit authentication session for the request, when the route ran the
+   * authentication stack. Unrelated to the MCP transport session
+   * (`Mcp-Session-Id`). Narrow it with
+   * {@link import('./mcp.authentication.session.js').requireMcpAuthenticationSession}
+   * before using it to evaluate a policy.
+   */
+  authenticationSession?: AuthenticationSession;
   /** Name of the tool being invoked. */
   toolName: string;
   /** Abort signal for the invocation (cancellation / timeout), when available. */
@@ -31,6 +40,14 @@ export interface McpResourceContext {
   logger: Logger;
   /** Authenticated subject, if the auth policy resolved one. */
   auth?: McpAuthInfo;
+  /**
+   * ServerKit authentication session for the request, when the route ran the
+   * authentication stack. Unrelated to the MCP transport session
+   * (`Mcp-Session-Id`). Narrow it with
+   * {@link import('./mcp.authentication.session.js').requireMcpAuthenticationSession}
+   * before using it to evaluate a policy.
+   */
+  authenticationSession?: AuthenticationSession;
   /** URI of the resource being read. */
   uri: string;
   /** Abort signal for the invocation, when available. */
@@ -56,6 +73,14 @@ export interface McpRequestContext {
   logger: Logger;
   /** Authenticated subject, if resolved by the auth policy. */
   auth?: McpAuthInfo;
+  /**
+   * ServerKit authentication session for the request, when the route ran the
+   * authentication stack. Unrelated to the MCP transport session
+   * (`Mcp-Session-Id`). Narrow it with
+   * {@link import('./mcp.authentication.session.js').requireMcpAuthenticationSession}
+   * before using it to evaluate a policy.
+   */
+  authenticationSession?: AuthenticationSession;
   /** Derive the {@link McpToolContext} for a specific tool invocation. */
   forTool(toolName: string, signal?: AbortSignal): McpToolContext;
   /** Derive the {@link McpResourceContext} for a specific resource read. */
@@ -77,26 +102,33 @@ export type CreateMcpRequestContextInput = {
   requestId: string;
   logger: Logger;
   auth?: McpAuthInfo;
+  authenticationSession?: AuthenticationSession;
 };
 
 /**
  * Builds an {@link McpRequestContext} from request-scoped values. Call this in
- * your koa route from `ctx` (e.g. `{ requestId: ctx.requestId, logger: ctx.logger }`)
- * and pass the result to the dispatcher.
+ * your koa route from `ctx` and pass the result to the dispatcher. On Fastify
+ * the same values come from `request.requestId`, `request.logger`, and
+ * `request.authenticationSession`.
  *
  * @example
  * ```ts
- * const context = createMcpRequestContext({ requestId: ctx.requestId, logger: ctx.logger });
+ * const context = createMcpRequestContext({
+ *   requestId: ctx.requestId,
+ *   logger: ctx.logger,
+ *   authenticationSession: ctx.authenticationSession,
+ * });
  * const response = await ctx.container.get(McpDispatcher).dispatch(ctx.parsedBody as JSONRPCMessage, context);
  * ```
  */
 export const createMcpRequestContext = (input: CreateMcpRequestContextInput): McpRequestContext => {
-  const { requestId, logger, auth } = input;
+  const { requestId, logger, auth, authenticationSession } = input;
   return {
     requestId,
     logger,
     auth,
-    forTool: (toolName, signal) => ({ requestId, logger, auth, toolName, signal }),
-    forResource: (uri, signal) => ({ requestId, logger, auth, uri, signal }),
+    authenticationSession,
+    forTool: (toolName, signal) => ({ requestId, logger, auth, authenticationSession, toolName, signal }),
+    forResource: (uri, signal) => ({ requestId, logger, auth, authenticationSession, uri, signal }),
   };
 };

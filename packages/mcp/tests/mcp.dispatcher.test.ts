@@ -7,7 +7,7 @@ import { McpToolHandlerMap, type McpToolHandler } from '../src/mcp.tool.handler.
 import { McpResourceHandlerMap } from '../src/mcp.resource.handler.js';
 import type { McpConfig } from '../src/mcp.config.js';
 import type { McpToolContext } from '../src/mcp.request.context.js';
-import { makeContext, makeLogger } from './helpers.js';
+import { makeAuthenticatedSession, makeContext, makeLogger } from './helpers.js';
 
 const echoTool = (): McpToolHandler => ({
   definition: {
@@ -55,6 +55,13 @@ describe('McpDispatcher (stateless)', () => {
     const response = await dispatcher.dispatch(rpc(2, 'tools/call', { name: 'echo', arguments: { message: 'hi' } }), makeContext());
     expect(response).toMatchObject({ id: 2, result: { content: [{ type: 'text', text: 'echo:hi' }] } });
     expect(tool.handle).toHaveBeenCalledWith({ message: 'hi' }, expect.objectContaining({ toolName: 'echo', requestId: 'req-1' }));
+  });
+
+  it('carries the authentication session through AsyncLocalStorage to the handler', async () => {
+    const { dispatcher, tool } = buildDispatcher();
+    const authenticationSession = makeAuthenticatedSession();
+    await dispatcher.dispatch(rpc(6, 'tools/call', { name: 'echo', arguments: { message: 'hi' } }), makeContext({ authenticationSession }));
+    expect(tool.handle).toHaveBeenCalledWith({ message: 'hi' }, expect.objectContaining({ authenticationSession }));
   });
 
   it('errors when calling an unregistered tool', async () => {

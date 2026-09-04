@@ -47,6 +47,7 @@
     "test:ci": "vitest run --coverage"
   },
   "dependencies": {
+    "@maroonedsoftware/authentication": "workspace:*",
     "@maroonedsoftware/errors": "workspace:*",
     "@maroonedsoftware/logger": "workspace:*",
     "@maroonedsoftware/policies": "workspace:*",
