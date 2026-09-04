@@ -71,14 +71,17 @@ an injectkit `Container` and a header accessor — still no koa import.
 
 ### Request context
 
-| Export                         | Kind      | Shape                                                                                                      | Notes                                                       |
-| ------------------------------ | --------- | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| `McpRequestContext`            | interface | `{ requestId, logger, auth?, authenticationSession?, forTool(name, signal?), forResource(uri, signal?) }`  | Transport-neutral — no koa or injectkit types.              |
-| `createMcpRequestContext`      | function  | `(input: CreateMcpRequestContextInput) => McpRequestContext`                                               | Build it from `ctx` in your route.                          |
-| `CreateMcpRequestContextInput` | type      | `{ requestId: string; logger: Logger; auth?: McpAuthInfo; authenticationSession?: AuthenticationSession }` | —                                                           |
-| `mcpContext`                   | constant  | `AsyncLocalStorage<McpRequestContext>`                                                                     | Set by the dispatcher. **Handlers never read it directly.** |
-| `McpToolContext`               | interface | `{ requestId, logger, auth?, authenticationSession?, toolName, signal? }`                                  | What a tool handler receives.                               |
-| `McpResourceContext`           | interface | `{ requestId, logger, auth?, authenticationSession?, uri, signal? }`                                       | What a resource handler receives.                           |
+All three context types extend one base, so a new request-scoped value is declared once.
+
+| Export                         | Kind      | Shape                                                                                                      | Notes                                                           |
+| ------------------------------ | --------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `McpContextBase`               | interface | `{ requestId: string; logger: Logger; auth?: McpAuthInfo; authenticationSession?: AuthenticationSession }` | The shared half of all three contexts. Add new fields **here**. |
+| `McpRequestContext`            | interface | `McpContextBase & { forTool(name, signal?), forResource(uri, signal?) }`                                   | Transport-neutral — no koa or injectkit types.                  |
+| `McpToolContext`               | interface | `McpContextBase & { toolName, signal? }`                                                                   | What a tool handler receives.                                   |
+| `McpResourceContext`           | interface | `McpContextBase & { uri, signal? }`                                                                        | What a resource handler receives.                               |
+| `createMcpRequestContext`      | function  | `(input: CreateMcpRequestContextInput) => McpRequestContext`                                               | Build it from `ctx` in your route.                              |
+| `CreateMcpRequestContextInput` | type      | Alias for `McpContextBase`                                                                                 | The factory takes exactly the shared fields.                    |
+| `mcpContext`                   | constant  | `AsyncLocalStorage<McpRequestContext>`                                                                     | Set by the dispatcher. **Handlers never read it directly.**     |
 
 ### Handlers
 
@@ -275,8 +278,8 @@ src/
   mcp.auth.ts               verifyMcpBearer, McpAuthInfo, McpAuthOptions, header constant
   mcp.auth.policy.ts        MCP_AUTH_POLICY, McpAuthPolicy, McpAuthPolicyContext
   mcp.auth.assert.ts        assertMcpAuth
-  mcp.request.context.ts    McpRequestContext, mcpContext (ALS), createMcpRequestContext,
-                            McpToolContext, McpResourceContext
+  mcp.request.context.ts    McpContextBase, McpRequestContext, McpToolContext,
+                            McpResourceContext, mcpContext (ALS), createMcpRequestContext
   mcp.authentication.session.ts
                             requireMcpAuthenticationSession, McpAuthenticatedContext
   mcp.tool.handler.ts       McpToolHandler, McpToolHandlerMap
@@ -296,6 +299,9 @@ Invariants a change must not break:
   its use case, not for an import.
 - Request-scoped state flows through `AsyncLocalStorage`, never through closures captured per
   request. This is the concurrency-safety invariant.
+- A new request-scoped value is declared on `McpContextBase` and spread into the derived contexts
+  by `createMcpRequestContext`. Do not add a field to `McpToolContext` or `McpResourceContext`
+  directly unless it is genuinely per-invocation, like `toolName`, `uri`, and `signal`.
 - `tools/list` and `resources/list` stay memoized at factory construction; the handler maps are
   bootstrap-frozen.
 - Bearer comparison stays constant-time, with the length guard that covers an empty or mismatched

@@ -4,11 +4,15 @@ import type { Logger } from '@maroonedsoftware/logger';
 import type { McpAuthInfo } from './mcp.auth.js';
 
 /**
- * Per-tool view of the request context handed to an
- * {@link import('./mcp.tool.handler.js').McpToolHandler}. Everything a handler
- * needs that is request-scoped rather than singleton.
+ * The request-scoped values every MCP context carries, whatever it is a view of.
+ * {@link McpRequestContext} holds them for the request; {@link McpToolContext}
+ * and {@link McpResourceContext} inherit them for one invocation.
+ *
+ * A new request-scoped value belongs here, not on the three types that extend
+ * it. It is also the input to {@link createMcpRequestContext}, aliased as
+ * {@link CreateMcpRequestContextInput}.
  */
-export interface McpToolContext {
+export interface McpContextBase {
   /** Correlation/request id for this MCP call (from `ctx.requestId`). */
   requestId: string;
   /** Request-scoped logger (from `ctx.logger`). */
@@ -23,6 +27,14 @@ export interface McpToolContext {
    * before using it to evaluate a policy.
    */
   authenticationSession?: AuthenticationSession;
+}
+
+/**
+ * Per-tool view of the request context handed to an
+ * {@link import('./mcp.tool.handler.js').McpToolHandler}. Everything a handler
+ * needs that is request-scoped rather than singleton.
+ */
+export interface McpToolContext extends McpContextBase {
   /** Name of the tool being invoked. */
   toolName: string;
   /** Abort signal for the invocation (cancellation / timeout), when available. */
@@ -33,21 +45,7 @@ export interface McpToolContext {
  * Per-resource view of the request context handed to an
  * {@link import('./mcp.resource.handler.js').McpResourceHandler}.
  */
-export interface McpResourceContext {
-  /** Correlation/request id for this MCP call. */
-  requestId: string;
-  /** Request-scoped logger. */
-  logger: Logger;
-  /** Authenticated subject, if the auth policy resolved one. */
-  auth?: McpAuthInfo;
-  /**
-   * ServerKit authentication session for the request, when the route ran the
-   * authentication stack. Unrelated to the MCP transport session
-   * (`Mcp-Session-Id`). Narrow it with
-   * {@link import('./mcp.authentication.session.js').requireMcpAuthenticationSession}
-   * before using it to evaluate a policy.
-   */
-  authenticationSession?: AuthenticationSession;
+export interface McpResourceContext extends McpContextBase {
   /** URI of the resource being read. */
   uri: string;
   /** Abort signal for the invocation, when available. */
@@ -66,21 +64,7 @@ export interface McpResourceContext {
  * one request — this is what lets a single set of handler functions serve
  * concurrent requests safely.
  */
-export interface McpRequestContext {
-  /** Correlation/request id (typically `ctx.requestId`). */
-  requestId: string;
-  /** Request-scoped logger (typically `ctx.logger`). */
-  logger: Logger;
-  /** Authenticated subject, if resolved by the auth policy. */
-  auth?: McpAuthInfo;
-  /**
-   * ServerKit authentication session for the request, when the route ran the
-   * authentication stack. Unrelated to the MCP transport session
-   * (`Mcp-Session-Id`). Narrow it with
-   * {@link import('./mcp.authentication.session.js').requireMcpAuthenticationSession}
-   * before using it to evaluate a policy.
-   */
-  authenticationSession?: AuthenticationSession;
+export interface McpRequestContext extends McpContextBase {
   /** Derive the {@link McpToolContext} for a specific tool invocation. */
   forTool(toolName: string, signal?: AbortSignal): McpToolContext;
   /** Derive the {@link McpResourceContext} for a specific resource read. */
@@ -97,13 +81,8 @@ export interface McpRequestContext {
  */
 export const mcpContext = new AsyncLocalStorage<McpRequestContext>();
 
-/** Fields needed to build an {@link McpRequestContext}. */
-export type CreateMcpRequestContextInput = {
-  requestId: string;
-  logger: Logger;
-  auth?: McpAuthInfo;
-  authenticationSession?: AuthenticationSession;
-};
+/** Fields needed to build an {@link McpRequestContext} — the shared {@link McpContextBase}. */
+export type CreateMcpRequestContextInput = McpContextBase;
 
 /**
  * Builds an {@link McpRequestContext} from request-scoped values. Call this in
@@ -123,12 +102,14 @@ export type CreateMcpRequestContextInput = {
  */
 export const createMcpRequestContext = (input: CreateMcpRequestContextInput): McpRequestContext => {
   const { requestId, logger, auth, authenticationSession } = input;
+
+  // Destructured rather than aliasing `input`, so a caller mutating the object
+  // it passed in cannot reach into a context already handed to a handler.
+  const shared: McpContextBase = { requestId, logger, auth, authenticationSession };
+
   return {
-    requestId,
-    logger,
-    auth,
-    authenticationSession,
-    forTool: (toolName, signal) => ({ requestId, logger, auth, authenticationSession, toolName, signal }),
-    forResource: (uri, signal) => ({ requestId, logger, auth, authenticationSession, uri, signal }),
+    ...shared,
+    forTool: (toolName, signal) => ({ ...shared, toolName, signal }),
+    forResource: (uri, signal) => ({ ...shared, uri, signal }),
   };
 };
