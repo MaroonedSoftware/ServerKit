@@ -1,7 +1,7 @@
 import { Injectable } from 'injectkit';
 import { Logger } from '@maroonedsoftware/logger';
 import { isJSONRPCRequest, type JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
-import { McpConfig } from './mcp.config.js';
+import { McpConfig, McpSessionMode } from './mcp.config.js';
 import { McpServerFactory } from './mcp.server.factory.js';
 import { McpSessionRegistry, type McpStatefulExchange } from './mcp.session.registry.js';
 import { KoaMcpTransport } from './mcp.transport.js';
@@ -49,7 +49,7 @@ export class McpDispatcher {
   ) {}
 
   /** Resolved session strategy — `'stateless'` unless the config opts into `'stateful'`. */
-  get sessionMode(): 'stateless' | 'stateful' {
+  get sessionMode(): McpSessionMode {
     return this.config.sessionMode ?? 'stateless';
   }
 

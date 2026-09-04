@@ -1,6 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
 import { isPolicyResultAllowed, isPolicyResultDenied, type PolicyEnvelope } from '@maroonedsoftware/policies';
-import { isBlankBearerToken, verifyMcpBearer, MCP_AUTHORIZATION_HEADER, type McpAuthFailureReason, type McpAuthInfo } from '../src/mcp.auth.js';
+import {
+  isBlankBearerToken,
+  verifyMcpBearer,
+  MCP_AUTHORIZATION_HEADER,
+  type McpAuthFailureReason,
+  type McpAuthInfo,
+  type McpAuthOptions,
+} from '../src/mcp.auth.js';
 import { McpAuthPolicy, MCP_AUTH_POLICY, type McpAuthPolicyContext } from '../src/mcp.auth.policy.js';
 import { IsMcpError } from '../src/mcp.error.js';
 
@@ -69,15 +76,17 @@ describe('isBlankBearerToken', () => {
 
 describe('McpAuthPolicy', () => {
   const envelope = {} as PolicyEnvelope; // bearer auth never reads envelope.now
-  const evaluateWith = (authorization: string | undefined, bearerToken: string | undefined, onResolved?: (auth: McpAuthInfo) => void) => {
+  const evaluateWith = (authorization: string | undefined, options: McpAuthOptions, onResolved?: (auth: McpAuthInfo) => void) => {
     const context: McpAuthPolicyContext = {
       getHeader: name => (name === MCP_AUTHORIZATION_HEADER && authorization ? authorization : ''),
-      options: { bearerToken },
+      options,
       onResolved,
     };
     return new McpAuthPolicy().evaluate(context, envelope);
   };
-  const evaluate = (authorization: string | undefined, bearerToken?: string) => evaluateWith(authorization, bearerToken);
+  const evaluate = (authorization: string | undefined, bearerToken?: string) => evaluateWith(authorization, { bearerToken });
+  /** The one configuration that runs unauthenticated: no token, opted in explicitly. */
+  const openOptions: McpAuthOptions = { allowUnauthenticated: true };
 
   it('is registered under the expected name', () => {
     expect(MCP_AUTH_POLICY).toBe('mcp.auth.valid');
@@ -87,8 +96,17 @@ describe('McpAuthPolicy', () => {
     expect(isPolicyResultAllowed(await evaluate(`Bearer ${TOKEN}`, TOKEN))).toBe(true);
   });
 
-  it('allows any request when no token is configured (open endpoint)', async () => {
-    expect(isPolicyResultAllowed(await evaluate(undefined, undefined))).toBe(true);
+  it('allows any request when unauthenticated mode is opted into explicitly', async () => {
+    expect(isPolicyResultAllowed(await evaluateWith(undefined, openOptions))).toBe(true);
+  });
+
+  it('throws rather than serving every caller when no token is configured and nothing opted in', async () => {
+    await expect(evaluate(undefined, undefined)).rejects.toThrow('allowUnauthenticated');
+  });
+
+  it('enforces a configured token even when allowUnauthenticated is also set', async () => {
+    await expect(evaluateWith(undefined, { bearerToken: TOKEN, allowUnauthenticated: true })).resolves.toMatchObject({ allowed: false });
+    expect(isPolicyResultAllowed(await evaluateWith(`Bearer ${TOKEN}`, { bearerToken: TOKEN, allowUnauthenticated: true }))).toBe(true);
   });
 
   it('throws rather than opening the endpoint when the configured token is blank', async () => {
@@ -97,6 +115,10 @@ describe('McpAuthPolicy', () => {
 
   it('treats a whitespace-only configured token the same way', async () => {
     await expect(evaluate(undefined, '   ')).rejects.toThrow('blank');
+  });
+
+  it('refuses a blank token even with allowUnauthenticated set, since the two contradict', async () => {
+    await expect(evaluateWith(undefined, { bearerToken: '', allowUnauthenticated: true })).rejects.toThrow('blank');
   });
 
   it('denies a missing token with a WWW-Authenticate challenge', async () => {
@@ -110,19 +132,19 @@ describe('McpAuthPolicy', () => {
 
   it('hands the resolved identity to onResolved when the token is valid', async () => {
     const onResolved = vi.fn();
-    await evaluateWith(`Bearer ${TOKEN}`, TOKEN, onResolved);
+    await evaluateWith(`Bearer ${TOKEN}`, { bearerToken: TOKEN }, onResolved);
     expect(onResolved).toHaveBeenCalledWith({ token: TOKEN });
   });
 
   it('does not call onResolved when it denies', async () => {
     const onResolved = vi.fn();
-    await evaluateWith('Bearer wrong-token', TOKEN, onResolved);
+    await evaluateWith('Bearer wrong-token', { bearerToken: TOKEN }, onResolved);
     expect(onResolved).not.toHaveBeenCalled();
   });
 
-  it('does not call onResolved in open mode, which authenticates nobody', async () => {
+  it('does not call onResolved in unauthenticated mode, which authenticates nobody', async () => {
     const onResolved = vi.fn();
-    await evaluateWith(undefined, undefined, onResolved);
+    await evaluateWith(undefined, openOptions, onResolved);
     expect(onResolved).not.toHaveBeenCalled();
   });
 

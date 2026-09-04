@@ -16,22 +16,22 @@ pnpm add @maroonedsoftware/mcp @modelcontextprotocol/sdk
 
 ## Exports
 
-| Symbol                                          | Purpose                                                                                                                                                          |
-| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `McpConfig`                                     | Abstract `@Injectable()` token; carries `serverName`, `version`, optional `sessionMode`, `bearerToken`, `requestTimeoutMs`. Consumer registers a concrete value. |
-| `McpDispatcher`                                 | Entry point. `dispatch(message, context)` for stateless mode; `dispatchStateful(exchange, context)` for stateful. Selects the mode from `McpConfig.sessionMode`. |
-| `McpServerFactory`                              | Builds SDK `Server` instances wired to the handler maps — memoizes the `tools/list` payload and uses stable, ALS-backed request handlers.                        |
-| `McpToolHandler` / `McpToolHandlerMap`          | One-method tool handler interface (`handle(args, context)`) + its `Map<toolName, handler>` DI token.                                                             |
-| `McpResourceHandler` / `McpResourceHandlerMap`  | Resource handler interface (`read(uri, context)`) + its `Map<uri, handler>` DI token.                                                                            |
-| `McpSessionRegistry`                            | Stateful-mode registry: one SDK `Server` + `StreamableHTTPServerTransport` per `Mcp-Session-Id`, reused across the session.                                      |
-| `KoaMcpTransport`                               | Minimal single-exchange `Transport` for stateless mode (one JSON-RPC message in, one response out).                                                              |
-| `McpRequestContext` / `createMcpRequestContext` | Request-scoped context threaded to handlers (request id, logger, auth info, authentication session), plus the factory that builds one from your `ctx`.           |
-| `verifyMcpBearer(input)`                        | Pure bearer-token verifier. Returns `McpAuthInfo` or throws `McpError`. **Scaffold-grade** — swap for OAuth resource-server JWT validation.                      |
-| `isBlankBearerToken(bearerToken)`               | Distinguishes an unset shared token (open mode) from one configured as a blank string (a misconfiguration that fails closed).                                    |
-| `assertMcpAuth(container, getHeader)`           | Gates a request on `MCP_AUTH_POLICY` and returns the identity it resolved, for `context.auth`. Throws 401 on denial.                                             |
-| `McpAuthPolicy`                                 | `@maroonedsoftware/policies` form of `verifyMcpBearer` (registered under `MCP_AUTH_POLICY`). Slots into koa's `requireSignature`.                                |
-| `requireMcpAuthenticationSession(context)`      | Narrows a handler context to an authenticated `AuthenticationSession`, or throws 401. Use it before evaluating a policy in a tool.                               |
-| `McpError` / `IsMcpError`                       | `ServerkitError` subclass for non-HTTP domain failures, plus its type guard.                                                                                     |
+| Symbol                                          | Purpose                                                                                                                                                                                  |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `McpConfig`                                     | Abstract `@Injectable()` token; carries `serverName`, `version`, optional `sessionMode`, `bearerToken`, `allowUnauthenticated`, `requestTimeoutMs`. Consumer registers a concrete value. |
+| `McpDispatcher`                                 | Entry point. `dispatch(message, context)` for stateless mode; `dispatchStateful(exchange, context)` for stateful. Selects the mode from `McpConfig.sessionMode`.                         |
+| `McpServerFactory`                              | Builds SDK `Server` instances wired to the handler maps — memoizes the `tools/list` payload and uses stable, ALS-backed request handlers.                                                |
+| `McpToolHandler` / `McpToolHandlerMap`          | One-method tool handler interface (`handle(args, context)`) + its `Map<toolName, handler>` DI token.                                                                                     |
+| `McpResourceHandler` / `McpResourceHandlerMap`  | Resource handler interface (`read(uri, context)`) + its `Map<uri, handler>` DI token.                                                                                                    |
+| `McpSessionRegistry`                            | Stateful-mode registry: one SDK `Server` + `StreamableHTTPServerTransport` per `Mcp-Session-Id`, reused across the session.                                                              |
+| `KoaMcpTransport`                               | Minimal single-exchange `Transport` for stateless mode (one JSON-RPC message in, one response out).                                                                                      |
+| `McpRequestContext` / `createMcpRequestContext` | Request-scoped context threaded to handlers (request id, logger, auth info, authentication session), plus the factory that builds one from your `ctx`.                                   |
+| `verifyMcpBearer(input)`                        | Pure bearer-token verifier. Returns `McpAuthInfo` or throws `McpError`. **Scaffold-grade** — swap for OAuth resource-server JWT validation.                                              |
+| `isBlankBearerToken(bearerToken)`               | Distinguishes an unset shared token from one configured as a blank string. Both fail closed; only the second is a misconfiguration.                                                      |
+| `assertMcpAuth(container, getHeader)`           | Gates a request on `MCP_AUTH_POLICY` and returns the identity it resolved, for `context.auth`. Throws 401 on denial.                                                                     |
+| `McpAuthPolicy`                                 | `@maroonedsoftware/policies` form of `verifyMcpBearer` (registered under `MCP_AUTH_POLICY`). Slots into koa's `requireSignature`.                                                        |
+| `requireMcpAuthenticationSession(context)`      | Narrows a handler context to an authenticated `AuthenticationSession`, or throws 401. Use it before evaluating a policy in a tool.                                                       |
+| `McpError` / `IsMcpError`                       | `ServerkitError` subclass for non-HTTP domain failures, plus its type guard.                                                                                                             |
 
 ## Configuration
 
@@ -54,19 +54,21 @@ registry.register(McpConfig).useValue(mcpConfig);
     "serverName": "my-service",
     "version": "1.0.0",
     "sessionMode": "stateless", // optional; "stateless" (default) or "stateful"
-    "bearerToken": "${env:MCP_BEARER_TOKEN}", // optional; enables the bundled auth policy
+    "bearerToken": "${env:MCP_BEARER_TOKEN}", // enables the bundled auth policy
+    // "allowUnauthenticated": true,          // only in place of bearerToken, only in development
     "requestTimeoutMs": 30000, // optional
   },
 }
 ```
 
-| Field              | Required | Used by                                                                                                                                                       |
-| ------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `serverName`       | yes      | Advertised to clients as `serverInfo.name` during `initialize`.                                                                                               |
-| `version`          | yes      | Advertised as `serverInfo.version`.                                                                                                                           |
-| `sessionMode`      | no       | `'stateless'` (default) or `'stateful'` — see [session modes](#session-modes).                                                                                |
-| `bearerToken`      | no       | Shared token accepted by `McpAuthPolicy`. Unset ⇒ the endpoint is open (development only).                                                                    |
-| `requestTimeoutMs` | no       | Milliseconds after which `context.signal` aborts. Defaults to `MCP_DEFAULT_REQUEST_TIMEOUT_MS` (30s). Cooperative: forward the signal or the handler runs on. |
+| Field                  | Required | Used by                                                                                                                                                       |
+| ---------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `serverName`           | yes      | Advertised to clients as `serverInfo.name` during `initialize`.                                                                                               |
+| `version`              | yes      | Advertised as `serverInfo.version`.                                                                                                                           |
+| `sessionMode`          | no       | `'stateless'` (default) or `'stateful'` — see [session modes](#session-modes).                                                                                |
+| `bearerToken`          | no       | Shared token accepted by `McpAuthPolicy`. Unset requires `allowUnauthenticated`.                                                                              |
+| `allowUnauthenticated` | no       | Run with no authentication, deliberately. Required when `bearerToken` is unset; ignored when it is set. Development only.                                     |
+| `requestTimeoutMs`     | no       | Milliseconds after which `context.signal` aborts. Defaults to `MCP_DEFAULT_REQUEST_TIMEOUT_MS` (30s). Cooperative: forward the signal or the handler runs on. |
 
 ## Defining tools
 
@@ -158,13 +160,15 @@ try {
 }
 ```
 
-A token configured as an empty or whitespace-only string is treated as a misconfiguration, not as open mode, and throws rather than opening the endpoint. A blank `MCP_BEARER_TOKEN` in the environment is an accident; leaving the key out entirely is the deliberate way to run open.
+The endpoint is never open by omission. `McpAuthPolicy` throws unless the config says something definite: a `bearerToken` to enforce, or `allowUnauthenticated: true` to run with none. A missing key and a blank string both fail closed, since neither shows that anyone chose to run unauthenticated. Setting both enforces the token, the more restrictive of the two.
+
+The check runs on the first MCP request rather than at boot, because the package has no module lifecycle to hook. Evaluate the policy in your own module `setup` if you want a misconfigured server to refuse to start.
 
 > **This is a scaffold-grade seam.** A production MCP server acts as an OAuth 2.0 resource server and validates a JWT access token's signature, `aud`, `exp`, and scopes against an authorization server. Swap `verifyMcpBearer` (or subclass `McpAuthPolicy`) for that, keeping the same `(request) → McpAuthInfo | throw` shape so the route wiring is unchanged.
 
 ### As a policy
 
-`McpAuthPolicy` wraps `verifyMcpBearer` as a `@maroonedsoftware/policies` policy: it allows on a valid token (or when no token is configured at all), throws when the configured token is blank, and denies with the verifier's `reason` plus a `WWW-Authenticate` challenge header. Its context (`getHeader` + `options`) is structurally compatible with `@maroonedsoftware/koa`'s `SignaturePolicyContext<McpAuthOptions>`, so `requireSignature` drives it — no koa dependency in this package:
+`McpAuthPolicy` wraps `verifyMcpBearer` as a `@maroonedsoftware/policies` policy: it allows on a valid token (or when `allowUnauthenticated` is set and no token is configured), throws on a config that states neither, and denies with the verifier's `reason` plus a `WWW-Authenticate` challenge header. Its context (`getHeader` + `options`) is structurally compatible with `@maroonedsoftware/koa`'s `SignaturePolicyContext<McpAuthOptions>`, so `requireSignature` drives it — no koa dependency in this package:
 
 ```ts
 import { McpAuthPolicy, MCP_AUTH_POLICY } from '@maroonedsoftware/mcp';

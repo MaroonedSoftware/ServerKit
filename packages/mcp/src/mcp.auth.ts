@@ -36,7 +36,7 @@ export const MCP_AUTHORIZATION_HEADER = 'Authorization';
  * satisfies it directly — e.g. `requireSignature<McpAuthOptions>('mcp', { policy: MCP_AUTH_POLICY })`
  * with the MCP config stored under that `AppConfig` key.
  */
-export type McpAuthOptions = Pick<McpConfig, 'bearerToken'>;
+export type McpAuthOptions = Pick<McpConfig, 'bearerToken' | 'allowUnauthenticated'>;
 
 /**
  * Whether a configured shared token is present but blank.

@@ -58,6 +58,19 @@ export interface McpConfig {
    */
   bearerToken?: string;
   /**
+   * Run the endpoint with **no authentication**, deliberately.
+   *
+   * Required to boot without a {@link bearerToken}: the bundled
+   * {@link import('./mcp.auth.policy.js').McpAuthPolicy} throws rather than
+   * quietly serving every caller, so an endpoint is never open by omission. Set
+   * this only for local development, and grep for it in production config the
+   * way you would any other kill switch.
+   *
+   * Ignored when a `bearerToken` is set: the token is enforced, since the more
+   * restrictive of two contradictory settings is the safe one to honour.
+   */
+  allowUnauthenticated?: boolean;
+  /**
    * Per-request timeout (in milliseconds) after which the `signal` on a
    * tool/resource handler context aborts. Defaults to
    * {@link MCP_DEFAULT_REQUEST_TIMEOUT_MS} (30s).

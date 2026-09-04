@@ -75,11 +75,23 @@ export class McpAuthPolicy extends Policy<McpAuthPolicyContext> {
     }
 
     if (options.bearerToken === undefined) {
-      // No token configured → endpoint is intentionally open (development). Allow,
-      // but resolve nobody: `onResolved` stays uncalled on purpose. Presenting a
-      // token to an endpoint that has none configured proves nothing, so passing it
-      // to `onResolved` here would put an unverified credential on `context.auth`
-      // and every handler gating on that field would let the caller through.
+      if (!options.allowUnauthenticated) {
+        // No token, and nobody said they meant it. An endpoint is never open by
+        // omission: running unauthenticated has to be stated in config, where it
+        // can be reviewed and grepped for. A missing key cannot be.
+        throw new McpError(
+          'MCP endpoint has no bearerToken configured; set McpConfig.allowUnauthenticated to run without authentication',
+        ).withInternalDetails({
+          kind: 'misconfiguration',
+          field: 'allowUnauthenticated',
+        });
+      }
+
+      // Unauthenticated by explicit request (development). Allow, but resolve
+      // nobody: `onResolved` stays uncalled on purpose. Presenting a token to an
+      // endpoint that has none configured proves nothing, so passing it to
+      // `onResolved` here would put an unverified credential on `context.auth` and
+      // every handler gating on that field would let the caller through.
       return this.allow();
     }
 

@@ -44,13 +44,13 @@ an injectkit `Container` and a header accessor — still no koa import.
 
 ### Config and errors
 
-| Export                           | Kind                       | Shape                                                                    | Notes                                                                                              |
-| -------------------------------- | -------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
-| `McpConfig`                      | interface + abstract class | `{ serverName, version, sessionMode?, bearerToken?, requestTimeoutMs? }` | Declaration-merged so one symbol is type and DI token. `requestTimeoutMs` aborts `context.signal`. |
-| `McpSessionMode`                 | type                       | `'stateless' \| 'stateful'`                                              | Default `'stateless'`.                                                                             |
-| `MCP_DEFAULT_REQUEST_TIMEOUT_MS` | constant                   | `30_000`                                                                 | Applied when `requestTimeoutMs` is unset.                                                          |
-| `McpError`                       | class                      | `extends ServerkitError`                                                 | —                                                                                                  |
-| `IsMcpError`                     | type guard                 | `(error: unknown) => error is McpError`                                  | —                                                                                                  |
+| Export                           | Kind                       | Shape                                                                                           | Notes                                                                                              |
+| -------------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `McpConfig`                      | interface + abstract class | `{ serverName, version, sessionMode?, bearerToken?, allowUnauthenticated?, requestTimeoutMs? }` | Declaration-merged so one symbol is type and DI token. `requestTimeoutMs` aborts `context.signal`. |
+| `McpSessionMode`                 | type                       | `'stateless' \| 'stateful'`                                                                     | Default `'stateless'`.                                                                             |
+| `MCP_DEFAULT_REQUEST_TIMEOUT_MS` | constant                   | `30_000`                                                                                        | Applied when `requestTimeoutMs` is unset.                                                          |
+| `McpError`                       | class                      | `extends ServerkitError`                                                                        | —                                                                                                  |
+| `IsMcpError`                     | type guard                 | `(error: unknown) => error is McpError`                                                         | —                                                                                                  |
 
 ### Auth
 
@@ -60,7 +60,7 @@ an injectkit `Container` and a header accessor — still no koa import.
 | `VerifyMcpBearerInput`            | type      | `{ authorization: string \| undefined; expectedToken: string }`                                            | —                                                                                                                                             |
 | `McpAuthInfo`                     | interface | `{ token: string; subject?: string; scopes?: string[] }`                                                   | The scaffold fills only `token`.                                                                                                              |
 | `McpAuthFailureReason`            | type      | `'missing_token' \| 'invalid_token'`                                                                       | Lands in `internalDetails.reason`.                                                                                                            |
-| `McpAuthOptions`                  | type      | `Pick<McpConfig, 'bearerToken'>`                                                                           | Structural subset, so an `McpConfig` value satisfies it directly.                                                                             |
+| `McpAuthOptions`                  | type      | `Pick<McpConfig, 'bearerToken' \| 'allowUnauthenticated'>`                                                 | Structural subset, so an `McpConfig` value satisfies it directly.                                                                             |
 | `MCP_AUTHORIZATION_HEADER`        | constant  | `'Authorization'`                                                                                          | —                                                                                                                                             |
 | `isBlankBearerToken`              | predicate | `(bearerToken: string \| undefined) => bearerToken is string`                                              | `true` only when a token was configured **and** is blank. `undefined` is open mode; blank is a misconfiguration.                              |
 | `MCP_AUTH_POLICY`                 | constant  | `'mcp.auth.valid'`                                                                                         | The `PolicyRegistryMap` key.                                                                                                                  |
@@ -193,6 +193,8 @@ router.post('/mcp', bodyParserMiddleware(['application/json']), async ctx => {
 - Set `ctx.respond = false` before `dispatchStateful` and do not touch `ctx.body` afterwards — the
   SDK transport owns the response.
 - Read `dispatcher.sessionMode` rather than duplicating the config check in the route.
+- Never set `allowUnauthenticated` in a config that ships. It exists so that running with no
+  authentication is a statement in config rather than an omission, which makes it reviewable.
 - Replace `verifyMcpBearer` (or subclass `McpAuthPolicy` and re-register under `MCP_AUTH_POLICY`)
   before production. Keep the `(request) → McpAuthInfo | throw` shape so the wiring is unchanged,
   and call `context.onResolved?.(auth)` with the identity you resolved, or `context.auth` stays
@@ -211,14 +213,17 @@ router.post('/mcp', bodyParserMiddleware(['application/json']), async ctx => {
 
 ## Gotchas
 
-- **The bundled auth is scaffold-grade, and it fails open on an _unset_ token.** `McpAuthPolicy`
-  **allows** every request when `McpConfig.bearerToken` is `undefined`, on the reasoning that an
-  unset token means "development, intentionally open". Ship a config without a token and the
-  endpoint is wide open with no warning. A real deployment is an OAuth 2.0 resource server
-  validating a JWT. A token configured as a **blank string** is the opposite case and throws: that
-  is a blank environment variable, not a decision, so it fails closed as a server misconfiguration
-  rather than reading as the open-mode branch.
-- **Open mode resolves nobody, deliberately.** The `undefined` branch allows without calling
+- **The bundled auth is scaffold-grade, but it is no longer open by omission.** `McpAuthPolicy`
+  throws unless the config says something definite: a `bearerToken` to enforce, or
+  `allowUnauthenticated: true` to run with none. A missing key and a blank token both fail closed,
+  because neither is a decision anyone can be shown to have made. Only `allowUnauthenticated` opts
+  in, and it is a name you can grep production config for. A real deployment is still an OAuth 2.0
+  resource server validating a JWT; this only stops the accident.
+- **The check runs on the first request, not at boot.** The package has no module lifecycle, and
+  validating in `McpDispatcher` would wrongly refuse to boot a server that swapped in its own auth
+  policy and legitimately has no `bearerToken`. So a misconfigured server starts and fails the
+  first MCP call. Evaluate the policy yourself in a `setup` hook if you want it to fail earlier.
+- **Unauthenticated mode resolves nobody, deliberately.** The opted-in branch allows without calling
   `onResolved`, so `context.auth` stays empty. Passing the presented header there would put an
   unverified credential on the context, and every handler gating on `context.auth` would admit any
   caller. `verifyMcpBearer` is the only thing that may construct an `McpAuthInfo`, because

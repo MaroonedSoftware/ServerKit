@@ -47,3 +47,14 @@ the server misconfiguration it is. `verifyMcpBearer` rejects a blank `expectedTo
 with `internalDetails.kind` of `misconfiguration` rather than an authentication reason code, since
 no credential can satisfy it. The new `isBlankBearerToken` predicate exposes the distinction for
 consumers validating their own config at bootstrap.
+
+**Breaking:** running the MCP endpoint with no authentication now has to be stated in config.
+`McpAuthPolicy` previously allowed every request when `McpConfig.bearerToken` was unset, so an
+endpoint could be wide open because a key was missing, which is invisible to anyone reviewing the
+config. It now throws unless the config says something definite: a `bearerToken` to enforce, or the
+new `allowUnauthenticated: true` to run with none. Setting both enforces the token. Existing
+deployments that configure a token are unaffected. A setup that relied on the old tokenless
+default, typically local development, needs `allowUnauthenticated: true` added, and
+`McpAuthOptions` widens to include the flag. The check runs on the first MCP request rather than at
+boot, since the package has no module lifecycle and validating in the dispatcher would wrongly
+refuse to boot a server that swapped in its own auth policy.

@@ -22,8 +22,8 @@ const makePolicyService = (): PolicyService => {
   return { check, assert } as unknown as PolicyService;
 };
 
-const makeContainer = (bearerToken?: string) => {
-  const config: McpConfig = { serverName: 'test', version: '0.0.0', bearerToken };
+const makeContainer = (bearerToken?: string, allowUnauthenticated?: boolean) => {
+  const config: McpConfig = { serverName: 'test', version: '0.0.0', bearerToken, allowUnauthenticated };
   const policyService = makePolicyService();
   return { get: vi.fn((token: unknown) => (token === McpConfig ? config : policyService)) } as unknown as Container;
 };
@@ -46,8 +46,12 @@ describe('assertMcpAuth', () => {
     await expect(assertMcpAuth(makeContainer(TOKEN), getHeader('Bearer nope'))).rejects.toThrow(HttpError);
   });
 
-  it('resolves to undefined in open mode, since no token configured authenticates nobody', async () => {
-    await expect(assertMcpAuth(makeContainer(undefined), getHeader(undefined))).resolves.toBeUndefined();
+  it('resolves to undefined in unauthenticated mode, since no token configured authenticates nobody', async () => {
+    await expect(assertMcpAuth(makeContainer(undefined, true), getHeader(undefined))).resolves.toBeUndefined();
+  });
+
+  it('rejects when no token is configured and unauthenticated mode was not opted into', async () => {
+    await expect(assertMcpAuth(makeContainer(undefined), getHeader(undefined))).rejects.toThrow('allowUnauthenticated');
   });
 
   it('rejects rather than falling through to open mode when the configured token is blank', async () => {
