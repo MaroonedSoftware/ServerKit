@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { invalidAuthenticationSession, type AuthenticationSession } from '@maroonedsoftware/authentication';
+import { invalidAuthenticationSession, MFA_SATISFIED_POLICY, type AuthenticationSession } from '@maroonedsoftware/authentication';
 import { PolicyService } from '@maroonedsoftware/policies';
 import { httpError } from '@maroonedsoftware/errors';
 import type { ServerKitModule } from '@maroonedsoftware/servercore';
@@ -47,7 +47,10 @@ describe('requirePolicy (fastify)', () => {
     const response = await app.inject({ method: 'GET', url: '/' });
 
     expect(response.statusCode).toBe(200);
+    // The literal pins the wire value; MFA_SATISFIED_POLICY pins that the
+    // default is sourced from the constant rather than a private copy.
     expect(assert).toHaveBeenCalledWith('auth.session.mfa.satisfied', { session });
+    expect(assert).toHaveBeenCalledWith(MFA_SATISFIED_POLICY, { session });
   });
 
   it('asserts a custom policy name', async () => {

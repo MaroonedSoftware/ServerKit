@@ -148,8 +148,13 @@ class) and an abstract `<Name>FactorRepository` you implement.
 | `AuthenticationPolicyNames`    | type     | Union of the eleven names above                          | —                                                               |
 | `AuthenticationPolicyMappings` | constant | `Record<AuthenticationPolicyNames, Constructor<Policy>>` | Spread into your `PolicyRegistryMap`.                           |
 | `AuthenticationPolicyContexts` | type     | `Record<AuthenticationPolicyNames, …Context>`            | Intersect with your own `Policies` map for `BasePolicyService`. |
+| `MFA_SATISFIED_POLICY`         | constant | `'auth.session.mfa.satisfied'`                           | The one policy name exported as a constant — see below.         |
 
-`auth.session.mfa.satisfied` is the default `requirePolicy()` gate in `@maroonedsoftware/koa`.
+`auth.session.mfa.satisfied` is the default `requirePolicy()` gate in `@maroonedsoftware/koa` and
+`@maroonedsoftware/fastify`, and it is the only name of the eleven exported as a constant,
+`MFA_SATISFIED_POLICY`. Reference it rather than the literal wherever code mirrors that HTTP
+default off the route path — a `@maroonedsoftware/mcp` tool passing it to `requireMcpPolicy`, say
+— so the two cannot drift. The other ten are still spelled as literals.
 
 ### Orchestrators
 

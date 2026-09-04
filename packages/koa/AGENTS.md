@@ -77,7 +77,7 @@ and `RateLimiter` token are `servercore`'s and are re-exported here by name.
 | ---------------------------------- | --------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | `bodyParserMiddleware`             | function  | `(contentTypes: string[]) => ServerKitRouterMiddleware`                                                     | Parses per `Content-Type` into `ctx.parsedBody`.                                    |
 | `requirePolicy`                    | function  | `(options?: RequirePolicyOptions) => ServerKitRouterMiddleware`                                             | 401 on an invalid session; then asserts a policy (403 on deny).                     |
-| `RequirePolicyOptions`             | interface | `{ policy?: string \| false }`                                                                              | Default `'auth.session.mfa.satisfied'`. `false` skips the policy check.             |
+| `RequirePolicyOptions`             | interface | `{ policy?: string \| false }`                                                                              | Default `MFA_SATISFIED_POLICY`. `false` skips the policy check.                     |
 | `requireSignature`                 | function  | `<TOptions = SignatureOptions>(optionsKey, options?: RequireSignatureOptions) => ServerKitRouterMiddleware` | Reads `SignatureOptions` from `AppConfig` by key.                                   |
 | `RequireSignatureOptions`          | type      | `{ policy?: string }`                                                                                       | Default `REQUIRE_SIGNATURE_POLICY`.                                                 |
 | `SignatureOptions`                 | type      | `{ header, secret, algorithm, digest }`                                                                     | Stored in `AppConfig`, not passed inline.                                           |
@@ -244,6 +244,8 @@ See [.claude/skills/koa-route](../../.claude/skills/koa-route) and
   in `start` delays boot for every module after it.
 - **`requirePolicy()` defaults to `'auth.session.mfa.satisfied'`.** Calling it bare on a route that
   only needs authentication rejects sessions that have not stepped up. Pass `{ policy: false }`.
+  The name is `MFA_SATISFIED_POLICY`, exported from `@maroonedsoftware/authentication`; reference
+  it instead of the literal when code off the route path has to mirror this default.
 - **`DefaultSignaturePolicy` denies on a length mismatch too**, which is how a missing or empty
   header is handled without tripping `timingSafeEqual`'s equal-length requirement. Diagnostics
   (header, algorithm, digest, both signatures) go to `internalDetails`; the secret never does.

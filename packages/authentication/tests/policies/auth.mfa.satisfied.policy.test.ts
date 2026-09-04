@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { DateTime } from 'luxon';
-import { DefaultMfaSatisfiedPolicy, AuthMfaSatisfiedPolicyContext } from '../../src/policies/auth.mfa.satisfied.policy.js';
+import { DefaultMfaSatisfiedPolicy, AuthMfaSatisfiedPolicyContext, MFA_SATISFIED_POLICY } from '../../src/policies/auth.mfa.satisfied.policy.js';
+import { AuthenticationPolicyMappings } from '../../src/policies/policy.mappings.js';
 import { AuthenticationFactorKind, AuthenticationFactorMethod, AuthenticationSession, AuthenticationSessionFactor } from '../../src/types.js';
 
 const envelope = { now: DateTime.utc() };
@@ -80,5 +81,17 @@ describe('DefaultMfaSatisfiedPolicy', () => {
       reason: 'mfa_required',
       headers: { 'WWW-Authenticate': 'Bearer error="mfa_required"' },
     });
+  });
+});
+
+describe('MFA_SATISFIED_POLICY', () => {
+  it('is the wire name the policy is registered under', () => {
+    // Pinned as a literal: the string is a public contract that a consumer's
+    // PolicyRegistryMap keys on, so changing it is a breaking change.
+    expect(MFA_SATISFIED_POLICY).toBe('auth.session.mfa.satisfied');
+  });
+
+  it('maps to DefaultMfaSatisfiedPolicy in the bundled mappings', () => {
+    expect(AuthenticationPolicyMappings[MFA_SATISFIED_POLICY]).toBe(DefaultMfaSatisfiedPolicy);
   });
 });

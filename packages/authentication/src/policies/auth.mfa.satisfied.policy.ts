@@ -3,6 +3,17 @@ import { Policy, PolicyEnvelope, PolicyResult } from '@maroonedsoftware/policies
 import { AuthenticationSession } from '../types.js';
 
 /**
+ * Policy name under which {@link DefaultMfaSatisfiedPolicy} is registered, and
+ * the default gate for `requirePolicy()` in `@maroonedsoftware/koa` and
+ * `@maroonedsoftware/fastify`.
+ *
+ * Reference it instead of spelling the literal, so code that mirrors the HTTP
+ * default — a `@maroonedsoftware/mcp` tool calling `requireMcpPolicy`, say —
+ * cannot drift from it.
+ */
+export const MFA_SATISFIED_POLICY = 'auth.session.mfa.satisfied' as const;
+
+/**
  * Context for {@link DefaultMfaSatisfiedPolicy}: the current authentication
  * session whose factors will be evaluated against the MFA rule.
  */
@@ -17,14 +28,14 @@ export interface AuthMfaSatisfiedPolicyContext {
  * Mirrors the historical {@link import('../mfa/mfa.orchestrator.js').MfaOrchestrator}
  * "second factor present" intuition, but answered from the session alone — no
  * primary/secondary/available-factors context needed. Used by
- * `requirePolicy({ policy: 'auth.session.mfa.satisfied' })` (and, by default,
- * by `requirePolicy()` with no options) to gate routes that require MFA.
+ * `requirePolicy({ policy: MFA_SATISFIED_POLICY })` (and, by default, by
+ * `requirePolicy()` with no options) to gate routes that require MFA.
  *
  * The default rule allows when **at least two factors are present** *and* **not
  * every factor is of `kind: 'knowledge'`**. Sessions with a single factor —
  * including OIDC-only sessions (one `possession` factor) — are denied. Apps
  * whose IdP enforces MFA upstream should subclass and re-register under
- * `'auth.session.mfa.satisfied'` to relax this rule for `oidc` factors:
+ * {@link MFA_SATISFIED_POLICY} to relax this rule for `oidc` factors:
  *
  * @example
  * ```ts

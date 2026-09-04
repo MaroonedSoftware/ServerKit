@@ -795,7 +795,8 @@ pass it through the policy `context`. Gate on actor kind (e.g. reject
 non-human actors with a different `reason`) at the call site or in a
 wrapping subclass.
 
-`'auth.session.mfa.satisfied'` — `DefaultMfaSatisfiedPolicy`. Gate-style rule
+`'auth.session.mfa.satisfied'` — `DefaultMfaSatisfiedPolicy`, also exported as
+the constant `MFA_SATISFIED_POLICY`. Gate-style rule
 consulted by `@maroonedsoftware/koa`'s `requirePolicy()` (and by anything else
 that asks "does this session as-it-stands count as MFA-satisfied?"). Allows
 when the session has at least two factors and at least one is not of

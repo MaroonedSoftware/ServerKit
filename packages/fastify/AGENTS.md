@@ -68,7 +68,7 @@ plus `injectkit` and `type-is`.
 
 | Export                    | Kind      | Shape                                                                                                       | Notes                                                                                                                             |
 | ------------------------- | --------- | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `requirePolicy`           | function  | `(options?: RequirePolicyOptions) => preHandlerAsyncHookHandler`                                            | 401 on an invalid session; then asserts a policy (403 on deny). Default `'auth.session.mfa.satisfied'`; `false` skips the policy. Also usable in `onRequest`. |
+| `requirePolicy`           | function  | `(options?: RequirePolicyOptions) => preHandlerAsyncHookHandler`                                            | 401 on an invalid session; then asserts a policy (403 on deny). Default `MFA_SATISFIED_POLICY`; `false` skips the policy. Also usable in `onRequest`. |
 | `RequirePolicyOptions`    | interface | `{ policy?: string \| false }`                                                                              | —                                                                                                                                 |
 | `requireSignature`        | function  | `<TOptions = SignatureOptions>(optionsKey, options?: RequireSignatureOptions) => preHandlerAsyncHookHandler` | Reads `SignatureOptions` from `AppConfig` by key; asserts with 401. Needs `request.rawBody`, so the route's `config.body` must allow the payload. |
 | `RequireSignatureOptions` | type      | `{ policy?: string }`                                                                                       | Default `REQUIRE_SIGNATURE_POLICY`.                                                                                               |
@@ -241,7 +241,9 @@ follow the snippets here rather than translating the Koa skills, which describe 
 - **The rate limiter is inserted only when a `RateLimiter` is registered.** No registration means
   no rate limiting, silently.
 - **`requirePolicy()` defaults to `'auth.session.mfa.satisfied'`.** Pass `{ policy: false }` for
-  session-only routes.
+  session-only routes. The name is `MFA_SATISFIED_POLICY`, exported from
+  `@maroonedsoftware/authentication`; reference it instead of the literal when code off the route
+  path has to mirror this default.
 - **`corsPlugin` can be applied once per server only.** `@fastify/cors` decorates the request,
   so a second application throws on the duplicate decorator.
 - **An SSE stream flushes its headers on the first write, not when it opens.** A client sees no
