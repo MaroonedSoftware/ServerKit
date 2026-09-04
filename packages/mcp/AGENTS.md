@@ -42,12 +42,13 @@ koa's `requireSignature` drive MCP bearer auth without either package depending 
 
 ### Config and errors
 
-| Export           | Kind                       | Shape                                                                    | Notes                                                  |
-| ---------------- | -------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------ |
-| `McpConfig`      | interface + abstract class | `{ serverName, version, sessionMode?, bearerToken?, requestTimeoutMs? }` | Declaration-merged so one symbol is type and DI token. |
-| `McpSessionMode` | type                       | `'stateless' \| 'stateful'`                                              | Default `'stateless'`.                                 |
-| `McpError`       | class                      | `extends ServerkitError`                                                 | —                                                      |
-| `IsMcpError`     | type guard                 | `(error: unknown) => error is McpError`                                  | —                                                      |
+| Export                           | Kind                       | Shape                                                                    | Notes                                                                                              |
+| -------------------------------- | -------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| `McpConfig`                      | interface + abstract class | `{ serverName, version, sessionMode?, bearerToken?, requestTimeoutMs? }` | Declaration-merged so one symbol is type and DI token. `requestTimeoutMs` aborts `context.signal`. |
+| `McpSessionMode`                 | type                       | `'stateless' \| 'stateful'`                                              | Default `'stateless'`.                                                                             |
+| `MCP_DEFAULT_REQUEST_TIMEOUT_MS` | constant                   | `30_000`                                                                 | Applied when `requestTimeoutMs` is unset.                                                          |
+| `McpError`                       | class                      | `extends ServerkitError`                                                 | —                                                                                                  |
+| `IsMcpError`                     | type guard                 | `(error: unknown) => error is McpError`                                  | —                                                                                                  |
 
 ### Auth
 
@@ -87,14 +88,13 @@ koa's `requireSignature` drive MCP bearer auth without either package depending 
 
 ### Server, transport, dispatch
 
-| Export                           | Kind     | Shape                                                                                                   | Notes                                                                                             |
-| -------------------------------- | -------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `McpServerFactory`               | class    | `@Injectable()`. `create(): Server`                                                                     | Memoizes `tools/list` and `resources/list` at construction; handlers are stable instance methods. |
-| `KoaMcpTransport`                | class    | `implements Transport`. `receive(message)`, `response()`                                                | Single-exchange transport for **stateless** mode only.                                            |
-| `McpSessionRegistry`             | class    | `@Injectable()`. `handle(exchange, context)`                                                            | In-memory `Map` of `Mcp-Session-Id` → `{ server, transport }`.                                    |
-| `McpStatefulExchange`            | type     | `{ req: IncomingMessage; res: ServerResponse; body: unknown; sessionId? }`                              | —                                                                                                 |
-| `McpDispatcher`                  | class    | `@Injectable()`. `get sessionMode`, `dispatch(message, context)`, `dispatchStateful(exchange, context)` | The single entry point.                                                                           |
-| `MCP_DEFAULT_REQUEST_TIMEOUT_MS` | constant | `30_000`                                                                                                | —                                                                                                 |
+| Export                | Kind  | Shape                                                                                                   | Notes                                                                                             |
+| --------------------- | ----- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `McpServerFactory`    | class | `@Injectable()`. `create(): Server`                                                                     | Memoizes `tools/list` and `resources/list` at construction; handlers are stable instance methods. |
+| `KoaMcpTransport`     | class | `implements Transport`. `receive(message)`, `response()`                                                | Single-exchange transport for **stateless** mode only.                                            |
+| `McpSessionRegistry`  | class | `@Injectable()`. `handle(exchange, context)`                                                            | In-memory `Map` of `Mcp-Session-Id` → `{ server, transport }`.                                    |
+| `McpStatefulExchange` | type  | `{ req: IncomingMessage; res: ServerResponse; body: unknown; sessionId? }`                              | —                                                                                                 |
+| `McpDispatcher`       | class | `@Injectable()`. `get sessionMode`, `dispatch(message, context)`, `dispatchStateful(exchange, context)` | The single entry point.                                                                           |
 
 `dispatch` returns `undefined` for a notification (no `id`) — the route acks with 202.
 
@@ -173,7 +173,9 @@ router.post('/mcp', bodyParserMiddleware(['application/json']), requireSignature
   `ctx.authenticationSession`. Never reuse one across requests. On Fastify the same three values
   come from `request.requestId`, `request.logger`, and `request.authenticationSession`.
 - Use `context.logger` and `context.requestId` inside handlers, not an injected `Logger`.
-- Forward `context.signal` to any async work so the request timeout can actually cancel it.
+- Forward `context.signal` to any async work so client cancellation and the request timeout can
+  actually stop it. The signal is the SDK's per-request abort signal combined with
+  `McpConfig.requestTimeoutMs`.
 - Throw to surface a JSON-RPC error; set `isError: true` on a `CallToolResult` for a tool-level
   failure the **model** should see and can react to. They are different channels.
 - Set `ctx.respond = false` before `dispatchStateful` and do not touch `ctx.body` afterwards — the
@@ -212,6 +214,13 @@ router.post('/mcp', bodyParserMiddleware(['application/json']), requireSignature
   stable instance methods that read `mcpContext`, so one set of functions serves every concurrent
   request without capturing any of them. Replacing them with per-request closures would undo the
   design.
+- **The request timeout aborts the signal; it does not abandon the handler.** `requestTimeoutMs`
+  fires `context.signal`, and nothing races the handler's promise. A handler that ignores the
+  signal runs to completion and its result is still returned. Cancellation is cooperative by
+  design — the alternative leaks work that keeps running with nobody waiting on it.
+- **Closing the connection aborts in-flight signals.** The SDK aborts every outstanding request
+  signal on `Server.close()`, which the stateless dispatcher calls right after producing a
+  response. Sample `signal.aborted` inside a handler, not after `dispatch` resolves.
 - **Resources are matched by exact URI.** `McpResourceHandlerMap` is a plain `Map.get`. Templated
   resources (`resources/templates`) need the factory extended to match against a template set.
 - **`dispatch` returns `undefined` for notifications.** Setting `ctx.body = undefined` yields a 404
@@ -246,7 +255,8 @@ router.post('/mcp', bodyParserMiddleware(['application/json']), requireSignature
 ```
 src/
   index.ts                  Barrel
-  mcp.config.ts             McpConfig (interface + token), McpSessionMode
+  mcp.config.ts             McpConfig (interface + token), McpSessionMode,
+                            MCP_DEFAULT_REQUEST_TIMEOUT_MS
   mcp.error.ts              McpError, IsMcpError
   mcp.auth.ts               verifyMcpBearer, McpAuthInfo, McpAuthOptions, header constant
   mcp.auth.policy.ts        MCP_AUTH_POLICY, McpAuthPolicy, McpAuthPolicyContext
@@ -259,7 +269,7 @@ src/
   mcp.server.factory.ts     McpServerFactory — memoized lists, stable handlers
   mcp.transport.ts          KoaMcpTransport — single-exchange, stateless only
   mcp.session.registry.ts   McpSessionRegistry, McpStatefulExchange
-  mcp.dispatcher.ts         McpDispatcher, MCP_DEFAULT_REQUEST_TIMEOUT_MS
+  mcp.dispatcher.ts         McpDispatcher
 ```
 
 Tests are in `tests/`, mirroring `src/`.

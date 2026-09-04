@@ -15,6 +15,13 @@ import { Injectable } from 'injectkit';
 export type McpSessionMode = 'stateless' | 'stateful';
 
 /**
+ * Default per-request handler timeout (30s), applied when
+ * {@link McpConfig.requestTimeoutMs} is unset. See that field for what the
+ * timeout does and does not do.
+ */
+export const MCP_DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+
+/**
  * Configuration for the MCP package. Declared as an abstract `@Injectable()`
  * class so it doubles as a DI token (mirrors the `Logger` pattern in
  * `@maroonedsoftware/logger` and `DiscordConfig` in `@maroonedsoftware/discord`).
@@ -51,8 +58,13 @@ export interface McpConfig {
    */
   bearerToken?: string;
   /**
-   * Per-request timeout (in milliseconds) applied to a tool/resource handler
-   * invocation. Defaults to {@link import('./mcp.dispatcher.js').MCP_DEFAULT_REQUEST_TIMEOUT_MS} (30s).
+   * Per-request timeout (in milliseconds) after which the `signal` on a
+   * tool/resource handler context aborts. Defaults to
+   * {@link MCP_DEFAULT_REQUEST_TIMEOUT_MS} (30s).
+   *
+   * Cancellation is **cooperative**: the timeout aborts the signal, it does not
+   * abandon the handler's promise. A handler that forwards `context.signal` to
+   * its async work stops; one that ignores it runs to completion.
    */
   requestTimeoutMs?: number;
 }

@@ -58,13 +58,13 @@ registry.register(McpConfig).useValue(mcpConfig);
 }
 ```
 
-| Field              | Required | Used by                                                                                    |
-| ------------------ | -------- | ------------------------------------------------------------------------------------------ |
-| `serverName`       | yes      | Advertised to clients as `serverInfo.name` during `initialize`.                            |
-| `version`          | yes      | Advertised as `serverInfo.version`.                                                        |
-| `sessionMode`      | no       | `'stateless'` (default) or `'stateful'` — see [session modes](#session-modes).             |
-| `bearerToken`      | no       | Shared token accepted by `McpAuthPolicy`. Unset ⇒ the endpoint is open (development only). |
-| `requestTimeoutMs` | no       | Per-request handler timeout. Defaults to `MCP_DEFAULT_REQUEST_TIMEOUT_MS` (30s).           |
+| Field              | Required | Used by                                                                                                                                                       |
+| ------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `serverName`       | yes      | Advertised to clients as `serverInfo.name` during `initialize`.                                                                                               |
+| `version`          | yes      | Advertised as `serverInfo.version`.                                                                                                                           |
+| `sessionMode`      | no       | `'stateless'` (default) or `'stateful'` — see [session modes](#session-modes).                                                                                |
+| `bearerToken`      | no       | Shared token accepted by `McpAuthPolicy`. Unset ⇒ the endpoint is open (development only).                                                                    |
+| `requestTimeoutMs` | no       | Milliseconds after which `context.signal` aborts. Defaults to `MCP_DEFAULT_REQUEST_TIMEOUT_MS` (30s). Cooperative: forward the signal or the handler runs on. |
 
 ## Defining tools
 

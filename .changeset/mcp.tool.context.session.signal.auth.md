@@ -15,3 +15,11 @@ Add `requireMcpAuthenticationSession(context)`, which narrows a handler context 
 generated from an operation that declares a policy calls it and then
 `PolicyService.assert(policy, { session })`, so the tool enforces the same rule as its HTTP route
 rather than relying on the guard mounted on `POST /mcp`.
+
+Forward the SDK's per-request abort signal to handlers, combined with `McpConfig.requestTimeoutMs`.
+`context.signal` was previously always `undefined` despite being documented, and `requestTimeoutMs`
+was declared but never read, so neither client cancellation nor the configured timeout could stop a
+handler. Both now abort the signal a handler receives. Cancellation stays cooperative: a handler
+that does not forward the signal still runs to completion. `MCP_DEFAULT_REQUEST_TIMEOUT_MS` moved
+from the dispatcher module to the config module, next to the field it documents; the exported name
+is unchanged.

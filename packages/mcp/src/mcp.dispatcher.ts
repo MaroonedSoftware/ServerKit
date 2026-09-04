@@ -7,9 +7,6 @@ import { McpSessionRegistry, type McpStatefulExchange } from './mcp.session.regi
 import { KoaMcpTransport } from './mcp.transport.js';
 import { mcpContext, type McpRequestContext } from './mcp.request.context.js';
 
-/** Default per-request handler timeout (30s) when {@link McpConfig.requestTimeoutMs} is unset. */
-export const MCP_DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
-
 /**
  * Single entry point for serving MCP over ServerKit's Koa transport. Selects the
  * session strategy from {@link McpConfig.sessionMode} (default `'stateless'`) but
@@ -28,7 +25,7 @@ export const MCP_DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
  * // `ctx.request.body` is never set by ServerKit.
  * router.post('/mcp', bodyParserMiddleware(['application/json']), requireSignature<McpAuthOptions>('mcp', { policy: MCP_AUTH_POLICY }), async (ctx) => {
  *   const dispatcher = ctx.container.get(McpDispatcher);
- *   const context = createMcpRequestContext({ requestId: ctx.requestId, logger: ctx.logger });
+ *   const context = createMcpRequestContext({ requestId: ctx.requestId, logger: ctx.logger, authenticationSession: ctx.authenticationSession });
  *
  *   if (dispatcher.sessionMode === 'stateful') {
  *     ctx.respond = false; // hand the raw response stream to the SDK transport (SSE)
