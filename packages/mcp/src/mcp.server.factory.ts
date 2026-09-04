@@ -1,6 +1,7 @@
 import { Injectable } from 'injectkit';
 import { Logger } from '@maroonedsoftware/logger';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import type { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import {
   CallToolRequestSchema,
   ListResourcesRequestSchema,
@@ -12,12 +13,17 @@ import {
   type ListToolsResult,
   type ReadResourceRequest,
   type ReadResourceResult,
+  type ServerNotification,
+  type ServerRequest,
 } from '@modelcontextprotocol/sdk/types.js';
-import { McpConfig } from './mcp.config.js';
+import { McpConfig, MCP_DEFAULT_REQUEST_TIMEOUT_MS } from './mcp.config.js';
 import { McpError } from './mcp.error.js';
 import { McpToolHandlerMap } from './mcp.tool.handler.js';
 import { McpResourceHandlerMap } from './mcp.resource.handler.js';
 import { mcpContext } from './mcp.request.context.js';
+
+/** Per-request extras the SDK passes to a `Server` request handler. */
+type McpHandlerExtra = RequestHandlerExtra<ServerRequest, ServerNotification>;
 
 /**
  * Builds SDK `Server` instances wired to ServerKit's DI-registered handler maps.
@@ -56,11 +62,21 @@ export class McpServerFactory {
     this.resourceList = { resources: [...resources.values()].map(handler => handler.definition) };
   }
 
+  /**
+   * Signal handed to a handler for one invocation: the SDK's per-request abort
+   * signal (client `notifications/cancelled`, connection close) combined with
+   * {@link McpConfig.requestTimeoutMs}. Aborting it does not abandon the
+   * handler's promise — cancellation is cooperative.
+   */
+  private requestSignal(extra: Pick<McpHandlerExtra, 'signal'>): AbortSignal {
+    return AbortSignal.any([extra.signal, AbortSignal.timeout(this.config.requestTimeoutMs ?? MCP_DEFAULT_REQUEST_TIMEOUT_MS)]);
+  }
+
   private readonly onListTools = async (): Promise<ListToolsResult> => this.toolList;
 
   private readonly onListResources = async (): Promise<ListResourcesResult> => this.resourceList;
 
-  private readonly onCallTool = async (request: CallToolRequest): Promise<CallToolResult> => {
+  private readonly onCallTool = async (request: CallToolRequest, extra: McpHandlerExtra): Promise<CallToolResult> => {
     const context = mcpContext.getStore();
     if (!context) throw new McpError('MCP tool invoked outside a request context');
 
@@ -71,10 +87,10 @@ export class McpServerFactory {
       throw new McpError(`No MCP tool registered for "${name}"`).withInternalDetails({ tool: name });
     }
 
-    return handler.handle(request.params.arguments ?? {}, context.forTool(name));
+    return handler.handle(request.params.arguments ?? {}, context.forTool(name, this.requestSignal(extra)));
   };
 
-  private readonly onReadResource = async (request: ReadResourceRequest): Promise<ReadResourceResult> => {
+  private readonly onReadResource = async (request: ReadResourceRequest, extra: McpHandlerExtra): Promise<ReadResourceResult> => {
     const context = mcpContext.getStore();
     if (!context) throw new McpError('MCP resource read outside a request context');
 
@@ -85,7 +101,7 @@ export class McpServerFactory {
       throw new McpError(`No MCP resource registered for "${uri}"`).withInternalDetails({ uri });
     }
 
-    return handler.read(uri, context.forResource(uri));
+    return handler.read(uri, context.forResource(uri, this.requestSignal(extra)));
   };
 
   /**

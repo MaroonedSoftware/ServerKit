@@ -1,7 +1,14 @@
 import { Injectable } from 'injectkit';
 import { Policy, PolicyEnvelope, PolicyResult } from '@maroonedsoftware/policies';
-import { IsMcpError } from './mcp.error.js';
-import { MCP_AUTHORIZATION_HEADER, verifyMcpBearer, type McpAuthFailureReason, type McpAuthOptions } from './mcp.auth.js';
+import { IsMcpError, McpError } from './mcp.error.js';
+import {
+  isBlankBearerToken,
+  MCP_AUTHORIZATION_HEADER,
+  verifyMcpBearer,
+  type McpAuthFailureReason,
+  type McpAuthInfo,
+  type McpAuthOptions,
+} from './mcp.auth.js';
 
 /**
  * Policy name under which {@link McpAuthPolicy} is registered. Use as the key
@@ -28,6 +35,19 @@ export interface McpAuthPolicyContext {
   options: McpAuthOptions;
   /** Present when driven by `requireSignature`; unused by bearer auth. */
   rawBody?: unknown;
+  /**
+   * Called with the resolved identity when the policy allows an authenticated
+   * request, so the route can put it on the request context without verifying
+   * the credential a second time. Not called when the endpoint runs
+   * unauthenticated (no configured token, `allowUnauthenticated` set), which
+   * authenticates nobody.
+   *
+   * {@link import('./mcp.auth.assert.js').assertMcpAuth} supplies it. Driven by
+   * koa's `requireSignature` the field is simply absent, which is why it is
+   * optional and why the context stays structurally compatible with
+   * `SignaturePolicyContext`.
+   */
+  onResolved?: (auth: McpAuthInfo) => void;
 }
 
 /**
@@ -39,20 +59,46 @@ export interface McpAuthPolicyContext {
  *
  * Registered by default under {@link MCP_AUTH_POLICY}. Subclass and re-register
  * under the same name to swap the scaffold's static-token check for real OAuth
- * resource-server validation without touching the route wiring.
+ * resource-server validation without touching the route wiring. A subclass
+ * should call `context.onResolved?.(auth)` with the identity it resolved, so the
+ * route can thread it onto the request context.
  */
 @Injectable()
 export class McpAuthPolicy extends Policy<McpAuthPolicyContext> {
   async evaluate(context: McpAuthPolicyContext, _envelope: PolicyEnvelope): Promise<PolicyResult> {
-    const { getHeader, options } = context;
+    const { getHeader, options, onResolved } = context;
 
-    if (!options.bearerToken) {
-      // No token configured → endpoint is intentionally open (development). Allow.
+    if (isBlankBearerToken(options.bearerToken)) {
+      // A token was configured and is empty — a blank environment variable, not a
+      // decision to run open. Fail closed and surface it as the server fault it is,
+      // rather than letting it read as the `undefined` open-mode case below.
+      throw new McpError('McpConfig.bearerToken is configured but blank').withInternalDetails({ kind: 'misconfiguration', field: 'bearerToken' });
+    }
+
+    if (options.bearerToken === undefined) {
+      if (!options.allowUnauthenticated) {
+        // No token, and nobody said they meant it. An endpoint is never open by
+        // omission: running unauthenticated has to be stated in config, where it
+        // can be reviewed and grepped for. A missing key cannot be.
+        throw new McpError(
+          'MCP endpoint has no bearerToken configured; set McpConfig.allowUnauthenticated to run without authentication',
+        ).withInternalDetails({
+          kind: 'misconfiguration',
+          field: 'allowUnauthenticated',
+        });
+      }
+
+      // Unauthenticated by explicit request (development). Allow, but resolve
+      // nobody: `onResolved` stays uncalled on purpose. Presenting a token to an
+      // endpoint that has none configured proves nothing, so passing it to
+      // `onResolved` here would put an unverified credential on `context.auth` and
+      // every handler gating on that field would let the caller through.
       return this.allow();
     }
 
     try {
-      verifyMcpBearer({ authorization: getHeader(MCP_AUTHORIZATION_HEADER), expectedToken: options.bearerToken });
+      const auth = verifyMcpBearer({ authorization: getHeader(MCP_AUTHORIZATION_HEADER), expectedToken: options.bearerToken });
+      onResolved?.(auth);
       return this.allow();
     } catch (error) {
       if (!IsMcpError(error)) throw error;

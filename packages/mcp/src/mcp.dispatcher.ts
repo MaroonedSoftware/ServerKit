@@ -1,14 +1,11 @@
 import { Injectable } from 'injectkit';
 import { Logger } from '@maroonedsoftware/logger';
 import { isJSONRPCRequest, type JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
-import { McpConfig } from './mcp.config.js';
+import { McpConfig, McpSessionMode } from './mcp.config.js';
 import { McpServerFactory } from './mcp.server.factory.js';
 import { McpSessionRegistry, type McpStatefulExchange } from './mcp.session.registry.js';
 import { KoaMcpTransport } from './mcp.transport.js';
 import { mcpContext, type McpRequestContext } from './mcp.request.context.js';
-
-/** Default per-request handler timeout (30s) when {@link McpConfig.requestTimeoutMs} is unset. */
-export const MCP_DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
 /**
  * Single entry point for serving MCP over ServerKit's Koa transport. Selects the
@@ -26,9 +23,10 @@ export const MCP_DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
  * ```ts
  * // `bodyParserMiddleware` is what populates `ctx.parsedBody` and `ctx.rawBody`; koa's own
  * // `ctx.request.body` is never set by ServerKit.
- * router.post('/mcp', bodyParserMiddleware(['application/json']), requireSignature<McpAuthOptions>('mcp', { policy: MCP_AUTH_POLICY }), async (ctx) => {
+ * router.post('/mcp', bodyParserMiddleware(['application/json']), async (ctx) => {
+ *   const auth = await assertMcpAuth(ctx.container, name => ctx.get(name));
  *   const dispatcher = ctx.container.get(McpDispatcher);
- *   const context = createMcpRequestContext({ requestId: ctx.requestId, logger: ctx.logger });
+ *   const context = createMcpRequestContext({ requestId: ctx.requestId, logger: ctx.logger, authenticationSession: ctx.authenticationSession, auth });
  *
  *   if (dispatcher.sessionMode === 'stateful') {
  *     ctx.respond = false; // hand the raw response stream to the SDK transport (SSE)
@@ -52,7 +50,7 @@ export class McpDispatcher {
   ) {}
 
   /** Resolved session strategy — `'stateless'` unless the config opts into `'stateful'`. */
-  get sessionMode(): 'stateless' | 'stateful' {
+  get sessionMode(): McpSessionMode {
     return this.config.sessionMode ?? 'stateless';
   }
 
