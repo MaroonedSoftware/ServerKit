@@ -1,6 +1,7 @@
 export * from './types.js';
 export * from './authentication.scheme.handler.js';
 export * from './authentication.handler.js';
+export * from './chained.authentication.handler.js';
 export * from './authentication.session.service.js';
 export * from './jwt/jwt.authentication.handler.js';
 export * from './jwt/jwt.autentication.issuer.js';
