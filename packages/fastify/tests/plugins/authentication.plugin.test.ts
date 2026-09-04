@@ -18,9 +18,16 @@ const build = async (options?: AuthenticationPluginOptions, handle = vi.fn(async
     modules: [module],
     plugins: container => [errorPlugin(container), serverKitContextPlugin(container), authenticationPlugin(options)],
   });
-  let seen: { session: AuthenticationSession; header: string | undefined; rawHeader: string | undefined } | undefined;
+  let seen: { session: AuthenticationSession; header: string | undefined; rawHeader: string | undefined; rawHeaders: string[] } | undefined;
   app.get('/*', async request => {
-    seen = { session: request.authenticationSession, header: request.headers.authorization, rawHeader: request.raw.headers.authorization };
+    seen = {
+      session: request.authenticationSession,
+      header: request.headers.authorization,
+      rawHeader: request.raw.headers.authorization,
+      // `rawHeaders` is a separate array Node fills at parse time; deleting the
+      // property does not touch it, so it is asserted on its own.
+      rawHeaders: request.raw.rawHeaders.filter(entry => entry.toLowerCase() === 'authorization' || entry.startsWith('Bearer ')),
+    };
     return 'ok';
   });
   return { app, handle, seen: () => seen };
@@ -34,7 +41,21 @@ describe('authenticationPlugin (fastify)', () => {
 
     expect(response.statusCode).toBe(200);
     expect(handle).toHaveBeenCalledWith('Bearer abc');
-    expect(seen()).toEqual({ session, header: undefined, rawHeader: undefined });
+    expect(seen()).toEqual({ session, header: undefined, rawHeader: undefined, rawHeaders: [] });
+  });
+
+  it('strips the credential from rawHeaders, which Node fills separately from headers', async () => {
+    // Deleting `headers.authorization` leaves `rawHeaders` untouched, so anything
+    // serializing that array would still capture the token.
+    const { app } = await build();
+    let raw: string[] = [];
+    app.addHook('onSend', async request => void (raw = [...request.raw.rawHeaders]));
+
+    await app.inject({ method: 'GET', url: '/private', headers: { authorization: 'Bearer abc' } });
+
+    expect(raw.join('\n')).not.toContain('Bearer abc');
+    expect(raw.some(entry => entry.toLowerCase() === 'authorization')).toBe(false);
+    expect(raw).toContain('host'); // the other headers survive
   });
 
   it('passes an absent header to the scheme handler', async () => {
@@ -50,7 +71,7 @@ describe('authenticationPlugin (fastify)', () => {
 
     await app.inject({ method: 'GET', url: '/health?x=1', headers: { authorization: 'Bearer abc' } });
     expect(handle).not.toHaveBeenCalled();
-    expect(seen()).toEqual({ session: invalidAuthenticationSession, header: undefined, rawHeader: undefined });
+    expect(seen()).toEqual({ session: invalidAuthenticationSession, header: undefined, rawHeader: undefined, rawHeaders: [] });
 
     await app.inject({ method: 'GET', url: '/public/logo.png' });
     expect(handle).not.toHaveBeenCalled();

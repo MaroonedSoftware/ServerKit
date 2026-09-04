@@ -29,6 +29,7 @@ an adapter for another framework, or a library that must work under either adapt
   function; `@fastify/cors` matches strings, RegExps, and arrays itself, so the Fastify adapter
   passes `origin` straight through.
 - **Anonymous paths**: `createAnonymousPathMatcher` for routes that skip authentication.
+- **Credential scrubbing**: `stripRawAuthorizationHeader` removes the `Authorization` entry from a Node `rawHeaders` array, which `delete headers.authorization` does not touch.
 - **Request signatures**: `DefaultSignaturePolicy`, `SignaturePolicyContext`, and
   `assertRequestSignature`, verifying an HMAC over the raw body in constant time.
 - **SSE transport**: `openSseStream` with heartbeat, backpressure, and lifecycle-signal drain,
@@ -153,6 +154,7 @@ stream.onClose(() => clearInterval(timer));
 - `RateLimiter` (DI token), `consumeRateLimit(rateLimiter, key)`.
 - `CorsOrigin`, `normalizeCorsOrigins(origin)`, `createOriginMatcher(matchers)` (Koa adapter only).
 - `createAnonymousPathMatcher(paths)`.
+- `stripRawAuthorizationHeader(rawHeaders)`.
 - `REQUIRE_SIGNATURE_POLICY`, `SignatureOptions`, `SignaturePolicyContext`, `DefaultSignaturePolicy`,
   `SignatureRequest`, `assertRequestSignature(container, request, optionsKey, policy?)`.
 

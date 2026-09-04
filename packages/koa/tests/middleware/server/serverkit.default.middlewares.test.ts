@@ -53,7 +53,7 @@ describe('serverKitDefaultMiddleware', () => {
     const containerGet = vi.fn();
     const ctx = {
       path: '/health',
-      req: { headers: {} },
+      req: { headers: {}, rawHeaders: [] },
       container: { get: containerGet },
     } as unknown as ServerKitContext;
     const next: Next = vi.fn().mockResolvedValue(undefined);

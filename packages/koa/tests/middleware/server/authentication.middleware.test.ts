@@ -24,7 +24,7 @@ describe('authenticationMiddleware', () => {
 
     mockCtx = {
       path: '/api/example',
-      req: { headers: { authorization: undefined } },
+      req: { headers: { authorization: undefined }, rawHeaders: [] },
       container: { get: vi.fn().mockReturnValue(mockSchemeHandler) },
     } as unknown as ServerKitContext;
   });
@@ -56,6 +56,18 @@ describe('authenticationMiddleware', () => {
     await middleware(mockCtx, mockNext);
 
     expect(mockCtx.req.headers.authorization).toBeUndefined();
+  });
+
+  it('strips the credential from req.rawHeaders, which Node fills separately from headers', async () => {
+    // Deleting `headers.authorization` leaves `rawHeaders` untouched, so anything
+    // serializing that array would still capture the token.
+    mockCtx.req.headers.authorization = 'Bearer token';
+    mockCtx.req.rawHeaders = ['Host', 'example.com', 'Authorization', 'Bearer token'];
+    const middleware = authenticationMiddleware();
+
+    await middleware(mockCtx, mockNext);
+
+    expect(mockCtx.req.rawHeaders).toEqual(['Host', 'example.com']);
   });
 
   it('passes the authorization header value to schemeHandler.handle', async () => {
@@ -142,11 +154,13 @@ describe('authenticationMiddleware', () => {
       // happen whether or not the scheme handler runs.
       (mockCtx as { path: string }).path = '/health';
       mockCtx.req.headers.authorization = 'Bearer token';
+      mockCtx.req.rawHeaders = ['Authorization', 'Bearer token'];
       const middleware = authenticationMiddleware({ anonymousPaths: ['/health'] });
 
       await middleware(mockCtx, mockNext);
 
       expect(mockCtx.req.headers.authorization).toBeUndefined();
+      expect(mockCtx.req.rawHeaders).toEqual([]);
     });
 
     it('matches a RegExp entry', async () => {
