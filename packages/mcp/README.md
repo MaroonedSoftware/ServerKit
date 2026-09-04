@@ -207,7 +207,7 @@ The guard on `POST /mcp` gates the mount, not the individual tools. Once a calle
 
 ```ts
 import { PolicyService } from '@maroonedsoftware/policies';
-import { requireMcpAuthenticationSession, type McpToolContext } from '@maroonedsoftware/mcp';
+import { requireMcpPolicy, type McpToolContext } from '@maroonedsoftware/mcp';
 
 @Injectable()
 class RefundPaymentTool implements McpToolHandler {
@@ -219,14 +219,15 @@ class RefundPaymentTool implements McpToolHandler {
   ) {}
 
   async handle(args: Record<string, unknown>, context: McpToolContext) {
-    const session = requireMcpAuthenticationSession(context);
-    await this.policies.assert('payments.write', { session });
+    const session = await requireMcpPolicy(context, this.policies, { policy: 'payments.write' });
 
     const { paymentId } = await parseAndValidate(args, RefundArgs);
     return { content: [{ type: 'text' as const, text: await this.payments.refund(paymentId) }] };
   }
 }
 ```
+
+`requireMcpPolicy` narrows the session (401 if there is none) and asserts the policy against it (403 on deny), returning the session. Omitting `policy` requires only a valid session, which is the default — unlike the HTTP `requirePolicy()`, whose default is `MFA_SATISFIED_POLICY`. A caller authenticated by `McpAuthenticationHandler` holds a shared token and so carries no factors, and the MFA gate would reject every request. Pass `MFA_SATISFIED_POLICY` explicitly on a server whose MCP callers hold real user sessions.
 
 Relationship-based checks compose the same way. Inject the `AuthorizationModel` and `PermissionsTupleRepository` from [`@maroonedsoftware/permissions`](../permissions), take the object id from the tool's own `args`, and use `session.subject` as the subject — ideally inside a policy, so the HTTP route and the tool evaluate one rule rather than two copies of it.
 

@@ -36,3 +36,10 @@ quietly, logged at `debug`, since behind a chain this handler sees every bearer 
 Also new: `McpConfig.subject` names the client on the session (default `MCP_DEFAULT_SUBJECT`,
 `'mcp'`), and `compareMcpToken` exposes the constant-time comparison at the token level, for callers
 handed the credential already separated from its scheme.
+
+`requireMcpPolicy(context, policies, options?)` collapses the per-tool session-plus-assert pair that
+every gated handler was writing by hand. It narrows the session (401), asserts the policy against it
+(403), and returns the session. `policy` defaults to `false` — session only — rather than to
+`MFA_SATISFIED_POLICY` as the HTTP `requirePolicy()` does, precisely because the scaffold session has
+no factors. It takes a `PolicyService` rather than a `Container`, since a handler context is
+transport-neutral and carries no injectkit types while handlers are `@Injectable()`.

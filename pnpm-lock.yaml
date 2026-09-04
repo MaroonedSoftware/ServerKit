@@ -388,12 +388,18 @@ importers:
       '@fastify/cors':
         specifier: ^11.3.0
         version: 11.3.0
+      '@maroonedsoftware/mcp':
+        specifier: workspace:*
+        version: link:../mcp
       '@maroonedsoftware/serverfeed':
         specifier: workspace:*
         version: link:../serverfeed
       '@maroonedsoftware/zod':
         specifier: workspace:*
         version: link:../zod
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.30.0
+        version: 1.30.0(zod@4.5.4)
       '@repo/config-eslint':
         specifier: workspace:*
         version: link:../config-eslint

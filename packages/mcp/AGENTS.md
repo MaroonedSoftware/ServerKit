@@ -70,7 +70,9 @@ an injectkit `Container` and a header accessor — still no koa import.
 | `McpAuthPolicy`                   | class     | `extends Policy<McpAuthPolicyContext>`                                                                     | Policy form of the verifier — denies rather than throwing.                                                                                    |
 | `McpAuthPolicyContext`            | interface | `{ getHeader: (name) => string; options: McpAuthOptions; rawBody?: unknown; onResolved?: (auth) => void }` | `rawBody` is accepted and ignored, purely for koa structural compatibility. `onResolved` is how the verified identity gets back to the route. |
 | `assertMcpAuth`                   | function  | `(container, getHeader) => Promise<McpAuthInfo \| undefined>`                                              | Gates on `MCP_AUTH_POLICY`, returns the resolved identity. **Throws** 401 on denial. `undefined` = allowed without authenticating anyone.     |
-| `requireMcpAuthenticationSession` | function  | `(context: McpAuthenticatedContext) => AuthenticationSession`                                              | Narrows a handler context or **throws** 401. Treats a missing session as unauthenticated.                                                     |
+| `requireMcpPolicy`                | function  | `(context, policies: PolicyService, options?: { policy?: string \| false }) => Promise<AuthenticationSession>` | **The per-tool guard.** Session plus optional policy. `policy` defaults to `false` — see Gotchas.                                          |
+| `RequireMcpPolicyOptions`         | interface | `{ policy?: string \| false }`                                                                             | Pass `MFA_SATISFIED_POLICY` to mirror the HTTP `requirePolicy()` default.                                                                     |
+| `requireMcpAuthenticationSession` | function  | `(context: McpAuthenticatedContext) => AuthenticationSession`                                              | Narrows a handler context or **throws** 401. Treats a missing session as unauthenticated. `requireMcpPolicy` wraps it.                        |
 | `McpAuthenticatedContext`         | type      | `{ authenticationSession?: AuthenticationSession }`                                                        | Structural, so a tool, resource, or request context all satisfy it.                                                                           |
 
 ### Request context
@@ -205,8 +207,8 @@ router.post('/mcp', bodyParserMiddleware(['application/json']), async ctx => {
 - **A tool whose operation declares a policy must enforce it itself.** The guard on the `/mcp`
   route gates the mount, not the individual tool, so every exposed tool is otherwise callable by
   anyone who clears that one guard. Inject `PolicyService` through the constructor and open
-  `handle` with `const session = requireMcpAuthenticationSession(context);` followed by
-  `await this.policies.assert(policyName, { session });` — the same rule the HTTP route evaluates.
+  `handle` with `const session = await requireMcpPolicy(context, this.policies, { policy: policyName });`
+  — the same rule the HTTP route evaluates. Omit `policy` to require only a valid session.
 - For relationship-based authorization, `@maroonedsoftware/permissions` composes the same way:
   inject the `AuthorizationModel` and `PermissionsTupleRepository` (both singletons), take the
   object id from the tool's own `args`, and use `session.subject` as the subject. Prefer wrapping
