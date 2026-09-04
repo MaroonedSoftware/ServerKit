@@ -6,9 +6,9 @@ Repo-wide conventions live in the [root AGENTS.md](../../AGENTS.md).
 ## Purpose
 
 Serve the Model Context Protocol from a ServerKit app. The official
-`@modelcontextprotocol/sdk` `Server` is wrapped behind a DI-registered dispatcher: tools and
-resources are `@Injectable()` handlers registered in maps at bootstrap, request-scoped state travels
-through `AsyncLocalStorage` rather than closures, and bearer auth is expressed as a
+`@modelcontextprotocol/sdk` low-level `Server` is wrapped behind a DI-registered dispatcher: tools
+and resources are `@Injectable()` handlers registered in maps at bootstrap, request-scoped state
+travels through `AsyncLocalStorage` rather than closures, and bearer auth is expressed as a
 `@maroonedsoftware/policies` policy. Stateless is the default; stateful (`Mcp-Session-Id`, SSE,
 server-initiated messages) is opt-in.
 
@@ -234,6 +234,25 @@ router.post('/mcp', bodyParserMiddleware(['application/json']), async ctx => {
   peer). Nothing enforces this.
 - **`dispatchStateful` in stateless mode only logs a warning** and proceeds. It does not throw, so a
   mis-wired route degrades quietly.
+- **`Server` is `@deprecated` in favour of `McpServer`, and staying on it is deliberate.** The SDK's
+  note reads "Use `McpServer` instead for the high-level API. Only use `Server` for advanced use
+  cases." `McpServer` is a wrapper that holds a `Server` (exposed as `.server`), not a replacement,
+  and this package sits on the advanced side of that line. What it gives up by staying low-level:
+  automatic input/output validation (documented as the handler's job on `McpToolHandler.handle`),
+  `structuredContent` / `outputSchema` handling, prompts and `completion/complete` (not exposed by
+  this package at all), and `listChanged` notifications (moot, the handler maps are frozen at
+  bootstrap). `@typescript-eslint/no-deprecated` is not enabled in the shared ESLint config, so the
+  deprecated import does not fail `build:ci`. Three reasons not to switch:
+  1. `McpToolHandler.definition` is the SDK's `Tool` type, so `inputSchema` is JSON Schema.
+     `McpServer.registerTool` accepts only zod v3/v4 (`ZodRawShapeCompat | AnySchema`), so switching
+     would put zod in the public handler contract and add a zod dependency to this package.
+  2. The SDK server is connection-scoped, so `McpServerFactory.create()` runs per request in
+     stateless mode. It currently costs a shell plus four `setRequestHandler` calls with both list
+     payloads memoized at construction; `McpServer` would cost one `registerTool` /
+     `registerResource` per handler per connection and rebuild the lists from zod on every
+     `tools/list`.
+  3. `McpServer` wants a closure per registered tool, which is exactly what the `AsyncLocalStorage`
+     bullet below says not to do.
 - **The SDK `Server` is connection-scoped and cannot be a singleton.** It stores its transport and
   per-connection `initialize` state. `McpServerFactory.create()` makes a fresh thin shell per
   connection — do not "optimise" it into a shared instance.
