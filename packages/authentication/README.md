@@ -16,6 +16,7 @@ pnpm add @maroonedsoftware/authentication
 - **Server-side sessions** — `AuthenticationSessionService` manages session lifecycle in any cache backend, with JWT issuance and revocation support
 - **Built-in JWT support** — `JwtAuthenticationHandler` and `JwtAuthenticationIssuer` for multi-issuer Bearer token validation
 - **Built-in Basic support** — `BasicAuthenticationHandler` and `BasicAuthenticationIssuer` for username/password flows
+- **Handler chaining** — `ChainedAuthenticationHandler` puts several handlers on one scheme, so `Bearer` can carry both a session JWT and a service's static token
 - **OTP/TOTP** — RFC 4226/6238 compliant HOTP and TOTP generation and validation, plus `otpauth://` URI generation for QR codes
 - **Password strength** — zxcvbn-ts powered strength checking with HaveIBeenPwned integration
 - **Password factors** — strength-validated, PBKDF2-hashed, rate-limited password factor lifecycle via `PasswordFactorService`
@@ -147,6 +148,38 @@ registry.register(MyBasicIssuer).useClass(MyBasicIssuer).asSingleton();
 registry.register(BasicAuthenticationHandler).useClass(BasicAuthenticationHandler).asSingleton();
 registry.register(AuthenticationHandlerMap).useMap(AuthenticationHandlerMap).set('basic', BasicAuthenticationHandler);
 ```
+
+---
+
+### Chaining handlers on one scheme
+
+`AuthenticationHandlerMap` holds one handler per scheme, but a scheme can carry more than one kind of credential. `Bearer` is the usual case: a session JWT for end users, plus a static token for a machine client such as an MCP server. Register `ChainedAuthenticationHandler` for the scheme and list the real handlers in an `AuthenticationHandlerChain`:
+
+```typescript
+import {
+  AuthenticationHandlerChain,
+  AuthenticationHandlerMap,
+  ChainedAuthenticationHandler,
+  JwtAuthenticationHandler,
+} from '@maroonedsoftware/authentication';
+
+registry.register(McpAuthenticationHandler).useClass(McpAuthenticationHandler).asSingleton();
+registry.register(JwtAuthenticationHandler).useClass(JwtAuthenticationHandler).asSingleton();
+
+// Registration order is try order — most specific first.
+registry
+  .register(AuthenticationHandlerChain)
+  .useArray(AuthenticationHandlerChain)
+  .push(McpAuthenticationHandler)
+  .push(JwtAuthenticationHandler);
+
+registry.register(ChainedAuthenticationHandler).useClass(ChainedAuthenticationHandler).asSingleton();
+registry.register(AuthenticationHandlerMap).useMap(AuthenticationHandlerMap).set('bearer', ChainedAuthenticationHandler);
+```
+
+Each handler is tried in turn and the first session that is not `invalidAuthenticationSession` wins. A handler that does not recognise the credential returns the sentinel, so "not mine" and "mine but invalid" look the same to the chain — deliberately, so that no single member can confirm to a caller that a credential is genuinely invalid.
+
+A handler that **throws** stops the chain and propagates. Handlers throw for misconfiguration, never for a bad credential, and an operator error must not be swallowed by the next handler returning the sentinel.
 
 ---
 
@@ -795,7 +828,8 @@ pass it through the policy `context`. Gate on actor kind (e.g. reject
 non-human actors with a different `reason`) at the call site or in a
 wrapping subclass.
 
-`'auth.session.mfa.satisfied'` — `DefaultMfaSatisfiedPolicy`. Gate-style rule
+`'auth.session.mfa.satisfied'` — `DefaultMfaSatisfiedPolicy`, also exported as
+the constant `MFA_SATISFIED_POLICY`. Gate-style rule
 consulted by `@maroonedsoftware/koa`'s `requirePolicy()` (and by anything else
 that asks "does this session as-it-stands count as MFA-satisfied?"). Allows
 when the session has at least two factors and at least one is not of

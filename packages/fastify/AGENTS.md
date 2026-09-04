@@ -59,7 +59,7 @@ plus `injectkit` and `type-is`.
 | `corsPlugin`                    | function  | `(options?: CorsOptions) => ServerKitPlugin`                                               | Registers `@fastify/cors` from inside the plugin, so its hook keeps stack order. Options pass through untouched; `methods` defaults wider. Throws when `credentials` is paired with a `'*'` origin.                   |
 | `CorsOptions`                       | type      | `FastifyCorsOptions`                                                                           | `@fastify/cors`'s own options, unchanged. Alias only, so the plugin adds no matching of its own.                                                                                                            |
 | `rateLimiterPlugin`             | function  | `(rateLimiter: RateLimiter) => ServerKitPlugin`                                            | Per-IP `onRequest` hook; 429 when exceeded.                                                                                                                                                                |
-| `authenticationPlugin`          | function  | `(options?: AuthenticationPluginOptions) => ServerKitPlugin`                           | `onRequest` hook resolving `Authorization` via `AuthenticationSchemeHandler` into `request.authenticationSession`; strips the header; `anonymousPaths` skips the handler.                                  |
+| `authenticationPlugin`          | function  | `(options?: AuthenticationPluginOptions) => ServerKitPlugin`                           | `onRequest` hook resolving `Authorization` via `AuthenticationSchemeHandler` into `request.authenticationSession`; strips the header from `headers`, `raw.headers`, and `raw.rawHeaders`; `anonymousPaths` skips the handler. |
 | `AuthenticationPluginOptions`   | interface | `{ anonymousPaths?: (string \| RegExp)[] }`                                                    | Strings match the path exactly; RegExp is the escape hatch.                                                                                                                                                |
 | `serverKitDefaultPlugins`        | function  | `(container: Container, options?: ServerKitDefaultPluginsOptions) => ServerKitPlugin[]` | error → context → body parser → rate limiter (**only if a `RateLimiter` is registered**) → cors (`exposedHeaders: ['WWW-Authenticate']`) → authentication.                                                |
 | `ServerKitDefaultPluginsOptions` | interface | `{ authentication?: AuthenticationPluginOptions }`                                         | Forwarded to `authenticationPlugin`.                                                                                                                                                                   |
@@ -68,7 +68,7 @@ plus `injectkit` and `type-is`.
 
 | Export                    | Kind      | Shape                                                                                                       | Notes                                                                                                                             |
 | ------------------------- | --------- | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `requirePolicy`           | function  | `(options?: RequirePolicyOptions) => preHandlerAsyncHookHandler`                                            | 401 on an invalid session; then asserts a policy (403 on deny). Default `'auth.session.mfa.satisfied'`; `false` skips the policy. Also usable in `onRequest`. |
+| `requirePolicy`           | function  | `(options?: RequirePolicyOptions) => preHandlerAsyncHookHandler`                                            | 401 on an invalid session; then asserts a policy (403 on deny). Default `MFA_SATISFIED_POLICY`; `false` skips the policy. Also usable in `onRequest`. |
 | `RequirePolicyOptions`    | interface | `{ policy?: string \| false }`                                                                              | —                                                                                                                                 |
 | `requireSignature`        | function  | `<TOptions = SignatureOptions>(optionsKey, options?: RequireSignatureOptions) => preHandlerAsyncHookHandler` | Reads `SignatureOptions` from `AppConfig` by key; asserts with 401. Needs `request.rawBody`, so the route's `config.body` must allow the payload. |
 | `RequireSignatureOptions` | type      | `{ policy?: string }`                                                                                       | Default `REQUIRE_SIGNATURE_POLICY`.                                                                                               |
@@ -241,7 +241,17 @@ follow the snippets here rather than translating the Koa skills, which describe 
 - **The rate limiter is inserted only when a `RateLimiter` is registered.** No registration means
   no rate limiting, silently.
 - **`requirePolicy()` defaults to `'auth.session.mfa.satisfied'`.** Pass `{ policy: false }` for
-  session-only routes.
+  session-only routes. The name is `MFA_SATISFIED_POLICY`, exported from
+  `@maroonedsoftware/authentication`; reference it instead of the literal when code off the route
+  path has to mirror this default.
+- **`authenticationPlugin` removes the credential from every view of the request** once the scheme
+  handler has read it — `request.headers`, `request.raw.headers`, and `request.raw.rawHeaders`,
+  which Node fills separately at parse time and does not keep in sync (hence
+  `stripRawAuthorizationHeader` from `servercore`). This happens on every route, including anonymous
+  ones, so it cannot be captured by logging. It also means nothing downstream can re-read the
+  credential: a `preHandler` or route that needs it must instead be an `AuthenticationHandler`
+  registered for its scheme (chain it with `ChainedAuthenticationHandler` when the scheme is already
+  taken). The deprecated `assertMcpAuth` in `@maroonedsoftware/mcp` is the cautionary case.
 - **`corsPlugin` can be applied once per server only.** `@fastify/cors` decorates the request,
   so a second application throws on the duplicate decorator.
 - **An SSE stream flushes its headers on the first write, not when it opens.** A client sees no

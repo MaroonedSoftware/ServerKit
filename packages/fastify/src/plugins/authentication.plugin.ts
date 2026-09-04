@@ -1,5 +1,5 @@
 import { AuthenticationSchemeHandler, invalidAuthenticationSession } from '@maroonedsoftware/authentication';
-import { createAnonymousPathMatcher } from '@maroonedsoftware/servercore';
+import { createAnonymousPathMatcher, stripRawAuthorizationHeader } from '@maroonedsoftware/servercore';
 import { serverKitPlugin, type ServerKitPlugin } from '../serverkit.plugin.js';
 import { requestPath } from '../request/request.accessors.js';
 
@@ -25,10 +25,14 @@ export interface AuthenticationPluginOptions {
  * Resolves the `Authorization` request header into an {@link AuthenticationSession}
  * and attaches it to `request.authenticationSession`, in an `onRequest` hook.
  *
- * The header is immediately removed from the request headers after being read so it
- * cannot be accidentally captured by downstream logging or serialization. This happens
- * on every route, including whitelisted anonymous ones — it is a logging-safety measure,
- * not an authentication step.
+ * The header is immediately removed from the request after being read so it cannot be
+ * accidentally captured by downstream logging or serialization: from `request.headers`,
+ * `request.raw.headers`, and `request.raw.rawHeaders`, which Node populates separately
+ * and does not keep in sync with the others. This happens on every route, including
+ * whitelisted anonymous ones — it is a logging-safety measure, not an authentication step.
+ *
+ * It also means nothing downstream can re-read the credential. A guard that needs the
+ * raw header belongs in an {@link AuthenticationSchemeHandler} handler instead.
  *
  * Resolution is delegated to the {@link AuthenticationSchemeHandler} registered in
  * the DI container. `request.authenticationSession` is initialised to
@@ -54,10 +58,13 @@ export const authenticationPlugin = (options?: AuthenticationPluginOptions): Ser
     app.addHook('onRequest', async request => {
       request.authenticationSession = invalidAuthenticationSession; // bad initial state so it will fail verification
 
-      // NOTE: we delete the auth header on both header views so we don't accidentally log it
+      // NOTE: we remove the auth header from every view of the request so we don't
+      // accidentally log it. `rawHeaders` is populated separately from `headers` at
+      // parse time and is not kept in sync, so deleting the property is not enough.
       const authorizationHeader = request.headers.authorization;
       delete request.headers.authorization;
       delete request.raw.headers.authorization;
+      stripRawAuthorizationHeader(request.raw.rawHeaders);
 
       if (!isAnonymous(requestPath(request))) {
         const schemeHandler = request.container.get(AuthenticationSchemeHandler);

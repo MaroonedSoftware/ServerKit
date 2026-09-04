@@ -76,8 +76,10 @@
   },
   "devDependencies": {
     "@fastify/cors": "^11.3.0",
+    "@maroonedsoftware/mcp": "workspace:*",
     "@maroonedsoftware/serverfeed": "workspace:*",
     "@maroonedsoftware/zod": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
     "@types/type-is": "^1.6.7",

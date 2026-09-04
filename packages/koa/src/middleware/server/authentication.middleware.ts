@@ -1,6 +1,6 @@
 import { ServerKitMiddleware } from '../../serverkit.middleware.js';
 import { AuthenticationSchemeHandler, invalidAuthenticationSession } from '@maroonedsoftware/authentication';
-import { createAnonymousPathMatcher } from '@maroonedsoftware/servercore';
+import { createAnonymousPathMatcher, stripRawAuthorizationHeader } from '@maroonedsoftware/servercore';
 
 /**
  * Options for {@link authenticationMiddleware}.
@@ -24,10 +24,14 @@ export interface AuthenticationMiddlewareOptions {
  * Resolves the `Authorization` request header into an {@link AuthenticationSession}
  * and attaches it to `ctx.authenticationSession`.
  *
- * The header is immediately removed from `ctx.req.headers` after being read so it
- * cannot be accidentally captured by downstream logging or serialization. This happens
- * on every route, including whitelisted anonymous ones — it is a logging-safety measure,
- * not an authentication step.
+ * The header is immediately removed from the request after being read so it cannot be
+ * accidentally captured by downstream logging or serialization: from `ctx.req.headers`
+ * and from `ctx.req.rawHeaders`, which Node populates separately and does not keep in
+ * sync with the former. This happens on every route, including whitelisted anonymous
+ * ones — it is a logging-safety measure, not an authentication step.
+ *
+ * It also means nothing downstream can re-read the credential. A guard that needs the
+ * raw header belongs in an {@link AuthenticationSchemeHandler} handler instead.
  *
  * Resolution is delegated to the {@link AuthenticationSchemeHandler} registered in
  * the DI container. `ctx.authenticationSession` is initialised to
@@ -52,9 +56,12 @@ export const authenticationMiddleware = (options?: AuthenticationMiddlewareOptio
   return async (ctx, next) => {
     ctx.authenticationSession = invalidAuthenticationSession; // bad initial state so it will fail verification
 
-    // NOTE: we delete the auth headers on the request here to ensure we don't accidentally log it
+    // NOTE: we remove the auth header from every view of the request here to ensure we
+    // don't accidentally log it. `rawHeaders` is populated separately from `headers` at
+    // parse time and is not kept in sync, so deleting the property is not enough.
     const authorizationHeader = ctx.req.headers.authorization;
     delete ctx.req.headers.authorization;
+    stripRawAuthorizationHeader(ctx.req.rawHeaders);
 
     if (!isAnonymous(ctx.path)) {
       const schemeHandler = ctx.container.get(AuthenticationSchemeHandler);

@@ -184,7 +184,7 @@ router.get('/api/me', async ctx => {
 
 `requirePolicy` is router middleware that runs after `authenticationMiddleware`. It throws **401** with `WWW-Authenticate: Bearer error="invalid_token"` when the request is unauthenticated, and **403** when the named policy denies. The policy's own deny shape carries the response details and any `WWW-Authenticate` value (e.g. `Bearer error="mfa_required"`).
 
-By default, `requirePolicy()` enforces the `'auth.session.mfa.satisfied'` policy — bundled with `@maroonedsoftware/authentication` as `DefaultMfaSatisfiedPolicy`. It allows when the session carries at least two factors and at least one is not of `kind: 'knowledge'`. Override by registering your own class against the same name in `PolicyRegistryMap` (e.g. to grant MFA credit to `oidc` sessions when your IdP enforces 2FA upstream).
+By default, `requirePolicy()` enforces the `'auth.session.mfa.satisfied'` policy — bundled with `@maroonedsoftware/authentication` as `DefaultMfaSatisfiedPolicy`, and exported from there as the constant `MFA_SATISFIED_POLICY` so you need not spell the literal. It allows when the session carries at least two factors and at least one is not of `kind: 'knowledge'`. Override by registering your own class against the same name in `PolicyRegistryMap` (e.g. to grant MFA credit to `oidc` sessions when your IdP enforces 2FA upstream).
 
 ```typescript
 import { requirePolicy } from '@maroonedsoftware/koa';

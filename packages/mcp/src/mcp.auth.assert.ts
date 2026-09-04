@@ -22,6 +22,13 @@ import type { McpAuthInfo } from './mcp.auth.js';
  * @throws {HttpError} 401 when the policy denies, carrying the policy's
  *   `WWW-Authenticate` challenge.
  *
+ * @deprecated Register
+ *   {@link import('./mcp.authentication.handler.js').McpAuthenticationHandler} under
+ *   the `bearer` scheme and read `context.authenticationSession` instead. This
+ *   function re-reads the `Authorization` header, which
+ *   `authenticationPlugin` (fastify) and `authenticationMiddleware` (koa) delete
+ *   after resolving it, so it only works on a server with no authentication stack.
+ *
  * @example
  * ```ts
  * router.post('/mcp', bodyParserMiddleware(['application/json']), async ctx => {

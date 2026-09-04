@@ -70,6 +70,8 @@ by area; type aliases for provider-specific payload shapes are grouped rather th
 | `AuthenticationHandler`       | interface      | `authenticate(scheme, value): Promise<AuthenticationSession>`           | —                                                                      |
 | `AuthenticationHandlerMap`    | class          | `@Injectable() extends Map<AuthorizationScheme, AuthenticationHandler>` | Keys must be **lowercase** — see Gotchas.                              |
 | `AuthenticationSchemeHandler` | class          | `@Injectable()`. `handle(authorizationHeader?)`                         | Splits on the **first** space only, so `Digest a="x", b="y"` survives. |
+| `ChainedAuthenticationHandler` | class         | `@Injectable() implements AuthenticationHandler`                        | Tries an `AuthenticationHandlerChain` in order; first non-sentinel wins. |
+| `AuthenticationHandlerChain`  | class          | `@Injectable() extends Array<AuthenticationHandler>`                    | Register with `useArray(…).push(…)`; registration order is try order.  |
 | `JwtAuthenticationHandler`    | class          | `implements AuthenticationHandler`                                      | Bearer.                                                                |
 | `JwtAuthenticationIssuer`     | abstract class | Per-issuer JWT validation                                               | —                                                                      |
 | `JwtAuthenticationIssuerMap`  | class          | `extends Map<string, JwtAuthenticationIssuer>`                          | Multi-issuer bearer support.                                           |
@@ -148,8 +150,13 @@ class) and an abstract `<Name>FactorRepository` you implement.
 | `AuthenticationPolicyNames`    | type     | Union of the eleven names above                          | —                                                               |
 | `AuthenticationPolicyMappings` | constant | `Record<AuthenticationPolicyNames, Constructor<Policy>>` | Spread into your `PolicyRegistryMap`.                           |
 | `AuthenticationPolicyContexts` | type     | `Record<AuthenticationPolicyNames, …Context>`            | Intersect with your own `Policies` map for `BasePolicyService`. |
+| `MFA_SATISFIED_POLICY`         | constant | `'auth.session.mfa.satisfied'`                           | The one policy name exported as a constant — see below.         |
 
-`auth.session.mfa.satisfied` is the default `requirePolicy()` gate in `@maroonedsoftware/koa`.
+`auth.session.mfa.satisfied` is the default `requirePolicy()` gate in `@maroonedsoftware/koa` and
+`@maroonedsoftware/fastify`, and it is the only name of the eleven exported as a constant,
+`MFA_SATISFIED_POLICY`. Reference it rather than the literal wherever code mirrors that HTTP
+default off the route path — a `@maroonedsoftware/mcp` tool passing it to `requireMcpPolicy`, say
+— so the two cannot drift. The other ten are still spelled as literals.
 
 ### Orchestrators
 
@@ -199,6 +206,13 @@ registry.register(JwtAuthenticationHandler).useClass(JwtAuthenticationHandler).a
 registry.register(AuthenticationHandlerMap).useMap(AuthenticationHandlerMap).set('bearer', JwtAuthenticationHandler);
 registry.register(AuthenticationSchemeHandler).useClass(AuthenticationSchemeHandler);
 
+// Two kinds of credential on one scheme: chain them, most specific first.
+// registry.register(AuthenticationHandlerChain).useArray(AuthenticationHandlerChain)
+//   .push(McpAuthenticationHandler)
+//   .push(JwtAuthenticationHandler);
+// registry.register(ChainedAuthenticationHandler).useClass(ChainedAuthenticationHandler).asSingleton();
+// registry.register(AuthenticationHandlerMap).useMap(AuthenticationHandlerMap).set('bearer', ChainedAuthenticationHandler);
+
 // Sessions
 registry.register(AuthenticationSessionServiceOptions).useValue(
   new AuthenticationSessionServiceOptions(
@@ -244,6 +258,13 @@ const session = await sessions.createSession(completed.actor.id, claims, complet
 - **Register `AuthenticationHandlerMap` keys in lowercase.** The scheme handler lowercases the
   inbound scheme before lookup, so a `'Bearer'` key never matches.
 - Compare against `invalidAuthenticationSession` by identity (`===`), not by inspecting fields.
+- **A handler declines by returning the sentinel, and throws only for misconfiguration.**
+  `ChainedAuthenticationHandler` relies on that split: a sentinel moves to the next handler, a
+  throw stops the chain. A handler that threw on a bad credential would make one member of a
+  chain able to reject a credential meant for another.
+- **One handler per scheme.** To put two kinds of credential on `bearer` (a session JWT and a
+  service's static token, say), register `ChainedAuthenticationHandler` for the scheme and put the
+  real handlers in an `AuthenticationHandlerChain`, most specific first.
 - Implement `FactorRepository` methods per factor. Implement `findFactor` only when the lookup value
   is genuinely globally unique (email, OIDC `sub`, FIDO credential id) — see Gotchas.
 - The orchestrators do **not** deliver codes. `issueFactorChallenge` returns the code and recipient
@@ -302,6 +323,7 @@ src/
   types.ts                        Session model, factor kinds/methods, hooks, sentinel, token shape
   authentication.handler.ts       AuthenticationHandler, AuthorizationScheme
   authentication.scheme.handler.ts  AuthenticationHandlerMap, AuthenticationSchemeHandler
+  chained.authentication.handler.ts ChainedAuthenticationHandler, AuthenticationHandlerChain
   authentication.session.service.ts Sessions, rotation, refresh + theft detection
   helpers.ts                      matchesFactorConstraints, isFactorRecent
   jwt/                            JwtAuthenticationHandler, JwtAuthenticationIssuer(+Map)

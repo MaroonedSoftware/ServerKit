@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { isPolicyResultAllowed, isPolicyResultDenied, type PolicyEnvelope } from '@maroonedsoftware/policies';
 import {
+  compareMcpToken,
   isBlankBearerToken,
   verifyMcpBearer,
   MCP_AUTHORIZATION_HEADER,
@@ -12,6 +13,29 @@ import { McpAuthPolicy, MCP_AUTH_POLICY, type McpAuthPolicyContext } from '../sr
 import { IsMcpError } from '../src/mcp.error.js';
 
 const TOKEN = 'sk-secret-token';
+
+describe('compareMcpToken', () => {
+  it('accepts an exact match', () => {
+    expect(compareMcpToken(TOKEN, TOKEN)).toBe(true);
+  });
+
+  it('rejects a different token of the same length', () => {
+    expect(compareMcpToken('sk-secret-tokeN', TOKEN)).toBe(false);
+  });
+
+  it('rejects a token of a different length without throwing', () => {
+    // timingSafeEqual requires equal-length buffers; the length guard is what
+    // keeps this a `false` rather than a crash.
+    expect(compareMcpToken('short', TOKEN)).toBe(false);
+    expect(compareMcpToken(`${TOKEN}-extra`, TOKEN)).toBe(false);
+  });
+
+  it('rejects a blank side rather than treating it as a match', () => {
+    expect(compareMcpToken('', TOKEN)).toBe(false);
+    expect(compareMcpToken(TOKEN, '')).toBe(false);
+    expect(compareMcpToken('', '')).toBe(false);
+  });
+});
 
 describe('verifyMcpBearer', () => {
   it('returns the token when the Authorization header matches', () => {

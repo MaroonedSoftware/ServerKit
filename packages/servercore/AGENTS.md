@@ -88,6 +88,7 @@ plus `@hapi/bourne`, `inflation`, `injectkit`, `luxon`, `qs`, `rate-limiter-flex
 | `normalizeCorsOrigins`       | function                   | `(origin?: CorsOrigin) => (string \| RegExp)[]`                                                | `undefined` → `['*']`; a string is one origin. Koa only.                     |
 | `createOriginMatcher`        | function                   | `(matchers) => (requestOrigin: string) => string`                                              | Reflects the origin on match, `''` otherwise. Koa only.                      |
 | `createAnonymousPathMatcher` | function                   | `(paths?: (string \| RegExp)[]) => (path: string) => boolean`                                  | Strings exact, RegExps tested.                                               |
+| `stripRawAuthorizationHeader` | function                  | `(rawHeaders: string[]) => void`                                                              | Removes every `Authorization` pair from a Node `rawHeaders` array, in place. |
 | `REQUIRE_SIGNATURE_POLICY`   | constant                   | `'request.signature.valid'`                                                                    | —                                                                            |
 | `SignatureOptions`           | type                       | `{ header, secret, algorithm, digest }`                                                        | Stored in `AppConfig`, resolved by key.                                      |
 | `SignaturePolicyContext<T>`  | interface                  | `{ rawBody: BinaryLike; getHeader: (name) => string; options: T }`                             | The policy context for a signature scheme.                                   |
@@ -189,6 +190,7 @@ src/
   ratelimit/rate.limiter.ts        RateLimiter, consumeRateLimit
   cors/cors.origin.ts              normalizeCorsOrigins, createOriginMatcher
   authentication/anonymous.paths.ts  createAnonymousPathMatcher
+  authentication/raw.authorization.header.ts  stripRawAuthorizationHeader
   sse/                             sse.frame, sse.request, sse.stream
   serverfeed.ts                    Subpath entry for ./serverfeed
   serverfeed/server.feed.stream.ts handleServerFeed, ServerFeedContext, serverFeedFilterFromQuery

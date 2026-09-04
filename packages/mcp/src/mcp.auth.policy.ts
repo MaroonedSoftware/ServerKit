@@ -14,6 +14,8 @@ import {
  * Policy name under which {@link McpAuthPolicy} is registered. Use as the key
  * when wiring your `PolicyRegistryMap`, and pass to `PolicyService.check` — or to
  * koa's `requireSignature` as the `{ policy }` option.
+ *
+ * @deprecated Part of the header-reading auth path. See {@link McpAuthPolicy}.
  */
 export const MCP_AUTH_POLICY = 'mcp.auth.valid' as const;
 
@@ -27,6 +29,8 @@ export const MCP_AUTH_POLICY = 'mcp.auth.valid' as const;
  * ```ts
  * router.post('/mcp', requireSignature<McpAuthOptions>('mcp', { policy: MCP_AUTH_POLICY }), handler);
  * ```
+ *
+ * @deprecated Part of the header-reading auth path. See {@link McpAuthPolicy}.
  */
 export interface McpAuthPolicyContext {
   /** Case-insensitive request header accessor (Koa's `ctx.get`); returns `''` when absent. */
@@ -62,6 +66,15 @@ export interface McpAuthPolicyContext {
  * resource-server validation without touching the route wiring. A subclass
  * should call `context.onResolved?.(auth)` with the identity it resolved, so the
  * route can thread it onto the request context.
+ *
+ * @deprecated Register
+ *   {@link import('./mcp.authentication.handler.js').McpAuthenticationHandler} under
+ *   the `bearer` scheme instead, and gate the route with `requirePolicy`. This
+ *   policy reads the `Authorization` header, which `authenticationPlugin`
+ *   (fastify) and `authenticationMiddleware` (koa) delete after resolving it, so
+ *   it only works on a server with no authentication stack. Its identity lands on
+ *   `context.auth`, a second identity model alongside
+ *   `context.authenticationSession`; the handler collapses the two into one.
  */
 @Injectable()
 export class McpAuthPolicy extends Policy<McpAuthPolicyContext> {

@@ -14,6 +14,7 @@ export * from './request/request.identity.js';
 export * from './ratelimit/rate.limiter.js';
 export * from './cors/cors.origin.js';
 export * from './authentication/anonymous.paths.js';
+export * from './authentication/raw.authorization.header.js';
 export * from './sse/sse.frame.js';
 export * from './sse/sse.request.js';
 export * from './sse/sse.stream.js';

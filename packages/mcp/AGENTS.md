@@ -8,9 +8,9 @@ Repo-wide conventions live in the [root AGENTS.md](../../AGENTS.md).
 Serve the Model Context Protocol from a ServerKit app. The official
 `@modelcontextprotocol/sdk` low-level `Server` is wrapped behind a DI-registered dispatcher: tools
 and resources are `@Injectable()` handlers registered in maps at bootstrap, request-scoped state
-travels through `AsyncLocalStorage` rather than closures, and bearer auth is expressed as a
-`@maroonedsoftware/policies` policy. Stateless is the default; stateful (`Mcp-Session-Id`, SSE,
-server-initiated messages) is opt-in.
+travels through `AsyncLocalStorage` rather than closures, and bearer auth is expressed as an
+`AuthenticationHandler`, so an MCP caller arrives at a tool as an ordinary `AuthenticationSession`.
+Stateless is the default; stateful (`Mcp-Session-Id`, SSE, server-initiated messages) is opt-in.
 
 Reach for this to expose your app's capabilities to an MCP client. Do **not** expect an MCP
 _client_ — this is server-side only. And note that the bundled auth is scaffold-grade: a single
@@ -33,12 +33,15 @@ stateful mode).
 - **Depended on by:** nothing internal. It is a leaf that applications wire up directly.
 - **Subpath exports:** none. `exports` maps only `.` and `./package.json`.
 
-**Deliberately not a dependency: `koa`.** The package is transport-neutral. Your route extracts the
-request, builds an `McpRequestContext`, and calls the dispatcher. The auth policy context is
-_structurally_ compatible with koa's `SignaturePolicyContext<McpAuthOptions>`, which is what lets
-koa's `requireSignature` drive MCP bearer auth without either package depending on the other. The
-package's own `assertMcpAuth` drives the same policy through `PolicyService` directly, taking only
-an injectkit `Container` and a header accessor — still no koa import.
+**Deliberately not a dependency: `koa` or `fastify`.** The package is transport-neutral. Your route
+extracts the request, builds an `McpRequestContext`, and calls the dispatcher. Authentication needs
+no adapter either: `McpAuthenticationHandler` implements the `authentication` package's
+`AuthenticationHandler`, which both adapters already drive through `AuthenticationSchemeHandler`.
+
+The deprecated `McpAuthPolicyContext` is _structurally_ compatible with koa's
+`SignaturePolicyContext<McpAuthOptions>`, which is what let koa's `requireSignature` drive MCP bearer
+auth without either package depending on the other. That trick is no longer the recommended path —
+it reads the `Authorization` header, which the authentication stack deletes.
 
 ## API surface
 
@@ -46,7 +49,7 @@ an injectkit `Container` and a header accessor — still no koa import.
 
 | Export                           | Kind                       | Shape                                                                                           | Notes                                                                                              |
 | -------------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `McpConfig`                      | interface + abstract class | `{ serverName, version, sessionMode?, bearerToken?, allowUnauthenticated?, requestTimeoutMs? }` | Declaration-merged so one symbol is type and DI token. `requestTimeoutMs` aborts `context.signal`. |
+| `McpConfig`                      | interface + abstract class | `{ serverName, version, sessionMode?, bearerToken?, allowUnauthenticated?, subject?, requestTimeoutMs? }` | Declaration-merged so one symbol is type and DI token. `requestTimeoutMs` aborts `context.signal`; `subject` names the MCP client on the session. |
 | `McpSessionMode`                 | type                       | `'stateless' \| 'stateful'`                                                                     | Default `'stateless'`.                                                                             |
 | `MCP_DEFAULT_REQUEST_TIMEOUT_MS` | constant                   | `30_000`                                                                                        | Applied when `requestTimeoutMs` is unset.                                                          |
 | `McpError`                       | class                      | `extends ServerkitError`                                                                        | —                                                                                                  |
@@ -54,21 +57,37 @@ an injectkit `Container` and a header accessor — still no koa import.
 
 ### Auth
 
-| Export                            | Kind      | Shape                                                                                                      | Notes                                                                                                                                         |
-| --------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `verifyMcpBearer`                 | function  | `(input: VerifyMcpBearerInput) => McpAuthInfo`                                                             | Pure. Constant-time compare. **Throws** `McpError` on failure.                                                                                |
-| `VerifyMcpBearerInput`            | type      | `{ authorization: string \| undefined; expectedToken: string }`                                            | —                                                                                                                                             |
-| `McpAuthInfo`                     | interface | `{ token: string; subject?: string; scopes?: string[] }`                                                   | The scaffold fills only `token`.                                                                                                              |
-| `McpAuthFailureReason`            | type      | `'missing_token' \| 'invalid_token'`                                                                       | Lands in `internalDetails.reason`.                                                                                                            |
-| `McpAuthOptions`                  | type      | `Pick<McpConfig, 'bearerToken' \| 'allowUnauthenticated'>`                                                 | Structural subset, so an `McpConfig` value satisfies it directly.                                                                             |
-| `MCP_AUTHORIZATION_HEADER`        | constant  | `'Authorization'`                                                                                          | —                                                                                                                                             |
-| `isBlankBearerToken`              | function  | `(bearerToken: string \| undefined) => boolean`                                                            | `true` only when a token was configured **and** is blank. `undefined` needs `allowUnauthenticated`; blank is refused either way.              |
-| `MCP_AUTH_POLICY`                 | constant  | `'mcp.auth.valid'`                                                                                         | The `PolicyRegistryMap` key.                                                                                                                  |
-| `McpAuthPolicy`                   | class     | `extends Policy<McpAuthPolicyContext>`                                                                     | Policy form of the verifier — denies rather than throwing.                                                                                    |
-| `McpAuthPolicyContext`            | interface | `{ getHeader: (name) => string; options: McpAuthOptions; rawBody?: unknown; onResolved?: (auth) => void }` | `rawBody` is accepted and ignored, purely for koa structural compatibility. `onResolved` is how the verified identity gets back to the route. |
-| `assertMcpAuth`                   | function  | `(container, getHeader) => Promise<McpAuthInfo \| undefined>`                                              | Gates on `MCP_AUTH_POLICY`, returns the resolved identity. **Throws** 401 on denial. `undefined` = allowed without authenticating anyone.     |
-| `requireMcpAuthenticationSession` | function  | `(context: McpAuthenticatedContext) => AuthenticationSession`                                              | Narrows a handler context or **throws** 401. Treats a missing session as unauthenticated.                                                     |
-| `McpAuthenticatedContext`         | type      | `{ authenticationSession?: AuthenticationSession }`                                                        | Structural, so a tool, resource, or request context all satisfy it.                                                                           |
+| Export                            | Kind      | Shape                                                                                                         | Notes                                                                                                                            |
+| --------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `McpAuthenticationHandler`        | class     | `@Injectable() implements AuthenticationHandler`                                                              | **How you authenticate.** Resolves the shared token into an `AuthenticationSession`. Register under `bearer`.                     |
+| `MCP_DEFAULT_SUBJECT`             | constant  | `'mcp'`                                                                                                       | `session.subject` when `McpConfig.subject` is unset.                                                                              |
+| `compareMcpToken`                 | function  | `(provided: string, expected: string) => boolean`                                                             | Constant-time, with the length guard. Blank either side is `false`.                                                               |
+| `isBlankBearerToken`              | function  | `(bearerToken: string \| undefined) => boolean`                                                                | `true` only when a token was configured **and** is blank. `undefined` needs `allowUnauthenticated`; blank is refused either way.  |
+| `requireMcpPolicy`                | function  | `(context, policies: PolicyService, options?: { policy?: string \| false }) => Promise<AuthenticationSession>` | **The per-tool guard.** Session plus optional policy. `policy` defaults to `false` — see Gotchas.                                 |
+| `RequireMcpPolicyOptions`         | interface | `{ policy?: string \| false }`                                                                                | Pass `MFA_SATISFIED_POLICY` to mirror the HTTP `requirePolicy()` default.                                                         |
+| `requireMcpAuthenticationSession` | function  | `(context: McpAuthenticatedContext) => AuthenticationSession`                                                 | Narrows a handler context or **throws** 401. Treats a missing session as unauthenticated. `requireMcpPolicy` wraps it.            |
+| `McpAuthenticatedContext`         | type      | `{ authenticationSession?: AuthenticationSession }`                                                           | Structural, so a tool, resource, or request context all satisfy it.                                                               |
+| `McpAuthFailureReason`            | type      | `'missing_token' \| 'invalid_token'`                                                                           | Lands in `internalDetails.reason`.                                                                                                |
+
+#### Deprecated: the header-reading path
+
+All still functional, all removed in a later major. They re-read the `Authorization` header, which
+`authenticationPlugin` / `authenticationMiddleware` delete once `AuthenticationSchemeHandler` has
+resolved it — so this path only works on a server with no authentication stack, and it carries a
+second identity model (`context.auth`) alongside `context.authenticationSession`.
+
+| Export                     | Kind      | Shape                                                                                                      | Replacement                                       |
+| -------------------------- | --------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `assertMcpAuth`            | function  | `(container, getHeader) => Promise<McpAuthInfo \| undefined>`                                               | `McpAuthenticationHandler` + `requirePolicy`      |
+| `McpAuthPolicy`            | class     | `extends Policy<McpAuthPolicyContext>`                                                                     | `McpAuthenticationHandler`                        |
+| `MCP_AUTH_POLICY`          | constant  | `'mcp.auth.valid'`                                                                                         | —                                                 |
+| `McpAuthPolicyContext`     | interface | `{ getHeader: (name) => string; options: McpAuthOptions; rawBody?: unknown; onResolved?: (auth) => void }` | —                                                 |
+| `verifyMcpBearer`          | function  | `(input: VerifyMcpBearerInput) => McpAuthInfo`                                                             | `compareMcpToken` + `isBlankBearerToken`          |
+| `VerifyMcpBearerInput`     | type      | `{ authorization: string \| undefined; expectedToken: string }`                                             | —                                                 |
+| `McpAuthInfo`              | interface | `{ token: string; subject?: string; scopes?: string[] }`                                                   | `AuthenticationSession`                           |
+| `McpAuthOptions`           | type      | `Pick<McpConfig, 'bearerToken' \| 'allowUnauthenticated'>`                                                  | `McpConfig`                                       |
+| `MCP_AUTHORIZATION_HEADER` | constant  | `'Authorization'`                                                                                          | —                                                 |
+| `McpContextBase.auth`      | field     | `McpAuthInfo \| undefined`                                                                                  | `McpContextBase.authenticationSession`            |
 
 ### Request context
 
@@ -114,14 +133,19 @@ import {
   McpDispatcher,
   McpToolHandlerMap,
   McpResourceHandlerMap,
-  McpAuthPolicy,
-  MCP_AUTH_POLICY,
-  assertMcpAuth,
+  McpAuthenticationHandler,
   createMcpRequestContext,
-  requireMcpAuthenticationSession,
+  requireMcpPolicy,
   type McpToolHandler,
   type McpToolContext,
 } from '@maroonedsoftware/mcp';
+import {
+  AuthenticationHandlerChain,
+  AuthenticationHandlerMap,
+  AuthenticationSchemeHandler,
+  ChainedAuthenticationHandler,
+  JwtAuthenticationHandler,
+} from '@maroonedsoftware/authentication';
 
 @Injectable()
 class SearchDocsTool implements McpToolHandler {
@@ -146,19 +170,31 @@ registry.register(SearchDocsTool).useClass(SearchDocsTool).asSingleton();
 registry.register(McpToolHandlerMap).useMap(McpToolHandlerMap).set('search_docs', SearchDocsTool);
 registry.register(McpResourceHandlerMap).useMap(McpResourceHandlerMap);
 registry.register(McpConfig).useValue(appConfig.getAs<McpConfig>('mcp'));
-policies.set(MCP_AUTH_POLICY, McpAuthPolicy);
+
+// Auth: the MCP token is a session source, so it goes through the scheme handler
+// like any other credential. Chain it with the JWT handler — `bearer` holds one.
+registry.register(McpAuthenticationHandler).useClass(McpAuthenticationHandler).asSingleton();
+registry.register(JwtAuthenticationHandler).useClass(JwtAuthenticationHandler).asSingleton();
+registry.register(AuthenticationHandlerChain).useArray(AuthenticationHandlerChain).push(McpAuthenticationHandler).push(JwtAuthenticationHandler);
+registry.register(ChainedAuthenticationHandler).useClass(ChainedAuthenticationHandler).asSingleton();
+registry.register(AuthenticationHandlerMap).useMap(AuthenticationHandlerMap).set('bearer', ChainedAuthenticationHandler);
+registry.register(AuthenticationSchemeHandler).useClass(AuthenticationSchemeHandler);
 ```
 
-The route — one shape, both modes. `assertMcpAuth` runs the same `MCP_AUTH_POLICY` that
-`requireSignature<McpAuthOptions>('mcp', { policy: MCP_AUTH_POLICY })` would, and additionally
-returns the identity for the context; use `requireSignature` instead when the route does not need
-`context.auth`. `bodyParserMiddleware` must run first: it is what populates `ctx.parsedBody` and `ctx.rawBody`. Koa's own `ctx.request.body` is never populated by ServerKit, so reading it yields `undefined`.
+The route — one shape, both modes. Authentication has already happened by the time it runs:
+`authenticationMiddleware` (koa) / `authenticationPlugin` (fastify) resolved the header into
+`authenticationSession`, so the route only guards and dispatches. `requirePolicy({ policy: false })`
+is the guard: it rejects an unauthenticated caller with 401 but does not apply the MFA policy, which
+the scaffold session cannot satisfy.
+
+**Koa.** `bodyParserMiddleware` must run first: it is what populates `ctx.parsedBody` and
+`ctx.rawBody`. Koa's own `ctx.request.body` is never populated by ServerKit, so reading it yields
+`undefined`.
 
 ```typescript
-router.post('/mcp', bodyParserMiddleware(['application/json']), async ctx => {
-  const auth = await assertMcpAuth(ctx.container, name => ctx.get(name));
+router.post('/mcp', bodyParserMiddleware(['application/json']), requirePolicy({ policy: false }), async ctx => {
   const dispatcher = ctx.container.get(McpDispatcher);
-  const context = createMcpRequestContext({ requestId: ctx.requestId, logger: ctx.logger, authenticationSession: ctx.authenticationSession, auth });
+  const context = createMcpRequestContext({ requestId: ctx.requestId, logger: ctx.logger, authenticationSession: ctx.authenticationSession });
 
   if (dispatcher.sessionMode === 'stateful') {
     ctx.respond = false; // hand the raw response stream to the SDK transport
@@ -169,6 +205,31 @@ router.post('/mcp', bodyParserMiddleware(['application/json']), async ctx => {
   const response = await dispatcher.dispatch(ctx.parsedBody as JSONRPCMessage, context);
   if (response) ctx.body = response;
   else ctx.status = 202; // notification — nothing to return
+});
+```
+
+**Fastify.** Accepted content types go in the route's `config.body`, guards in `preHandler`, and the
+parsed payload is on `request.body`.
+
+```typescript
+app.post('/mcp', { config: { body: ['application/json'] }, preHandler: [requirePolicy({ policy: false })] }, async (request, reply) => {
+  const dispatcher = request.container.get(McpDispatcher);
+  const context = createMcpRequestContext({
+    requestId: request.requestId,
+    logger: request.logger,
+    authenticationSession: request.authenticationSession,
+  });
+
+  if (dispatcher.sessionMode === 'stateful') {
+    reply.hijack(); // the SDK transport owns the response
+    await dispatcher.dispatchStateful({ req: request.raw, res: reply.raw, body: request.body, sessionId: request.headers['mcp-session-id'] as string }, context);
+    return;
+  }
+
+  const response = await dispatcher.dispatch(request.body as JSONRPCMessage, context);
+  if (response) return response;
+  reply.status(202);
+  return undefined;
 });
 ```
 
@@ -194,16 +255,20 @@ router.post('/mcp', bodyParserMiddleware(['application/json']), async ctx => {
   SDK transport owns the response.
 - Read `dispatcher.sessionMode` rather than duplicating the config check in the route.
 - Never set `allowUnauthenticated` in a config that ships. It exists so that running with no
-  authentication is a statement in config rather than an omission, which makes it reviewable.
-- Replace `verifyMcpBearer` (or subclass `McpAuthPolicy` and re-register under `MCP_AUTH_POLICY`)
-  before production. Keep the `(request) → McpAuthInfo | throw` shape so the wiring is unchanged,
-  and call `context.onResolved?.(auth)` with the identity you resolved, or `context.auth` stays
-  empty for every route using `assertMcpAuth`.
+  authentication is a statement in config rather than an omission, which makes it reviewable. In
+  handler form it means the handler authenticates nobody, so the `/mcp` route must also be mounted
+  **without** `requirePolicy` — otherwise every request is a 401.
+- Register `McpAuthenticationHandler` under `bearer`, through `ChainedAuthenticationHandler` when
+  the server also serves JWT bearer traffic. Do not reach for the deprecated `assertMcpAuth` /
+  `MCP_AUTH_POLICY` path in new code; it cannot see the header behind the auth stack.
+- Replace `McpAuthenticationHandler` before production. Write another `AuthenticationHandler` that
+  validates a real OAuth access token and put it in the chain; nothing downstream of
+  `authenticationSession` changes.
 - **A tool whose operation declares a policy must enforce it itself.** The guard on the `/mcp`
   route gates the mount, not the individual tool, so every exposed tool is otherwise callable by
   anyone who clears that one guard. Inject `PolicyService` through the constructor and open
-  `handle` with `const session = requireMcpAuthenticationSession(context);` followed by
-  `await this.policies.assert(policyName, { session });` — the same rule the HTTP route evaluates.
+  `handle` with `const session = await requireMcpPolicy(context, this.policies, { policy: policyName });`
+  — the same rule the HTTP route evaluates. Omit `policy` to require only a valid session.
 - For relationship-based authorization, `@maroonedsoftware/permissions` composes the same way:
   inject the `AuthorizationModel` and `PermissionsTupleRepository` (both singletons), take the
   object id from the tool's own `args`, and use `session.subject` as the subject. Prefer wrapping
@@ -213,21 +278,38 @@ router.post('/mcp', bodyParserMiddleware(['application/json']), async ctx => {
 
 ## Gotchas
 
-- **The bundled auth is scaffold-grade, but it is no longer open by omission.** `McpAuthPolicy`
+- **The authentication stack deletes the `Authorization` header.** `authenticationPlugin` (fastify)
+  and `authenticationMiddleware` (koa) read it, hand it to `AuthenticationSchemeHandler`, and delete
+  it from both header views before any route runs — on every route, whitelisted or not. Anything
+  re-reading it later sees nothing. This is the single reason the deprecated `assertMcpAuth` /
+  `requireSignature` path denies every request behind the default stack, and the reason MCP auth is
+  an `AuthenticationHandler` now.
+- **The scaffold session has no factors, so `requirePolicy()`'s default rejects it.** A shared token
+  satisfies no `AuthenticationFactorMethod`, so `factors` is honestly empty and
+  `DefaultMfaSatisfiedPolicy` denies. Mount `/mcp` with `requirePolicy({ policy: false })`, and note
+  `requireMcpPolicy` defaults to `policy: false` for the same reason — the opposite of the HTTP
+  default. Pass `MFA_SATISFIED_POLICY` explicitly only where callers hold real user sessions.
+- **The bundled auth is scaffold-grade, but it is not open by omission.** `McpAuthenticationHandler`
   throws unless the config says something definite: a `bearerToken` to enforce, or
   `allowUnauthenticated: true` to run with none. A missing key and a blank token both fail closed,
   because neither is a decision anyone can be shown to have made. Only `allowUnauthenticated` opts
   in, and it is a name you can grep production config for. A real deployment is still an OAuth 2.0
   resource server validating a JWT; this only stops the accident.
 - **The check runs on the first request, not at boot.** The package has no module lifecycle, and
-  validating in `McpDispatcher` would wrongly refuse to boot a server that swapped in its own auth
-  policy and legitimately has no `bearerToken`. So a misconfigured server starts and fails the
-  first MCP call. Evaluate the policy yourself in a `setup` hook if you want it to fail earlier.
-- **Unauthenticated mode resolves nobody, deliberately.** The opted-in branch allows without calling
-  `onResolved`, so `context.auth` stays empty. Passing the presented header there would put an
-  unverified credential on the context, and every handler gating on `context.auth` would admit any
-  caller. `verifyMcpBearer` is the only thing that may construct an `McpAuthInfo`, because
-  `McpAuthInfo` carries no marker saying it was checked.
+  validating earlier would wrongly refuse to boot a server that swapped in its own handler and
+  legitimately has no `bearerToken`. So a misconfigured server starts and fails the first MCP call
+  with a 500.
+- **Unauthenticated mode resolves nobody, deliberately.** The opted-in branch returns the sentinel
+  rather than minting a session. Presenting a token to an endpoint that has none configured proves
+  nothing, so a session built from it would hand every caller an authenticated identity. That does
+  mean the route cannot carry a session guard in this mode.
+- **The session token is not the bearer token.** `McpAuthenticationHandler` mints a fresh random
+  `sessionToken` per request, so the credential cannot leak through anything that logs a session,
+  and nothing mistakes it for a stored, revocable session key. It references nothing.
+- **Chain order does not affect correctness, only work.** Handlers decline by returning the
+  sentinel, so a JWT-bearing request reaching `McpAuthenticationHandler` first simply falls through.
+  Put the cheaper or more common one first. This is also why a mismatch logs at `debug`: behind a
+  chain it is the ordinary case.
 - **Stateful mode requires session affinity.** `McpSessionRegistry` is an in-memory `Map`, so a
   session lives in one process. Behind a load balancer you need sticky routing, or externalised
   session/event state (the SDK's `eventStore`, backed by the optional `@maroonedsoftware/cache`
@@ -273,25 +355,19 @@ router.post('/mcp', bodyParserMiddleware(['application/json']), async ctx => {
   from `errorMiddleware`, not a 202. Branch explicitly.
 - **A stateful request with no session that is not an `initialize` gets a raw 400** written directly
   to `res` with JSON-RPC error `-32000`, bypassing `errorMiddleware` entirely.
-- **`McpAuthPolicyContext.rawBody` exists only for structural compatibility** with koa's
-  `SignaturePolicyContext`. It is accepted and ignored. That is the trick that keeps this package
-  free of a `koa` dependency.
-- **`context.auth` is only populated when the route asks for it.** A route gated with
-  `requireSignature` never passes `onResolved`, so the identity is verified and discarded. Use
-  `assertMcpAuth` when a handler needs `context.auth`. Running unauthenticated it is `undefined`
-  even then: allowing everyone is not authenticating anyone.
-- **`verifyMcpBearer` throws while `McpAuthPolicy` denies.** Same logic, two shapes. Pick the one
-  that matches your call site.
+- **`context.auth` (deprecated) is only populated by `assertMcpAuth`.** A route gated with
+  `requireSignature` never passes `onResolved`, so the identity is verified and discarded, and
+  behind the authentication stack neither can read the header at all. Read
+  `context.authenticationSession` instead.
 - **An error thrown from a handler becomes a JSON-RPC error on a 200 response.** That covers
-  `requireMcpAuthenticationSession`'s 401 and `PolicyService.assert`'s 403: the status code and the
+  `requireMcpPolicy`'s 401 and `PolicyService.assert`'s 403: the status code and the
   `WWW-Authenticate` header never reach the wire, because the response is an MCP payload, not an
   HTTP error. That is the correct channel for a tool-level failure, but do not expect a client to
   drive re-auth from it. Gate the transport itself on the route for that.
-- **The bundled shared-token auth resolves no session, so per-tool policies cannot run behind it.**
-  `McpAuthPolicy` proves the caller holds the configured token; it identifies nobody. Behind it
-  `context.authenticationSession` is `undefined` and every policy check fails closed. A route that
-  needs per-tool enforcement runs the real authentication stack with a subject-resolving scheme
-  handler (JWT, for instance).
+- **The shared token identifies the client, not a user.** `McpAuthenticationHandler` resolves one
+  subject (`McpConfig.subject`, default `'mcp'`) for everyone holding the token. Per-tool policies
+  run, but they are deciding what that one client may do. For per-user authorization, authenticate
+  MCP callers with a subject-resolving handler (JWT) instead.
 - **`context.authenticationSession` is the ServerKit auth session, not the MCP transport session.**
   Two unrelated things share the word: `Mcp-Session-Id`, `McpSessionRegistry`, and `sessionMode`
   are the protocol's connection session; `authenticationSession` is who the caller is. A stateful
@@ -308,14 +384,17 @@ src/
   mcp.config.ts             McpConfig (interface + token), McpSessionMode,
                             MCP_DEFAULT_REQUEST_TIMEOUT_MS
   mcp.error.ts              McpError, IsMcpError
-  mcp.auth.ts               verifyMcpBearer, isBlankBearerToken, McpAuthInfo, McpAuthOptions,
-                            header constant
+  mcp.auth.ts               compareMcpToken, isBlankBearerToken, verifyMcpBearer,
+                            McpAuthInfo, McpAuthOptions, header constant
+  mcp.authentication.handler.ts
+                            McpAuthenticationHandler, MCP_DEFAULT_SUBJECT
   mcp.auth.policy.ts        MCP_AUTH_POLICY, McpAuthPolicy, McpAuthPolicyContext
   mcp.auth.assert.ts        assertMcpAuth
   mcp.request.context.ts    McpContextBase, McpRequestContext, McpToolContext,
                             McpResourceContext, mcpContext (ALS), createMcpRequestContext
   mcp.authentication.session.ts
                             requireMcpAuthenticationSession, McpAuthenticatedContext
+  mcp.require.policy.ts     requireMcpPolicy, RequireMcpPolicyOptions
   mcp.tool.handler.ts       McpToolHandler, McpToolHandlerMap
   mcp.resource.handler.ts   McpResourceHandler, McpResourceHandlerMap
   mcp.server.factory.ts     McpServerFactory — memoized lists, stable handlers
@@ -328,9 +407,11 @@ Tests are in `tests/`, mirroring `src/`.
 
 Invariants a change must not break:
 
-- **No dependency on `@maroonedsoftware/koa`.** The structural `McpAuthPolicyContext` and the
-  transport-neutral `McpRequestContext` exist to keep it that way. `KoaMcpTransport` is named for
-  its use case, not for an import.
+- **No dependency on `@maroonedsoftware/koa` or `@maroonedsoftware/fastify`.** The
+  transport-neutral `McpRequestContext` exists to keep it that way, as did the structural
+  `McpAuthPolicyContext` before it was deprecated. `KoaMcpTransport` is named for its use case, not
+  for an import. `McpAuthenticationHandler` reaches both adapters through `authentication`, which is
+  a layer below either.
 - Request-scoped state flows through `AsyncLocalStorage`, never through closures captured per
   request. This is the concurrency-safety invariant.
 - A new request-scoped value is declared on `McpContextBase` and spread into the derived contexts

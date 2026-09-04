@@ -17,6 +17,10 @@ export type McpAuthFailureReason = 'missing_token' | 'invalid_token';
  * The scaffold's static-token verifier only fills `token`. A real OAuth resource
  * server would populate `subject`/`scopes` from validated JWT claims — extend
  * this shape (and {@link verifyMcpBearer}) when you wire that.
+ *
+ * @deprecated The identity of an MCP caller is an `AuthenticationSession`, resolved
+ *   by {@link import('./mcp.authentication.handler.js').McpAuthenticationHandler}.
+ *   This type belongs to the header-reading path.
  */
 export interface McpAuthInfo {
   /** The raw bearer token presented on the request. */
@@ -27,7 +31,12 @@ export interface McpAuthInfo {
   scopes?: string[];
 }
 
-/** HTTP header carrying the bearer token, per the MCP authorization spec. */
+/**
+ * HTTP header carrying the bearer token, per the MCP authorization spec.
+ *
+ * @deprecated Nothing behind the ServerKit authentication stack can read this
+ *   header: it is deleted once `AuthenticationSchemeHandler` has resolved it.
+ */
 export const MCP_AUTHORIZATION_HEADER = 'Authorization';
 
 /**
@@ -35,6 +44,9 @@ export const MCP_AUTHORIZATION_HEADER = 'Authorization';
  * reads. A structural subset of {@link McpConfig}, so an `McpConfig` value
  * satisfies it directly — e.g. `requireSignature<McpAuthOptions>('mcp', { policy: MCP_AUTH_POLICY })`
  * with the MCP config stored under that `AppConfig` key.
+ *
+ * @deprecated Part of the header-reading auth path. The handler reads
+ *   {@link McpConfig} directly.
  */
 export type McpAuthOptions = Pick<McpConfig, 'bearerToken' | 'allowUnauthenticated'>;
 
@@ -61,6 +73,33 @@ export type McpAuthOptions = Pick<McpConfig, 'bearerToken' | 'allowUnauthenticat
  */
 export const isBlankBearerToken = (bearerToken: string | undefined): boolean => bearerToken !== undefined && bearerToken.trim().length === 0;
 
+/**
+ * Constant-time comparison of a presented token against the configured one.
+ *
+ * The token-level half of {@link verifyMcpBearer}, split out for callers that are
+ * handed the credential already separated from its scheme —
+ * {@link import('./mcp.authentication.handler.js').McpAuthenticationHandler} gets
+ * `value` from `AuthenticationSchemeHandler`, which has already stripped `Bearer `.
+ *
+ * A blank side answers `false` rather than throwing. That is defensive only:
+ * callers check {@link isBlankBearerToken} first, so a blank *configuration*
+ * surfaces as the misconfiguration it is instead of an authentication failure.
+ *
+ * @param provided - The token presented on the request.
+ * @param expected - The configured {@link McpConfig.bearerToken}.
+ * @returns `true` when the two match.
+ */
+export const compareMcpToken = (provided: string, expected: string): boolean => {
+  if (!provided || !expected) return false;
+
+  const presented = Buffer.from(provided);
+  const configured = Buffer.from(expected);
+
+  // Length guard covers an empty/mismatched token without tripping timingSafeEqual's
+  // equal-length requirement.
+  return presented.length === configured.length && timingSafeEqual(presented, configured);
+};
+
 /** Extracts the token from an `Authorization: Bearer <token>` header value. */
 const extractBearer = (authorization: string | undefined): string | undefined => {
   if (!authorization) return undefined;
@@ -68,7 +107,11 @@ const extractBearer = (authorization: string | undefined): string | undefined =>
   return match?.[1];
 };
 
-/** Inputs to {@link verifyMcpBearer}. Taken verbatim from the request. */
+/**
+ * Inputs to {@link verifyMcpBearer}. Taken verbatim from the request.
+ *
+ * @deprecated Part of the header-reading auth path. See {@link verifyMcpBearer}.
+ */
 export type VerifyMcpBearerInput = {
   /** Value of the `Authorization` request header (or `undefined` if absent). */
   authorization: string | undefined;
@@ -94,6 +137,11 @@ export type VerifyMcpBearerInput = {
  *   map those to HTTP 401 at the route boundary. A blank `expectedToken` throws
  *   with `internalDetails.kind === 'misconfiguration'` instead, since no
  *   credential can satisfy it and the fault is the server's, not the caller's.
+ *
+ * @deprecated Takes a full `Authorization` header value, which nothing behind the
+ *   authentication stack has. The supported surface is {@link compareMcpToken} plus
+ *   {@link isBlankBearerToken}, which is what
+ *   {@link import('./mcp.authentication.handler.js').McpAuthenticationHandler} uses.
  */
 export const verifyMcpBearer = (input: VerifyMcpBearerInput): McpAuthInfo => {
   if (isBlankBearerToken(input.expectedToken)) {
@@ -107,11 +155,7 @@ export const verifyMcpBearer = (input: VerifyMcpBearerInput): McpAuthInfo => {
     });
   }
 
-  const provided = Buffer.from(token);
-  const expected = Buffer.from(input.expectedToken);
-  // Length guard covers an empty/mismatched token without tripping timingSafeEqual's
-  // equal-length requirement.
-  if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {
+  if (!compareMcpToken(token, input.expectedToken)) {
     throw new McpError('MCP bearer token is invalid').withInternalDetails({
       reason: 'invalid_token' satisfies McpAuthFailureReason,
     });

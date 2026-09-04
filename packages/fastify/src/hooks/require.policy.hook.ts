@@ -1,4 +1,4 @@
-import { invalidAuthenticationSession } from '@maroonedsoftware/authentication';
+import { invalidAuthenticationSession, MFA_SATISFIED_POLICY } from '@maroonedsoftware/authentication';
 import { PolicyService } from '@maroonedsoftware/policies';
 import { unauthorizedError } from '@maroonedsoftware/errors';
 import type { preHandlerAsyncHookHandler } from 'fastify';
@@ -14,24 +14,22 @@ export interface RequirePolicyOptions {
    * by registering their own policy class against the same name in
    * `PolicyRegistryMap`.
    *
-   * Defaults to `'auth.session.mfa.satisfied'`. Pass `false` to validate the
+   * Defaults to {@link MFA_SATISFIED_POLICY}. Pass `false` to validate the
    * session only (skip the policy check entirely).
    */
   policy?: string | false;
 }
 
-const DEFAULT_POLICY = 'auth.session.mfa.satisfied' as const;
-
 /**
  * Route guard that enforces a valid authentication session and, by
- * default, the `'auth.session.mfa.satisfied'` policy.
+ * default, the {@link MFA_SATISFIED_POLICY} policy.
  *
  * Reads `request.authenticationSession` (set by `authenticationPlugin`) and:
  *
  * - Throws HTTP 401 with `WWW-Authenticate: Bearer error="invalid_token"`
  *   when the session is `invalidAuthenticationSession`.
  * - When `options.policy` is set (or omitted — the default is
- *   `'auth.session.mfa.satisfied'`), resolves the `PolicyService` from
+ *   {@link MFA_SATISFIED_POLICY}), resolves the `PolicyService` from
  *   `request.container` and calls `assert(policy, { session })`. The policy
  *   declares its own wire-shape — including any `WWW-Authenticate` header
  *   needed for clients to drive re-auth — via `result.headers`.
@@ -39,7 +37,7 @@ const DEFAULT_POLICY = 'auth.session.mfa.satisfied' as const;
  *   only needs to be valid).
  * - Otherwise lets the request through.
  *
- * @param options - Optional. Defaults to `{ policy: 'auth.session.mfa.satisfied' }`.
+ * @param options - Optional. Defaults to `{ policy: MFA_SATISFIED_POLICY }`.
  * @returns A Fastify hook handler to put in a route's `preHandler` (or `onRequest`, to reject
  *   before the body is read).
  * @throws {HttpError} 401 when the session is invalid.
@@ -59,7 +57,7 @@ const DEFAULT_POLICY = 'auth.session.mfa.satisfied' as const;
  * ```
  */
 export const requirePolicy = (options: RequirePolicyOptions = {}): preHandlerAsyncHookHandler => {
-  const policy = options.policy === undefined ? DEFAULT_POLICY : options.policy;
+  const policy = options.policy === undefined ? MFA_SATISFIED_POLICY : options.policy;
 
   return async request => {
     const session = request.authenticationSession;

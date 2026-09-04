@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { requirePolicy } from '../../../src/middleware/router/require.policy.middleware.js';
 import {
   invalidAuthenticationSession,
+  MFA_SATISFIED_POLICY,
   type AuthenticationFactorKind,
   type AuthenticationFactorMethod,
   type AuthenticationSession,
@@ -77,7 +78,10 @@ describe('requirePolicy', () => {
       await requirePolicy()(mockCtx, mockNext);
 
       expect(mockCtx.container.get).toHaveBeenCalledWith(PolicyService);
+      // The literal pins the wire value; MFA_SATISFIED_POLICY pins that the
+      // default is sourced from the constant rather than a private copy.
       expect(policyService.assert).toHaveBeenCalledWith('auth.session.mfa.satisfied', { session });
+      expect(policyService.assert).toHaveBeenCalledWith(MFA_SATISFIED_POLICY, { session });
       expect(mockNext).toHaveBeenCalledOnce();
     });
 
