@@ -1,5 +1,48 @@
 # @maroonedsoftware/koa
 
+## 3.2.3
+
+### Patch Changes
+
+- b2c37da: Export `MFA_SATISFIED_POLICY` (`'auth.session.mfa.satisfied'`) from
+  `@maroonedsoftware/authentication`, and use it as the `requirePolicy()` default in
+  `@maroonedsoftware/koa` and `@maroonedsoftware/fastify` instead of the private literal each package
+  declared for itself.
+
+  The default gate is unchanged; only its source moved. What changes is that code mirroring the HTTP
+  default from off the route path — a background job, or a `@maroonedsoftware/mcp` tool enforcing the
+  same rule its route does — can reference the constant rather than carrying a copy of the string that
+  silently diverges if the default ever changes.
+
+  `MFA_SATISFIED_POLICY` is the only one of the eleven bundled policy names exported this way, because
+  it is the only one that is a default rather than an explicit choice at the call site. The others stay
+  literals.
+
+- 89b874f: Scrub the `Authorization` credential from `rawHeaders` too, closing a leak in both adapters'
+  authentication step.
+
+  `authenticationPlugin` (fastify) and `authenticationMiddleware` (koa) delete the header after handing
+  it to `AuthenticationSchemeHandler`, so it cannot be captured by downstream logging. But
+  `IncomingMessage.rawHeaders` is a separate array Node fills at parse time and never keeps in sync
+  with `headers`, so `delete req.headers.authorization` left the token sitting in `req.rawHeaders`.
+  Anything serializing that array — a request logger, an error reporter, a proxy replaying headers —
+  still captured it, which is precisely what the delete was there to prevent.
+
+  Both adapters now also call the new `stripRawAuthorizationHeader` from `@maroonedsoftware/servercore`,
+  which removes every `Authorization` pair from the array in place. It matches the name
+  case-insensitively, only ever at an even index (so a header whose _value_ reads `"authorization"`
+  survives), and handles duplicates, including adjacent ones.
+
+  No API change for consumers. Code that was reaching into `rawHeaders` to recover the credential after
+  the authentication step will now find nothing there — that was never a supported way to read it, and
+  the supported one is an `AuthenticationHandler` registered for the scheme.
+
+- Updated dependencies [892a28b]
+- Updated dependencies [b2c37da]
+- Updated dependencies [89b874f]
+  - @maroonedsoftware/authentication@4.31.0
+  - @maroonedsoftware/servercore@0.3.0
+
 ## 3.2.2
 
 ### Patch Changes
