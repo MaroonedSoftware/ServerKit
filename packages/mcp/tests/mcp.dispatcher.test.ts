@@ -4,6 +4,7 @@ import { McpDispatcher } from '../src/mcp.dispatcher.js';
 import { McpServerFactory } from '../src/mcp.server.factory.js';
 import { McpSessionRegistry } from '../src/mcp.session.registry.js';
 import { McpToolHandlerMap, type McpToolHandler } from '../src/mcp.tool.handler.js';
+import { requireMcpAuthenticationSession } from '../src/mcp.authentication.session.js';
 import { McpResourceHandlerMap } from '../src/mcp.resource.handler.js';
 import type { McpConfig } from '../src/mcp.config.js';
 import type { McpToolContext } from '../src/mcp.request.context.js';
@@ -20,10 +21,24 @@ const echoTool = (): McpToolHandler => ({
   }),
 });
 
+/** A tool that enforces an authenticated session, the shape generated code uses. */
+const guardedTool = (): McpToolHandler => ({
+  definition: {
+    name: 'guarded',
+    description: 'Requires an authenticated session.',
+    inputSchema: { type: 'object', properties: {} },
+  } satisfies Tool,
+  handle: vi.fn(async (_args: Record<string, unknown>, context: McpToolContext): Promise<CallToolResult> => {
+    const session = requireMcpAuthenticationSession(context);
+    return { content: [{ type: 'text', text: session.subject }] };
+  }),
+});
+
 const buildDispatcher = (mode: McpConfig['sessionMode'] = 'stateless') => {
   const tools = new McpToolHandlerMap();
   const tool = echoTool();
   tools.set('echo', tool);
+  tools.set('guarded', guardedTool());
   const resources = new McpResourceHandlerMap();
   const config: McpConfig = { serverName: 'test', version: '0.0.0', sessionMode: mode };
   const logger = makeLogger();
@@ -47,7 +62,7 @@ describe('McpDispatcher (stateless)', () => {
   it('lists registered tools from the memoized advertisement', async () => {
     const { dispatcher } = buildDispatcher();
     const response = await dispatcher.dispatch(rpc(1, 'tools/list'), makeContext());
-    expect(response).toMatchObject({ id: 1, result: { tools: [{ name: 'echo' }] } });
+    expect(response).toMatchObject({ id: 1, result: { tools: [{ name: 'echo' }, { name: 'guarded' }] } });
   });
 
   it('routes a tools/call to the registered handler with a per-request context', async () => {
@@ -62,6 +77,21 @@ describe('McpDispatcher (stateless)', () => {
     const authenticationSession = makeAuthenticatedSession();
     await dispatcher.dispatch(rpc(6, 'tools/call', { name: 'echo', arguments: { message: 'hi' } }), makeContext({ authenticationSession }));
     expect(tool.handle).toHaveBeenCalledWith({ message: 'hi' }, expect.objectContaining({ authenticationSession }));
+  });
+
+  it('surfaces a handler session check as a JSON-RPC error when no session is present', async () => {
+    const { dispatcher } = buildDispatcher();
+    const response = (await dispatcher.dispatch(rpc(7, 'tools/call', { name: 'guarded', arguments: {} }), makeContext())) as { error?: unknown };
+    expect(response.error).toBeDefined();
+  });
+
+  it('lets a guarded handler through when the context carries a session', async () => {
+    const { dispatcher } = buildDispatcher();
+    const response = await dispatcher.dispatch(
+      rpc(8, 'tools/call', { name: 'guarded', arguments: {} }),
+      makeContext({ authenticationSession: makeAuthenticatedSession() }),
+    );
+    expect(response).toMatchObject({ id: 8, result: { content: [{ type: 'text', text: 'user-1' }] } });
   });
 
   it('errors when calling an unregistered tool', async () => {

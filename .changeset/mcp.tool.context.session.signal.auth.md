@@ -9,3 +9,9 @@ evaluate a policy for the caller instead of relying solely on the guard mounted 
 Build the context from `ctx.requestId`, `ctx.logger`, and `ctx.authenticationSession` (Koa) or the
 same three fields on `request` (Fastify). The field is optional, so existing wiring is unchanged.
 Note it is unrelated to the MCP transport session behind `Mcp-Session-Id`.
+
+Add `requireMcpAuthenticationSession(context)`, which narrows a handler context to an authenticated
+`AuthenticationSession` or throws 401, mirroring the session check in Koa's `requirePolicy`. A tool
+generated from an operation that declares a policy calls it and then
+`PolicyService.assert(policy, { session })`, so the tool enforces the same rule as its HTTP route
+rather than relying on the guard mounted on `POST /mcp`.

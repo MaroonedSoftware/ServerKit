@@ -3,6 +3,7 @@ export * from './mcp.error.js';
 export * from './mcp.auth.js';
 export * from './mcp.auth.policy.js';
 export * from './mcp.request.context.js';
+export * from './mcp.authentication.session.js';
 export * from './mcp.tool.handler.js';
 export * from './mcp.resource.handler.js';
 export * from './mcp.server.factory.js';

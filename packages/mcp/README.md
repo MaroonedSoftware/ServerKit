@@ -28,6 +28,7 @@ pnpm add @maroonedsoftware/mcp @modelcontextprotocol/sdk
 | `McpRequestContext` / `createMcpRequestContext` | Request-scoped context threaded to handlers (request id, logger, auth info, authentication session), plus the factory that builds one from your `ctx`.           |
 | `verifyMcpBearer(input)`                        | Pure bearer-token verifier. Returns `McpAuthInfo` or throws `McpError`. **Scaffold-grade** — swap for OAuth resource-server JWT validation.                      |
 | `McpAuthPolicy`                                 | `@maroonedsoftware/policies` form of `verifyMcpBearer` (registered under `MCP_AUTH_POLICY`). Slots into koa's `requireSignature`.                                |
+| `requireMcpAuthenticationSession(context)`      | Narrows a handler context to an authenticated `AuthenticationSession`, or throws 401. Use it before evaluating a policy in a tool.                               |
 | `McpError` / `IsMcpError`                       | `ServerkitError` subclass for non-HTTP domain failures, plus its type guard.                                                                                     |
 
 ## Configuration
@@ -166,6 +167,39 @@ import { McpAuthPolicy, MCP_AUTH_POLICY } from '@maroonedsoftware/mcp';
 registry.set(MCP_AUTH_POLICY, McpAuthPolicy);
 router.post('/mcp', requireSignature<McpAuthOptions>('mcp', { policy: MCP_AUTH_POLICY }), handler);
 ```
+
+### Per-tool enforcement
+
+The guard on `POST /mcp` gates the mount, not the individual tools. Once a caller clears it, every registered tool is callable — including tools generated from operations whose HTTP routes carry a stricter policy. A tool that needs its own rule enforces it in `handle`, using the session the route put on the context:
+
+```ts
+import { PolicyService } from '@maroonedsoftware/policies';
+import { requireMcpAuthenticationSession, type McpToolContext } from '@maroonedsoftware/mcp';
+
+@Injectable()
+class RefundPaymentTool implements McpToolHandler {
+  readonly definition = {/* … */} as const;
+
+  constructor(
+    private readonly payments: PaymentsService,
+    private readonly policies: PolicyService,
+  ) {}
+
+  async handle(args: Record<string, unknown>, context: McpToolContext) {
+    const session = requireMcpAuthenticationSession(context);
+    await this.policies.assert('payments.write', { session });
+
+    const { paymentId } = await parseAndValidate(args, RefundArgs);
+    return { content: [{ type: 'text' as const, text: await this.payments.refund(paymentId) }] };
+  }
+}
+```
+
+Relationship-based checks compose the same way. Inject the `AuthorizationModel` and `PermissionsTupleRepository` from [`@maroonedsoftware/permissions`](../permissions), take the object id from the tool's own `args`, and use `session.subject` as the subject — ideally inside a policy, so the HTTP route and the tool evaluate one rule rather than two copies of it.
+
+> This needs a route that resolves an identity. The bundled `McpAuthPolicy` checks a shared token and identifies nobody, so behind it `context.authenticationSession` is unset and every check above fails closed. Run the real authentication stack (a JWT scheme handler, for instance) on the MCP route when you want per-tool enforcement.
+
+Note that an error thrown from a handler — the 401 above, or `assert`'s 403 — is returned as a JSON-RPC error inside a 200 response. The status code and `WWW-Authenticate` header do not reach the client.
 
 ## Limitations
 
