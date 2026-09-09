@@ -198,7 +198,7 @@ const parseListQueryFromUrl = (query: ServerKitContext['query'], maxResults: num
   return {
     filter: filterRaw ? parseScimFilter(filterRaw) : undefined,
     startIndex: parsePositiveInt(pickStringParam(query, 'startIndex'), 1),
-    count: clamp(parsePositiveInt(pickStringParam(query, 'count'), maxResults), 0, maxResults),
+    count: clamp(parseCount(pickStringParam(query, 'count'), maxResults), 0, maxResults),
     sortBy: pickStringParam(query, 'sortBy'),
     sortOrder: parseSortOrder(pickStringParam(query, 'sortOrder')),
     attributes: parseCsvParam(pickStringParam(query, 'attributes')),
@@ -227,6 +227,19 @@ const parseListQueryFromBody = (body: unknown, maxResults: number): ScimListQuer
 const parseSortOrder = (raw: string | undefined): ScimSortOrder | undefined => {
   if (raw === 'ascending' || raw === 'descending') return raw;
   return undefined;
+};
+
+/**
+ * Parse the `count` query parameter. RFC 7644 §3.4.2.4 gives a value below 1 its own
+ * meaning — return no resources, but still report `totalResults` — which is the probe
+ * Okta and Entra make when setting up a connection. A non-numeric or absent value
+ * falls back to the configured page size.
+ */
+const parseCount = (raw: string | undefined, fallback: number): number => {
+  if (raw === undefined) return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return n < 1 ? 0 : Math.floor(n);
 };
 
 const parsePositiveInt = (raw: string | undefined, fallback: number): number => {

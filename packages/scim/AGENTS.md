@@ -166,6 +166,10 @@ app.use(router.routes()).use(router.allowedMethods());
   Provisioning clients paginate on it, and a wrong value makes Okta or Entra loop or truncate.
 - Populate `claims.scimScopes` (a string array) when minting the bearer session, or every request
   gets a 403.
+- Honour `count: 0` by returning an empty `Resources` array with the real `totalResults`, per RFC
+  7644 §3.4.2.4. The router already parses it that way from both the query string and a `.search`
+  body; a repository that treats `0` as "unset" breaks the count probe Okta and Entra make on
+  connection setup.
 - Honour `startIndex` as **1-based**, per RFC 7644 §3.4.2.4. Off-by-one here silently skips or
   repeats the first record.
 - Apply PATCH with `applyScimPatch` rather than hand-rolling op semantics — value-path filters
@@ -229,7 +233,7 @@ Invariants a change must not break:
 - Repositories receive the **parsed AST**, never the raw filter string. That is what keeps backend
   translation the only concern a consumer has.
 - `totalResults` is the filter-matching total. Provisioning clients' pagination depends on it.
-- `startIndex` is 1-based throughout.
+- `startIndex` is 1-based throughout, and `count: 0` means "none, but tell me the total".
 - The SCIM error envelope (`ScimErrorSchema`, `scimType`, `detail`) is a wire contract with Okta,
   Entra ID, and every other provisioning client. It is not ServerKit's error shape.
 - The filter grammar and the PATCH value-path semantics follow RFC 7644. Divergence shows up as an

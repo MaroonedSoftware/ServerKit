@@ -177,6 +177,41 @@ describe('createScimRouter — integration', () => {
       expect(res.body.detail).toContain('bjensen');
     });
 
+    it('GET /Users?count=0 returns no resources but still reports totalResults', async () => {
+      // The connection-setup probe Okta and Entra make: "how many users are there?"
+      const { app } = buildApp();
+      await request(app.callback()).post('/Users').set('Content-Type', SCIM_MEDIA_TYPE).send({ userName: 'alice' });
+      await request(app.callback()).post('/Users').set('Content-Type', SCIM_MEDIA_TYPE).send({ userName: 'bob' });
+
+      const res = await request(app.callback()).get('/Users?count=0');
+
+      expect(res.status).toBe(200);
+      expect(res.body.totalResults).toBe(2);
+      expect(res.body.Resources).toEqual([]);
+      expect(res.body.itemsPerPage).toBe(0);
+    });
+
+    it('GET /Users?count=0 agrees with the same count in a .search body', async () => {
+      const { app } = buildApp();
+      await request(app.callback()).post('/Users').set('Content-Type', SCIM_MEDIA_TYPE).send({ userName: 'alice' });
+
+      const fromUrl = await request(app.callback()).get('/Users?count=0');
+      const fromBody = await request(app.callback()).post('/Users/.search').set('Content-Type', SCIM_MEDIA_TYPE).send({ count: 0 });
+
+      expect(fromUrl.body.Resources).toEqual(fromBody.body.Resources);
+      expect(fromUrl.body.totalResults).toBe(fromBody.body.totalResults);
+    });
+
+    it('GET /Users falls back to the page size for a non-numeric count', async () => {
+      const { app } = buildApp();
+      await request(app.callback()).post('/Users').set('Content-Type', SCIM_MEDIA_TYPE).send({ userName: 'alice' });
+
+      const res = await request(app.callback()).get('/Users?count=notanumber');
+
+      expect(res.status).toBe(200);
+      expect(res.body.Resources).toHaveLength(1);
+    });
+
     it('POST /Users 400 names the missing required attribute', async () => {
       const { app } = buildApp();
       const res = await request(app.callback()).post('/Users').set('Content-Type', SCIM_MEDIA_TYPE).send({});
