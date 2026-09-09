@@ -400,8 +400,10 @@ const factor = await emailFactors.createEmailFactorFromRegistration(user.id, reg
 
 // --- Challenge (sign-in) ---
 
-// Step 1: send a challenge. Idempotent — `alreadyIssued` is true when a pending
-// challenge was already cached, so the caller can skip re-sending the email.
+// Step 1: send a challenge. Idempotent per method — `alreadyIssued` is true when a
+// pending challenge of *this* method was already cached, so the caller can skip
+// re-sending the email. Each method has its own slot, so an OTP and a magic link can
+// be pending for the same factor at once and neither shadows the other.
 const { email, challengeId, code, alreadyIssued } = await emailFactors.issueEmailChallenge(user.id, factor.id, 'code');
 if (!alreadyIssued) {
   await mailer.sendOtp(email, code);
@@ -409,7 +411,10 @@ if (!alreadyIssued) {
 
 // Step 2: user submits the code. Returns the verified factor; throws 401 if the
 // factor has been deleted or deactivated since the challenge was issued.
-const verifiedFactor = await emailFactors.verifyEmailChallenge(challengeId, submittedCode);
+// Pass the expected method on a route that serves only one flow — a magic link
+// callback, say — and a challenge issued under the other method is refused with a
+// 404 before the code is checked, without consuming a verification attempt.
+const verifiedFactor = await emailFactors.verifyEmailChallenge(challengeId, submittedCode, 'code');
 ```
 
 `registerEmailFactor` rejects the request before issuing a code when:
@@ -807,6 +812,8 @@ if (started.method === 'phone' && !started.alreadyIssued) {
 
 // When the client submits the proof:
 const completed = await mfaOrchestrator.completeMfa(mfaChallengeId, { method: 'phone', challengeId: 'phone-chal-1', code: '123456' });
+// An email proof also accepts an optional `issueMethod` ('code' or 'magiclink'), forwarded to
+// `verifyEmailChallenge` so a route serving one flow refuses the other method's challenge.
 // completed.actor, completed.primaryFactor, completed.secondaryFactor — mint the final session yourself.
 const session = await sessionService.createSession(completed.actor.actorId, { role: user.role }, [
   completed.primaryFactor,
@@ -988,6 +995,8 @@ const verified = await recoveryOrchestrator.verifyChannel(challengeId, {
   channel: 'email',
   channelChallengeId: issued.challengeId,
   code: input.code,
+  // Optional: refuse a challenge issued under the other email method with a 404.
+  issueMethod: 'code',
 });
 // verified.recoverySessionToken is opaque, single-use, and 10-minute TTL.
 
@@ -1317,14 +1326,14 @@ Abstract base class. Extends `FactorRepository<PasswordFactor, PasswordValue>` f
 
 ### `EmailFactorService`
 
-| Method                                                             | Returns                                                                                                  | Description                                                                                                                                                 |
-| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `registerEmailFactor(value, verificationMethod, registrationId?)`  | `Promise<{ registrationId, code, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>` | Initiate email factor registration (idempotent — `alreadyRegistered` is `true` on a cache hit)                                                              |
-| `createEmailFactorFromRegistration(actorId, registrationId, code)` | `Promise<EmailFactor>`                                                                                   | Complete registration                                                                                                                                       |
-| `hasPendingRegistration(registrationId)`                           | `Promise<boolean>`                                                                                       | Check whether a registration is still cached and unexpired                                                                                                  |
-| `issueEmailChallenge(actorId, factorId, issueMethod)`              | `Promise<{ email, challengeId, code, expiresAt: DateTime, issuedAt: DateTime, alreadyIssued: boolean }>` | Initiate a sign-in challenge (idempotent — `alreadyIssued` is `true` on a cache hit)                                                                        |
-| `verifyEmailChallenge(challengeId, code)`                          | `Promise<EmailFactor>`                                                                                   | Complete a sign-in challenge; re-checks the factor is active and returns it (HTTP 401 if it has been deleted or deactivated since the challenge was issued) |
-| `hasPendingChallenge(challengeId)`                                 | `Promise<boolean>`                                                                                       | Check whether a challenge is still cached and unexpired                                                                                                     |
+| Method                                                             | Returns                                                                                                  | Description                                                                                                                                                                                                                                            |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `registerEmailFactor(value, verificationMethod, registrationId?)`  | `Promise<{ registrationId, code, expiresAt: DateTime, issuedAt: DateTime, alreadyRegistered: boolean }>` | Initiate email factor registration (idempotent — `alreadyRegistered` is `true` on a cache hit)                                                                                                                                                         |
+| `createEmailFactorFromRegistration(actorId, registrationId, code)` | `Promise<EmailFactor>`                                                                                   | Complete registration                                                                                                                                                                                                                                  |
+| `hasPendingRegistration(registrationId)`                           | `Promise<boolean>`                                                                                       | Check whether a registration is still cached and unexpired                                                                                                                                                                                             |
+| `issueEmailChallenge(actorId, factorId, issueMethod)`              | `Promise<{ email, challengeId, code, expiresAt: DateTime, issuedAt: DateTime, alreadyIssued: boolean }>` | Initiate a sign-in challenge (idempotent per method — `alreadyIssued` is `true` on a cache hit for that same `issueMethod`)                                                                                                                            |
+| `verifyEmailChallenge(challengeId, code, method?)`                 | `Promise<EmailFactor>`                                                                                   | Complete a sign-in challenge; re-checks the factor is active and returns it (HTTP 401 if it has been deleted or deactivated since the challenge was issued). Pass `method` to refuse a challenge issued under the other verification method with a 404 |
+| `hasPendingChallenge(challengeId)`                                 | `Promise<boolean>`                                                                                       | Check whether a challenge is still cached and unexpired                                                                                                                                                                                                |
 
 `EmailFactorServiceOptions`:
 
