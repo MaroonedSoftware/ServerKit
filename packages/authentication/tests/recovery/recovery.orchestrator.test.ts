@@ -289,6 +289,49 @@ describe('RecoveryOrchestrator', () => {
         orchestrator.verifyChannel(initiated.challengeId, { channel: 'phone', channelChallengeId: 'phone-chal-1', code: '654321' }),
       ).rejects.toMatchObject({ statusCode: 400 });
     });
+
+    it('rejects a channel challenge id this recovery challenge did not issue', async () => {
+      // Cross-account takeover: the attacker initiates recovery against the victim's
+      // identifier, then submits a sub-challenge id minted against their own factor.
+      const { orchestrator, emailFactor } = makeOrchestrator();
+      const initiated = await orchestrator.initiateRecovery({ identifier: { kind: 'email', value: 'user@example.com' }, reason: 'password_reset' });
+      await orchestrator.issueChannelChallenge(initiated.challengeId, { channel: 'email', methodId: 'email-1' });
+
+      await expect(
+        orchestrator.verifyChannel(initiated.challengeId, { channel: 'email', channelChallengeId: 'attacker-chal-9', code: '123456' }),
+      ).rejects.toMatchObject({ statusCode: 400 });
+
+      // The proof was never handed to the factor service, so no session could be minted.
+      expect(emailFactor.verifyEmailChallenge).not.toHaveBeenCalled();
+    });
+
+    it('rejects a proof when no channel challenge has been issued yet', async () => {
+      const { orchestrator, emailFactor } = makeOrchestrator();
+      const initiated = await orchestrator.initiateRecovery({ actorId: actor.actorId, reason: 'password_reset' });
+
+      await expect(
+        orchestrator.verifyChannel(initiated.challengeId, { channel: 'email', channelChallengeId: 'email-chal-1', code: '123456' }),
+      ).rejects.toMatchObject({ statusCode: 400 });
+      expect(emailFactor.verifyEmailChallenge).not.toHaveBeenCalled();
+    });
+
+    it('rejects when the verified factor is not on the challenge eligible list', async () => {
+      const { orchestrator, emailFactor } = makeOrchestrator();
+      const initiated = await orchestrator.initiateRecovery({ actorId: actor.actorId, reason: 'password_reset' });
+      await orchestrator.issueChannelChallenge(initiated.challengeId, { channel: 'email', methodId: 'email-1' });
+
+      // The factor service resolves the sub-challenge to a factor that was never eligible.
+      vi.mocked(emailFactor.verifyEmailChallenge).mockResolvedValueOnce({
+        id: 'email-99',
+        actorId: actor.actorId,
+        active: true,
+        value: 'other@example.com',
+      } as Awaited<ReturnType<EmailFactorService['verifyEmailChallenge']>>);
+
+      await expect(
+        orchestrator.verifyChannel(initiated.challengeId, { channel: 'email', channelChallengeId: 'email-chal-1', code: '123456' }),
+      ).rejects.toMatchObject({ statusCode: 400 });
+    });
   });
 
   describe('completeRecovery', () => {

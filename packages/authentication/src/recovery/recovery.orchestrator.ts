@@ -272,9 +272,17 @@ export class RecoveryOrchestrator {
    * recovery challenge is redeemed (single-use) and a recovery session is
    * minted whose `grantedActions` are derived from the original `reason`.
    *
+   * The proof is bound to the parent challenge two ways: for `email` / `phone` the
+   * `channelChallengeId` must be the one {@link issueChannelChallenge} stitched on, and
+   * the factor the proof resolves to must appear in the challenge's `eligibleChannels`.
+   * Both are required so a sub-challenge issued against another account cannot be
+   * redeemed here.
+   *
    * @throws HTTP 404 when the recovery challenge has expired or does not exist, or when an
    *   email proof carries an `issueMethod` the underlying channel challenge was not issued under.
-   * @throws HTTP 400 when the proof's channel doesn't match the selected channel.
+   * @throws HTTP 400 when the proof's channel doesn't match the selected channel, when the
+   *   proof's `channelChallengeId` is not the one this challenge issued, or when the verified
+   *   factor is not on the challenge's eligible list.
    * @throws Whatever the per-factor `verify*` call throws when the proof is invalid.
    */
   async verifyChannel<K extends string = string>(challengeId: string, proof: RecoveryProof): Promise<VerifyChannelResult> {
@@ -289,7 +297,29 @@ export class RecoveryOrchestrator {
       throw httpError(400).withDetails({ channel: 'does not match the selected channel' });
     }
 
+    // The proof must name the very sub-challenge this recovery challenge issued.
+    // Without this gate, a sub-challenge issued against the attacker's own email or
+    // phone factor could be redeemed against a parent challenge bound to a different
+    // actor, minting that actor's recovery session.
+    if (proof.channel !== 'recoveryCode') {
+      if (!challenge.channelChallengeId) {
+        throw httpError(400).withDetails({ channelChallengeId: 'no channel challenge has been issued for this recovery challenge' });
+      }
+      if (proof.channelChallengeId !== challenge.channelChallengeId) {
+        throw httpError(400).withDetails({ channelChallengeId: 'does not match the issued channel challenge' });
+      }
+    }
+
     const verifiedVia: { channel: RecoveryChannel; methodId?: string } = await this.verifyProof(challenge.actor.actorId, proof);
+
+    // Defence in depth, mirroring `MfaOrchestrator.completeMfa`: the factor the proof
+    // resolved to has to be one this challenge listed as eligible for its own actor.
+    const matchesEligible = challenge.eligibleChannels.some(
+      c => c.channel === verifiedVia.channel && (c.channel === 'recoveryCode' || c.methodId === verifiedVia.methodId),
+    );
+    if (!matchesEligible) {
+      throw httpError(400).withDetails({ channel: 'not eligible for this challenge' });
+    }
 
     await this.challengeService.redeem(challengeId);
 
