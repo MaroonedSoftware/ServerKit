@@ -197,6 +197,18 @@ default off the route path — a `@maroonedsoftware/mcp` tool passing it to `req
 | `formatApiKeyToken`, `parseApiKeyToken`, `hashApiKeyToken`, `apiKeyHint` | functions      | `{prefix}_{type}_{body}{crc32}`. Parse is checksum-verified and does no I/O.            |
 | `encodeBase62`, `crc32`                                                  | functions      | Pure codec pieces. `encodeBase62` pads to a constant width — see Gotchas.               |
 
+### Audit (`src/audit/`)
+
+| Export                                                      | Kind           | Notes                                                                                       |
+| ----------------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------- |
+| `AuditSink`                                                 | abstract class | The consumer's seam. `record(event)`. Unbound, nothing is recorded.                         |
+| `AuditRecorder` (+ `AuditOptions`)                          | class          | Stamps `occurredAt` and applies the failure policy. Services inject **this**, not the sink. |
+| `NoopAuditSink`, `LoggingAuditSink`, `CompositeAuditSink`   | classes        | Composite offers the event to every member, then rethrows what failed.                      |
+| `AuditEvent`, `AuthenticationAuditEvent`, `AuditEventInput` | types          | `AuditEvent<TType, TData>` is how a domain declares its events.                             |
+| `AuditEventBase`, `AuditEventContext`                       | interfaces     | `context` is filled by the app's sink, never by this package. See Gotchas.                  |
+| `AuditEventCategory`, `AuditOutcome`                        | types          | `'failure'` always means a credential verdict, never an infrastructure fault.               |
+| `AUDIT_SINK_FAILED_EVENT`                                   | constant       | Logged when a sink throws outside strict mode. **Alert on it.**                             |
+
 ### Helpers (`src/helpers.ts`)
 
 | Export                     | Kind     | Shape                                                                               | Notes                                                   |
@@ -315,8 +327,10 @@ const session = await sessions.createSession(completed.actor.id, claims, complet
   `AuthenticationSessionService` was passed to the constructor (bind it in DI and this is the
   default). Construct the orchestrator without one and prior tokens keep working until the caller
   revokes them.
-- Register `AuthenticationSessionHooks` for audit and alerting rather than wrapping the service.
-  Wire `onRefreshReuseDetected` to a real alert — it is a token-theft signal.
+- **Bind an `AuditSink` for audit.** It covers the whole package, carries a common envelope, and
+  attributes an `actorId` the session hooks cannot. `AuthenticationSessionHooks` is the deprecated
+  predecessor and still fires; wire `onRefreshReuseDetected` to a real alert either way, since it is
+  a token-theft signal.
 - Spread `AuthenticationPolicyMappings` into your `PolicyRegistryMap` rather than listing eleven
   bindings, and intersect `AuthenticationPolicyContexts` into your `Policies` type.
 - Use `requirePolicy()` from `@maroonedsoftware/koa` on routes rather than reading
@@ -348,9 +362,20 @@ const session = await sessions.createSession(completed.actor.id, claims, complet
 - **`ensureStrength` requires a score of 3 or higher** out of 4. That is stricter than many products
   expect and it throws rather than returning a result.
 - **Hooks are fire-and-forget from the caller's perspective.** They run after the cache commits, are
-  awaited sequentially, and their errors are logged but never propagated — deliberately, so a
-  failing audit sink cannot break login. A hook that silently fails is invisible unless you watch
-  logs.
+  awaited sequentially, and their errors are logged but never propagated. A hook that silently fails
+  is invisible unless you watch logs.
+- **An audit sink failure is swallowed by default, but it is logged.** `AuditRecorder` catches, logs
+  `AUDIT_SINK_FAILED_EVENT` at `error`, and lets the operation continue, so an audit store outage
+  cannot become a login outage. Alert on that event or the outage is invisible. `AuditOptions.strict`
+  inverts it: a sink failure aborts the operation, which is what some compliance regimes require and
+  which makes a sink outage a login outage. Choose deliberately.
+- **The package never fills `AuditEventContext`.** It sits at L2 alongside the HTTP adapters, so it
+  cannot reach a request. Fill `correlationId`, `ipAddress`, and the rest in your own request-scoped
+  sink.
+- **`outcome: 'failure'` is always a credential verdict.** Events are emitted at the decision point,
+  never from a catch block, so a cache outage or a mailer 503 produces no event rather than a false
+  failure. Keep it that way when adding one: an operator's audit feed must not fill with their own
+  downtime.
 - **`FactorRepository.findFactor` is optional.** A service path that needs global lookup against a
   repository that did not implement it fails at runtime, not at compile time.
 - **Recovery deliberately cannot be used to probe for account existence.** An unknown identifier
@@ -400,6 +425,7 @@ src/
                                   support.verification.code.service
   apikey/                         types, api.key.token (codec), api.key.repository,
                                   api.key.service, api.key.authentication.handler
+  audit/                          types, audit.sink, audit.recorder
   index.ts                        Barrel
 ```
 

@@ -18,6 +18,7 @@ pnpm add @maroonedsoftware/authentication
 - **Built-in Basic support** — `BasicAuthenticationHandler` and `BasicAuthenticationIssuer` for username/password flows
 - **Handler chaining** — `ChainedAuthenticationHandler` puts several handlers on one scheme, so `Bearer` can carry both a session JWT and a service's static token
 - **API keys** — revocable, expiring, scoped machine credentials via `ApiKeyService`, with GitHub-style checksummed tokens that a malformed credential fails before any storage read
+- **Audit logging** — bind one `AuditSink` and receive a typed, enveloped event for every security-relevant operation: login success, login failure, credential change, privilege change
 - **OTP/TOTP** — RFC 4226/6238 compliant HOTP and TOTP generation and validation, plus `otpauth://` URI generation for QR codes
 - **Password strength** — zxcvbn-ts powered strength checking with HaveIBeenPwned integration
 - **Password factors** — strength-validated, PBKDF2-hashed, rate-limited password factor lifecycle via `PasswordFactorService`

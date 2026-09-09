@@ -64,4 +64,7 @@ export * from './apikey/api.key.token.js';
 export * from './apikey/api.key.repository.js';
 export * from './apikey/api.key.service.js';
 export * from './apikey/api.key.authentication.handler.js';
+export * from './audit/types.js';
+export * from './audit/audit.sink.js';
+export * from './audit/audit.recorder.js';
 export * from './helpers.js';
