@@ -340,7 +340,7 @@ describe('EmailFactorService', () => {
       expect(result.alreadyIssued).toBe(false);
     });
 
-    it('caches the challenge payload under both the challenge id and actor+factor keys', async () => {
+    it('caches the challenge payload under both the challenge id and the actor+factor+method slot key', async () => {
       repo.getFactor = vi.fn().mockResolvedValue(makeEmailFactor());
 
       await service.issueEmailChallenge('actor-1', 'factor-1', 'code');
@@ -353,7 +353,7 @@ describe('EmailFactorService', () => {
       const payload = JSON.parse(payloadJson as string);
       expect(payload.actorId).toBe('actor-1');
       expect(payload.factorId).toBe('factor-1');
-      expect(secondCall![0]).toBe('email_factor_challenge_actor-1_factor-1');
+      expect(secondCall![0]).toBe('email_factor_challenge_actor-1_factor-1_code');
     });
 
     it('returns the existing pending challenge with alreadyIssued=true when one is cached', async () => {
@@ -463,7 +463,7 @@ describe('EmailFactorService', () => {
       await service.verifyEmailChallenge('chal-id-1', '123456');
 
       expect(cache.delete).toHaveBeenCalledWith('email_factor_challenge_chal-id-1');
-      expect(cache.delete).toHaveBeenCalledWith('email_factor_challenge_actor-1_factor-1');
+      expect(cache.delete).toHaveBeenCalledWith('email_factor_challenge_actor-1_factor-1_code');
     });
 
     it('increments the attempt counter and persists it after a failed verification', async () => {
