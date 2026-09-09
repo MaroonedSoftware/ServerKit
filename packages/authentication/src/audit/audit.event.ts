@@ -1,4 +1,5 @@
 import type { ApiKeyAuditEvent } from './api.key.audit.event.js';
+import type { AuthenticatorAuditEvent, EmailAuditEvent, PhoneAuditEvent } from './factor.audit.event.js';
 import type { MfaAuditEvent } from './mfa.audit.event.js';
 import type { PasswordAuditEvent } from './password.audit.event.js';
 import type { RecoveryAuditEvent } from './recovery.audit.event.js';
@@ -11,7 +12,15 @@ import type { SessionAuditEvent } from './session.audit.event.js';
  * keep a `default` branch: a minor release may add a member, and an event you do
  * not recognise is still worth filing.
  */
-export type AuthenticationAuditEvent = SessionAuditEvent | ApiKeyAuditEvent | PasswordAuditEvent | MfaAuditEvent | RecoveryAuditEvent;
+export type AuthenticationAuditEvent =
+  | SessionAuditEvent
+  | ApiKeyAuditEvent
+  | PasswordAuditEvent
+  | EmailAuditEvent
+  | PhoneAuditEvent
+  | AuthenticatorAuditEvent
+  | MfaAuditEvent
+  | RecoveryAuditEvent;
 
 /** `Omit` that distributes across a union instead of collapsing it to its common keys. */
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;

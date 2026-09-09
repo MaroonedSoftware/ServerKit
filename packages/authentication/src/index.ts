@@ -68,6 +68,7 @@ export * from './audit/types.js';
 export * from './audit/session.audit.event.js';
 export * from './audit/api.key.audit.event.js';
 export * from './audit/password.audit.event.js';
+export * from './audit/factor.audit.event.js';
 export * from './audit/mfa.audit.event.js';
 export * from './audit/recovery.audit.event.js';
 export * from './audit/audit.event.js';

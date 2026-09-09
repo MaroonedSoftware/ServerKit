@@ -3,6 +3,8 @@ import { DateTime, Duration } from 'luxon';
 import { Injectable } from 'injectkit';
 import { httpError, unauthorizedError } from '@maroonedsoftware/errors';
 import { CacheProvider } from '@maroonedsoftware/cache';
+import { AuditRecorder } from '../../audit/audit.recorder.js';
+import type { ChallengeFailureReason } from '../../audit/factor.audit.event.js';
 import { PhoneFactorRepository } from './phone.factor.repository.js';
 import { PolicyService } from '@maroonedsoftware/policies';
 import { OtpProvider } from '../../providers/otp.provider.js';
@@ -80,7 +82,31 @@ export class PhoneFactorService {
     private readonly otpProvider: OtpProvider,
     private readonly cache: CacheProvider,
     private readonly policyService: PolicyService,
+    /** Records challenge outcomes and factor changes. Defaulted, so audit is opt-in. */
+    private readonly audit: AuditRecorder = new AuditRecorder(),
   ) {}
+
+  /** Record a dispatched challenge. Never carries the code the response holds. */
+  private async auditChallengeIssued(actorId: string, factorId: string, alreadyIssued: boolean) {
+    await this.audit.record({
+      type: 'phone.challenge.issued',
+      category: 'login',
+      outcome: 'success',
+      actorId,
+      data: { factorId, alreadyIssued },
+    });
+  }
+
+  /** Record a refused challenge. Never carries the code the response holds. */
+  private async auditChallengeFailed(reason: ChallengeFailureReason, actorId?: string, factorId?: string) {
+    await this.audit.record({
+      type: 'phone.challenge.failed',
+      category: 'login',
+      outcome: 'failure',
+      ...(actorId === undefined ? {} : { actorId }),
+      data: { reason, ...(factorId === undefined ? {} : { factorId }) },
+    });
+  }
 
   private getChallengeKey(key: string) {
     return `phone_factor_challenge_${key}`;
@@ -268,6 +294,8 @@ export class PhoneFactorService {
     await this.cache.delete(this.getRegistrationKey(registrationId));
     await this.cache.delete(this.getRegistrationKey(payload.value));
 
+    await this.audit.record({ type: 'phone.factor.created', category: 'credential', outcome: 'success', actorId, data: { factorId: factor.id } });
+
     return factor;
   }
 
@@ -300,6 +328,7 @@ export class PhoneFactorService {
 
     const existingChallenge = await this.lookupChallengeByActorAndFactor(actorId, factorId);
     if (existingChallenge) {
+      await this.auditChallengeIssued(actorId, factorId, true);
       return {
         phone,
         challengeId: existingChallenge.id,
@@ -316,6 +345,8 @@ export class PhoneFactorService {
     payload.factorId = factorId;
 
     const challengeId = await this.cacheChallenge(payload, expiration);
+
+    await this.auditChallengeIssued(actorId, factorId, false);
 
     return { phone, challengeId, code: payload.code, expiresAt, issuedAt, alreadyIssued: false };
   }
@@ -341,23 +372,34 @@ export class PhoneFactorService {
   async verifyPhoneChallenge(challengeId: string, code: string) {
     const payload = await this.lookupChallenge(challengeId);
     if (!payload) {
+      await this.auditChallengeFailed('challenge_not_found');
       throw httpError(404).withDetails({ challengeId: 'not found' });
     }
 
     const factor = await this.phoneFactorRepository.getFactor(payload.actorId, payload.factorId);
     if (!factor || !factor.active) {
+      await this.auditChallengeFailed('no_active_factor', payload.actorId, payload.factorId);
       throw unauthorizedError('Bearer error="invalid_factor"');
     }
 
     try {
       this.verifyPayload(payload, code);
     } catch (error) {
+      await this.auditChallengeFailed('invalid_code', payload.actorId, payload.factorId);
       await this.recordFailedAttempt(challengeId, payload);
       throw error;
     }
 
     await this.cache.delete(this.getChallengeKey(challengeId));
     await this.cache.delete(this.getChallengeKey(`${payload.actorId}_${payload.factorId}`));
+
+    await this.audit.record({
+      type: 'phone.challenge.verified',
+      category: 'login',
+      outcome: 'success',
+      actorId: payload.actorId,
+      data: { factorId: factor.id },
+    });
 
     return factor;
   }
@@ -378,6 +420,13 @@ export class PhoneFactorService {
     if (attempts >= maxAttempts) {
       await this.cache.delete(this.getChallengeKey(challengeId));
       await this.cache.delete(this.getChallengeKey(`${payload.actorId}_${payload.factorId}`));
+      await this.audit.record({
+        type: 'phone.challenge.locked',
+        category: 'login',
+        outcome: 'failure',
+        actorId: payload.actorId,
+        data: { factorId: payload.factorId, attempts },
+      });
       throw httpError(429).withDetails({ code: 'too many attempts' });
     }
 
@@ -429,5 +478,6 @@ export class PhoneFactorService {
   /** Permanently remove a phone factor. */
   async deleteFactor(actorId: string, factorId: string) {
     await this.phoneFactorRepository.deleteFactor(actorId, factorId);
+    await this.audit.record({ type: 'phone.factor.deleted', category: 'credential', outcome: 'success', actorId, data: { factorId } });
   }
 }

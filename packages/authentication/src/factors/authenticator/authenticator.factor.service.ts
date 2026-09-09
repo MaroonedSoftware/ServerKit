@@ -1,6 +1,7 @@
 import { Injectable } from 'injectkit';
 import { toDataURL } from 'qrcode';
 import { type OtpOptions, OtpProvider } from '../../providers/otp.provider.js';
+import { AuditRecorder } from '../../audit/audit.recorder.js';
 import { type AuthenticatorFactor, AuthenticatorFactorRepository } from './authenticator.factor.repository.js';
 import { httpError, unauthorizedError } from '@maroonedsoftware/errors';
 import { EncryptionProvider } from '@maroonedsoftware/encryption';
@@ -80,6 +81,8 @@ export class AuthenticatorFactorService {
     private readonly authenticatorFactorRepository: AuthenticatorFactorRepository,
     private readonly encryptionProvider: EncryptionProvider,
     private readonly cache: CacheProvider,
+    /** Records enrolment and validation outcomes. Defaulted, so audit is opt-in. */
+    private readonly audit: AuditRecorder = new AuditRecorder(),
   ) {}
 
   private getRegistrationKey(key: string) {
@@ -186,6 +189,17 @@ export class AuthenticatorFactorService {
 
     registrationId = await this.cacheRegistration(payload, this.options.registrationExpiration);
 
+    // The secret is provisioned but not yet a live factor, so this is not an
+    // enrolment. Never record the secret, the URI, or the QR code: all three
+    // carry it.
+    await this.audit.record({
+      type: 'authenticator.registered',
+      category: 'credential',
+      outcome: 'success',
+      actorId,
+      data: { ...(label === undefined ? {} : { label }) },
+    });
+
     return { registrationId, secret, uri, qrCode, expiresAt, issuedAt, alreadyRegistered: false };
   }
 
@@ -230,6 +244,16 @@ export class AuthenticatorFactorService {
     await this.cache.delete(this.getRegistrationKey(registrationId));
     await this.cache.delete(this.getRegistrationKey(payload.actorId));
 
+    // `privilege`: a new second factor raises the assurance every future session
+    // can reach.
+    await this.audit.record({
+      type: 'authenticator.enrolled',
+      category: 'privilege',
+      outcome: 'success',
+      actorId,
+      data: { factorId: factor.id, ...(payload.label === undefined ? {} : { label: payload.label }) },
+    });
+
     return factor;
   }
 
@@ -270,6 +294,13 @@ export class AuthenticatorFactorService {
   async validateFactor(actorId: string, factorId: string, code: string) {
     const factor = await this.authenticatorFactorRepository.getFactor(actorId, factorId);
     if (!factor || !factor.active) {
+      await this.audit.record({
+        type: 'authenticator.validation.failed',
+        category: 'login',
+        outcome: 'failure',
+        actorId,
+        data: { factorId, reason: 'no_active_factor' },
+      });
       throw unauthorizedError('Bearer error="invalid_factor"');
     }
 
@@ -279,6 +310,7 @@ export class AuthenticatorFactorService {
     const attempts = cachedAttempts ? Number(cachedAttempts) : 0;
 
     if (attempts >= maxAttempts) {
+      await this.audit.record({ type: 'authenticator.validation.rate_limited', category: 'login', outcome: 'failure', actorId, data: { factorId } });
       throw httpError(429).withDetails({ code: 'too many attempts' });
     }
 
@@ -288,6 +320,13 @@ export class AuthenticatorFactorService {
     if (matchedCounter === undefined) {
       const window = this.options.validationAttemptWindow ?? DEFAULT_VALIDATION_ATTEMPT_WINDOW;
       await this.cache.set(attemptKey, String(attempts + 1), window);
+      await this.audit.record({
+        type: 'authenticator.validation.failed',
+        category: 'login',
+        outcome: 'failure',
+        actorId,
+        data: { factorId, reason: 'invalid_code' },
+      });
       throw unauthorizedError('Bearer error="invalid_code"');
     }
 
@@ -304,11 +343,16 @@ export class AuthenticatorFactorService {
       if (!claimed) {
         const window = this.options.validationAttemptWindow ?? DEFAULT_VALIDATION_ATTEMPT_WINDOW;
         await this.cache.set(attemptKey, String(attempts + 1), window);
+        // Its own event, not an invalid_code: a correct-but-replayed code means
+        // someone observed a valid one, which is interception rather than a typo.
+        await this.audit.record({ type: 'authenticator.validation.replayed', category: 'login', outcome: 'failure', actorId, data: { factorId } });
         throw unauthorizedError('Bearer error="invalid_code"');
       }
     }
 
     await this.cache.delete(attemptKey);
+
+    await this.audit.record({ type: 'authenticator.validated', category: 'login', outcome: 'success', actorId, data: { factorId } });
 
     return factor;
   }
@@ -346,5 +390,8 @@ export class AuthenticatorFactorService {
    */
   async deleteFactor(actorId: string, factorId: string) {
     await this.authenticatorFactorRepository.deleteFactor(actorId, factorId);
+    // An auditor cares about an MFA factor disappearing at least as much as one
+    // appearing.
+    await this.audit.record({ type: 'authenticator.factor.deleted', category: 'privilege', outcome: 'success', actorId, data: { factorId } });
   }
 }

@@ -4,6 +4,8 @@ import { DateTime, Duration } from 'luxon';
 import { OtpProvider } from '../../providers/otp.provider.js';
 import { httpError, unauthorizedError } from '@maroonedsoftware/errors';
 import { CacheProvider } from '@maroonedsoftware/cache';
+import { AuditRecorder } from '../../audit/audit.recorder.js';
+import type { ChallengeFailureReason } from '../../audit/factor.audit.event.js';
 import { EmailFactorRepository } from './email.factor.repository.js';
 import { PolicyService } from '@maroonedsoftware/policies';
 import { timingSafeCompare } from '../../helpers.js';
@@ -72,7 +74,31 @@ export class EmailFactorService {
     private readonly otpProvider: OtpProvider,
     private readonly cache: CacheProvider,
     private readonly policyService: PolicyService,
+    /** Records challenge outcomes and factor changes. Defaulted, so audit is opt-in. */
+    private readonly audit: AuditRecorder = new AuditRecorder(),
   ) {}
+
+  /** Record a dispatched challenge. Never carries the code or the magic-link token. */
+  private async auditChallengeIssued(actorId: string, factorId: string, issueMethod: 'code' | 'magiclink', alreadyIssued: boolean) {
+    await this.audit.record({
+      type: 'email.challenge.issued',
+      category: 'login',
+      outcome: 'success',
+      actorId,
+      data: { factorId, issueMethod, alreadyIssued },
+    });
+  }
+
+  /** Record a refused challenge. Never carries the code or the magic-link token. */
+  private async auditChallengeFailed(reason: ChallengeFailureReason, actorId?: string, factorId?: string) {
+    await this.audit.record({
+      type: 'email.challenge.failed',
+      category: 'login',
+      outcome: 'failure',
+      ...(actorId === undefined ? {} : { actorId }),
+      data: { reason, ...(factorId === undefined ? {} : { factorId }) },
+    });
+  }
 
   private getChallengeKey(key: string) {
     return `email_factor_challenge_${key}`;
@@ -306,6 +332,14 @@ export class EmailFactorService {
     await this.cache.delete(this.getRegistrationKey(registrationId));
     await this.cache.delete(this.getRegistrationKey(payload.value));
 
+    await this.audit.record({
+      type: 'email.factor.created',
+      category: 'credential',
+      outcome: 'success',
+      actorId,
+      data: { factorId: factor.id },
+    });
+
     return factor;
   }
 
@@ -343,6 +377,7 @@ export class EmailFactorService {
 
     const existingChallenge = await this.lookupChallengeByActorAndFactor(actorId, factorId, issueMethod);
     if (existingChallenge) {
+      await this.auditChallengeIssued(actorId, factorId, issueMethod, true);
       return {
         email,
         challengeId: existingChallenge.id,
@@ -359,6 +394,8 @@ export class EmailFactorService {
     payload.factorId = factorId;
 
     const challengeId = await this.cacheChallenge(payload, expiration);
+
+    await this.auditChallengeIssued(actorId, factorId, issueMethod, false);
 
     return { email, challengeId, code: payload.code, expiresAt, issuedAt, alreadyIssued: false };
   }
@@ -391,29 +428,43 @@ export class EmailFactorService {
   async verifyEmailChallenge(challengeId: string, code: string, method?: 'code' | 'magiclink') {
     const payload = await this.lookupChallenge(challengeId);
     if (!payload) {
+      await this.auditChallengeFailed('challenge_not_found');
       throw httpError(404).withDetails({ challengeId: 'not found' });
     }
 
     // A method mismatch is reported as a miss, and checked before the factor lookup and the
     // code check, so a cross-method probe neither burns an attempt nor reveals factor state.
     if (method && payload.verificationMethod !== method) {
+      // Recorded under its real reason even though the caller is told "not found":
+      // the anti-probing lie is for the client, not for the audit trail.
+      await this.auditChallengeFailed('method_mismatch', payload.actorId, payload.factorId);
       throw httpError(404).withDetails({ challengeId: 'not found' });
     }
 
     const factor = await this.emailFactorRepository.getFactor(payload.actorId, payload.factorId);
     if (!factor || !factor.active) {
+      await this.auditChallengeFailed('no_active_factor', payload.actorId, payload.factorId);
       throw unauthorizedError('Bearer error="invalid_factor"');
     }
 
     try {
       this.verifyPayload(payload, code);
     } catch (error) {
+      await this.auditChallengeFailed('invalid_code', payload.actorId, payload.factorId);
       await this.recordFailedAttempt(challengeId, payload);
       throw error;
     }
 
     await this.cache.delete(this.getChallengeKey(challengeId));
     await this.cache.delete(this.getChallengeSlotKey(payload.actorId, payload.factorId, payload.verificationMethod));
+
+    await this.audit.record({
+      type: 'email.challenge.verified',
+      category: 'login',
+      outcome: 'success',
+      actorId: payload.actorId,
+      data: { factorId: factor.id, issueMethod: payload.verificationMethod },
+    });
 
     return factor;
   }
@@ -434,6 +485,15 @@ export class EmailFactorService {
     if (attempts >= maxAttempts) {
       await this.cache.delete(this.getChallengeKey(challengeId));
       await this.cache.delete(this.getChallengeSlotKey(payload.actorId, payload.factorId, payload.verificationMethod));
+      // Brute force against a six-digit code, and the challenge is destroyed
+      // rather than merely refused.
+      await this.audit.record({
+        type: 'email.challenge.locked',
+        category: 'login',
+        outcome: 'failure',
+        actorId: payload.actorId,
+        data: { factorId: payload.factorId, attempts },
+      });
       throw httpError(429).withDetails({ code: 'too many attempts' });
     }
 
@@ -481,7 +541,16 @@ export class EmailFactorService {
 
     await this.ensureEmailAllowed(value);
 
-    return this.emailFactorRepository.createFactor(actorId, value);
+    const factor = await this.emailFactorRepository.createFactor(actorId, value);
+    await this.audit.record({
+      type: 'email.factor.created',
+      category: 'credential',
+      outcome: 'success',
+      actorId,
+      data: { factorId: factor.id },
+    });
+
+    return factor;
   }
 
   /** Check whether registration is gated by an invite for the given domain. Domain is normalized (trimmed and lowercased). */
@@ -508,6 +577,9 @@ export class EmailFactorService {
 
   /** Permanently remove an email factor. */
   async deleteFactor(actorId: string, factorId: string) {
-    return await this.emailFactorRepository.deleteFactor(actorId, factorId);
+    const result = await this.emailFactorRepository.deleteFactor(actorId, factorId);
+    await this.audit.record({ type: 'email.factor.deleted', category: 'credential', outcome: 'success', actorId, data: { factorId } });
+
+    return result;
   }
 }

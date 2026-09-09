@@ -56,6 +56,29 @@ const categoryFor = (type: AuthenticationAuditEvent['type']): AuditEventCategory
     case 'mfa.factor_challenge.ineligible':
       return 'privilege';
 
+    case 'email.challenge.issued':
+    case 'email.challenge.verified':
+    case 'email.challenge.failed':
+    case 'email.challenge.locked':
+    case 'phone.challenge.issued':
+    case 'phone.challenge.verified':
+    case 'phone.challenge.failed':
+    case 'phone.challenge.locked':
+    case 'authenticator.validated':
+    case 'authenticator.validation.failed':
+    case 'authenticator.validation.rate_limited':
+    case 'authenticator.validation.replayed':
+      return 'login';
+    case 'email.factor.created':
+    case 'email.factor.deleted':
+    case 'phone.factor.created':
+    case 'phone.factor.deleted':
+    case 'authenticator.registered':
+      return 'credential';
+    case 'authenticator.enrolled':
+    case 'authenticator.factor.deleted':
+      return 'privilege';
+
     case 'recovery.initiated':
     case 'recovery.policy_denied':
     case 'recovery.channel.issued':

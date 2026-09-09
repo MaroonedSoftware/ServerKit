@@ -388,6 +388,12 @@ const session = await sessions.createSession(completed.actor.id, claims, complet
   `mfa.failed` with `post_verification_mismatch`, which is a defence-in-depth trip.
 - **`recovery.sessions_not_revoked` is a misconfiguration alarm.** It fires when the orchestrator has
   no `AuthenticationSessionService` bound, which silently leaves every pre-recovery token working.
+- **`authenticator.validation.replayed` is not an `invalid_code`.** A correct-but-replayed code means
+  someone observed a valid one, which is interception rather than a typo. Same reasoning as the
+  password rate limit: keep the signal separable.
+- **A challenge event never carries its code.** The email, phone, and authenticator services all
+  return a code or token to their caller for delivery. None of that reaches an event, and the
+  registration URI and QR code carry the TOTP secret too.
 - **The package never fills `AuditEventContext`.** It sits at L2 alongside the HTTP adapters, so it
   cannot reach a request. Fill `correlationId`, `ipAddress`, and the rest in your own request-scoped
   sink.
@@ -445,7 +451,7 @@ src/
   apikey/                         types, api.key.token (codec), api.key.repository,
                                   api.key.service, api.key.authentication.handler
   audit/                          types, audit.sink, audit.recorder, audit.event,
-                                  session/api.key/password/mfa/recovery .audit.event
+                                  session/api.key/password/factor/mfa/recovery .audit.event
   index.ts                        Barrel
 ```
 
