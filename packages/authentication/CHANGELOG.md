@@ -1,5 +1,138 @@
 # @maroonedsoftware/authentication
 
+## 5.0.0
+
+### Major Changes
+
+- a0f814a: **Breaking:** `AuthenticationSessionHooks` is removed, along with the fifth `hooks` argument to
+  `AuthenticationSessionServiceOptions`. Bind an `AuditSink` instead.
+
+  The hooks existed to observe the session lifecycle, and the audit sink does that better: it covers
+  the whole package rather than sessions alone, carries a common envelope on every event, and
+  attributes an `actorId` on validation failures where the hook passed only a token. Migration is
+  mechanical:
+
+  | Hook                     | Event                                                           |
+  | ------------------------ | --------------------------------------------------------------- |
+  | `onSessionCreated`       | `session.created`                                               |
+  | `onSessionRefreshed`     | `session.refreshed` (`data.previousJti`)                        |
+  | `onSessionRevoked`       | `session.revoked` (`data.reason`)                               |
+  | `onValidationFailed`     | `session.validation_failed` (`data.reason`), now with `actorId` |
+  | `onRefreshReuseDetected` | `session.refresh_reuse_detected`                                |
+
+  Two things improve in the move. A rotation is one `session.rotated` event naming both tokens rather
+  than an uncorrelated `onSessionCreated` and `onSessionRevoked` pair, and `revokeAllForSubject` emits
+  a `session.revoked_all` carrying the count that no hook ever saw.
+
+  Session events also carry the session's `claims` whole, so an application that stamps request detail
+  at login can still recover it on a revoke that happens on a different request.
+
+  `AuthenticationSessionService` also drops its `Logger` constructor parameter, which `runHook` was
+  the only consumer of. Applications resolving the service through dependency injection are
+  unaffected. Anything constructing it by hand should remove the fourth argument; because
+  `AuditRecorder` moves into that position, passing the old argument list is a type error rather than
+  a silent mis-binding.
+
+  `RecoveryOrchestratorHooks` is **not** affected. It is behavioural rather than observational —
+  `onRebindMfaFactor` is where an application mutates the factor, and a throw there must abort the
+  recovery.
+
+  Adds the seam this replaces it with: `AuditSink`, `AuditRecorder`, and the event contract. Services
+  take the recorder as a defaulted trailing constructor parameter, so an unbound sink is a working
+  no-op. A sink failure is swallowed and logged as `audit.sink_failed` by default, so an audit store
+  outage cannot become a login outage — alert on that event or the outage is invisible.
+  `AuditOptions.strict` inverts it for deployments where an action that could not be recorded must not
+  proceed.
+
+### Minor Changes
+
+- 182ea35: Emit audit events for the email, phone, and authenticator factors: challenge issue, verification,
+  failure, lockout, and factor creation and removal.
+
+  An email or phone challenge verification is a login in its own right, not merely an address
+  confirmation, so those events are categorised as such. A challenge abandoned after too many wrong
+  codes gets its own event rather than another failure, because the challenge is destroyed rather than
+  merely refused and the rate is worth alerting on.
+
+  `authenticator.validation.replayed` is separate from an invalid code. A correct-but-replayed code
+  inside the drift window means someone observed a valid one, which is interception rather than a
+  typo. Authenticator enrolment and removal are privilege changes rather than credential changes,
+  since they move the assurance every future session can reach.
+
+  A cross-method email probe is recorded under its real reason even though the caller is told "not
+  found": the anti-probing response is for the client, not for the audit trail.
+
+  No code, magic-link token, TOTP secret, provisioning URI, or QR code reaches an event, though all
+  three of those last carry the secret and the services return them to their callers for delivery.
+
+- 2ff613e: Emit audit events for FIDO2/WebAuthn, OpenID Connect, and OAuth 2.0, completing the audit surface.
+  Every security-relevant operation in the package now reports itself.
+
+  `oidc.linked.auto` and `oauth2.linked.auto` are the ones to watch. The package links a provider
+  identity to a pre-existing local account on a verified-email match alone, so anyone who can get an
+  identity provider to assert an address gains that account. Both are recorded with the provider, the
+  subject, and the email so the join can be reviewed after the fact. The OAuth 2.0 case is weaker
+  still, since a plain provider's verified claim is whatever its userinfo endpoint says with no
+  id_token binding it.
+
+  Two failures are alarms rather than user errors. `fido.verification.failed` with `missing_counter`
+  means a stored credential has no replay counter, so the library would accept any value and replay
+  protection is silently off. `oidc.authorization.failed` with `issuer_mismatch` is RFC 9207 mix-up
+  detection: an attacker splicing one provider's response onto another provider's flow.
+
+  No access token, refresh token, assertion blob, or public key reaches an event.
+
+- 2344d46: Emit audit events for password verification, MFA orchestration, and account recovery. This is the
+  largest previously silent surface in the package: none of these operations recorded anything.
+
+  `password.verify.*` is the most important group, since it is where a login succeeds or fails. The
+  rate-limit refusal is its own event rather than a failure reason, because a wrong password is one
+  person mistyping while a burst of refusals is the lockout signal, and collapsing them hides that
+  burst. A forced reset and a missing factor are likewise distinct from a wrong password.
+
+  `mfa.challenge.skipped` records the gate deciding a second factor was not required. An auditor
+  reviewing an incident needs to see that decision, not only the cases where MFA was demanded and
+  satisfied. `mfa.failed` carries a reason that separates an ordinary rejected proof from the
+  defence-in-depth trips, which mean a pre-check was bypassed.
+
+  `recovery.initiated` without an `actorId` is a probe: the package deliberately issues a challenge
+  for an unknown identifier so a caller cannot enumerate accounts, so a run of those events is someone
+  testing addresses. `recovery.channel.rejected` names `sub_challenge_mismatch` specifically, which is
+  a proof issued against one account presented on another's challenge.
+
+  `recovery.sessions_not_revoked` fires when the orchestrator has no `AuthenticationSessionService`
+  bound, which silently leaves every pre-recovery token working. That misconfiguration had no visible
+  symptom before.
+
+  No secret reaches an event: no password, hash, one-time code, or magic-link token. Events are
+  emitted at the decision point rather than from a catch block, so a `failure` outcome always means a
+  credential verdict and never an infrastructure fault.
+
+- b4cfb8a: Emit audit events for the session lifecycle and for API keys, and deprecate `AuthenticationSessionHooks`.
+
+  Session events cover creation, update, rotation, refresh, revocation, bulk revocation, family
+  teardown, refresh-token replay, and validation failure. Two of them improve on what the hooks could
+  report: `session.rotated` is a single event naming both tokens rather than the uncorrelated
+  created/revoked pair, and `session.revoked_all` carries the count that no hook ever saw.
+
+  `session.validation_failed` carries an `actorId` wherever the service knows one, which is every case
+  except a JWT that never decoded. The hook passes only a token, so a consumer recording the failure
+  has to look the session up again — a cache read that returns nothing in the common case where the
+  session is already gone.
+
+  API key events reuse the type names the service already logs, so an event and its log line read
+  identically. `api_key.authenticated` is new: only rejections were visible before, so a machine
+  login left no record.
+
+  `AuthenticationSessionHooks` is deprecated in favour of `AuditSink`, which covers the whole package
+  rather than sessions alone. Nothing breaks: every hook still fires, and removal is deferred to a
+  later major. `RecoveryOrchestratorHooks` is not deprecated, because it is behavioural rather than
+  observational — `onRebindMfaFactor` is where an application mutates the factor and a throw must
+  abort recovery.
+
+  Session events carry the session's `claims` whole, so an application that stamps request detail at
+  login can recover it on a later revoke that happens on a different request.
+
 ## 4.34.0
 
 ### Minor Changes
