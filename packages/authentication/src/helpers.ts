@@ -1,5 +1,11 @@
 import crypto from 'node:crypto';
-import { type AuthenticationFactorKind, type AuthenticationFactorMethod, type AuthenticationSessionFactor, type SessionDevice } from './types.js';
+import {
+  type AuthenticationFactorKind,
+  type AuthenticationFactorMethod,
+  type AuthenticationSession,
+  type AuthenticationSessionFactor,
+  type SessionDevice,
+} from './types.js';
 import { DateTime, Duration } from 'luxon';
 
 /**
@@ -140,5 +146,83 @@ export const normaliseSessionDevice = (device: SessionDevice | undefined): Sessi
     ...(ipAddress === undefined ? {} : { ipAddress }),
     ...(userAgent === undefined ? {} : { userAgent }),
     ...(label === undefined ? {} : { label }),
+  };
+};
+
+/**
+ * A session projected for display: the parts a "your active sessions" list
+ * needs, with every timestamp already an ISO 8601 string.
+ *
+ * Two fields a list also wants are deliberately absent, because neither is this
+ * package's to know: whether a row is the caller's own session (compare
+ * `sessionToken` against the token the request arrived with) and any
+ * application-specific claim such as an organisation.
+ */
+export interface DescribedSession {
+  /** The session's opaque token. */
+  sessionToken: string;
+  /** Who the session belongs to. */
+  subject: string;
+  /** When the session was issued, ISO 8601. */
+  issuedAt: string;
+  /** When the session expires, ISO 8601. */
+  expiresAt: string;
+  /** When the session was last used, ISO 8601. */
+  lastAccessedAt: string;
+  /** Factors the session satisfied, with ISO 8601 timestamps. */
+  factors: {
+    method: AuthenticationFactorMethod;
+    methodId: string;
+    kind: AuthenticationFactorKind;
+    issuedAt: string;
+    authenticatedAt: string;
+  }[];
+  /** The IP the session was established from, when known. */
+  ipAddress?: string;
+  /** The user agent the session was established from, when known. */
+  userAgent?: string;
+  /** The device label the application recorded, when it recorded one. */
+  deviceLabel?: string;
+}
+
+/**
+ * Project a session for a user-facing session list.
+ *
+ * Flattens the {@link SessionDevice} block and converts every Luxon `DateTime`
+ * to ISO 8601, which is what a wire contract wants and what both ServerKit
+ * consumers were each writing by hand.
+ *
+ * @example
+ * ```ts
+ * const sessions = await sessionService.getSessionsForSubject(actorId);
+ *
+ * return sessions.map(session => ({
+ *   ...describeSession(session),
+ *   isCurrent: session.sessionToken === currentSessionToken,
+ * }));
+ * ```
+ *
+ * @param session - The session to project.
+ * @returns The display-shaped projection.
+ */
+export const describeSession = (session: AuthenticationSession): DescribedSession => {
+  const { device } = session;
+
+  return {
+    sessionToken: session.sessionToken,
+    subject: session.subject,
+    issuedAt: session.issuedAt.toISO() ?? '',
+    expiresAt: session.expiresAt.toISO() ?? '',
+    lastAccessedAt: session.lastAccessedAt.toISO() ?? '',
+    factors: session.factors.map(factor => ({
+      method: factor.method,
+      methodId: factor.methodId,
+      kind: factor.kind,
+      issuedAt: factor.issuedAt.toISO() ?? '',
+      authenticatedAt: factor.authenticatedAt.toISO() ?? '',
+    })),
+    ...(device?.ipAddress === undefined ? {} : { ipAddress: device.ipAddress }),
+    ...(device?.userAgent === undefined ? {} : { userAgent: device.userAgent }),
+    ...(device?.label === undefined ? {} : { deviceLabel: device.label }),
   };
 };

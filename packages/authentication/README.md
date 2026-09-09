@@ -19,6 +19,7 @@ pnpm add @maroonedsoftware/authentication
 - **Handler chaining** — `ChainedAuthenticationHandler` puts several handlers on one scheme, so `Bearer` can carry both a session JWT and a service's static token
 - **API keys** — revocable, expiring, scoped machine credentials via `ApiKeyService`, with GitHub-style checksummed tokens that a malformed credential fails before any storage read
 - **Audit logging** — bind one `AuditSink` and receive a typed, enveloped event for every security-relevant operation: login success, login failure, credential change, privilege change
+- **Device metadata** — sessions record the IP, user agent and label they were established from, so a "your active sessions" list can tell one from another and audit events carry the origin
 - **OTP/TOTP** — RFC 4226/6238 compliant HOTP and TOTP generation and validation, plus `otpauth://` URI generation for QR codes
 - **Password strength** — zxcvbn-ts powered strength checking with HaveIBeenPwned integration
 - **Password factors** — strength-validated, PBKDF2-hashed, rate-limited password factor lifecycle via `PasswordFactorService`
@@ -253,6 +254,53 @@ Refresh tokens are single-use JWTs that carry `kind: 'refresh'`, `jti`, `familyI
 - If a client ever presents a `jti` that is already consumed, **every session in the family is revoked** and the family entry is deleted. This is the theft signal — observe it via the `session.refresh_reuse_detected` audit event.
 
 Family-blob TTL is reset on every rotation so it can never expire mid-chain.
+
+#### Device metadata and session lists
+
+A session records who and when. Pass a `device` block to record where from, and a "your active
+sessions" screen becomes possible — without it, `getSessionsForSubject` returns rows a user cannot
+tell apart.
+
+```typescript
+// At login. Both adapters carry these on their context already.
+const session = await sessionService.createSession(user.id, claims, factor, undefined, {
+  ipAddress: ctx.ipAddress,
+  userAgent: ctx.userAgent,
+  label: describeUserAgent(ctx.userAgent), // yours to compose; the package does not parse
+});
+```
+
+Then project the list with `describeSession`, which flattens the block and converts every timestamp
+to ISO 8601:
+
+```typescript
+import { describeSession } from '@maroonedsoftware/authentication';
+
+const sessions = await sessionService.getSessionsForSubject(actorId);
+
+return sessions.map(session => ({
+  ...describeSession(session),
+  isCurrent: session.sessionToken === currentSessionToken,
+}));
+```
+
+`isCurrent` is yours because only you know the token the request arrived with.
+
+Three things worth knowing:
+
+- **It describes where the session began**, not where it was last used. That is what makes it useful
+  on a revoke or a refresh, which arrive on a different request where the live context describes a
+  different caller. A rotation carries it forward for the same reason; pass a new block to
+  `rotateSession` to re-stamp deliberately.
+- **A blank value is treated as absent.** Both adapters set `userAgent` to `''` when the header is
+  missing, so without this every session would record an empty string rather than nothing.
+- **The IP is not validated.** It is stored as given. If you write it to a typed column — Postgres
+  `inet` rejects malformed input — validate it yourself.
+
+The block also rides on every `session.*` audit event, so a sink writing an audit row gets it without
+reading claims.
+
+---
 
 #### Observing the session lifecycle
 

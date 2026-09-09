@@ -4,7 +4,7 @@ import type { CacheProvider } from '@maroonedsoftware/cache';
 import { Logger } from '@maroonedsoftware/logger';
 import { AuthenticationSessionService, AuthenticationSessionServiceOptions } from '../../src/authentication.session.service.js';
 import { JwtProvider } from '../../src/providers/jwt.provider.js';
-import { MAX_USER_AGENT_LENGTH, normaliseSessionDevice } from '../../src/helpers.js';
+import { MAX_USER_AGENT_LENGTH, describeSession, normaliseSessionDevice } from '../../src/helpers.js';
 import type { AuthenticationSessionFactor } from '../../src/types.js';
 import { generateKeyPairSync } from 'node:crypto';
 
@@ -211,5 +211,61 @@ describe('the write paths', () => {
     const read = await service.getSession(rotated.session.sessionToken);
 
     expect(read?.device).toEqual(device);
+  });
+});
+
+describe('describeSession', () => {
+  const device = { ipAddress: '203.0.113.7', userAgent: 'curl/8', label: 'Laptop' };
+
+  it('flattens the device block and stringifies every timestamp', async () => {
+    const session = await build().createSession('user-1', {}, factor, undefined, device);
+
+    const described = describeSession(session);
+
+    expect(described).toMatchObject({
+      sessionToken: session.sessionToken,
+      subject: 'user-1',
+      ipAddress: '203.0.113.7',
+      userAgent: 'curl/8',
+      deviceLabel: 'Laptop',
+    });
+    for (const iso of [described.issuedAt, described.expiresAt, described.lastAccessedAt]) {
+      expect(DateTime.fromISO(iso).isValid).toBe(true);
+    }
+    expect(described.factors).toEqual([
+      { method: 'password', methodId: 'pw-1', kind: 'knowledge', issuedAt: expect.any(String), authenticatedAt: expect.any(String) },
+    ]);
+  });
+
+  it('omits the device fields when the session has none', async () => {
+    const described = describeSession(await build().createSession('user-1', {}, factor));
+
+    expect(described).not.toHaveProperty('ipAddress');
+    expect(described).not.toHaveProperty('userAgent');
+    expect(described).not.toHaveProperty('deviceLabel');
+  });
+
+  it('omits only the fields that are missing', async () => {
+    const session = await build().createSession('user-1', {}, factor, undefined, { ipAddress: '203.0.113.7' });
+
+    const described = describeSession(session);
+
+    expect(described.ipAddress).toBe('203.0.113.7');
+    expect(described).not.toHaveProperty('userAgent');
+  });
+
+  it('carries no claims, so an application cannot leak one into a list by accident', () => {
+    // Unlike the audit payload, which passes claims through whole.
+    const described = describeSession({
+      sessionToken: 'st',
+      subject: 'user-1',
+      issuedAt: DateTime.utc(),
+      expiresAt: DateTime.utc().plus({ hours: 1 }),
+      lastAccessedAt: DateTime.utc(),
+      factors: [],
+      claims: { secretish: 'do not display' },
+    });
+
+    expect(JSON.stringify(described)).not.toContain('do not display');
   });
 });
