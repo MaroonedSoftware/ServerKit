@@ -36,7 +36,7 @@ class TestJsonParser extends ServerKitParser {
   }
 }
 
-const buildApp = (options: { authenticated?: boolean; scopes?: string[] } = {}) => {
+const buildApp = (options: { authenticated?: boolean; scopes?: string[]; baseUrl?: string } = {}) => {
   const userRepository = new InMemoryUserRepository();
   const groupRepository = new InMemoryGroupRepository();
 
@@ -61,6 +61,7 @@ const buildApp = (options: { authenticated?: boolean; scopes?: string[] } = {}) 
     groupService,
     serviceProviderService,
     routeGuards: [requireScimScope('scim')],
+    baseUrl: options.baseUrl,
   });
 
   const app = new Koa();
@@ -267,6 +268,41 @@ describe('createScimRouter — integration', () => {
 
       expect(res.body.Resources[0].userName).toBe('bjensen');
       expect(res.body.Resources[0].displayName).toBeUndefined();
+    });
+
+    it('renders meta.location and the Location header against baseUrl', async () => {
+      const { app } = buildApp({ baseUrl: 'https://api.example.com/scim/v2' });
+      const created = await request(app.callback()).post('/Users').set('Content-Type', SCIM_MEDIA_TYPE).send({ userName: 'bjensen' });
+
+      expect(created.body.meta.location).toBe(`https://api.example.com/scim/v2/Users/${created.body.id}`);
+      expect(created.headers['location']).toBe(`https://api.example.com/scim/v2/Users/${created.body.id}`);
+
+      const fetched = await request(app.callback()).get(`/Users/${created.body.id}`);
+      expect(fetched.body.meta.location).toBe(`https://api.example.com/scim/v2/Users/${created.body.id}`);
+
+      const listed = await request(app.callback()).get('/Users');
+      expect(listed.body.Resources[0].meta.location).toBe(`https://api.example.com/scim/v2/Users/${created.body.id}`);
+    });
+
+    it('strips a trailing slash from baseUrl rather than doubling it', async () => {
+      const { app } = buildApp({ baseUrl: 'https://api.example.com/scim/v2/' });
+      const created = await request(app.callback()).post('/Users').set('Content-Type', SCIM_MEDIA_TYPE).send({ userName: 'bjensen' });
+
+      expect(created.body.meta.location).toBe(`https://api.example.com/scim/v2/Users/${created.body.id}`);
+    });
+
+    it('keeps the root-relative path when no baseUrl is configured', async () => {
+      const { app } = buildApp();
+      const created = await request(app.callback()).post('/Users').set('Content-Type', SCIM_MEDIA_TYPE).send({ userName: 'bjensen' });
+
+      expect(created.body.meta.location).toBe(`/Users/${created.body.id}`);
+    });
+
+    it('renders group locations against baseUrl too', async () => {
+      const { app } = buildApp({ baseUrl: 'https://api.example.com/scim/v2' });
+      const created = await request(app.callback()).post('/Groups').set('Content-Type', SCIM_MEDIA_TYPE).send({ displayName: 'Engineering' });
+
+      expect(created.body.meta.location).toBe(`https://api.example.com/scim/v2/Groups/${created.body.id}`);
     });
 
     it('POST /Users 400 names the missing required attribute', async () => {

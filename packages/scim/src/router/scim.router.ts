@@ -36,6 +36,15 @@ export interface CreateScimRouterOptions {
    * `serviceProviderService` `filter.maxResults` value, falling back to 200.
    */
   maxResults?: number;
+  /**
+   * Absolute base URL this router is reachable at, e.g.
+   * `https://api.example.com/scim/v2`. When set, `meta.location` and the
+   * `Location` response header are rendered against it, as RFC 7643 §3.1 wants
+   * a resource URI. Leave it unset to keep the previous behaviour of emitting a
+   * root-relative path (`/Users/{id}`), which is wrong for any deployment that
+   * mounts the router under a prefix.
+   */
+  baseUrl?: string;
 }
 
 /**
@@ -62,6 +71,15 @@ export const createScimRouter = (options: CreateScimRouterOptions): Router<unkno
   const guards = options.routeGuards ?? [];
   const json = bodyParserMiddleware([SCIM_MEDIA_TYPE, 'application/json']);
   const maxResults = options.maxResults ?? options.serviceProviderService.getServiceProviderConfig().filter.maxResults ?? 200;
+  const baseUrl = options.baseUrl?.replace(/\/+$/, '');
+
+  /**
+   * Render a resource's `meta.location` against the configured base URL. The
+   * services assign a root-relative path because they do not know where the
+   * router is mounted; without a `baseUrl` that path is left as-is.
+   */
+  const withLocation = <T extends { id: string; meta: { location?: string } }>(resource: T, endpoint: 'Users' | 'Groups'): T =>
+    baseUrl ? { ...resource, meta: { ...resource.meta, location: `${baseUrl}/${endpoint}/${resource.id}` } } : resource;
 
   // Discovery endpoints — RFC 7644 §4 says these MAY be unauthenticated. Apply
   // the route guards anyway so the consumer can decide.
@@ -94,7 +112,7 @@ export const createScimRouter = (options: CreateScimRouterOptions): Router<unkno
   router.get('/Users', ...guards, async ctx => {
     const query = parseListQueryFromUrl(ctx.query, maxResults);
     const result = await options.userService.list(query);
-    ctx.body = listEnvelope(result.resources.map(user => projectUser(user, query)), query, result.totalResults);
+    ctx.body = listEnvelope(result.resources.map(user => projectUser(withLocation(user, 'Users'), query)), query, result.totalResults);
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
@@ -102,7 +120,7 @@ export const createScimRouter = (options: CreateScimRouterOptions): Router<unkno
     const requestBody = takeRequestBody(ctx);
     const query = parseListQueryFromBody(requestBody, maxResults);
     const result = await options.userService.list(query);
-    ctx.body = listEnvelope(result.resources.map(user => projectUser(user, query)), query, result.totalResults);
+    ctx.body = listEnvelope(result.resources.map(user => projectUser(withLocation(user, 'Users'), query)), query, result.totalResults);
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
@@ -110,26 +128,27 @@ export const createScimRouter = (options: CreateScimRouterOptions): Router<unkno
     const payload = takeRequestBody(ctx) as Partial<ScimUser>;
     const created = await options.userService.create(payload);
     ctx.status = 201;
-    ctx.body = projectUser(created, parseProjectionFromUrl(ctx.query));
+    const located = withLocation(created, 'Users');
+    ctx.body = projectUser(located, parseProjectionFromUrl(ctx.query));
     ctx.type = SCIM_MEDIA_TYPE;
-    if (created.meta.location) ctx.set('Location', created.meta.location);
+    if (located.meta.location) ctx.set('Location', located.meta.location);
   });
 
   router.get('/Users/:id', ...guards, async ctx => {
-    ctx.body = projectUser(await options.userService.get(ctx.params.id!), parseProjectionFromUrl(ctx.query));
+    ctx.body = projectUser(withLocation(await options.userService.get(ctx.params.id!), 'Users'), parseProjectionFromUrl(ctx.query));
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
   router.put('/Users/:id', ...guards, json, async ctx => {
     const payload = takeRequestBody(ctx) as Partial<ScimUser>;
-    ctx.body = projectUser(await options.userService.replace(ctx.params.id!, payload), parseProjectionFromUrl(ctx.query));
+    ctx.body = projectUser(withLocation(await options.userService.replace(ctx.params.id!, payload), 'Users'), parseProjectionFromUrl(ctx.query));
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
   router.patch('/Users/:id', ...guards, json, async ctx => {
     const requestBody = takeRequestBody(ctx) as Partial<ScimPatchRequest>;
     const ops = validatePatchRequest(requestBody);
-    ctx.body = projectUser(await options.userService.patch(ctx.params.id!, ops), parseProjectionFromUrl(ctx.query));
+    ctx.body = projectUser(withLocation(await options.userService.patch(ctx.params.id!, ops), 'Users'), parseProjectionFromUrl(ctx.query));
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
@@ -142,7 +161,7 @@ export const createScimRouter = (options: CreateScimRouterOptions): Router<unkno
   router.get('/Groups', ...guards, async ctx => {
     const query = parseListQueryFromUrl(ctx.query, maxResults);
     const result = await options.groupService.list(query);
-    ctx.body = listEnvelope(result.resources.map(group => projectGroup(group, query)), query, result.totalResults);
+    ctx.body = listEnvelope(result.resources.map(group => projectGroup(withLocation(group, 'Groups'), query)), query, result.totalResults);
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
@@ -150,7 +169,7 @@ export const createScimRouter = (options: CreateScimRouterOptions): Router<unkno
     const requestBody = takeRequestBody(ctx);
     const query = parseListQueryFromBody(requestBody, maxResults);
     const result = await options.groupService.list(query);
-    ctx.body = listEnvelope(result.resources.map(group => projectGroup(group, query)), query, result.totalResults);
+    ctx.body = listEnvelope(result.resources.map(group => projectGroup(withLocation(group, 'Groups'), query)), query, result.totalResults);
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
@@ -158,26 +177,27 @@ export const createScimRouter = (options: CreateScimRouterOptions): Router<unkno
     const payload = takeRequestBody(ctx) as Partial<ScimGroup>;
     const created = await options.groupService.create(payload);
     ctx.status = 201;
-    ctx.body = projectGroup(created, parseProjectionFromUrl(ctx.query));
+    const located = withLocation(created, 'Groups');
+    ctx.body = projectGroup(located, parseProjectionFromUrl(ctx.query));
     ctx.type = SCIM_MEDIA_TYPE;
-    if (created.meta.location) ctx.set('Location', created.meta.location);
+    if (located.meta.location) ctx.set('Location', located.meta.location);
   });
 
   router.get('/Groups/:id', ...guards, async ctx => {
-    ctx.body = projectGroup(await options.groupService.get(ctx.params.id!), parseProjectionFromUrl(ctx.query));
+    ctx.body = projectGroup(withLocation(await options.groupService.get(ctx.params.id!), 'Groups'), parseProjectionFromUrl(ctx.query));
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
   router.put('/Groups/:id', ...guards, json, async ctx => {
     const payload = takeRequestBody(ctx) as Partial<ScimGroup>;
-    ctx.body = projectGroup(await options.groupService.replace(ctx.params.id!, payload), parseProjectionFromUrl(ctx.query));
+    ctx.body = projectGroup(withLocation(await options.groupService.replace(ctx.params.id!, payload), 'Groups'), parseProjectionFromUrl(ctx.query));
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
   router.patch('/Groups/:id', ...guards, json, async ctx => {
     const requestBody = takeRequestBody(ctx) as Partial<ScimPatchRequest>;
     const ops = validatePatchRequest(requestBody);
-    ctx.body = projectGroup(await options.groupService.patch(ctx.params.id!, ops), parseProjectionFromUrl(ctx.query));
+    ctx.body = projectGroup(withLocation(await options.groupService.patch(ctx.params.id!, ops), 'Groups'), parseProjectionFromUrl(ctx.query));
     ctx.type = SCIM_MEDIA_TYPE;
   });
 

@@ -21,7 +21,16 @@ This package provides the protocol layer — schemas, filter parser, PATCH appli
 ```ts
 import Koa from 'koa';
 import { ServerKitContext, serverKitContextMiddleware, authenticationMiddleware } from '@maroonedsoftware/koa';
-import { createScimRouter, ScimUserRepository, ScimGroupRepository, scimErrorMiddleware } from '@maroonedsoftware/scim';
+import {
+  createScimRouter,
+  requireScimScope,
+  ScimGroupRepository,
+  ScimGroupService,
+  ScimServiceProviderService,
+  ScimUserRepository,
+  ScimUserService,
+  scimErrorMiddleware,
+} from '@maroonedsoftware/scim';
 
 class MyScimUserRepository extends ScimUserRepository {
   // implement against your datastore
@@ -35,23 +44,28 @@ const app = new Koa();
 app.use(serverKitContextMiddleware(container));
 app.use(authenticationMiddleware());
 
+// The router takes services, not repositories: the service owns id and meta
+// assignment, uniqueness, and PATCH application.
+const serviceProviderService = new ScimServiceProviderService({
+  documentationUri: 'https://example.com/scim/docs',
+  patch: { supported: true },
+  filter: { supported: true, maxResults: 200 },
+  sort: { supported: true },
+});
+
 const scimRouter = createScimRouter({
-  userRepository: new MyScimUserRepository(),
-  groupRepository: new MyScimGroupRepository(),
-  basePath: '/scim/v2',
-  serviceProviderConfig: {
-    documentationUri: 'https://example.com/scim/docs',
-    patch: { supported: true },
-    bulk: { supported: false, maxOperations: 0, maxPayloadSize: 0 },
-    filter: { supported: true, maxResults: 200 },
-    changePassword: { supported: false },
-    sort: { supported: true },
-    etag: { supported: false },
-  },
+  userService: new ScimUserService(new MyScimUserRepository(), logger),
+  groupService: new ScimGroupService(new MyScimGroupRepository(), logger),
+  serviceProviderService,
+  routeGuards: [requireScimScope('scim')],
+  // Where this router is reachable. Set it whenever you mount under a prefix,
+  // or `meta.location` and the `Location` header will be wrong.
+  baseUrl: 'https://api.example.com/scim/v2',
 });
 
 app.use(scimErrorMiddleware());
 app.use(scimRouter.routes());
+app.use(scimRouter.allowedMethods());
 ```
 
 ## Authentication

@@ -110,7 +110,7 @@ contract is inseparable from HTTP.
 | `SCIM_MEDIA_TYPE`           | constant  | `'application/scim+json'`                                                          | —                                                                                     |
 | `requireScimScope`          | function  | `(scope: string) => ServerKitRouterMiddleware`                                     | Reads `ctx.authenticationSession.claims.scimScopes`. `*` grants everything.           |
 | `createScimRouter`          | function  | `(options: CreateScimRouterOptions) => Router<unknown, ServerKitContext>`          | Mounts every endpoint below.                                                          |
-| `CreateScimRouterOptions`   | interface | `{ userService, groupService, serviceProviderService, routeGuards?, maxResults? }` | `maxResults` defaults to the service-provider config's `filter.maxResults`, then 200. |
+| `CreateScimRouterOptions`   | interface | `{ userService, groupService, serviceProviderService, routeGuards?, maxResults?, baseUrl? }` | `maxResults` defaults to the service-provider config's `filter.maxResults`, then 200. Set `baseUrl` whenever the router is mounted under a prefix. |
 
 Endpoints mounted: `GET|POST /Users`, `GET|PUT|PATCH|DELETE /Users/:id`, `POST /Users/.search`, the
 same six plus `.search` for `/Groups`, and `GET /Schemas`, `/Schemas/:id`, `/ResourceTypes`,
@@ -147,6 +147,7 @@ const router = createScimRouter({
   groupService: new ScimGroupService(groupRepository, logger),
   serviceProviderService: new ScimServiceProviderService(config),
   routeGuards: [requireScimScope('scim:write')],
+  baseUrl: 'https://api.example.com/scim/v2',
 });
 
 // SCIM mountpoint — note scimErrorMiddleware, not errorMiddleware
@@ -209,6 +210,10 @@ app.use(router.routes()).use(router.allowedMethods());
   `scimContentTypeMiddleware` is what actually enforces the media type if you want strictness.
 - **`schemas` on a resource is a required array of URNs**, not decoration. Omitting the enterprise
   URN on a user with enterprise attributes makes clients ignore them.
+- **`meta.location` needs `baseUrl` to be right.** The services assign a root-relative
+  `/Users/{id}`, because they cannot know where the router is mounted. `createScimRouter` rewrites
+  it (and the `Location` header) against `options.baseUrl`; without that option a deployment under
+  `/scim/v2` emits URIs that provisioning clients then follow to a 404.
 - **Responses are projected by the router, not the repository.** `createScimRouter` runs every user
   and group response through `projectScimResource`, which applies `attributes` /
   `excludedAttributes` and strips attributes the schema declares `returned: 'never'`. A repository
