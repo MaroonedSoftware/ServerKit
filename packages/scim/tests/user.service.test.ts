@@ -120,4 +120,21 @@ describe('ScimUserService', () => {
     const { service } = makeService();
     await expect(service.get('missing')).rejects.toMatchObject({ statusCode: 404 });
   });
+
+  it('ignores a client-supplied id on create', async () => {
+    const { service } = makeService();
+    const created = await service.create({ id: 'client-chosen-id', userName: 'bjensen' });
+    expect(created.id).not.toBe('client-chosen-id');
+    expect(created.id).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it('does not let a client-supplied id collide with an existing record', async () => {
+    const { repo, service } = makeService();
+    const first = await service.create({ userName: 'bjensen' });
+    const second = await service.create({ id: first.id, userName: 'jsmith' });
+
+    expect(second.id).not.toBe(first.id);
+    expect(repo.users.size).toBe(2);
+    expect(repo.users.get(first.id)!.userName).toBe('bjensen');
+  });
 });
