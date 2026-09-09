@@ -2,7 +2,6 @@ import { Injectable } from 'injectkit';
 import { unauthorizedError } from '@maroonedsoftware/errors';
 import { DateTime, Duration } from 'luxon';
 import { deepmergeCustom } from 'deepmerge-ts';
-import { Logger } from '@maroonedsoftware/logger';
 import { AuditRecorder } from './audit/audit.recorder.js';
 import type { AuditSessionData, SessionValidationFailureReason } from './audit/session.audit.event.js';
 import { AuthenticationSession, AuthenticationSessionFactor, AuthenticationToken, SessionRevocationReason } from './types.js';
@@ -83,10 +82,9 @@ export class AuthenticationSessionService {
     private readonly options: AuthenticationSessionServiceOptions,
     private readonly cache: CacheProvider,
     private readonly jwtProvider: JwtProvider,
-    private readonly logger: Logger,
     /**
-     * Records session lifecycle events. Defaulted so binding an `AuditSink` is
-     * opt-in and an existing hand-constructed service keeps compiling.
+     * Records session lifecycle events. Defaulted, so an application that has not
+     * bound an `AuditSink` gets a working no-op rather than a wiring error.
      */
     private readonly audit: AuditRecorder = new AuditRecorder(),
   ) {}

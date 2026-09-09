@@ -50,7 +50,7 @@ let captured: ReturnType<typeof makeCapturingSink>;
 
 const build = () => {
   const options = new AuthenticationSessionServiceOptions('iss', 'aud', Duration.fromObject({ minutes: 15 }), Duration.fromObject({ days: 30 }));
-  return new AuthenticationSessionService(options, cache, new JwtProvider(logger, privateKey), logger, new AuditRecorder(captured.sink));
+  return new AuthenticationSessionService(options, cache, new JwtProvider(logger, privateKey), new AuditRecorder(captured.sink));
 };
 
 const typesOf = () => captured.events.map(e => e.type);
@@ -246,7 +246,6 @@ describe('the sink is the only lifecycle seam', () => {
       new AuthenticationSessionServiceOptions('iss', 'aud', Duration.fromObject({ minutes: 15 })),
       cache,
       new JwtProvider(logger, privateKey),
-      logger,
       new AuditRecorder(
         {
           record: () => {

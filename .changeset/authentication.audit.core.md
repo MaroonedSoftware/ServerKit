@@ -25,6 +25,12 @@ a `session.revoked_all` carrying the count that no hook ever saw.
 Session events also carry the session's `claims` whole, so an application that stamps request detail
 at login can still recover it on a revoke that happens on a different request.
 
+`AuthenticationSessionService` also drops its `Logger` constructor parameter, which `runHook` was
+the only consumer of. Applications resolving the service through dependency injection are
+unaffected. Anything constructing it by hand should remove the fourth argument; because
+`AuditRecorder` moves into that position, passing the old argument list is a type error rather than
+a silent mis-binding.
+
 `RecoveryOrchestratorHooks` is **not** affected. It is behavioural rather than observational —
 `onRebindMfaFactor` is where an application mutates the factor, and a throw there must abort the
 recovery.

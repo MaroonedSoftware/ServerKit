@@ -78,15 +78,13 @@ const makeStoredSession = (overrides: Record<string, unknown> = {}) => ({
 describe('AuthenticationSessionService', () => {
   let cache: ReturnType<typeof makeCacheProvider>;
   let jwtProvider: ReturnType<typeof makeJwtProvider>;
-  let logger: ReturnType<typeof makeLogger>;
   let service: AuthenticationSessionService;
 
   beforeEach(() => {
     vi.restoreAllMocks();
     cache = makeCacheProvider();
     jwtProvider = makeJwtProvider();
-    logger = makeLogger();
-    service = new AuthenticationSessionService(makeOptions(), cache, jwtProvider, logger);
+    service = new AuthenticationSessionService(makeOptions(), cache, jwtProvider);
   });
 
   describe('createSession', () => {
@@ -356,7 +354,7 @@ describe('AuthenticationSessionService', () => {
         'auth_session_token-a': JSON.stringify(makeStoredSession({ sessionToken: 'token-a', familyId: undefined })),
         'auth_session_token-b': JSON.stringify(makeStoredSession({ sessionToken: 'token-b', familyId: undefined })),
       });
-      service = new AuthenticationSessionService(makeOptions(), statefulCache, jwtProvider, logger);
+      service = new AuthenticationSessionService(makeOptions(), statefulCache, jwtProvider);
 
       await expect(service.revokeAllForSubject('user-1')).resolves.toBe(2);
 
@@ -371,7 +369,7 @@ describe('AuthenticationSessionService', () => {
         'auth_session_token-a': JSON.stringify(makeStoredSession({ sessionToken: 'token-a', familyId: undefined })),
         'auth_session_token-b': JSON.stringify(makeStoredSession({ sessionToken: 'token-b', familyId: undefined })),
       });
-      service = new AuthenticationSessionService(makeOptions(), statefulCache, jwtProvider, logger, recorder);
+      service = new AuthenticationSessionService(makeOptions(), statefulCache, jwtProvider, recorder);
 
       await service.revokeAllForSubject('user-1', 'recovery');
 
@@ -386,7 +384,7 @@ describe('AuthenticationSessionService', () => {
       const statefulCache = makeStatefulCache({
         'auth_session_subject_user-1': JSON.stringify(['stale-token']),
       });
-      service = new AuthenticationSessionService(makeOptions(), statefulCache, jwtProvider, logger);
+      service = new AuthenticationSessionService(makeOptions(), statefulCache, jwtProvider);
 
       await expect(service.revokeAllForSubject('user-1')).resolves.toBe(0);
     });
@@ -619,7 +617,7 @@ describe('AuthenticationSessionService', () => {
   describe('issueTokenForSession — refresh token + family seeding', () => {
     it('issues an access token AND a refresh token bound to the session family', async () => {
       const harness = makeLiveHarness();
-      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider, harness.logger);
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);
 
       const session = await svc.createSession('user-1', {}, makeFactor());
       const tokens = await svc.issueTokenForSession(session.sessionToken);
@@ -639,7 +637,7 @@ describe('AuthenticationSessionService', () => {
 
     it('registers the issued jti in the family blob so it can be rotated/revoked later', async () => {
       const harness = makeLiveHarness();
-      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider, harness.logger);
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);
 
       const session = await svc.createSession('user-1', {}, makeFactor());
       await svc.issueTokenForSession(session.sessionToken);
@@ -656,8 +654,8 @@ describe('AuthenticationSessionService', () => {
     it('rotates jti, marks the previous jti consumed, and returns a fresh token pair', async () => {
       const harness = makeLiveHarness();
       const { events, recorder } = makeCapturingRecorder();
-      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider, harness.logger);
-      const svcWithAudit = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider, harness.logger, recorder);
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);
+      const svcWithAudit = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider, recorder);
 
       const session = await svc.createSession('user-1', {}, makeFactor());
       const first = await svcWithAudit.issueTokenForSession(session.sessionToken);
@@ -694,7 +692,7 @@ describe('AuthenticationSessionService', () => {
     it('rejects a replayed (consumed) refresh token AND revokes every session in the family', async () => {
       const harness = makeLiveHarness();
       const { events, recorder } = makeCapturingRecorder();
-      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider, harness.logger, recorder);
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider, recorder);
 
       const session = await svc.createSession('user-1', {}, makeFactor());
       const tokens = await svc.issueTokenForSession(session.sessionToken);
@@ -732,7 +730,7 @@ describe('AuthenticationSessionService', () => {
 
     it('asserts the configured audience when verifying the refresh token', async () => {
       const harness = makeLiveHarness();
-      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider, harness.logger);
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);
 
       const session = await svc.createSession('user-1', {}, makeFactor());
       const tokens = await svc.issueTokenForSession(session.sessionToken);
@@ -761,7 +759,7 @@ describe('AuthenticationSessionService', () => {
 
     it('rejects a refresh token with a missing/wrong kind claim', async () => {
       const harness = makeLiveHarness();
-      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider, harness.logger);
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);
       (harness.jwtProvider.decode as ReturnType<typeof vi.fn>).mockReturnValue({
         // No `kind: 'refresh'` discriminator.
         jti: 'jti-1',
@@ -776,7 +774,7 @@ describe('AuthenticationSessionService', () => {
     it('mints a new sessionToken, preserves familyId, deletes the old session, fires hooks', async () => {
       const harness = makeLiveHarness();
       const { events, recorder } = makeCapturingRecorder();
-      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider, harness.logger, recorder);
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider, recorder);
 
       const old = await svc.createSession('user-1', { acr: 'low' }, makeFactor());
       const rotated = await svc.rotateSession(old.sessionToken, { acr: 'high', mfa_satisfied: true });
@@ -804,7 +802,7 @@ describe('AuthenticationSessionService', () => {
 
     it('throws 401 when the source session does not exist', async () => {
       const harness = makeLiveHarness();
-      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider, harness.logger);
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);
       await expect(svc.rotateSession('missing-token')).rejects.toMatchObject({ statusCode: 401 });
     });
   });
@@ -821,7 +819,7 @@ describe('AuthenticationSessionService', () => {
         undefined,
         harness.logger,
       );
-      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider, harness.logger, failing);
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider, failing);
 
       // An audit outage must not become a login outage.
       const session = await svc.createSession('user-1', {}, makeFactor());
@@ -832,7 +830,7 @@ describe('AuthenticationSessionService', () => {
     it('records a validation failure with the actor it can still attribute', async () => {
       const harness = makeLiveHarness();
       const { events, recorder } = makeCapturingRecorder();
-      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider, harness.logger, recorder);
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider, recorder);
       // `sub` is the claim the service reads, and is what makes the record attributable.
       (harness.jwtProvider.decode as ReturnType<typeof vi.fn>).mockReturnValue({
         sessionToken: 'ghost-token',
