@@ -1,5 +1,14 @@
 # @maroonedsoftware/permissions-dsl
 
+## 0.5.7
+
+### Patch Changes
+
+- Updated dependencies [4ad43c5]
+- Updated dependencies [4ad43c5]
+- Updated dependencies [4ad43c5]
+  - @maroonedsoftware/permissions@0.3.0
+
 ## 0.5.6
 
 ### Patch Changes

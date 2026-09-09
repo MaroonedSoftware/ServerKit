@@ -1,5 +1,64 @@
 # @maroonedsoftware/authentication
 
+## 4.33.0
+
+### Minor Changes
+
+- e1ef261: Make authenticator codes single-use. `AuthenticatorFactorService.validateFactor` previously never
+  advanced an HOTP factor's stored counter, so an HOTP code stayed valid indefinitely, and had no
+  replay guard for TOTP, so a code could be reused inside its drift window. HOTP factors now have
+  their counter advanced past the step that matched, and consumed TOTP steps are claimed in cache
+  with a set-if-absent write.
+
+  **Breaking for repository implementers:** `AuthenticatorFactorRepository` gains a required
+  `updateFactorCounter(actorId, factorId, counter)` method.
+
+  Also adds `OtpProvider.validateWithCounter`, which validates a code and reports which counter or
+  time step matched, and fixes a `RangeError` thrown out of `validate` when a submitted code was the
+  right number of characters but a different number of bytes.
+
+- 6a0c667: Revoke a user's existing sessions after a password reset or full recovery. Previously
+  `RecoveryOrchestrator.completeRecovery` left prior authentication sessions working, and the caller
+  had to enumerate and delete them; a caller who missed that step left tokens minted before the
+  recovery valid.
+
+  Adds `AuthenticationSessionService.revokeAllForSubject(subject, reason?)`, a new `'recovery'`
+  member of `SessionRevocationReason`, and an optional `AuthenticationSessionService` constructor
+  dependency on `RecoveryOrchestrator`. When it is bound, `resetPassword` and `fullRecovery` revoke
+  the actor's sessions automatically; without it the previous behaviour is unchanged.
+
+### Patch Changes
+
+- 8a6163c: Make MFA completion atomic and check eligibility before the proof is spent.
+  `MfaOrchestrator.completeMfa` previously verified the proof before checking it against the
+  challenge's eligible list, so a proof aimed at a factor the challenge never offered still consumed
+  the single-use sub-challenge behind it. It also ran `peek` then `redeem` non-atomically, so two
+  concurrent completions for the same challenge could both succeed.
+
+  The method (and an authenticator proof's `methodId`) is now checked up front, one completion runs
+  at a time per challenge (a concurrent second call gets a 409, and the lock is released when a proof
+  fails so the actor can retry), and `MfaChallengeService.redeem` treats the delete as the claim so
+  only one caller wins.
+
+- 7b77bae: Bind recovery channel proofs to the parent recovery challenge. `RecoveryOrchestrator.verifyChannel`
+  now requires an email or phone proof to carry the `channelChallengeId` that `issueChannelChallenge`
+  stitched onto the challenge, and requires the verified factor to appear in the challenge's
+  `eligibleChannels`. Previously a sub-challenge issued against the caller's own factor could be
+  redeemed against a recovery challenge bound to a different actor, minting that actor's recovery
+  session with `resetPassword` granted.
+- 18c6070: Mask recovery channel labels. `RecoveryOrchestrator.initiateRecovery` is reachable
+  pre-authentication, and previously returned the account's full email addresses and phone numbers
+  as `eligibleChannels[].label`, so anyone who knew one identifier could read the others. Labels are
+  now masked with the new `maskEmail` and `maskPhone` helpers; the unmasked recipient is still
+  returned by `issueChannelChallenge` for delivery.
+- bec7f86: Compare magic-link tokens in constant time. `EmailFactorService` verified magic-link tokens with a
+  plain `!==` while every other secret comparison in the package used `crypto.timingSafeEqual`.
+
+  Adds a shared `timingSafeCompare` helper and routes both the email factor and the support
+  verification service through it. The helper compares byte lengths rather than character counts, so
+  a submitted value that is the right number of characters but a different number of bytes returns
+  `false` instead of throwing a `RangeError`.
+
 ## 4.32.0
 
 ### Minor Changes
