@@ -128,6 +128,38 @@ describe('applyScimPatch', () => {
     }
   });
 
+  describe('prototype safety', () => {
+    it('does not reparent the resource on a pathless add carrying __proto__', () => {
+      const resource: Record<string, unknown> = { userName: 'bjensen' };
+      const payload = JSON.parse('{"__proto__": {"polluted": true}}') as Record<string, unknown>;
+
+      const out = applyScimPatch(resource, [{ op: 'add', value: payload }]);
+
+      expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
+      expect((out as { polluted?: unknown }).polluted).toBeUndefined();
+      expect(({} as { polluted?: unknown }).polluted).toBeUndefined();
+    });
+
+    it('leaves Object.prototype alone for a nested __proto__ merge', () => {
+      const resource: Record<string, unknown> = { name: { givenName: 'Barbara' } };
+      const payload = JSON.parse('{"name": {"__proto__": {"polluted": true}}}') as Record<string, unknown>;
+
+      applyScimPatch(resource, [{ op: 'add', value: payload }]);
+
+      expect(({} as { polluted?: unknown }).polluted).toBeUndefined();
+    });
+
+    it('still merges ordinary attributes alongside a __proto__ key', () => {
+      const resource: Record<string, unknown> = { userName: 'bjensen' };
+      const payload = JSON.parse('{"__proto__": {"polluted": true}, "displayName": "Barbara"}') as Record<string, unknown>;
+
+      const out = applyScimPatch(resource, [{ op: 'add', value: payload }]);
+
+      expect((out as { displayName?: string }).displayName).toBe('Barbara');
+      expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
+    });
+  });
+
   it('applies multiple ops in order', () => {
     const out = applyScimPatch({ active: true }, [
       { op: 'add', path: 'displayName', value: 'Bob' },
