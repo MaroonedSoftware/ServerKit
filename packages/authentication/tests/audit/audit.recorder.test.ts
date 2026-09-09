@@ -3,7 +3,7 @@ import { DateTime } from 'luxon';
 import { Logger } from '@maroonedsoftware/logger';
 import { AUDIT_SINK_FAILED_EVENT, AuditOptions, AuditRecorder } from '../../src/audit/audit.recorder.js';
 import { AuditSink, CompositeAuditSink, LoggingAuditSink, NoopAuditSink } from '../../src/audit/audit.sink.js';
-import type { AuthenticationAuditEvent } from '../../src/audit/types.js';
+import type { AuthenticationAuditEvent } from '../../src/audit/audit.event.js';
 
 const makeLogger = () => ({ error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn(), trace: vi.fn() }) as unknown as Logger;
 
@@ -99,23 +99,24 @@ describe('LoggingAuditSink', () => {
   it('logs a success at info with the type as the message', () => {
     const sink = new LoggingAuditSink(logger);
 
-    sink.record({ ...event, occurredAt: DateTime.fromISO('2026-01-02T03:04:05Z', { zone: 'utc' }), data: { sessionToken: 'st' } });
+    const data = { sessionToken: 'st', factors: [], claims: {}, expiresAt: '2026-01-02T04:04:05.000Z' };
+    sink.record({ ...event, occurredAt: DateTime.fromISO('2026-01-02T03:04:05Z', { zone: 'utc' }), data });
 
     expect(logger.info).toHaveBeenCalledWith('session.created', {
       category: 'session',
       outcome: 'success',
       occurredAt: '2026-01-02T03:04:05.000Z',
       actorId: 'user-1',
-      data: { sessionToken: 'st' },
+      data,
     });
   });
 
   it('logs a failure at warn', () => {
     const sink = new LoggingAuditSink(logger);
 
-    sink.record({ type: 'password.verify.failed', category: 'login', outcome: 'failure', occurredAt: DateTime.utc() });
+    sink.record({ type: 'api_key.rejected', category: 'machine', outcome: 'failure', occurredAt: DateTime.utc(), data: { reason: 'expired' } });
 
-    expect(logger.warn).toHaveBeenCalledWith('password.verify.failed', expect.objectContaining({ outcome: 'failure' }));
+    expect(logger.warn).toHaveBeenCalledWith('api_key.rejected', expect.objectContaining({ outcome: 'failure' }));
     expect(logger.info).not.toHaveBeenCalled();
   });
 

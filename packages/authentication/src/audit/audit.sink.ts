@@ -1,6 +1,6 @@
 import { Injectable } from 'injectkit';
 import { Logger } from '@maroonedsoftware/logger';
-import type { AuthenticationAuditEvent } from './types.js';
+import type { AuthenticationAuditEvent } from './audit.event.js';
 
 /**
  * Where audit events go.

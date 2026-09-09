@@ -5,12 +5,14 @@ import { httpError } from '@maroonedsoftware/errors';
 import { CacheProvider } from '@maroonedsoftware/cache';
 import { Logger } from '@maroonedsoftware/logger';
 import { PolicyService, isPolicyResultDenied } from '@maroonedsoftware/policies';
+import { AuditRecorder } from '../audit/audit.recorder.js';
+import type { AuditApiKeyData } from '../audit/api.key.audit.event.js';
 import { invalidAuthenticationSession, type AuthenticationSession } from '../types.js';
 import type { AuthorizationScheme } from '../authentication.handler.js';
 import type { TargetActor } from '../mfa/types.js';
 import { ApiKeyRepository, type ApiKeyListOptions } from './api.key.repository.js';
 import { apiKeyHint, encodeBase62, formatApiKeyToken, hashApiKeyToken, parseApiKeyToken } from './api.key.token.js';
-import type { ApiKey, ApiKeyCreateInput, ApiKeyIssued, ApiKeySessionClaim, ApiKeyUpdate, ApiKeyValidation } from './types.js';
+import type { ApiKey, ApiKeyCreateInput, ApiKeyIssued, ApiKeyRejectionReason, ApiKeySessionClaim, ApiKeyUpdate, ApiKeyValidation } from './types.js';
 
 /** Cache key prefix for the `lastUsedAt` write throttle. */
 const TOUCH_KEY_PREFIX = 'api_key_touched_';
@@ -90,7 +92,19 @@ export class ApiKeyService<K extends string = string> {
     private readonly cache: CacheProvider,
     private readonly policyService: PolicyService,
     private readonly logger: Logger,
+    /** Records key lifecycle and authentication events. Defaulted, so audit is opt-in. */
+    private readonly audit: AuditRecorder = new AuditRecorder(),
   ) {}
+
+  /** Project a key onto the shape audit events carry. Never the token, only the hint. */
+  private auditKeyData(key: ApiKey<K>): AuditApiKeyData {
+    return {
+      id: key.id,
+      name: key.name,
+      hint: key.hint,
+      ...(key.owner.organizationId === undefined ? {} : { organizationId: key.owner.organizationId }),
+    };
+  }
 
   /**
    * Issue a new key.
@@ -136,6 +150,18 @@ export class ApiKeyService<K extends string = string> {
       expiresAt: stored.expiresAt?.toISO() ?? undefined,
     });
 
+    await this.audit.record({
+      type: 'api_key.created',
+      category: 'credential',
+      outcome: 'success',
+      actorId: stored.owner.actorId,
+      data: {
+        ...this.auditKeyData(stored),
+        scopes: stored.scopes,
+        ...(stored.expiresAt ? { expiresAt: stored.expiresAt.toISO() ?? undefined } : {}),
+      },
+    });
+
     return { key: stored, token };
   }
 
@@ -159,12 +185,14 @@ export class ApiKeyService<K extends string = string> {
       // Every non-key bearer credential lands here, so this is the ordinary
       // case behind a chain, not a signal. `debug`, never `warn`.
       this.logger.debug('api_key.rejected', { reason: 'malformed' });
+      await this.auditRejected('malformed');
       return { kind: 'invalid', reason: 'malformed' };
     }
 
     const key = await this.repository.findBySecretHash(hashApiKeyToken(token));
     if (!key) {
       this.logger.debug('api_key.rejected', { reason: 'unknown' });
+      await this.auditRejected('unknown');
       return { kind: 'invalid', reason: 'unknown' };
     }
 
@@ -174,17 +202,20 @@ export class ApiKeyService<K extends string = string> {
     // credential that was withdrawn, which is worth seeing in a log.
     if (key.revokedAt) {
       this.logger.warn('api_key.rejected', { id: key.id, actorId: key.owner.actorId, reason: 'revoked' });
+      await this.auditRejected('revoked', key);
       return { kind: 'invalid', reason: 'revoked' };
     }
 
     if (key.expiresAt && key.expiresAt <= now) {
       this.logger.warn('api_key.rejected', { id: key.id, actorId: key.owner.actorId, reason: 'expired' });
+      await this.auditRejected('expired', key);
       return { kind: 'invalid', reason: 'expired' };
     }
 
     const policyResult = await this.policyService.check('auth.api.key.allowed', { owner: key.owner, operation: 'validate', key });
     if (isPolicyResultDenied(policyResult)) {
       this.logger.warn('api_key.rejected', { id: key.id, actorId: key.owner.actorId, reason: 'policy_denied', policyReason: policyResult.reason });
+      await this.auditRejected('policy_denied', key);
       return { kind: 'invalid', reason: 'policy_denied' };
     }
 
@@ -217,6 +248,17 @@ export class ApiKeyService<K extends string = string> {
     if (result.kind === 'invalid') return invalidAuthenticationSession;
 
     const { key } = result;
+
+    // The machine equivalent of a login success, and the one event the service
+    // did not record before: only rejections were visible.
+    await this.audit.record({
+      type: 'api_key.authenticated',
+      category: 'machine',
+      outcome: 'success',
+      actorId: key.owner.actorId,
+      data: { ...this.auditKeyData(key), scopes: key.scopes },
+    });
+
     const issuedAt = DateTime.utc();
     const sessionExpiry = issuedAt.plus(this.options.sessionLifetime);
 
@@ -270,6 +312,13 @@ export class ApiKeyService<K extends string = string> {
 
     const updated = await this.repository.update(existing.id, patch);
     this.logger.info('api_key.updated', { id: updated.id, actorId: updated.owner.actorId });
+    await this.audit.record({
+      type: 'api_key.updated',
+      category: 'credential',
+      outcome: 'success',
+      actorId: updated.owner.actorId,
+      data: this.auditKeyData(updated),
+    });
 
     return updated;
   }
@@ -301,6 +350,13 @@ export class ApiKeyService<K extends string = string> {
 
     const updated = await this.repository.update(existing.id, { secretHash: hashApiKeyToken(token), hint: apiKeyHint(token) });
     this.logger.info('api_key.rotated', { id: updated.id, actorId: updated.owner.actorId, hint: updated.hint });
+    await this.audit.record({
+      type: 'api_key.rotated',
+      category: 'credential',
+      outcome: 'success',
+      actorId: updated.owner.actorId,
+      data: this.auditKeyData(updated),
+    });
 
     return { key: updated, token };
   }
@@ -318,6 +374,13 @@ export class ApiKeyService<K extends string = string> {
     const revoked = await this.repository.revoke(existing.id, DateTime.utc());
 
     this.logger.info('api_key.revoked', { id: revoked.id, actorId: revoked.owner.actorId });
+    await this.audit.record({
+      type: 'api_key.revoked',
+      category: 'credential',
+      outcome: 'success',
+      actorId: revoked.owner.actorId,
+      data: this.auditKeyData(revoked),
+    });
 
     return revoked;
   }
@@ -336,6 +399,13 @@ export class ApiKeyService<K extends string = string> {
     const count = await this.repository.revokeAllForOwner(owner, DateTime.utc());
 
     this.logger.info('api_key.revoked_all', { actorId: owner.actorId, organizationId: owner.organizationId, count });
+    await this.audit.record({
+      type: 'api_key.revoked_all',
+      category: 'credential',
+      outcome: 'success',
+      actorId: owner.actorId,
+      data: { ...(owner.organizationId === undefined ? {} : { organizationId: owner.organizationId }), count },
+    });
 
     return count;
   }
@@ -349,6 +419,25 @@ export class ApiKeyService<K extends string = string> {
   async delete(id: string): Promise<void> {
     await this.repository.delete(id);
     this.logger.info('api_key.deleted', { id });
+    await this.audit.record({ type: 'api_key.deleted', category: 'credential', outcome: 'success', data: { id } });
+  }
+
+  /**
+   * Record a refused credential.
+   *
+   * `malformed` and `unknown` carry no key detail, because there is no key to
+   * attribute them to. They are also the ordinary case behind a handler chain,
+   * where every JWT reaches this service, so their volume is traffic rather than
+   * attack.
+   */
+  private async auditRejected(reason: ApiKeyRejectionReason, key?: ApiKey<K>): Promise<void> {
+    await this.audit.record({
+      type: 'api_key.rejected',
+      category: 'machine',
+      outcome: 'failure',
+      ...(key === undefined ? {} : { actorId: key.owner.actorId }),
+      data: { ...(key === undefined ? {} : this.auditKeyData(key)), reason },
+    });
   }
 
   /** Fetch a key or raise a 404, so management methods share one error shape. */

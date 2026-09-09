@@ -3,6 +3,8 @@ import { unauthorizedError } from '@maroonedsoftware/errors';
 import { DateTime, Duration } from 'luxon';
 import { deepmergeCustom } from 'deepmerge-ts';
 import { Logger } from '@maroonedsoftware/logger';
+import { AuditRecorder } from './audit/audit.recorder.js';
+import type { AuditSessionData, SessionValidationFailureReason } from './audit/session.audit.event.js';
 import { AuthenticationSession, AuthenticationSessionFactor, AuthenticationToken, SessionRevocationReason } from './types.js';
 import type { AuthenticationSessionHooks } from './types.js';
 import { CacheProvider } from '@maroonedsoftware/cache';
@@ -88,7 +90,40 @@ export class AuthenticationSessionService {
     private readonly cache: CacheProvider,
     private readonly jwtProvider: JwtProvider,
     private readonly logger: Logger,
+    /**
+     * Records session lifecycle events. Defaulted so binding an `AuditSink` is
+     * opt-in and an existing hand-constructed service keeps compiling.
+     */
+    private readonly audit: AuditRecorder = new AuditRecorder(),
   ) {}
+
+  /**
+   * Project a session onto the shape audit events carry.
+   *
+   * `claims` goes through whole: an application that stamps request detail onto
+   * a session at login needs it back on a later revoke, which happens on a
+   * different request.
+   */
+  private auditSessionData(session: AuthenticationSession): AuditSessionData {
+    return {
+      sessionToken: session.sessionToken,
+      ...(session.familyId === undefined ? {} : { familyId: session.familyId }),
+      factors: session.factors.map(({ method, methodId, kind }) => ({ method, methodId, kind })),
+      claims: session.claims,
+      expiresAt: session.expiresAt.toISO() ?? '',
+    };
+  }
+
+  /** Record a failed validation, attributing an actor whenever one is known. */
+  private async auditValidationFailed(reason: SessionValidationFailureReason, sessionToken?: string, actorId?: string) {
+    await this.audit.record({
+      type: 'session.validation_failed',
+      category: 'login',
+      outcome: 'failure',
+      ...(actorId === undefined ? {} : { actorId }),
+      data: { ...(sessionToken ? { sessionToken } : {}), reason },
+    });
+  }
 
   private getSessionKey(id: string) {
     return `auth_session_${id}`;
@@ -261,6 +296,13 @@ export class AuthenticationSessionService {
     await this.ensureSubjectSession(subject, sessionToken, expiration);
 
     await this.runHook('onSessionCreated', hook => hook(session));
+    await this.audit.record({
+      type: 'session.created',
+      category: 'session',
+      outcome: 'success',
+      actorId: subject,
+      data: this.auditSessionData(session),
+    });
 
     return session;
   }
@@ -338,6 +380,16 @@ export class AuthenticationSessionService {
     await this.cache.update(this.getSessionKey(sessionToken), this.serializeSession(session), expiration);
     await this.ensureSubjectSession(session.subject, sessionToken, expiration);
 
+    // `privilege`, not `session`: claims and factors are what a route's policy
+    // reads, so changing them changes what the session may do.
+    await this.audit.record({
+      type: 'session.updated',
+      category: 'privilege',
+      outcome: 'success',
+      actorId: session.subject,
+      data: this.auditSessionData(session),
+    });
+
     return session;
   }
 
@@ -387,6 +439,8 @@ export class AuthenticationSessionService {
     const jwtPayload = this.jwtProvider.decode(jwt, this.options.issuer, ignoreJwtExpiration, false, this.options.audience);
     if (!jwtPayload) {
       await this.runHook('onValidationFailed', hook => hook('', { reason: 'jwt_decode_failed' }));
+      // The one failure with no actor to attribute: the token never decoded.
+      await this.auditValidationFailed('jwt_decode_failed');
       throw unauthorizedError('Bearer error="invalid_token"');
     }
 
@@ -394,6 +448,7 @@ export class AuthenticationSessionService {
 
     if (!session) {
       await this.runHook('onValidationFailed', hook => hook(jwtPayload.sessionToken ?? '', { reason: 'session_not_found' }));
+      await this.auditValidationFailed('session_not_found', jwtPayload.sessionToken, jwtPayload.sub);
       throw unauthorizedError('Bearer error="invalid_token"').withInternalDetails({
         message: `unable to find session ${jwtPayload.sessionToken}`,
       });
@@ -401,6 +456,7 @@ export class AuthenticationSessionService {
 
     if (session.subject !== jwtPayload.sub) {
       await this.runHook('onValidationFailed', hook => hook(jwtPayload.sessionToken ?? '', { reason: 'subject_mismatch' }));
+      await this.auditValidationFailed('subject_mismatch', jwtPayload.sessionToken, session.subject);
       throw unauthorizedError('Bearer error="invalid_token"').withInternalDetails({
         message: `session ${jwtPayload.sessionToken} not valid for ${jwtPayload.sub}`,
       });
@@ -429,6 +485,13 @@ export class AuthenticationSessionService {
         await this.removeSessionFromFamily(session.familyId, sessionToken);
       }
       await this.runHook('onSessionRevoked', hook => hook(session, { reason }));
+      await this.audit.record({
+        type: 'session.revoked',
+        category: 'session',
+        outcome: 'success',
+        actorId: session.subject,
+        data: { ...this.auditSessionData(session), reason },
+      });
     }
   }
 
@@ -480,6 +543,17 @@ export class AuthenticationSessionService {
       await this.deleteSession(token, reason);
       revoked += 1;
     }
+
+    // Alongside the per-session events `deleteSession` already emitted. The
+    // count is the part no hook ever sees.
+    await this.audit.record({
+      type: 'session.revoked_all',
+      category: 'session',
+      outcome: 'success',
+      actorId: subject,
+      data: { reason, count: revoked },
+    });
+
     return revoked;
   }
 
@@ -595,6 +669,15 @@ export class AuthenticationSessionService {
 
     await this.runHook('onSessionCreated', hook => hook(newSession));
     await this.runHook('onSessionRevoked', hook => hook(oldSession, { reason: 'rotate' }));
+    // One event, not the created/revoked pair the hooks fire: a consumer should
+    // not have to correlate two records to see that one session replaced another.
+    await this.audit.record({
+      type: 'session.rotated',
+      category: 'privilege',
+      outcome: 'success',
+      actorId: oldSession.subject,
+      data: { ...this.auditSessionData(newSession), previousSessionToken: sessionToken },
+    });
 
     return { session: newSession, ...tokens };
   }
@@ -614,6 +697,7 @@ export class AuthenticationSessionService {
       (RefreshTokenPayload & { exp?: number }) | undefined;
     if (!decoded || decoded.kind !== 'refresh' || !decoded.jti || !decoded.familyId || !decoded.sessionToken) {
       await this.runHook('onValidationFailed', hook => hook('', { reason: 'refresh_token_invalid' }));
+      await this.auditValidationFailed('refresh_token_invalid');
       throw unauthorizedError('Bearer error="invalid_token"');
     }
 
@@ -627,8 +711,20 @@ export class AuthenticationSessionService {
     const consumedTtlSeconds = Math.max(decoded.exp ? decoded.exp - Math.floor(DateTime.now().toSeconds()) : 0, MIN_CONSUMED_TTL_SECONDS);
     const claimed = await this.cache.add(consumedKey, '1', { ttl: Duration.fromObject({ seconds: consumedTtlSeconds }) });
     if (!claimed) {
-      await this.revokeFamily(familyId);
+      const revokedInFamily = await this.revokeFamily(familyId);
       await this.runHook('onRefreshReuseDetected', hook => hook({ familyId, jti, sessionToken }));
+      await this.audit.record({
+        type: 'session.family_revoked',
+        category: 'session',
+        outcome: 'success',
+        data: { familyId, count: revokedInFamily },
+      });
+      await this.audit.record({
+        type: 'session.refresh_reuse_detected',
+        category: 'login',
+        outcome: 'failure',
+        data: { familyId, jti, ...(sessionToken ? { sessionToken } : {}) },
+      });
       throw unauthorizedError('Bearer error="invalid_token"').withInternalDetails({
         message: `refresh token jti ${jti} replayed for family ${familyId}`,
       });
@@ -637,12 +733,20 @@ export class AuthenticationSessionService {
     const session = await this.getSession(sessionToken);
     if (!session) {
       await this.runHook('onValidationFailed', hook => hook(sessionToken, { reason: 'session_not_found' }));
+      await this.auditValidationFailed('session_not_found', sessionToken);
       throw unauthorizedError('Bearer error="invalid_token"');
     }
 
     const tokens = await this.issueTokensForLoadedSession(session);
 
     await this.runHook('onSessionRefreshed', hook => hook(session, { previousJti: jti }));
+    await this.audit.record({
+      type: 'session.refreshed',
+      category: 'session',
+      outcome: 'success',
+      actorId: session.subject,
+      data: { ...this.auditSessionData(session), previousJti: jti },
+    });
 
     return tokens;
   }
@@ -674,17 +778,35 @@ export class AuthenticationSessionService {
     };
   }
 
-  private async revokeFamily(familyId: string) {
+  /**
+   * Tear down every session in a refresh-token family.
+   *
+   * @returns How many sessions were revoked, so the caller can record the
+   *   aggregate alongside the per-session events.
+   */
+  private async revokeFamily(familyId: string): Promise<number> {
     const { blob, existed } = await this.readFamily(familyId);
-    if (!existed) return;
+    if (!existed) return 0;
+
+    let revoked = 0;
     for (const token of blob.sessionTokens) {
       const session = await this.getSession(token);
       await this.cache.delete(this.getSessionKey(token));
       if (session) {
         await this.removeSubjectSession(session.subject, token);
         await this.runHook('onSessionRevoked', hook => hook(session, { reason: 'theft' }));
+        await this.audit.record({
+          type: 'session.revoked',
+          category: 'session',
+          outcome: 'success',
+          actorId: session.subject,
+          data: { ...this.auditSessionData(session), reason: 'theft' },
+        });
+        revoked += 1;
       }
     }
     await this.cache.delete(this.getFamilyKey(familyId));
+
+    return revoked;
   }
 }

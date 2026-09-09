@@ -59,7 +59,7 @@ by area; type aliases for provider-specific payload shapes are grouped rather th
 | `AuthenticationFactorMethod`   | type      | `'phone' \| 'password' \| 'authenticator' \| 'email' \| 'fido' \| 'oidc' \| 'apikey'`                             | **Note: no `'oauth2'`.** See Gotchas. `'apikey'` is a machine credential, not an enrolled factor. |
 | `invalidAuthenticationSession` | constant  | Sentinel with empty strings and `DateTime.invalid('invalid')` fields                                              | Compare by **identity**; that is what `requirePolicy` does.                                       |
 | `SessionRevocationReason`      | type      | `'logout' \| 'rotate' \| 'theft' \| 'expiry'`                                                                     | —                                                                                                 |
-| `AuthenticationSessionHooks`   | interface | `onSessionCreated?`, `onSessionRefreshed?`, `onSessionRevoked?`, `onValidationFailed?`, `onRefreshReuseDetected?` | Fire **after** the cache write commits. Errors logged, never propagated.                          |
+| `AuthenticationSessionHooks`   | interface | `onSessionCreated?`, `onSessionRefreshed?`, `onSessionRevoked?`, `onValidationFailed?`, `onRefreshReuseDetected?` | **Deprecated** — bind an `AuditSink`. Still fires. Errors logged, never propagated.               |
 | `AuthenticationToken`          | type      | `{ accessToken, tokenType, expiresIn, … }`                                                                        | OAuth 2.0-shaped response.                                                                        |
 
 ### Scheme dispatch
@@ -205,6 +205,8 @@ default off the route path — a `@maroonedsoftware/mcp` tool passing it to `req
 | `AuditRecorder` (+ `AuditOptions`)                          | class          | Stamps `occurredAt` and applies the failure policy. Services inject **this**, not the sink. |
 | `NoopAuditSink`, `LoggingAuditSink`, `CompositeAuditSink`   | classes        | Composite offers the event to every member, then rethrows what failed.                      |
 | `AuditEvent`, `AuthenticationAuditEvent`, `AuditEventInput` | types          | `AuditEvent<TType, TData>` is how a domain declares its events.                             |
+| `SessionAuditEvent`, `ApiKeyAuditEvent`                     | types          | The domains emitting today; `AuthenticationAuditEvent` unions them.                         |
+| `AuditSessionData`, `AuditApiKeyData`, `AuditSessionFactor` | interfaces     | Event payloads. `AuditSessionData.claims` passes through whole — see Gotchas.               |
 | `AuditEventBase`, `AuditEventContext`                       | interfaces     | `context` is filled by the app's sink, never by this package. See Gotchas.                  |
 | `AuditEventCategory`, `AuditOutcome`                        | types          | `'failure'` always means a credential verdict, never an infrastructure fault.               |
 | `AUDIT_SINK_FAILED_EVENT`                                   | constant       | Logged when a sink throws outside strict mode. **Alert on it.**                             |
@@ -369,6 +371,12 @@ const session = await sessions.createSession(completed.actor.id, claims, complet
   cannot become a login outage. Alert on that event or the outage is invisible. `AuditOptions.strict`
   inverts it: a sink failure aborts the operation, which is what some compliance regimes require and
   which makes a sink outage a login outage. Choose deliberately.
+- **`AuditSessionData.claims` passes through whole.** An app that stamps `loginIp` / `loginUserAgent`
+  onto a session at login needs them back on a later revoke, which happens on a different request
+  where the live context describes the wrong caller. So whatever you put in `claims` reaches your
+  sink: do not store a secret there.
+- **`session.rotated` is one event, not two.** The hooks fire `onSessionCreated` + `onSessionRevoked`
+  for a rotation and leave the consumer to correlate them. The event names both tokens.
 - **The package never fills `AuditEventContext`.** It sits at L2 alongside the HTTP adapters, so it
   cannot reach a request. Fill `correlationId`, `ipAddress`, and the rest in your own request-scoped
   sink.
@@ -425,7 +433,8 @@ src/
                                   support.verification.code.service
   apikey/                         types, api.key.token (codec), api.key.repository,
                                   api.key.service, api.key.authentication.handler
-  audit/                          types, audit.sink, audit.recorder
+  audit/                          types, audit.sink, audit.recorder, audit.event,
+                                  session.audit.event, api.key.audit.event
   index.ts                        Barrel
 ```
 

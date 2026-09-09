@@ -115,20 +115,3 @@ export interface AuditEvent<TType extends string = string, TData = Record<string
    */
   data?: TData;
 }
-
-/**
- * Every event this package emits.
- *
- * Grows one domain at a time. Consumers should `switch` on `type` with a
- * `default` branch, since a minor release may add a member.
- */
-export type AuthenticationAuditEvent = AuditEvent;
-
-/** `Omit` that distributes across a union instead of collapsing it to its common keys. */
-type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
-
-/**
- * What a service passes to {@link import('./audit.recorder.js').AuditRecorder.record}:
- * an event without its timestamp, which the recorder stamps.
- */
-export type AuditEventInput = DistributiveOmit<AuthenticationAuditEvent, 'occurredAt'>;

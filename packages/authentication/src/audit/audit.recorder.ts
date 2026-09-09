@@ -2,7 +2,7 @@ import { Injectable } from 'injectkit';
 import { DateTime } from 'luxon';
 import { Logger } from '@maroonedsoftware/logger';
 import { AuditSink, NoopAuditSink } from './audit.sink.js';
-import type { AuditEventInput, AuthenticationAuditEvent } from './types.js';
+import type { AuditEventInput, AuthenticationAuditEvent } from './audit.event.js';
 
 /** Event logged when a sink throws and {@link AuditOptions.strict} is off. */
 export const AUDIT_SINK_FAILED_EVENT = 'audit.sink_failed' as const;

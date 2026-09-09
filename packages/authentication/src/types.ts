@@ -79,6 +79,16 @@ export type SessionRevocationReason = 'logout' | 'rotate' | 'theft' | 'expiry' |
  * Hooks fire **after** the cache write/delete so they observe committed state.
  * They run sequentially and are awaited; errors are logged but not propagated
  * (a failing hook must not break authentication).
+ *
+ * @deprecated Bind an `AuditSink` instead. It covers the whole package rather
+ *   than sessions alone, carries a common envelope, and attributes an `actorId`
+ *   at every point the service knows one — including validation failures, where
+ *   these hooks pass only a token and force a consumer to look the session up
+ *   again to file the record.
+ *
+ *   Hooks still fire and are not going away in this major. Keep them for work
+ *   that must happen as a consequence of a session change; use the sink to
+ *   record that it happened.
  */
 export interface AuthenticationSessionHooks {
   /** Fired after a new session has been created and persisted. */
