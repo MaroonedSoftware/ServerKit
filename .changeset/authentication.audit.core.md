@@ -1,24 +1,37 @@
 ---
-'@maroonedsoftware/authentication': minor
+'@maroonedsoftware/authentication': major
 ---
 
-Add the audit seam: `AuditSink`, `AuditRecorder`, and the event contract. No events are emitted yet;
-later changes fill in the domains.
+**Breaking:** `AuthenticationSessionHooks` is removed, along with the fifth `hooks` argument to
+`AuthenticationSessionServiceOptions`. Bind an `AuditSink` instead.
 
-An application implements `AuditSink` and registers it, and every service in the package records
-through `AuditRecorder`, which stamps `occurredAt` and applies the failure policy in one place.
-Services take the recorder as a defaulted trailing constructor parameter, so a consumer who has not
-opted in keeps their existing constructor calls and the default recorder drops every event.
+The hooks existed to observe the session lifecycle, and the audit sink does that better: it covers
+the whole package rather than sessions alone, carries a common envelope on every event, and
+attributes an `actorId` on validation failures where the hook passed only a token. Migration is
+mechanical:
 
-A sink failure is swallowed and logged as `audit.sink_failed` by default, so an audit store outage
-cannot become a login outage. Alert on that event or the outage is invisible. `AuditOptions.strict`
-inverts it for deployments where an action that could not be recorded must not proceed.
+| Hook                     | Event                                                           |
+| ------------------------ | --------------------------------------------------------------- |
+| `onSessionCreated`       | `session.created`                                               |
+| `onSessionRefreshed`     | `session.refreshed` (`data.previousJti`)                        |
+| `onSessionRevoked`       | `session.revoked` (`data.reason`)                               |
+| `onValidationFailed`     | `session.validation_failed` (`data.reason`), now with `actorId` |
+| `onRefreshReuseDetected` | `session.refresh_reuse_detected`                                |
 
-`CompositeAuditSink` offers an event to every member even when one throws, then rethrows what
-failed, so a broken SIEM does not cost you the database row while the recorder's failure policy
-stays meaningful. `LoggingAuditSink` writes through `Logger` using the same dotted-event convention
-the package already logs with.
+Two things improve in the move. A rotation is one `session.rotated` event naming both tokens rather
+than an uncorrelated `onSessionCreated` and `onSessionRevoked` pair, and `revokeAllForSubject` emits
+a `session.revoked_all` carrying the count that no hook ever saw.
 
-The package never fills `AuditEventContext`: it sits at L2 alongside the HTTP adapters and cannot
-reach a request, so `correlationId` and `ipAddress` are filled by the application's own
-request-scoped sink.
+Session events also carry the session's `claims` whole, so an application that stamps request detail
+at login can still recover it on a revoke that happens on a different request.
+
+`RecoveryOrchestratorHooks` is **not** affected. It is behavioural rather than observational —
+`onRebindMfaFactor` is where an application mutates the factor, and a throw there must abort the
+recovery.
+
+Adds the seam this replaces it with: `AuditSink`, `AuditRecorder`, and the event contract. Services
+take the recorder as a defaulted trailing constructor parameter, so an unbound sink is a working
+no-op. A sink failure is swallowed and logged as `audit.sink_failed` by default, so an audit store
+outage cannot become a login outage — alert on that event or the outage is invisible.
+`AuditOptions.strict` inverts it for deployments where an action that could not be recorded must not
+proceed.

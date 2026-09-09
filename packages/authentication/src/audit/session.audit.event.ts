@@ -44,10 +44,10 @@ export interface AuditSessionData {
 /**
  * Session lifecycle events.
  *
- * These overlap `AuthenticationSessionHooks`, which still fires and is now
- * deprecated. Two things make the events better for audit: they carry a common
+ * These replace `AuthenticationSessionHooks`, which has been removed. Two things
+ * make the events better for the job the hooks were doing: they carry a common
  * envelope, and they attribute an `actorId` at every point the service knows one
- * — including validation failures, where the hook passes only a token and forces
+ * — including validation failures, where the hook passed only a token and forced
  * a consumer to look the session up again to file the record.
  */
 export type SessionAuditEvent =

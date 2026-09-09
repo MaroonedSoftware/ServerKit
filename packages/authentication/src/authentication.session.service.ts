@@ -6,7 +6,6 @@ import { Logger } from '@maroonedsoftware/logger';
 import { AuditRecorder } from './audit/audit.recorder.js';
 import type { AuditSessionData, SessionValidationFailureReason } from './audit/session.audit.event.js';
 import { AuthenticationSession, AuthenticationSessionFactor, AuthenticationToken, SessionRevocationReason } from './types.js';
-import type { AuthenticationSessionHooks } from './types.js';
 import { CacheProvider } from '@maroonedsoftware/cache';
 import { JwtProvider } from './providers/jwt.provider.js';
 
@@ -62,11 +61,6 @@ export class AuthenticationSessionServiceOptions {
      * entries inherit this TTL, refreshed on every rotation.
      */
     public readonly refreshExpiresIn: Duration = Duration.fromObject({ days: 30 }),
-    /**
-     * Optional lifecycle callbacks fired after session writes/deletes commit.
-     * See {@link AuthenticationSessionHooks} for individual hook semantics.
-     */
-    public readonly hooks: AuthenticationSessionHooks = {},
   ) {}
 }
 
@@ -180,19 +174,6 @@ export class AuthenticationSessionService {
     };
   }
 
-  private async runHook<T extends keyof AuthenticationSessionHooks>(
-    name: T,
-    invoke: (hook: NonNullable<AuthenticationSessionHooks[T]>) => Promise<void> | void,
-  ) {
-    const hook = this.options.hooks[name];
-    if (!hook) return;
-    try {
-      await invoke(hook as NonNullable<AuthenticationSessionHooks[T]>);
-    } catch (ex) {
-      this.logger.error(`Authentication hook ${String(name)} threw; ignoring`, ex);
-    }
-  }
-
   private async readFamily(familyId: string): Promise<{ blob: RefreshFamilyBlob; existed: boolean }> {
     const raw = await this.cache.get(this.getFamilyKey(familyId));
     if (!raw) {
@@ -295,7 +276,6 @@ export class AuthenticationSessionService {
 
     await this.ensureSubjectSession(subject, sessionToken, expiration);
 
-    await this.runHook('onSessionCreated', hook => hook(session));
     await this.audit.record({
       type: 'session.created',
       category: 'session',
@@ -438,7 +418,6 @@ export class AuthenticationSessionService {
   async lookupSessionFromJwt(jwt: string, ignoreJwtExpiration?: boolean) {
     const jwtPayload = this.jwtProvider.decode(jwt, this.options.issuer, ignoreJwtExpiration, false, this.options.audience);
     if (!jwtPayload) {
-      await this.runHook('onValidationFailed', hook => hook('', { reason: 'jwt_decode_failed' }));
       // The one failure with no actor to attribute: the token never decoded.
       await this.auditValidationFailed('jwt_decode_failed');
       throw unauthorizedError('Bearer error="invalid_token"');
@@ -447,7 +426,6 @@ export class AuthenticationSessionService {
     const session = await this.getSession(jwtPayload.sessionToken ?? '');
 
     if (!session) {
-      await this.runHook('onValidationFailed', hook => hook(jwtPayload.sessionToken ?? '', { reason: 'session_not_found' }));
       await this.auditValidationFailed('session_not_found', jwtPayload.sessionToken, jwtPayload.sub);
       throw unauthorizedError('Bearer error="invalid_token"').withInternalDetails({
         message: `unable to find session ${jwtPayload.sessionToken}`,
@@ -455,7 +433,6 @@ export class AuthenticationSessionService {
     }
 
     if (session.subject !== jwtPayload.sub) {
-      await this.runHook('onValidationFailed', hook => hook(jwtPayload.sessionToken ?? '', { reason: 'subject_mismatch' }));
       await this.auditValidationFailed('subject_mismatch', jwtPayload.sessionToken, session.subject);
       throw unauthorizedError('Bearer error="invalid_token"').withInternalDetails({
         message: `session ${jwtPayload.sessionToken} not valid for ${jwtPayload.sub}`,
@@ -484,7 +461,6 @@ export class AuthenticationSessionService {
       if (session.familyId) {
         await this.removeSessionFromFamily(session.familyId, sessionToken);
       }
-      await this.runHook('onSessionRevoked', hook => hook(session, { reason }));
       await this.audit.record({
         type: 'session.revoked',
         category: 'session',
@@ -667,8 +643,6 @@ export class AuthenticationSessionService {
 
     const tokens = await this.issueTokensForLoadedSession(newSession);
 
-    await this.runHook('onSessionCreated', hook => hook(newSession));
-    await this.runHook('onSessionRevoked', hook => hook(oldSession, { reason: 'rotate' }));
     // One event, not the created/revoked pair the hooks fire: a consumer should
     // not have to correlate two records to see that one session replaced another.
     await this.audit.record({
@@ -696,7 +670,6 @@ export class AuthenticationSessionService {
     const decoded = this.jwtProvider.decode(refreshToken, this.options.issuer, undefined, false, this.options.audience) as
       (RefreshTokenPayload & { exp?: number }) | undefined;
     if (!decoded || decoded.kind !== 'refresh' || !decoded.jti || !decoded.familyId || !decoded.sessionToken) {
-      await this.runHook('onValidationFailed', hook => hook('', { reason: 'refresh_token_invalid' }));
       await this.auditValidationFailed('refresh_token_invalid');
       throw unauthorizedError('Bearer error="invalid_token"');
     }
@@ -712,7 +685,6 @@ export class AuthenticationSessionService {
     const claimed = await this.cache.add(consumedKey, '1', { ttl: Duration.fromObject({ seconds: consumedTtlSeconds }) });
     if (!claimed) {
       const revokedInFamily = await this.revokeFamily(familyId);
-      await this.runHook('onRefreshReuseDetected', hook => hook({ familyId, jti, sessionToken }));
       await this.audit.record({
         type: 'session.family_revoked',
         category: 'session',
@@ -732,14 +704,12 @@ export class AuthenticationSessionService {
 
     const session = await this.getSession(sessionToken);
     if (!session) {
-      await this.runHook('onValidationFailed', hook => hook(sessionToken, { reason: 'session_not_found' }));
       await this.auditValidationFailed('session_not_found', sessionToken);
       throw unauthorizedError('Bearer error="invalid_token"');
     }
 
     const tokens = await this.issueTokensForLoadedSession(session);
 
-    await this.runHook('onSessionRefreshed', hook => hook(session, { previousJti: jti }));
     await this.audit.record({
       type: 'session.refreshed',
       category: 'session',
@@ -794,7 +764,6 @@ export class AuthenticationSessionService {
       await this.cache.delete(this.getSessionKey(token));
       if (session) {
         await this.removeSubjectSession(session.subject, token);
-        await this.runHook('onSessionRevoked', hook => hook(session, { reason: 'theft' }));
         await this.audit.record({
           type: 'session.revoked',
           category: 'session',

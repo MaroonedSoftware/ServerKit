@@ -3,7 +3,10 @@ import { AuthenticationSessionService } from '../src/authentication.session.serv
 import type { CacheProvider } from '@maroonedsoftware/cache';
 import type { Logger } from '@maroonedsoftware/logger';
 import type { JwtProvider } from '../src/providers/jwt.provider.js';
-import type { AuthenticationSessionFactor, AuthenticationSessionHooks } from '../src/types.js';
+import type { AuthenticationSessionFactor } from '../src/types.js';
+import { AuditRecorder } from '../src/audit/audit.recorder.js';
+import { AuditSink } from '../src/audit/audit.sink.js';
+import type { AuthenticationAuditEvent } from '../src/audit/audit.event.js';
 import { DateTime, Duration } from 'luxon';
 
 const makeCacheProvider = () =>
@@ -42,13 +45,19 @@ const makeFactor = (overrides: Partial<AuthenticationSessionFactor> = {}): Authe
   ...overrides,
 });
 
-const makeOptions = (hooks: AuthenticationSessionHooks = {}) => ({
+const makeOptions = () => ({
   issuer: 'https://auth.example.com',
   audience: 'https://api.example.com',
   expiresIn: Duration.fromObject({ hours: 1 }),
   refreshExpiresIn: Duration.fromObject({ days: 30 }),
-  hooks,
 });
+
+/** A recorder that keeps every event, for the tests that assert on lifecycle reporting. */
+const makeCapturingRecorder = () => {
+  const events: AuthenticationAuditEvent[] = [];
+  const recorder = new AuditRecorder({ record: (e: AuthenticationAuditEvent) => void events.push(e) } as unknown as AuditSink);
+  return { events, recorder };
+};
 
 /**
  * Stored shape — the JSON that `serializeSession` writes and `deserializeSession`
@@ -355,19 +364,22 @@ describe('AuthenticationSessionService', () => {
       expect(await statefulCache.get('auth_session_token-b')).toBeNull();
     });
 
-    it('fires onSessionRevoked once per session with the supplied reason', async () => {
-      const onSessionRevoked = vi.fn();
+    it('reports one revocation per session with the supplied reason, plus the total', async () => {
+      const { events, recorder } = makeCapturingRecorder();
       const statefulCache = makeStatefulCache({
         'auth_session_subject_user-1': JSON.stringify(['token-a', 'token-b']),
         'auth_session_token-a': JSON.stringify(makeStoredSession({ sessionToken: 'token-a', familyId: undefined })),
         'auth_session_token-b': JSON.stringify(makeStoredSession({ sessionToken: 'token-b', familyId: undefined })),
       });
-      service = new AuthenticationSessionService(makeOptions({ onSessionRevoked }), statefulCache, jwtProvider, logger);
+      service = new AuthenticationSessionService(makeOptions(), statefulCache, jwtProvider, logger, recorder);
 
       await service.revokeAllForSubject('user-1', 'recovery');
 
-      expect(onSessionRevoked).toHaveBeenCalledTimes(2);
-      expect(onSessionRevoked.mock.calls.every(c => c[1]?.reason === 'recovery')).toBe(true);
+      const revoked = events.filter(e => e.type === 'session.revoked');
+      expect(revoked).toHaveLength(2);
+      expect(revoked.every(e => (e.data as { reason: string }).reason === 'recovery')).toBe(true);
+      // The aggregate carries the count, which no per-session record does.
+      expect(events.find(e => e.type === 'session.revoked_all')).toMatchObject({ data: { reason: 'recovery', count: 2 } });
     });
 
     it('skips index entries whose session has already expired out of cache', async () => {
@@ -643,12 +655,12 @@ describe('AuthenticationSessionService', () => {
   describe('refreshSession — rotation', () => {
     it('rotates jti, marks the previous jti consumed, and returns a fresh token pair', async () => {
       const harness = makeLiveHarness();
+      const { events, recorder } = makeCapturingRecorder();
       const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider, harness.logger);
-      const onSessionRefreshed = vi.fn();
-      const svcWithHook = new AuthenticationSessionService(makeOptions({ onSessionRefreshed }), harness.cache, harness.jwtProvider, harness.logger);
+      const svcWithAudit = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider, harness.logger, recorder);
 
       const session = await svc.createSession('user-1', {}, makeFactor());
-      const first = await svcWithHook.issueTokenForSession(session.sessionToken);
+      const first = await svcWithAudit.issueTokenForSession(session.sessionToken);
 
       // The refresh-token payload from issueTokenForSession is what the
       // service would later get back via jwtProvider.decode on the wire.
@@ -663,7 +675,7 @@ describe('AuthenticationSessionService', () => {
         exp: Math.floor(Date.now() / 1000) + 3600,
       });
 
-      const second = await svcWithHook.refreshSession(first.refreshToken!);
+      const second = await svcWithAudit.refreshSession(first.refreshToken!);
 
       expect(second.accessToken).toBeDefined();
       expect(second.refreshToken).toBeDefined();
@@ -673,21 +685,16 @@ describe('AuthenticationSessionService', () => {
       // The previous jti is now marked consumed.
       expect(harness.store.get(`auth_refresh_consumed_${firstRefreshPayload.jti}`)).toBeDefined();
 
-      // Hook fires with the previous jti.
-      expect(onSessionRefreshed).toHaveBeenCalledTimes(1);
-      expect(onSessionRefreshed.mock.calls[0]![1]).toMatchObject({ previousJti: firstRefreshPayload.jti });
+      // The refresh is reported, naming the jti it replaced.
+      const refreshed = events.filter(e => e.type === 'session.refreshed');
+      expect(refreshed).toHaveLength(1);
+      expect(refreshed[0]).toMatchObject({ actorId: 'user-1', data: { previousJti: firstRefreshPayload.jti } });
     });
 
     it('rejects a replayed (consumed) refresh token AND revokes every session in the family', async () => {
       const harness = makeLiveHarness();
-      const onRefreshReuseDetected = vi.fn();
-      const onSessionRevoked = vi.fn();
-      const svc = new AuthenticationSessionService(
-        makeOptions({ onRefreshReuseDetected, onSessionRevoked }),
-        harness.cache,
-        harness.jwtProvider,
-        harness.logger,
-      );
+      const { events, recorder } = makeCapturingRecorder();
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider, harness.logger, recorder);
 
       const session = await svc.createSession('user-1', {}, makeFactor());
       const tokens = await svc.issueTokenForSession(session.sessionToken);
@@ -712,15 +719,15 @@ describe('AuthenticationSessionService', () => {
       expect(harness.store.get(`auth_refresh_family_${session.familyId}`)).toBeUndefined();
       expect(harness.store.get(`auth_session_${session.sessionToken}`)).toBeUndefined();
 
-      // Hooks fired with the expected metadata.
-      expect(onRefreshReuseDetected).toHaveBeenCalledTimes(1);
-      expect(onRefreshReuseDetected.mock.calls[0]![0]).toMatchObject({
-        familyId: session.familyId,
-        jti: refreshPayload.jti,
-        sessionToken: session.sessionToken,
+      // The replay is reported as a failure, with the family teardown alongside it.
+      const reuse = events.filter(e => e.type === 'session.refresh_reuse_detected');
+      expect(reuse).toHaveLength(1);
+      expect(reuse[0]).toMatchObject({
+        outcome: 'failure',
+        data: { familyId: session.familyId, jti: refreshPayload.jti, sessionToken: session.sessionToken },
       });
-      expect(onSessionRevoked).toHaveBeenCalled();
-      expect(onSessionRevoked.mock.calls.some(c => c[1]?.reason === 'theft')).toBe(true);
+      expect(events.some(e => e.type === 'session.revoked' && (e.data as { reason: string }).reason === 'theft')).toBe(true);
+      expect(events.find(e => e.type === 'session.family_revoked')).toMatchObject({ data: { familyId: session.familyId } });
     });
 
     it('asserts the configured audience when verifying the refresh token', async () => {
@@ -768,14 +775,8 @@ describe('AuthenticationSessionService', () => {
   describe('rotateSession — privilege change', () => {
     it('mints a new sessionToken, preserves familyId, deletes the old session, fires hooks', async () => {
       const harness = makeLiveHarness();
-      const onSessionCreated = vi.fn();
-      const onSessionRevoked = vi.fn();
-      const svc = new AuthenticationSessionService(
-        makeOptions({ onSessionCreated, onSessionRevoked }),
-        harness.cache,
-        harness.jwtProvider,
-        harness.logger,
-      );
+      const { events, recorder } = makeCapturingRecorder();
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider, harness.logger, recorder);
 
       const old = await svc.createSession('user-1', { acr: 'low' }, makeFactor());
       const rotated = await svc.rotateSession(old.sessionToken, { acr: 'high', mfa_satisfied: true });
@@ -790,16 +791,15 @@ describe('AuthenticationSessionService', () => {
       expect(harness.store.get(`auth_session_${old.sessionToken}`)).toBeUndefined();
       expect(harness.store.get(`auth_session_${rotated.session.sessionToken}`)).toBeDefined();
 
-      // Hooks fired with the right reasons. createSession itself fires
-      // onSessionCreated once for `old`, then rotate fires it once for the new
-      // session and onSessionRevoked once for the old with reason='rotate'.
-      expect(onSessionCreated).toHaveBeenCalledTimes(2);
-      const lastCreated = onSessionCreated.mock.calls.at(-1)![0];
-      expect(lastCreated.sessionToken).toBe(rotated.session.sessionToken);
-
-      expect(onSessionRevoked).toHaveBeenCalledTimes(1);
-      expect(onSessionRevoked.mock.calls[0]![1]).toEqual({ reason: 'rotate' });
-      expect(onSessionRevoked.mock.calls[0]![0].sessionToken).toBe(old.sessionToken);
+      // One rotation record naming both tokens, rather than a create/revoke pair
+      // a consumer would have to correlate.
+      const rotation = events.filter(e => e.type === 'session.rotated');
+      expect(rotation).toHaveLength(1);
+      expect(rotation[0]).toMatchObject({
+        category: 'privilege',
+        actorId: 'user-1',
+        data: { previousSessionToken: old.sessionToken, sessionToken: rotated.session.sessionToken },
+      });
     });
 
     it('throws 401 when the source session does not exist', async () => {
@@ -809,30 +809,48 @@ describe('AuthenticationSessionService', () => {
     });
   });
 
-  describe('lifecycle hooks — robustness', () => {
-    it('logs but does not propagate errors thrown by hooks', async () => {
+  describe('lifecycle reporting — robustness', () => {
+    it('completes the operation when the audit sink throws', async () => {
       const harness = makeLiveHarness();
-      const onSessionCreated = vi.fn().mockImplementation(() => {
-        throw new Error('hook exploded');
-      });
-      const svc = new AuthenticationSessionService(makeOptions({ onSessionCreated }), harness.cache, harness.jwtProvider, harness.logger);
+      const failing = new AuditRecorder(
+        {
+          record: () => {
+            throw new Error('sink exploded');
+          },
+        } as unknown as AuditSink,
+        undefined,
+        harness.logger,
+      );
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider, harness.logger, failing);
 
-      // Must not throw despite the failing hook.
+      // An audit outage must not become a login outage.
       const session = await svc.createSession('user-1', {}, makeFactor());
       expect(session.sessionToken).toBeDefined();
-      expect(harness.logger.error).toHaveBeenCalled();
+      expect(harness.logger.error).toHaveBeenCalledWith('audit.sink_failed', expect.objectContaining({ type: 'session.created' }));
     });
 
-    it('fires onValidationFailed when lookupSessionFromJwt cannot resolve the session', async () => {
+    it('records a validation failure with the actor it can still attribute', async () => {
       const harness = makeLiveHarness();
-      const onValidationFailed = vi.fn();
-      const svc = new AuthenticationSessionService(makeOptions({ onValidationFailed }), harness.cache, harness.jwtProvider, harness.logger);
+      const { events, recorder } = makeCapturingRecorder();
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider, harness.logger, recorder);
+      // `sub` is the claim the service reads, and is what makes the record attributable.
       (harness.jwtProvider.decode as ReturnType<typeof vi.fn>).mockReturnValue({
         sessionToken: 'ghost-token',
-        subject: 'user-1',
+        sub: 'user-1',
       });
+
       await expect(svc.lookupSessionFromJwt('bad.jwt')).rejects.toMatchObject({ statusCode: 401 });
-      expect(onValidationFailed).toHaveBeenCalledWith('ghost-token', { reason: 'session_not_found' });
+
+      // The subject comes off the token, so the record is attributable even
+      // though the session itself is gone.
+      expect(events).toMatchObject([
+        {
+          type: 'session.validation_failed',
+          outcome: 'failure',
+          actorId: 'user-1',
+          data: { sessionToken: 'ghost-token', reason: 'session_not_found' },
+        },
+      ]);
     });
   });
 });

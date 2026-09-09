@@ -7,7 +7,7 @@ import { JwtProvider } from '../../src/providers/jwt.provider.js';
 import { AuditRecorder } from '../../src/audit/audit.recorder.js';
 import { AuditSink } from '../../src/audit/audit.sink.js';
 import type { AuthenticationAuditEvent } from '../../src/audit/audit.event.js';
-import type { AuthenticationSessionFactor, AuthenticationSessionHooks } from '../../src/types.js';
+import type { AuthenticationSessionFactor } from '../../src/types.js';
 import { generateKeyPairSync } from 'node:crypto';
 
 const { privateKey } = generateKeyPairSync('rsa', {
@@ -47,16 +47,9 @@ const factor: AuthenticationSessionFactor = {
 let cache: ReturnType<typeof makeCache>;
 let logger: Logger;
 let captured: ReturnType<typeof makeCapturingSink>;
-let hooks: AuthenticationSessionHooks;
 
 const build = () => {
-  const options = new AuthenticationSessionServiceOptions(
-    'iss',
-    'aud',
-    Duration.fromObject({ minutes: 15 }),
-    Duration.fromObject({ days: 30 }),
-    hooks,
-  );
+  const options = new AuthenticationSessionServiceOptions('iss', 'aud', Duration.fromObject({ minutes: 15 }), Duration.fromObject({ days: 30 }));
   return new AuthenticationSessionService(options, cache, new JwtProvider(logger, privateKey), logger, new AuditRecorder(captured.sink));
 };
 
@@ -67,13 +60,6 @@ beforeEach(() => {
   cache = makeCache();
   logger = makeLogger();
   captured = makeCapturingSink();
-  hooks = {
-    onSessionCreated: vi.fn(async () => undefined),
-    onSessionRefreshed: vi.fn(async () => undefined),
-    onSessionRevoked: vi.fn(async () => undefined),
-    onValidationFailed: vi.fn(async () => undefined),
-    onRefreshReuseDetected: vi.fn(async () => undefined),
-  };
 });
 
 describe('session lifecycle events', () => {
@@ -135,8 +121,8 @@ describe('session lifecycle events', () => {
 
     const rotated = await service.rotateSession(session.sessionToken);
 
-    // One event, not the created/revoked pair the hooks fire: a consumer should
-    // not have to correlate two records to see one session replace another.
+    // One event naming both tokens, so a consumer never has to correlate two
+    // records to see that one session replaced another.
     const rotation = captured.events.find(e => e.type === 'session.rotated');
     expect(rotation).toMatchObject({
       category: 'privilege',
@@ -242,9 +228,8 @@ describe('refresh and theft', () => {
   });
 });
 
-describe('hooks and the sink coexist', () => {
-  it('still fires every deprecated hook alongside the events', async () => {
-    // deadair and fintech both wire all five today; deprecation must not stop them.
+describe('the sink is the only lifecycle seam', () => {
+  it('reports every lifecycle transition through one channel', async () => {
     const service = build();
     const session = await service.createSession('user-1', {}, factor);
     const { refreshToken } = await service.issueTokenForSession(session.sessionToken);
@@ -252,22 +237,8 @@ describe('hooks and the sink coexist', () => {
     await service.deleteSession(session.sessionToken);
     await expect(service.lookupSessionFromJwt('bad')).rejects.toThrow();
 
-    expect(hooks.onSessionCreated).toHaveBeenCalled();
-    expect(hooks.onSessionRefreshed).toHaveBeenCalled();
-    expect(hooks.onSessionRevoked).toHaveBeenCalled();
-    expect(hooks.onValidationFailed).toHaveBeenCalled();
-  });
-
-  it('records events even when every hook throws', async () => {
-    hooks = {
-      onSessionCreated: vi.fn(async () => {
-        throw new Error('hook is broken');
-      }),
-    };
-
-    await build().createSession('user-1', {}, factor);
-
-    expect(typesOf()).toEqual(['session.created']);
+    // What five separate hook callbacks used to cover.
+    expect(typesOf()).toEqual(['session.created', 'session.refreshed', 'session.revoked', 'session.validation_failed']);
   });
 
   it('completes the operation when the sink throws', async () => {

@@ -68,44 +68,9 @@ export interface AuthenticationSession {
 }
 
 /**
- * The reason a session was revoked, surfaced to {@link AuthenticationSessionHooks.onSessionRevoked}.
+ * The reason a session was revoked, carried on the `session.revoked` audit event.
  */
 export type SessionRevocationReason = 'logout' | 'rotate' | 'theft' | 'expiry' | 'recovery';
-
-/**
- * Lifecycle callbacks consumers can register on {@link AuthenticationSessionServiceOptions}
- * to observe session events without monkey-patching the service.
- *
- * Hooks fire **after** the cache write/delete so they observe committed state.
- * They run sequentially and are awaited; errors are logged but not propagated
- * (a failing hook must not break authentication).
- *
- * @deprecated Bind an `AuditSink` instead. It covers the whole package rather
- *   than sessions alone, carries a common envelope, and attributes an `actorId`
- *   at every point the service knows one — including validation failures, where
- *   these hooks pass only a token and force a consumer to look the session up
- *   again to file the record.
- *
- *   Hooks still fire and are not going away in this major. Keep them for work
- *   that must happen as a consequence of a session change; use the sink to
- *   record that it happened.
- */
-export interface AuthenticationSessionHooks {
-  /** Fired after a new session has been created and persisted. */
-  onSessionCreated?: (session: AuthenticationSession) => Promise<void> | void;
-  /** Fired after a refresh-token rotation has succeeded. `previousJti` is the now-consumed token id. */
-  onSessionRefreshed?: (session: AuthenticationSession, meta: { previousJti: string }) => Promise<void> | void;
-  /** Fired after a session has been deleted from cache. `reason` discriminates logout / rotate / theft / expiry. */
-  onSessionRevoked?: (session: AuthenticationSession, meta: { reason: SessionRevocationReason }) => Promise<void> | void;
-  /** Fired when JWT validation or session lookup fails. `sessionToken` is the value carried in the token (may be empty). */
-  onValidationFailed?: (sessionToken: string, meta: { reason: string }) => Promise<void> | void;
-  /**
-   * Fired when a previously-consumed refresh token is presented (theft signal).
-   * Receives the family id, the replayed `jti`, and (when available) the bound session token.
-   * Every session in the family is revoked before this hook fires.
-   */
-  onRefreshReuseDetected?: (meta: { familyId: string; jti: string; sessionToken?: string }) => Promise<void> | void;
-}
 
 /**
  * Sentinel value representing an unauthenticated or failed authentication state.

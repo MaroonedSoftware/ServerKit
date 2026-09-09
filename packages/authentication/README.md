@@ -234,8 +234,8 @@ const { session, jwtPayload } = await sessionService.lookupSessionFromJwt(incomi
 const rotated = await sessionService.refreshSession(tokens.refreshToken!);
 
 // Rotate the session on privilege change (e.g. after MFA step-up) — mints a new
-// sessionToken, carries the familyId forward, deletes the old session, fires
-// onSessionRevoked({ reason: 'rotate' }) and onSessionCreated.
+// sessionToken, carries the familyId forward, deletes the old session, and
+// records one `session.rotated` audit event naming both tokens.'
 const stepUp = await sessionService.rotateSession(session.sessionToken, { acr: 'high', mfa_satisfied: true });
 
 // Revoke (logout)
@@ -250,29 +250,30 @@ Refresh tokens are single-use JWTs that carry `kind: 'refresh'`, `jti`, `familyI
 
 - The previous `jti` is marked consumed (`auth_refresh_consumed_{jti}` sentinel with TTL = `max(remaining-token-lifetime, 60s)`).
 - A new `jti` is minted and added to the family.
-- If a client ever presents a `jti` that is already consumed, **every session in the family is revoked** and the family entry is deleted. This is the theft signal — observe it via the `onRefreshReuseDetected` hook.
+- If a client ever presents a `jti` that is already consumed, **every session in the family is revoked** and the family entry is deleted. This is the theft signal — observe it via the `session.refresh_reuse_detected` audit event.
 
 Family-blob TTL is reset on every rotation so it can never expire mid-chain.
 
-#### Lifecycle hooks
+#### Observing the session lifecycle
 
-Register callbacks on `AuthenticationSessionServiceOptions.hooks` to observe session events without monkey-patching. Hooks fire **after** the cache write/delete commits, run sequentially, are awaited, and errors are logged but never propagated.
+Bind an `AuditSink` — see [Audit logging](#audit-logging). Every transition reports itself as a
+`session.*` event carrying a common envelope, the factors, the claims, and an `actorId` wherever the
+service knows one.
 
-```typescript
-new AuthenticationSessionServiceOptions(
-  'https://auth.example.com',
-  'https://api.example.com',
-  Duration.fromObject({ minutes: 15 }), // access token + session TTL
-  Duration.fromObject({ days: 30 }), // refresh token TTL
-  {
-    onSessionCreated: session => audit.log('session.created', session),
-    onSessionRefreshed: (session, { previousJti }) => audit.log('session.refreshed', { session, previousJti }),
-    onSessionRevoked: (session, { reason }) => audit.log('session.revoked', { session, reason }),
-    onValidationFailed: (sessionToken, { reason }) => audit.log('session.validation_failed', { sessionToken, reason }),
-    onRefreshReuseDetected: ({ familyId, jti, sessionToken }) => security.alert('refresh.theft', { familyId, jti, sessionToken }),
-  },
-);
-```
+`AuthenticationSessionServiceOptions` previously took a fifth `hooks` argument. It has been removed;
+the sink replaces it. Migration is mechanical:
+
+| Hook                     | Event                                                               |
+| ------------------------ | ------------------------------------------------------------------- |
+| `onSessionCreated`       | `session.created`                                                   |
+| `onSessionRefreshed`     | `session.refreshed` (`data.previousJti`)                            |
+| `onSessionRevoked`       | `session.revoked` (`data.reason`)                                   |
+| `onValidationFailed`     | `session.validation_failed` (`data.reason`), **now with `actorId`** |
+| `onRefreshReuseDetected` | `session.refresh_reuse_detected`                                    |
+
+Two things improve in the move. A rotation is one `session.rotated` event naming both tokens rather
+than an uncorrelated created/revoked pair, and a validation failure carries the actor, so a consumer
+no longer has to re-look-up the session to attribute the record.
 
 ---
 
@@ -1216,10 +1217,9 @@ provisioning URI, QR code, access token, or refresh token. Events are emitted at
 rather than from a catch block, so `outcome: 'failure'` always means a credential verdict and never
 an infrastructure fault.
 
-`AuthenticationSessionHooks` still fires and is deprecated in favour of the sink, which covers the
-whole package rather than sessions alone and attributes an `actorId` on validation failures that the
-hook cannot. `RecoveryOrchestratorHooks` is **not** deprecated: it is behavioural rather than
-observational, since `onRebindMfaFactor` is where your application mutates the factor.
+This replaces `AuthenticationSessionHooks`, which has been removed. `RecoveryOrchestratorHooks` is
+**not** affected: it is behavioural rather than observational, since `onRebindMfaFactor` is where
+your application mutates the factor and a throw there must abort the recovery.
 
 ---
 
