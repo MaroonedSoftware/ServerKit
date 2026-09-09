@@ -1,5 +1,64 @@
 # @maroonedsoftware/authentication
 
+## 4.34.0
+
+### Minor Changes
+
+- e60c8c2: Add the API key seam: `ApiKey` and its supporting types, the `ApiKeyRepository` contract, and the
+  token codec (`formatApiKeyToken`, `parseApiKeyToken`, `hashApiKeyToken`, `apiKeyHint`).
+
+  Tokens are GitHub-style, `{prefix}_{type}_{body}{checksum}`, where the body is 32 random bytes in
+  base62 and the checksum is a CRC32 over everything before it. The checksum means a truncated or
+  mistyped credential is rejected without a storage read, which matters because every bearer request
+  reaches the API key handler when it sits in a `ChainedAuthenticationHandler`, and it lets secret
+  scanners recognise a leaked key.
+
+  Lookup is by SHA-256 of the whole token, so validation is one indexed read rather than a scan over
+  every active hash. That is also why the hash is not Argon2id: a 32-byte random token cannot be
+  guessed, so a memory-hard KDF on the hot path would buy nothing and cost a denial-of-service
+  vector.
+
+  `AuthenticationFactorMethod` gains `'apikey'` so a key-authenticated session records honestly how it
+  was established, and so `excludeMethods: ['apikey']` on a step-up policy means something.
+
+- d544318: Add `ApiKeyAuthenticationHandler` and the two policies that gate machine routes.
+
+  The handler declines on scheme and prefix before doing any I/O, which is why it belongs first in a
+  `ChainedAuthenticationHandler`: every JWT in a chained deployment reaches it, and none of them
+  should cost a parse or a query. `ApiKeyServiceOptions.schemes` defaults to `['bearer']` for client
+  compatibility and accepts `'apikey'` for applications that prefer `Authorization: ApiKey sk_…`,
+  which the scheme map can dispatch directly without a chain.
+
+  An API key session carries one factor, so `requirePolicy()`'s default MFA gate rejects it — a
+  machine credential must not reach an MFA-gated route by accident. `API_KEY_SESSION_POLICY` gates a
+  machine-only route and optionally checks a scope, denying with `WWW-Authenticate: Bearer
+error="insufficient_scope"` so a client can tell a wrong key from a key lacking a permission.
+  `MFA_SATISFIED_OR_API_KEY_POLICY` accepts either an MFA-satisfied person or a key, for a path that
+  serves both. `getApiKeyClaim` is exported for applications writing their own rules.
+
+  Scope enforcement lives in the policy rather than the service because what a scope permits is a
+  property of the route, and the service does not know which route a key was presented to.
+
+- a9bf137: Add `ApiKeyService`: issue, validate, rotate, and revoke machine credentials, plus the
+  `'auth.api.key.allowed'` policy for gating the surface per actor.
+
+  `validate` returns a discriminated result rather than throwing, because the `AuthenticationHandler`
+  contract needs "not a valid credential" to be a value — a handler that throws stops the chain, so a
+  bad API key would keep a JWT behind it from ever being tried. The checksum test runs before any
+  I/O, so a JWT reaching this service costs no database round trip.
+
+  `authenticate` mints an ad-hoc, unpersisted session with a random `sessionToken` and a single
+  `{ method: 'apikey', kind: 'possession' }` factor. One factor fails the default MFA gate, which is
+  intentional: a key cannot reach an MFA-gated route by accident.
+
+  There is no validation cache, so `revoke` takes effect on the next request rather than at the end
+  of a TTL. `lastUsedAt` writes are throttled through `cache.add` so a busy key does not turn every
+  request into a database write, and a cache outage degrades to a skipped timestamp rather than a
+  failed request.
+
+  Note that nothing revokes a key when its owner is deleted: call `revokeAllForOwner` from your own
+  block and delete flows.
+
 ## 4.33.0
 
 ### Minor Changes
