@@ -9,7 +9,7 @@ This package provides the protocol layer — schemas, filter parser, PATCH appli
 - **Resource schemas** — `User`, `Group`, and the `EnterpriseUser` extension (RFC 7643).
 - **Filter parser** — full SCIM filter grammar (RFC 7644 §3.4.2.2) returning a typed AST.
 - **PATCH applier** — `add` / `replace` / `remove` ops with the path mini-language (RFC 7644 §3.5.2).
-- **Error envelope** — `scimError(status, scimType?)` builder producing the SCIM error JSON.
+- **Error envelope** — `scimError(status, scimType?, statusText?)` builder producing the SCIM error JSON; the operator-facing reason goes on `.withDetails({ message })` and is rendered as the envelope's `detail`.
 - **Abstract repositories** — `ScimUserRepository`, `ScimGroupRepository`. The consumer implements these against their datastore.
 - **Services** — `ScimUserService`, `ScimGroupService`, `ScimServiceProviderService`.
 - **Koa middleware** — `scimErrorMiddleware()`, `scimContentTypeMiddleware()`, `requireScimScope(scope)`.

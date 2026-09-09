@@ -163,6 +163,26 @@ describe('createScimRouter — integration', () => {
         schemas: [ScimErrorSchema],
         status: '404',
       });
+      // Provisioning clients surface `detail` to the operator, so it has to name the resource.
+      expect(res.body.detail).toContain('missing');
+    });
+
+    it('POST /Users 409 explains which userName collided', async () => {
+      const { app } = buildApp();
+      await request(app.callback()).post('/Users').set('Content-Type', SCIM_MEDIA_TYPE).send({ userName: 'bjensen' });
+      const res = await request(app.callback()).post('/Users').set('Content-Type', SCIM_MEDIA_TYPE).send({ userName: 'bjensen' });
+
+      expect(res.status).toBe(409);
+      expect(res.body.scimType).toBe('uniqueness');
+      expect(res.body.detail).toContain('bjensen');
+    });
+
+    it('POST /Users 400 names the missing required attribute', async () => {
+      const { app } = buildApp();
+      const res = await request(app.callback()).post('/Users').set('Content-Type', SCIM_MEDIA_TYPE).send({});
+
+      expect(res.status).toBe(400);
+      expect(res.body.detail).toContain('userName');
     });
   });
 

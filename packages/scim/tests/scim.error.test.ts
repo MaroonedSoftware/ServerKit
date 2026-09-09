@@ -39,6 +39,26 @@ describe('scimError', () => {
     expect(err.headers).toEqual({ 'X-Test': 'yes' });
   });
 
+  it('prefers a details.message over the status text for detail', () => {
+    const err = scimError(409, 'uniqueness', 'Conflict').withDetails({ message: 'userName "bjensen" already exists' });
+    expect(err.toScimBody()).toEqual({
+      schemas: [ScimErrorSchema],
+      status: '409',
+      scimType: 'uniqueness',
+      detail: 'userName "bjensen" already exists',
+    });
+  });
+
+  it('falls back to the status text when details carries no message', () => {
+    const err = scimError(400, 'invalidValue', 'Bad Request').withDetails({ field: 'userName' });
+    expect(err.toScimBody().detail).toBe('Bad Request');
+  });
+
+  it('falls back to the status text when details.message is not a string', () => {
+    const err = scimError(400, 'invalidValue', 'Bad Request').withDetails({ message: { nested: true } });
+    expect(err.toScimBody().detail).toBe('Bad Request');
+  });
+
   it('survives instanceof across factory and constructor', () => {
     expect(scimError(400)).toBeInstanceOf(ScimError);
     expect(new ScimError(403, 'insufficientScope')).toBeInstanceOf(ScimError);

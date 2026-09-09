@@ -83,7 +83,7 @@ contract is inseparable from HTTP.
 | Export            | Kind       | Shape                                                       | Notes                                        |
 | ----------------- | ---------- | ----------------------------------------------------------- | -------------------------------------------- |
 | `ScimError`       | class      | `extends HttpError`                                         | So `errorMiddleware` already understands it. |
-| `scimError`       | function   | `(status, scimType?, detail?) => ScimError`                 | The factory to use.                          |
+| `scimError`       | function   | `(status, scimType?, statusText?) => ScimError`             | The factory to use. The third argument is the HTTP status text; put the operator-facing reason on `.withDetails({ message })`, which `toScimBody` renders as `detail`. |
 | `IsScimError`     | type guard | —                                                           | —                                            |
 | `ScimErrorType`   | type       | `'invalidFilter'`, `'insufficientScope'`, `'mutability'`, … | RFC 7644 §3.12 `scimType` values.            |
 | `ScimErrorSchema` | constant   | The error envelope URN                                      | —                                            |
@@ -170,8 +170,10 @@ app.use(router.routes()).use(router.allowedMethods());
   repeats the first record.
 - Apply PATCH with `applyScimPatch` rather than hand-rolling op semantics — value-path filters
   (`emails[type eq "work"].value`) are easy to get subtly wrong.
-- Throw `scimError(status, scimType, detail)` with the right RFC 7644 §3.12 `scimType`. Clients
-  branch on it.
+- Throw `scimError(status, scimType, statusText).withDetails({ message })` with the right RFC 7644
+  §3.12 `scimType`. Clients branch on `scimType`, and `toScimBody` renders `details.message` as the
+  envelope's `detail` (falling back to the status text), which is what an operator reads in Okta or
+  Entra when provisioning fails.
 - Serve `/Schemas`, `/ResourceTypes`, and `/ServiceProviderConfig`. Provisioning clients call them
   during setup and fail the connection without them.
 
