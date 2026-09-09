@@ -1,5 +1,73 @@
 # @maroonedsoftware/authentication
 
+## 5.1.0
+
+### Minor Changes
+
+- bf6a68e: Add `describeSession`, a display projection for a "your active sessions" list. It flattens the
+  `SessionDevice` block and converts every Luxon `DateTime` to ISO 8601, which is what a wire contract
+  wants and what both ServerKit consumers were each writing by hand in identical mappers.
+
+  Two fields a list also wants are deliberately absent, because neither is the package's to know:
+  whether a row is the caller's own session, which needs the token the request arrived with, and any
+  application-specific claim such as an organisation.
+
+  Unlike the audit payload, the projection carries no claims, so an application cannot leak one into a
+  user-facing list by accident.
+
+- 46cda6c: Carry device metadata on session audit events. `AuditSessionData` gains the same optional `device`
+  block, filled from the session in `auditSessionData` — the single funnel feeding every session event
+  that carries session detail, so `session.created`, `updated`, `rotated`, `refreshed` and both
+  `revoked` paths gain it at once.
+
+  This is the useful half. A revoke or a refresh arrives on a different request than the login, where
+  the live context describes a different caller, so the origin has to come off the session rather than
+  the request. That is precisely what both ServerKit consumers were using session claims to achieve.
+
+  A session without a device produces an event without the block, rather than one carrying empty
+  strings.
+
+  The `AuditSessionData.claims` doc comment no longer explains the passthrough by pointing at that
+  workaround. The passthrough stays, since an application may legitimately stamp other things on a
+  session, but `device` is now the way to record where a session came from.
+
+- 0075839: Add `SessionDevice` to `AuthenticationSession`: an optional `device` block recording the IP address,
+  user agent, and a label for the request that established the session.
+
+  A session recorded who and when but nothing about where from, so `getSessionsForSubject` returned a
+  list a user could not tell apart. Both ServerKit consumers worked around it by stamping `loginIp` and
+  `loginUserAgent` into session claims and digging them back out later.
+
+  `normaliseSessionDevice` trims each field, drops blanks, and clamps the user agent to
+  `MAX_USER_AGENT_LENGTH` (512, matching what both consumers already clamp to). Blank handling is the
+  part that matters: both HTTP adapters set `userAgent` to an empty string when the header is absent,
+  so without it every session would record an empty user agent rather than none.
+
+  The IP is not validated. A correct IPv4/IPv6 validator is more surface than this earns, and the
+  adapters already defer to the framework's own proxy handling. An application writing the value to a
+  typed column — Postgres `inet` rejects malformed input — owns that check.
+
+  The block is optional throughout, so sessions already in a live cache deserialise without it rather
+  than failing. Nothing populates it yet; the write paths accept it in a following change.
+
+- fa8d93e: Accept device metadata on the session write paths. `createSession`, `createOrUpdateSession`, and
+  `rotateSession` each take an optional trailing `device`, normalised on the way in. Every parameter is
+  trailing and optional, so no existing call changes.
+
+  A rotation carries the original device forward unless the caller supplies a new one. A step-up
+  happens on a live request, but the session's origin is where it began, which is the same reason
+  claims carry forward across a rotation rather than being rebuilt. An application that genuinely wants
+  to re-stamp passes the current request's context.
+
+  An empty block normalises to nothing, and nothing means "not given", so a rotation cannot blank an
+  existing device by passing an adapter's empty-string default.
+
+  `createOrUpdateSession` only passes it on the create arm: updating a live session must not rewrite
+  where that session began.
+
+  `ApiKeyService.authenticate` leaves it unset deliberately. A machine credential has no device, and
+  inventing one would put a misleading row in a user's session list.
+
 ## 5.0.0
 
 ### Major Changes
