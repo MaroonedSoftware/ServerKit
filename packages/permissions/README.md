@@ -14,7 +14,10 @@ pnpm add @maroonedsoftware/permissions
 - **Validated model** — `AuthorizationModel` checks name shapes and cross-references at construction so a bad model fails at startup, not at Check time
 - **Relation tuples** — Zod-validated `RelationTuple` shape with concrete, wildcard, and userset subjects
 - **Pluggable storage** — implement the abstract `PermissionsTupleRepository` against your database of choice (typically Kysely/Postgres)
-- **Check evaluator** — recursive evaluator with per-request memo, cycle guard, and a configurable max-depth bound
+- **Check evaluator** — recursive evaluator with per-request memo, cycle guard, and a configurable max-depth bound; `checkDetailed` also reports whether the depth cap was hit, so a denial is distinguishable from an answer the evaluator could not reach
+- **Write-time subject validation** — `ModelValidatingTupleRepository` wraps any repository and enforces each relation's declared `subjects`, so a relation without `user.*` cannot be made world-grantable by writing the tuple directly
+- **Typed errors** — an unknown namespace or relation raises a `PermissionsError` with a `code`, never a silent denial
+- **Reverse listings** — optional `listSubjects` and `listObjects` on the repository contract answer "who is on this object?" and "what is this subject on?"
 - **Trace explainer** — `explain` returns a hierarchical `CheckTrace` showing exactly which evaluator branches fired; drives `pdsl explain` and the VSCode playground
 - **In-memory repository** — `InMemoryTupleRepository` for fixtures, tests, and ad-hoc tooling without a database
 - **Pluggable metrics** — `CheckMetricsSink` lets you forward per-Check observations to whatever telemetry backend is in use; ships with a `LoggingMetricsSink` for log-based metrics

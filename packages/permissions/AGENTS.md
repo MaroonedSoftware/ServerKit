@@ -49,7 +49,8 @@ database. That is what keeps this package free of a `kysely` dependency.
 | `intersection`       | builder   | `(...children: UsersetExpr[]) => UsersetExpr`                                                               | Every child must allow.                                                                                                    |
 | `exclusion`          | builder   | `(base: UsersetExpr, subtract: UsersetExpr) => UsersetExpr`                                                 | `base && !subtract`.                                                                                                       |
 | `SubjectType`        | type      | `string`                                                                                                    | `'user'`, `'user.*'` (wildcard), or `'org.member'` (userset).                                                              |
-| `RelationDef`        | interface | `{ subjects: SubjectType[] }`                                                                               | Allowed direct-tuple subject types. **Enforced at write time, not at Check time.**                                         |
+| `RelationDef`        | interface | `{ subjects: SubjectType[] }`                                                                               | Allowed direct-tuple subject types. **Enforced at write time, not at Check time** — see `ModelValidatingTupleRepository`.  |
+| `PermissionsError`   | class     | `extends Error`, with `code`, `namespace?`, `relation?`                                                     | `code` is `'unknown_namespace'`, `'unknown_relation'`, or `'subject_not_allowed'`. Guard: `IsPermissionsError`.            |
 | `NamespaceDef<R, P>` | interface | `{ name: string; relations: Record<R, RelationDef>; permissions: Record<P, UsersetExpr> }`                  | —                                                                                                                          |
 | `defineNamespace`    | function  | `<R, P>(name: string, def: { relations; permissions }) => NamespaceDef<R, P>`                               | Preserves literal types for relation and permission names.                                                                 |
 | `AuthorizationModel` | class     | `new AuthorizationModel(namespaces: NamespaceDef[])`                                                        | **Validates on construction** and throws on a bad model. Methods: `namespaces()`, `get(name)`, `resolve(namespace, name)`. |
@@ -76,7 +77,8 @@ Each of these is a Zod schema **and** a type of the same name.
 
 | Export                       | Kind           | Shape                                                                                                                                                       | Notes                                                                                 |
 | ---------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `PermissionsTupleRepository` | abstract class | `write(tuples, createdBy?)`, `delete(tuples)`, `listByObjectRelation(namespace, objectId, relation)`, `listObjectsRelatedBy(namespace, objectId, relation)` | An abstract class, not an interface, so it survives as an InjectKit token.            |
+| `PermissionsTupleRepository` | abstract class | `write(tuples, createdBy?)`, `delete(tuples)`, `listByObjectRelation(namespace, objectId, relation)`, `listObjectsRelatedBy(namespace, objectId, relation)`, optional `listSubjects(namespace, objectId, relation)` and `listObjects(namespace, relation, subject)` | An abstract class, not an interface, so it survives as an InjectKit token. The two listings are optional so existing repositories keep compiling. |
+| `ModelValidatingTupleRepository` | class | `new ModelValidatingTupleRepository(inner, model)` | Decorator enforcing `RelationDef.subjects` on write. Reads pass through. |
 | `InMemoryTupleRepository`    | class          | `new InMemoryTupleRepository(seed: RelationTuple[] = [])`, plus `all()` and `clear()`                                                                       | For fixtures, `pdsl validate`, the VS Code playground, and tests. Not for production. |
 
 `write` must be idempotent — duplicate `(object, relation, subject)` triples are no-ops.
@@ -87,7 +89,8 @@ meaningful as parent objects.
 
 | Export          | Kind      | Shape                                                                                                                                                             | Notes                                                                          |
 | --------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `check`         | function  | `(model, repo, object: ObjectRef, relationOrPermission: string, subject: SubjectRef, sink?: CheckMetricsSink) => Promise<boolean>`                                | Short-circuits on the first allow. Throws on an unknown namespace or relation. |
+| `check`         | function  | `(model, repo, object: ObjectRef, relationOrPermission: string, subject: SubjectRef, sink?: CheckMetricsSink) => Promise<boolean>`                                | Short-circuits on the first allow. Throws `PermissionsError` on an unknown namespace or relation. |
+| `checkDetailed` | function  | Same arguments, `=> Promise<CheckResult>`                                                                                                                        | `{ allowed, maxDepthExceeded, metrics }`. Use it to tell a denial from a depth-capped answer. |
 | `explain`       | function  | `(model, repo, object, relationOrPermission, subject) => Promise<ExplainResult>`                                                                                  | Does **not** short-circuit — evaluates every branch so the trace is complete.  |
 | `formatTrace`   | function  | `(trace: CheckTrace, indent = 0) => string`                                                                                                                       | Indented multi-line rendering with `✓`/`✗` markers.                            |
 | `ExplainResult` | interface | `{ object, relation, subject, allowed, trace }`                                                                                                                   | —                                                                              |
@@ -174,12 +177,15 @@ console.log(formatTrace(result.trace));
 
 ## Gotchas
 
-- **`RelationDef.subjects` is not enforced at Check time.** It constrains what may be _written_.
-  If your repository does not validate against the model on write, a tuple with a disallowed
-  subject type will still grant access. The evaluator trusts the store.
-- **Recursion is capped at `MAX_DEPTH = 32`.** Exceeding it returns `false` and sets
-  `metrics.hitMaxDepth`. That is a silent deny: a deep hierarchy looks like "no permission", not
-  like an error. Watch `hitMaxDepth`.
+- **`RelationDef.subjects` is not enforced at Check time.** It constrains what may be _written_,
+  and the evaluator trusts the store. Wrap your repository in `ModelValidatingTupleRepository` (or
+  call `model.assertTuplesAllowed` yourself) or a tuple with a disallowed subject type will still
+  grant access — a relation deliberately declared without `user.*` is otherwise still
+  world-grantable by writing the tuple directly.
+- **Recursion is capped at `MAX_DEPTH = 32`.** Exceeding it makes `check()` return `false` and sets
+  `metrics.hitMaxDepth`. Through `check()` that is a silent deny: a deep hierarchy looks like "no
+  permission", not like an error. Use `checkDetailed()` when the difference matters — its
+  `maxDepthExceeded` flag separates "denied" from "could not determine".
 - **The memo is per call, not per request.** Every `check()` allocates a fresh memo and cycle guard.
   Two `check()` calls in one request share nothing. Batch related questions into one call where
   you can, or add a caching layer above.
@@ -191,6 +197,13 @@ console.log(formatTrace(result.trace));
   canonical tuple string. An id sourced from user input must be validated or encoded.
 - **`InMemoryTupleRepository` ignores `createdBy`.** It is accepted for interface compatibility
   and dropped.
+- **`listSubjects` and `listObjects` are optional on the repository contract**, so existing
+  implementations keep compiling. Check for the method before calling it. `listObjects` is a
+  direct-tuple reverse index, not a Check: a subject who only has access through a
+  `tupleToUserset` parent does not appear in its results.
+- **An unknown namespace or relation throws, it does not deny.** `check()` raises a
+  `PermissionsError` with `code: 'unknown_namespace'` or `'unknown_relation'`. Catching that and
+  returning a 403 turns a typo into a silent lockout; let it surface.
 - **`LoggingMetricsSink` writes to `console.log` directly**, not through `@maroonedsoftware/logger`
   — this package has no logger dependency by design. In an app with a structured logger, write
   your own sink instead.
