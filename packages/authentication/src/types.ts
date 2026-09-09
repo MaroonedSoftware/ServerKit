@@ -12,8 +12,13 @@ export type AuthenticationFactorKind = 'knowledge' | 'possession' | 'biometric';
 /**
  * The verification method used to satisfy an authentication factor within a
  * session. Corresponds to the built-in factor services shipped by this package.
+ *
+ * `'apikey'` is the odd one out: it is not a factor a user enrols but the
+ * machine credential `ApiKeyService` authenticates with, recorded here so a
+ * key-authenticated session says honestly how it was established and so
+ * `excludeMethods: ['apikey']` on a step-up policy means something.
  */
-export type AuthenticationFactorMethod = 'phone' | 'password' | 'authenticator' | 'email' | 'fido' | 'oidc';
+export type AuthenticationFactorMethod = 'phone' | 'password' | 'authenticator' | 'email' | 'fido' | 'oidc' | 'apikey';
 
 /**
  * A single authentication factor recorded within a server-side session.

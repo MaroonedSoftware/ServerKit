@@ -132,6 +132,10 @@ app.post('/mfa/enroll', { preHandler: [requirePolicy({ policy: false })] }, hand
 app.post('/webhooks/github', { config: { body: ['application/json'] }, preHandler: [requireSignature('webhook')] }, handler);
 ```
 
+A session established by an API key carries one factor, so the default gate above rejects it.
+Machine routes name `API_KEY_SESSION_POLICY` instead, or `MFA_SATISFIED_OR_API_KEY_POLICY` when one
+path serves both browsers and integrations. Both come from `@maroonedsoftware/authentication`.
+
 `requireSignature` needs `request.rawBody`, so the route must accept the payload through
 `config.body`.
 `SignatureOptions` (`header`, `secret`, `algorithm`, `digest`) live in `AppConfig` under the key
@@ -246,18 +250,18 @@ change or `false` for session-only), streaming the `ServerFeed` bus registered i
 
 ### Request context
 
-| Property                | Type                    | Description                                  |
-| ----------------------- | ----------------------- | -------------------------------------------- |
-| `container`             | `Container`             | Request-scoped DI container                  |
-| `logger`                | `Logger`                | Request-scoped logger                        |
-| `loggerName`            | `string`                | The request path                             |
-| `userAgent`             | `string`                | `User-Agent` header or `''`                  |
-| `ipAddress`             | `string`                | Client IP, forwarded-aware only with `trustProxy` |
-| `correlationId`         | `string`                | From `X-Correlation-Id` or generated         |
+| Property                | Type                    | Description                                              |
+| ----------------------- | ----------------------- | -------------------------------------------------------- |
+| `container`             | `Container`             | Request-scoped DI container                              |
+| `logger`                | `Logger`                | Request-scoped logger                                    |
+| `loggerName`            | `string`                | The request path                                         |
+| `userAgent`             | `string`                | `User-Agent` header or `''`                              |
+| `ipAddress`             | `string`                | Client IP, forwarded-aware only with `trustProxy`        |
+| `correlationId`         | `string`                | From `X-Correlation-Id` or generated                     |
 | `requestId`             | `string`                | Fastify's `request.id`, from `X-Request-Id` or generated |
-| `rawBody`               | `BinaryLike`            | Raw body bytes, after `bodyParserPlugin`     |
-| `authenticationSession` | `AuthenticationSession` | Set by `authenticationPlugin`            |
-| `reply`                 | `FastifyReply`          | The paired reply, for injected services      |
+| `rawBody`               | `BinaryLike`            | Raw body bytes, after `bodyParserPlugin`                 |
+| `authenticationSession` | `AuthenticationSession` | Set by `authenticationPlugin`                            |
+| `reply`                 | `FastifyReply`          | The paired reply, for injected services                  |
 
 ### Server builder
 

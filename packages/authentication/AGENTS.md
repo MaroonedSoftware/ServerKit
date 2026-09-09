@@ -51,47 +51,48 @@ by area; type aliases for provider-specific payload shapes are grouped rather th
 
 ### Session model (`src/types.ts`)
 
-| Export                         | Kind      | Shape                                                                                                             | Notes                                                                    |
-| ------------------------------ | --------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `AuthenticationSession`        | interface | `{ sessionToken, subject, issuedAt, expiresAt, lastAccessedAt, factors, claims, familyId? }`                      | All timestamps are Luxon `DateTime`.                                     |
-| `AuthenticationSessionFactor`  | interface | `{ issuedAt, authenticatedAt, method, methodId, kind }`                                                           | `authenticatedAt` is what recency policies read.                         |
-| `AuthenticationFactorKind`     | type      | `'knowledge' \| 'possession' \| 'biometric'`                                                                      | Classic MFA taxonomy.                                                    |
-| `AuthenticationFactorMethod`   | type      | `'phone' \| 'password' \| 'authenticator' \| 'email' \| 'fido' \| 'oidc'`                                         | **Note: no `'oauth2'`.** See Gotchas.                                    |
-| `invalidAuthenticationSession` | constant  | Sentinel with empty strings and `DateTime.invalid('invalid')` fields                                              | Compare by **identity**; that is what `requirePolicy` does.              |
-| `SessionRevocationReason`      | type      | `'logout' \| 'rotate' \| 'theft' \| 'expiry'`                                                                     | —                                                                        |
-| `AuthenticationSessionHooks`   | interface | `onSessionCreated?`, `onSessionRefreshed?`, `onSessionRevoked?`, `onValidationFailed?`, `onRefreshReuseDetected?` | Fire **after** the cache write commits. Errors logged, never propagated. |
-| `AuthenticationToken`          | type      | `{ accessToken, tokenType, expiresIn, … }`                                                                        | OAuth 2.0-shaped response.                                               |
+| Export                         | Kind      | Shape                                                                                                             | Notes                                                                                             |
+| ------------------------------ | --------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `AuthenticationSession`        | interface | `{ sessionToken, subject, issuedAt, expiresAt, lastAccessedAt, factors, claims, familyId? }`                      | All timestamps are Luxon `DateTime`.                                                              |
+| `AuthenticationSessionFactor`  | interface | `{ issuedAt, authenticatedAt, method, methodId, kind }`                                                           | `authenticatedAt` is what recency policies read.                                                  |
+| `AuthenticationFactorKind`     | type      | `'knowledge' \| 'possession' \| 'biometric'`                                                                      | Classic MFA taxonomy.                                                                             |
+| `AuthenticationFactorMethod`   | type      | `'phone' \| 'password' \| 'authenticator' \| 'email' \| 'fido' \| 'oidc' \| 'apikey'`                             | **Note: no `'oauth2'`.** See Gotchas. `'apikey'` is a machine credential, not an enrolled factor. |
+| `invalidAuthenticationSession` | constant  | Sentinel with empty strings and `DateTime.invalid('invalid')` fields                                              | Compare by **identity**; that is what `requirePolicy` does.                                       |
+| `SessionRevocationReason`      | type      | `'logout' \| 'rotate' \| 'theft' \| 'expiry'`                                                                     | —                                                                                                 |
+| `AuthenticationSessionHooks`   | interface | `onSessionCreated?`, `onSessionRefreshed?`, `onSessionRevoked?`, `onValidationFailed?`, `onRefreshReuseDetected?` | Fire **after** the cache write commits. Errors logged, never propagated.                          |
+| `AuthenticationToken`          | type      | `{ accessToken, tokenType, expiresIn, … }`                                                                        | OAuth 2.0-shaped response.                                                                        |
 
 ### Scheme dispatch
 
-| Export                        | Kind           | Shape                                                                   | Notes                                                                  |
-| ----------------------------- | -------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `AuthorizationScheme`         | type           | `'bearer' \| 'basic' \| string`                                         | Open for custom schemes.                                               |
-| `AuthenticationHandler`       | interface      | `authenticate(scheme, value): Promise<AuthenticationSession>`           | —                                                                      |
-| `AuthenticationHandlerMap`    | class          | `@Injectable() extends Map<AuthorizationScheme, AuthenticationHandler>` | Keys must be **lowercase** — see Gotchas.                              |
-| `AuthenticationSchemeHandler` | class          | `@Injectable()`. `handle(authorizationHeader?)`                         | Splits on the **first** space only, so `Digest a="x", b="y"` survives. |
-| `ChainedAuthenticationHandler` | class         | `@Injectable() implements AuthenticationHandler`                        | Tries an `AuthenticationHandlerChain` in order; first non-sentinel wins. |
-| `AuthenticationHandlerChain`  | class          | `@Injectable() extends Array<AuthenticationHandler>`                    | Register with `useArray(…).push(…)`; registration order is try order.  |
-| `JwtAuthenticationHandler`    | class          | `implements AuthenticationHandler`                                      | Bearer.                                                                |
-| `JwtAuthenticationIssuer`     | abstract class | Per-issuer JWT validation                                               | —                                                                      |
-| `JwtAuthenticationIssuerMap`  | class          | `extends Map<string, JwtAuthenticationIssuer>`                          | Multi-issuer bearer support.                                           |
-| `BasicAuthenticationHandler`  | class          | `implements AuthenticationHandler`                                      | —                                                                      |
-| `BasicAuthenticationIssuer`   | abstract class | —                                                                       | —                                                                      |
+| Export                         | Kind           | Shape                                                                   | Notes                                                                    |
+| ------------------------------ | -------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `AuthorizationScheme`          | type           | `'bearer' \| 'basic' \| string`                                         | Open for custom schemes.                                                 |
+| `AuthenticationHandler`        | interface      | `authenticate(scheme, value): Promise<AuthenticationSession>`           | —                                                                        |
+| `AuthenticationHandlerMap`     | class          | `@Injectable() extends Map<AuthorizationScheme, AuthenticationHandler>` | Keys must be **lowercase** — see Gotchas.                                |
+| `AuthenticationSchemeHandler`  | class          | `@Injectable()`. `handle(authorizationHeader?)`                         | Splits on the **first** space only, so `Digest a="x", b="y"` survives.   |
+| `ChainedAuthenticationHandler` | class          | `@Injectable() implements AuthenticationHandler`                        | Tries an `AuthenticationHandlerChain` in order; first non-sentinel wins. |
+| `AuthenticationHandlerChain`   | class          | `@Injectable() extends Array<AuthenticationHandler>`                    | Register with `useArray(…).push(…)`; registration order is try order.    |
+| `JwtAuthenticationHandler`     | class          | `implements AuthenticationHandler`                                      | Bearer.                                                                  |
+| `JwtAuthenticationIssuer`      | abstract class | Per-issuer JWT validation                                               | —                                                                        |
+| `JwtAuthenticationIssuerMap`   | class          | `extends Map<string, JwtAuthenticationIssuer>`                          | Multi-issuer bearer support.                                             |
+| `BasicAuthenticationHandler`   | class          | `implements AuthenticationHandler`                                      | —                                                                        |
+| `BasicAuthenticationIssuer`    | abstract class | —                                                                       | —                                                                        |
+| `ApiKeyAuthenticationHandler`  | class          | `implements AuthenticationHandler`                                      | Put it **first** in a chain: declines on prefix with no I/O.             |
 
 ### Sessions
 
-| Export                                                         | Kind   | Shape                                                                             | Notes                                                  |
-| -------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `AuthenticationSessionServiceOptions`                          | class  | `(issuer, audience, expiresIn: Duration, refreshExpiresIn = 30 days, hooks = {})` | A class so it is an InjectKit token.                   |
-| `AuthenticationSessionService`                                 | class  | `@Injectable()`                                                                   | Backed by a `CacheProvider`.                           |
-| `#createSession` / `#updateSession` / `#createOrUpdateSession` | method | —                                                                                 | —                                                      |
-| `#getSession` / `#getSessionsForSubject`                       | method | —                                                                                 | Read paths; `#revokeAllForSubject` does the revoking. |
-| `#revokeAllForSubject`                                        | method | `(subject: string, reason?: SessionRevocationReason) => Promise<number>`          | Revokes every session for a subject; returns the count. |
-| `#lookupSessionFromJwt`                                        | method | `(jwt: string, ignoreJwtExpiration?: boolean)`                                    | —                                                      |
-| `#deleteSession`                                               | method | `(sessionToken, reason: SessionRevocationReason = 'logout')`                      | —                                                      |
-| `#issueTokenForSession`                                        | method | `(sessionToken) => Promise<AuthenticationToken>`                                  | —                                                      |
-| `#rotateSession`                                               | method | `(sessionToken, claimOverrides?, expiration?)`                                    | For privilege changes. Carries `familyId` forward.     |
-| `#refreshSession`                                              | method | `(refreshToken) => Promise<AuthenticationToken>`                                  | Rotation with replay detection.                        |
+| Export                                                         | Kind   | Shape                                                                             | Notes                                                   |
+| -------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `AuthenticationSessionServiceOptions`                          | class  | `(issuer, audience, expiresIn: Duration, refreshExpiresIn = 30 days, hooks = {})` | A class so it is an InjectKit token.                    |
+| `AuthenticationSessionService`                                 | class  | `@Injectable()`                                                                   | Backed by a `CacheProvider`.                            |
+| `#createSession` / `#updateSession` / `#createOrUpdateSession` | method | —                                                                                 | —                                                       |
+| `#getSession` / `#getSessionsForSubject`                       | method | —                                                                                 | Read paths; `#revokeAllForSubject` does the revoking.   |
+| `#revokeAllForSubject`                                         | method | `(subject: string, reason?: SessionRevocationReason) => Promise<number>`          | Revokes every session for a subject; returns the count. |
+| `#lookupSessionFromJwt`                                        | method | `(jwt: string, ignoreJwtExpiration?: boolean)`                                    | —                                                       |
+| `#deleteSession`                                               | method | `(sessionToken, reason: SessionRevocationReason = 'logout')`                      | —                                                       |
+| `#issueTokenForSession`                                        | method | `(sessionToken) => Promise<AuthenticationToken>`                                  | —                                                       |
+| `#rotateSession`                                               | method | `(sessionToken, claimOverrides?, expiration?)`                                    | For privilege changes. Carries `familyId` forward.      |
+| `#refreshSession`                                              | method | `(refreshToken) => Promise<AuthenticationToken>`                                  | Rotation with replay detection.                         |
 
 ### Factors
 
@@ -117,38 +118,41 @@ class) and an abstract `<Name>FactorRepository` you implement.
 
 ### Providers
 
-| Export                                                    | Kind           | Notes                                                                                                                             |
-| --------------------------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `PasswordHashProvider`                                    | abstract class | The DI token.                                                                                                                     |
-| `Argon2idPasswordHashProvider`                            | class          | Uses `ARGON2ID_DEFAULTS` from `@maroonedsoftware/encryption`. Result type `PasswordHashResult`.                                   |
-| `PasswordStrengthProvider`                                | class          | zxcvbn-ts (English dictionary + adjacency graphs) **plus a live HaveIBeenPwned check**. Score 0–4; `ensureStrength` requires ≥ 3. |
-| `JwtProvider`                                             | class          | —                                                                                                                                 |
+| Export                                                    | Kind           | Notes                                                                                                                                                                                                      |
+| --------------------------------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PasswordHashProvider`                                    | abstract class | The DI token.                                                                                                                                                                                              |
+| `Argon2idPasswordHashProvider`                            | class          | Uses `ARGON2ID_DEFAULTS` from `@maroonedsoftware/encryption`. Result type `PasswordHashResult`.                                                                                                            |
+| `PasswordStrengthProvider`                                | class          | zxcvbn-ts (English dictionary + adjacency graphs) **plus a live HaveIBeenPwned check**. Score 0–4; `ensureStrength` requires ≥ 3.                                                                          |
+| `JwtProvider`                                             | class          | —                                                                                                                                                                                                          |
 | `OtpProvider`                                             | class          | `validate` returns a boolean; `validateWithCounter` returns the matching step. Types: `OtpType`, `OtpOptions`, `TotpOptions`, `HotpOptions`, `OtpUrlOptions`, `OtpValidationOptions`, `defaultOtpOptions`. |
-| `OtpProviderMock`                                         | class          | `extends OtpProvider`. Tests only.                                                                                                |
-| `PkceProvider`                                            | class          | —                                                                                                                                 |
-| `OidcProviderRegistry` / `OidcProviderRegistryConfig`     | class          | Types: `OidcProviderConfig`.                                                                                                      |
-| `OAuth2ProviderRegistry` / `OAuth2ProviderRegistryConfig` | class          | Types: `OAuth2ProviderConfig`, `OAuth2ProviderClient`.                                                                            |
-| `HtmlRedirectProvider`                                    | class          | —                                                                                                                                 |
+| `OtpProviderMock`                                         | class          | `extends OtpProvider`. Tests only.                                                                                                                                                                         |
+| `PkceProvider`                                            | class          | —                                                                                                                                                                                                          |
+| `OidcProviderRegistry` / `OidcProviderRegistryConfig`     | class          | Types: `OidcProviderConfig`.                                                                                                                                                                               |
+| `OAuth2ProviderRegistry` / `OAuth2ProviderRegistryConfig` | class          | Types: `OAuth2ProviderConfig`, `OAuth2ProviderClient`.                                                                                                                                                     |
+| `HtmlRedirectProvider`                                    | class          | —                                                                                                                                                                                                          |
 
 ### Policies
 
-| Policy name                          | Class                              | Context type                              |
-| ------------------------------------ | ---------------------------------- | ----------------------------------------- |
-| `auth.factor.email.allowed`          | `EmailAllowedPolicy`               | `EmailAllowedPolicyContext`               |
-| `auth.factor.phone.allowed`          | `PhoneAllowedPolicy`               | `PhoneAllowedPolicyContext`               |
-| `auth.factor.password.allowed`       | `PasswordAllowedPolicy`            | `PasswordAllowedPolicyContext`            |
-| `auth.factor.oidc.profile.allowed`   | `OidcProfileAllowedPolicy`         | `OidcProfileAllowedPolicyContext`         |
-| `auth.factor.oauth2.profile.allowed` | `OAuth2ProfileAllowedPolicy`       | `OAuth2ProfileAllowedPolicyContext`       |
-| `auth.session.mfa.required`          | `DefaultMfaRequiredPolicy`         | `AuthMfaRequiredPolicyContext`            |
-| `auth.session.mfa.satisfied`         | `DefaultMfaSatisfiedPolicy`        | `AuthMfaSatisfiedPolicyContext`           |
-| `auth.session.recent.factor`         | `DefaultRecentFactorPolicy`        | `AuthRecentFactorPolicyContext`           |
-| `auth.session.assurance.level`       | `DefaultAssuranceLevelPolicy`      | `AuthAssuranceLevelPolicyContext`         |
-| `auth.recovery.allowed`              | `RecoveryAllowedPolicy`            | `RecoveryAllowedPolicyContext`            |
-| `auth.support.verification.allowed`  | `SupportVerificationAllowedPolicy` | `SupportVerificationAllowedPolicyContext` |
+| Policy name                             | Class                              | Context type                              |
+| --------------------------------------- | ---------------------------------- | ----------------------------------------- |
+| `auth.factor.email.allowed`             | `EmailAllowedPolicy`               | `EmailAllowedPolicyContext`               |
+| `auth.factor.phone.allowed`             | `PhoneAllowedPolicy`               | `PhoneAllowedPolicyContext`               |
+| `auth.factor.password.allowed`          | `PasswordAllowedPolicy`            | `PasswordAllowedPolicyContext`            |
+| `auth.factor.oidc.profile.allowed`      | `OidcProfileAllowedPolicy`         | `OidcProfileAllowedPolicyContext`         |
+| `auth.factor.oauth2.profile.allowed`    | `OAuth2ProfileAllowedPolicy`       | `OAuth2ProfileAllowedPolicyContext`       |
+| `auth.session.mfa.required`             | `DefaultMfaRequiredPolicy`         | `AuthMfaRequiredPolicyContext`            |
+| `auth.session.mfa.satisfied`            | `DefaultMfaSatisfiedPolicy`        | `AuthMfaSatisfiedPolicyContext`           |
+| `auth.session.recent.factor`            | `DefaultRecentFactorPolicy`        | `AuthRecentFactorPolicyContext`           |
+| `auth.session.assurance.level`          | `DefaultAssuranceLevelPolicy`      | `AuthAssuranceLevelPolicyContext`         |
+| `auth.recovery.allowed`                 | `RecoveryAllowedPolicy`            | `RecoveryAllowedPolicyContext`            |
+| `auth.support.verification.allowed`     | `SupportVerificationAllowedPolicy` | `SupportVerificationAllowedPolicyContext` |
+| `auth.api.key.allowed`                  | `ApiKeyAllowedPolicy`              | `ApiKeyAllowedPolicyContext`              |
+| `auth.session.api.key`                  | `ApiKeySessionPolicy`              | `ApiKeySessionPolicyContext`              |
+| `auth.session.mfa.satisfied.or.api.key` | `MfaSatisfiedOrApiKeyPolicy`       | `AuthMfaSatisfiedPolicyContext`           |
 
 | Export                         | Kind     | Shape                                                    | Notes                                                           |
 | ------------------------------ | -------- | -------------------------------------------------------- | --------------------------------------------------------------- |
-| `AuthenticationPolicyNames`    | type     | Union of the eleven names above                          | —                                                               |
+| `AuthenticationPolicyNames`    | type     | Union of the fourteen names above                        | —                                                               |
 | `AuthenticationPolicyMappings` | constant | `Record<AuthenticationPolicyNames, Constructor<Policy>>` | Spread into your `PolicyRegistryMap`.                           |
 | `AuthenticationPolicyContexts` | type     | `Record<AuthenticationPolicyNames, …Context>`            | Intersect with your own `Policies` map for `BasePolicyService`. |
 | `MFA_SATISFIED_POLICY`         | constant | `'auth.session.mfa.satisfied'`                           | The one policy name exported as a constant — see below.         |
@@ -164,7 +168,7 @@ default off the route path — a `@maroonedsoftware/mcp` tool passing it to `req
 | Export                                                               | Kind              | Shape                                                                                                                                                                                                                                                                                                                            | Notes                                 |
 | -------------------------------------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
 | `MfaOrchestrator`                                                    | class             | `issueOrChallenge`, `issueFactorChallenge`, `completeMfa`                                                                                                                                                                                                                                                                        | Consults `auth.session.mfa.required`. |
-| `MfaChallengeService` / `…Options`                                   | class             | Stashes and redeems challenges; `lockForCompletion` / `releaseCompletionLock` bound one in-flight completion                                                                                                                                                                                                                      | Challenges are single-use.            |
+| `MfaChallengeService` / `…Options`                                   | class             | Stashes and redeems challenges; `lockForCompletion` / `releaseCompletionLock` bound one in-flight completion                                                                                                                                                                                                                     | Challenges are single-use.            |
 | MFA types                                                            | —                 | `MfaChallengePayload`, `MfaEligibleFactor`, `IssueOrChallengeResult`, `CompleteMfaResult`, `FactorChallengeStartRequest`, `FactorChallengeStartResponse`, `FactorChallengeProof`, `TargetActor`                                                                                                                                  | —                                     |
 | `RecoveryOrchestrator`                                               | class             | `initiateRecovery`, `issueChannelChallenge`, `verifyChannel`, `completeRecovery`                                                                                                                                                                                                                                                 | Consults `auth.recovery.allowed`.     |
 | `RecoveryChallengeService` / `RecoverySessionService` (+ `…Options`) | class             | —                                                                                                                                                                                                                                                                                                                                | —                                     |
@@ -179,15 +183,29 @@ default off the route path — a `@maroonedsoftware/mcp` tool passing it to `req
 | `SupportVerificationSecretRepository`                                                            | abstract class | —                                                     |
 | `SupportVerificationSecret`, `SupportVerificationIssueResult`, `SupportVerificationVerifyResult` | interfaces     | —                                                     |
 
+### API keys (`src/apikey/`)
+
+| Export                                                                   | Kind           | Notes                                                                                   |
+| ------------------------------------------------------------------------ | -------------- | --------------------------------------------------------------------------------------- |
+| `ApiKeyService` (+ `…Options`)                                           | class          | Issue, validate, rotate, revoke. `authenticate(token)` mints the session.               |
+| `API_KEY_SESSION_POLICY`, `MFA_SATISFIED_OR_API_KEY_POLICY`              | constants      | Policy names for machine routes. `requirePolicy()`'s default rejects key sessions.      |
+| `getApiKeyClaim`                                                         | function       | `(session) => ApiKeySessionClaim \| undefined`. How a rule spots a machine caller.      |
+| `ApiKeyRepository`                                                       | abstract class | `secretHash` needs a **unique index**; it is the hot-path lookup key.                   |
+| `ApiKey`, `ApiKeyCreateInput`, `ApiKeyUpdate`, `ApiKeyIssued`            | interfaces     | `ApiKeyIssued.token` is the only place the plaintext token exists.                      |
+| `ApiKeyValidation`, `ApiKeyRejectionReason`                              | types          | Discriminated result, never a throw — a handler that throws stops the chain.            |
+| `ApiKeySessionClaim`                                                     | interface      | Placed at `session.claims.apiKey`. Its presence is how a policy spots a machine caller. |
+| `formatApiKeyToken`, `parseApiKeyToken`, `hashApiKeyToken`, `apiKeyHint` | functions      | `{prefix}_{type}_{body}{crc32}`. Parse is checksum-verified and does no I/O.            |
+| `encodeBase62`, `crc32`                                                  | functions      | Pure codec pieces. `encodeBase62` pads to a constant width — see Gotchas.               |
+
 ### Helpers (`src/helpers.ts`)
 
-| Export                     | Kind     | Shape                                                                               | Notes                                       |
-| -------------------------- | -------- | ----------------------------------------------------------------------------------- | ------------------------------------------- |
-| `matchesFactorConstraints` | function | Matches a session factor against a `StepUpRequirement`-style constraint set         | Used by the recency and assurance policies. |
-| `isFactorRecent`           | function | `(factor: AuthenticationSessionFactor, now: DateTime, within: Duration) => boolean` | —                                           |
-| `maskEmail`                | function | `(value: string) => string` — `jordan@example.com` → `j*****@example.com`         | Used for pre-auth channel labels.           |
-| `maskPhone`                | function | `(value: string) => string` — `+12025550123` → `•••• 23`                       | Used for pre-auth channel labels.           |
-| `timingSafeCompare`        | function | `(a: string, b: string) => boolean` — constant-time secret comparison             | Compares byte lengths, so multibyte input cannot throw. |
+| Export                     | Kind     | Shape                                                                               | Notes                                                   |
+| -------------------------- | -------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `matchesFactorConstraints` | function | Matches a session factor against a `StepUpRequirement`-style constraint set         | Used by the recency and assurance policies.             |
+| `isFactorRecent`           | function | `(factor: AuthenticationSessionFactor, now: DateTime, within: Duration) => boolean` | —                                                       |
+| `maskEmail`                | function | `(value: string) => string` — `jordan@example.com` → `j*****@example.com`           | Used for pre-auth channel labels.                       |
+| `maskPhone`                | function | `(value: string) => string` — `+12025550123` → `•••• 23`                            | Used for pre-auth channel labels.                       |
+| `timingSafeCompare`        | function | `(a: string, b: string) => boolean` — constant-time secret comparison               | Compares byte lengths, so multibyte input cannot throw. |
 
 ## Canonical usage
 
@@ -313,6 +331,17 @@ const session = await sessions.createSession(completed.actor.id, claims, complet
 - **`AuthenticationFactorMethod` has no `'oauth2'` member**, despite `OAuth2FactorService` existing.
   An OAuth2 login has to be recorded under one of the six listed methods (`'oidc'` is the usual
   choice). Do not assume the factor list and the service list line up.
+- **API keys are hashed with SHA-256, not Argon2id.** A 32-byte random token cannot be guessed, so
+  a memory-hard KDF on the authentication hot path buys nothing and costs a denial-of-service
+  vector. The single digest is also what makes `secretHash` an index key, so validation is one read
+  rather than a scan-and-verify over every active hash. Do not "upgrade" it to a password hash.
+- **An API key session has one factor, so `requirePolicy()` rejects it.** That is deliberate: a
+  machine credential must not reach an MFA-gated route by accident. Machine routes opt in with
+  `API_KEY_SESSION_POLICY`, or `MFA_SATISFIED_OR_API_KEY_POLICY` for a route serving both.
+- **Nothing revokes an API key when its owner is deleted.** This package does not know your account
+  lifecycle. Call `ApiKeyService.revokeAllForOwner` from your own block and delete flows.
+- **`'auth.api.key.allowed'` runs on every machine request** with `operation: 'validate'`. Keep any
+  override cheap and cache anything that needs I/O.
 - **`PasswordStrengthProvider` makes a live network call.** The HaveIBeenPwned matcher is wired to
   `fetch` in the constructor, so every strength check hits an external API. That means latency on
   your signup path, and a hard dependency on outbound network in tests. Stub the provider in tests.
@@ -363,12 +392,14 @@ src/
                                   each: <name>.factor.service.ts + <name>.factor.repository.ts
   providers/                      argon2id.password.hash, password.hash, password.strength, jwt,
                                   otp (+ mock), pkce, oidc, oauth2, html.redirect
-  policies/                       eleven policies + policy.mappings.ts
+  policies/                       fourteen policies + policy.mappings.ts
   mfa/                            types, mfa.challenge.service, mfa.orchestrator
   recovery/                       types, recovery.challenge.service, recovery.session.service,
                                   recovery.orchestrator
   support/                        types, support.verification.secret.repository,
                                   support.verification.code.service
+  apikey/                         types, api.key.token (codec), api.key.repository,
+                                  api.key.service, api.key.authentication.handler
   index.ts                        Barrel
 ```
 

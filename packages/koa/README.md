@@ -158,6 +158,11 @@ app.use(authenticationMiddleware({ anonymousPaths: ['/health', /^\/public\//] })
 builder.setupMiddleware(container => serverKitDefaultMiddleware(container, { authentication: { anonymousPaths: ['/health'] } }));
 ```
 
+A session established by an API key carries one factor, so `requirePolicy()`'s default MFA gate
+rejects it. Machine routes name `API_KEY_SESSION_POLICY` instead, or
+`MFA_SATISFIED_OR_API_KEY_POLICY` when one path serves both browsers and integrations. Both come
+from `@maroonedsoftware/authentication`.
+
 ```typescript
 import { AuthenticationSchemeHandler, AuthenticationHandlerMap } from '@maroonedsoftware/authentication';
 import { authenticationMiddleware } from '@maroonedsoftware/koa';

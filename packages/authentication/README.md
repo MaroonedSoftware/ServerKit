@@ -17,6 +17,7 @@ pnpm add @maroonedsoftware/authentication
 - **Built-in JWT support** — `JwtAuthenticationHandler` and `JwtAuthenticationIssuer` for multi-issuer Bearer token validation
 - **Built-in Basic support** — `BasicAuthenticationHandler` and `BasicAuthenticationIssuer` for username/password flows
 - **Handler chaining** — `ChainedAuthenticationHandler` puts several handlers on one scheme, so `Bearer` can carry both a session JWT and a service's static token
+- **API keys** — revocable, expiring, scoped machine credentials via `ApiKeyService`, with GitHub-style checksummed tokens that a malformed credential fails before any storage read
 - **OTP/TOTP** — RFC 4226/6238 compliant HOTP and TOTP generation and validation, plus `otpauth://` URI generation for QR codes
 - **Password strength** — zxcvbn-ts powered strength checking with HaveIBeenPwned integration
 - **Password factors** — strength-validated, PBKDF2-hashed, rate-limited password factor lifecycle via `PasswordFactorService`
@@ -167,14 +168,33 @@ registry.register(McpAuthenticationHandler).useClass(McpAuthenticationHandler).a
 registry.register(JwtAuthenticationHandler).useClass(JwtAuthenticationHandler).asSingleton();
 
 // Registration order is try order — most specific first.
-registry
-  .register(AuthenticationHandlerChain)
-  .useArray(AuthenticationHandlerChain)
-  .push(McpAuthenticationHandler)
-  .push(JwtAuthenticationHandler);
+registry.register(AuthenticationHandlerChain).useArray(AuthenticationHandlerChain).push(McpAuthenticationHandler).push(JwtAuthenticationHandler);
 
 registry.register(ChainedAuthenticationHandler).useClass(ChainedAuthenticationHandler).asSingleton();
 registry.register(AuthenticationHandlerMap).useMap(AuthenticationHandlerMap).set('bearer', ChainedAuthenticationHandler);
+```
+
+An API key handler belongs **first** in the chain. Its prefix test costs no I/O, so a JWT falls
+through without a database round trip, whereas a JWT handler asked about an API key has to decode
+it first:
+
+```typescript
+import { ApiKeyAuthenticationHandler } from '@maroonedsoftware/authentication';
+
+registry.register(AuthenticationHandlerChain).useArray(AuthenticationHandlerChain).push(ApiKeyAuthenticationHandler).push(JwtAuthenticationHandler);
+```
+
+To accept `Authorization: ApiKey sk_…` as well, add the scheme to `ApiKeyServiceOptions` and
+register the handler directly — nothing else claims that scheme, so it needs no chain:
+
+```typescript
+registry.register(ApiKeyServiceOptions).useValue(new ApiKeyServiceOptions('sk', 32, undefined, undefined, undefined, ['bearer', 'apikey']));
+
+registry
+  .register(AuthenticationHandlerMap)
+  .useMap(AuthenticationHandlerMap)
+  .set('bearer', ChainedAuthenticationHandler)
+  .set('apikey', ApiKeyAuthenticationHandler);
 ```
 
 Each handler is tried in turn and the first session that is not `invalidAuthenticationSession` wins. A handler that does not recognise the credential returns the sentinel, so "not mine" and "mine but invalid" look the same to the chain — deliberately, so that no single member can confirm to a caller that a credential is genuinely invalid.
@@ -822,7 +842,7 @@ const session = await sessionService.createSession(completed.actor.actorId, { ro
 const token = await sessionService.issueTokenForSession(session.sessionToken);
 ```
 
-`completeMfa` rejects a proof aimed at a factor the challenge never offered *before*
+`completeMfa` rejects a proof aimed at a factor the challenge never offered _before_
 handing it to a factor service, so an ineligible proof cannot spend the single-use
 sub-challenge behind it. Only one completion runs at a time for a given challenge:
 a concurrent second call gets a 409, and the lock is released when a proof fails so a
@@ -1050,6 +1070,76 @@ the call site or by subclassing). Subclass and re-register under
 
 ---
 
+### API keys
+
+`ApiKeyService` issues revocable, expiring, scoped machine credentials. Tokens are
+`{prefix}_{type}_{body}{checksum}` — 32 random bytes in base62 with a CRC32 over everything before
+them — so a truncated or mistyped credential is rejected before any storage read, and secret
+scanners can recognise a leaked key.
+
+Only the SHA-256 of the token and its leading characters are stored. A token cannot be recovered
+once issued; the remedy for a lost one is `rotate`.
+
+```typescript
+import { ApiKeyRepository, ApiKeyService, ApiKeyServiceOptions } from '@maroonedsoftware/authentication';
+
+registry.register(ApiKeyRepository).useClass(MyApiKeyRepository).asSingleton();
+registry.register(ApiKeyServiceOptions).useValue(new ApiKeyServiceOptions('acme'));
+registry.register(ApiKeyService).useClass(ApiKeyService).asSingleton();
+```
+
+```typescript
+const service = container.get(ApiKeyService);
+
+// Issue. `token` is the only copy — show it once, never log it.
+const { key, token } = await service.create({
+  owner: { kind: 'user', actorId: user.id },
+  name: 'CI deploy',
+  type: 'live',
+  scopes: ['deploy'],
+  metadata: { repo: 'serverkit' },
+  expiresAt: DateTime.utc().plus({ days: 90 }),
+});
+
+// Manage.
+await service.listForOwner({ kind: 'user', actorId: user.id });
+const rotated = await service.rotate(key.id); // old token dead immediately
+await service.revoke(key.id);
+```
+
+Your `ApiKeyRepository` needs a **unique index on `secretHash`**: it is the lookup key on the
+authentication hot path, and a duplicate would mean two keys share a token.
+
+**Revoke keys when an actor loses access.** Nothing in this package knows about your account
+lifecycle, so a key outlives a deleted user unless you say otherwise:
+
+```typescript
+await service.revokeAllForOwner({ kind: 'user', actorId: user.id }); // returns how many were revoked
+```
+
+A key session carries one factor, so `requirePolicy()`'s default MFA gate rejects it. That is
+deliberate — a machine credential must not reach an MFA-gated route by accident. Machine routes name
+a policy instead:
+
+```typescript
+import { API_KEY_SESSION_POLICY, MFA_SATISFIED_OR_API_KEY_POLICY } from '@maroonedsoftware/authentication';
+
+// Machine-only, and the key must carry the `deploy` scope.
+router.post('/v1/deploys', requirePolicy({ policy: API_KEY_SESSION_POLICY }), handler);
+
+// Serves a browser and an integration from one path.
+router.get('/v1/reports', requirePolicy({ policy: MFA_SATISFIED_OR_API_KEY_POLICY }), handler);
+```
+
+Scope enforcement lives in the policy rather than the service, because what a scope permits is a
+property of the route and the service has no idea which route a key was presented to.
+
+There is no validation cache, so a revocation takes effect on the next request rather than at the
+end of a TTL. `lastUsedAt` writes are throttled to one per five minutes per key, so a busy key does
+not turn every request into a database write.
+
+---
+
 ## API Reference
 
 ### `AuthenticationSession`
@@ -1221,13 +1311,13 @@ Constructed with `(logger, pemPrivateKey, pemPublicKey?)`. When `pemPublicKey` i
 
 ### `OtpProvider`
 
-| Method                                     | Returns   | Description                                    |
-| ------------------------------------------ | --------- | ---------------------------------------------- |
-| `createSecret(numBytes?)`                  | `string`  | Generate a base32-encoded random secret        |
-| `generate(secret, options)`                | `string`  | Generate an HOTP or TOTP value (RFC 4226/6238) |
-| `validate(otp, secret, options, window?)`  | `boolean` | Validate an HOTP or TOTP value                 |
+| Method                                               | Returns               | Description                                            |
+| ---------------------------------------------------- | --------------------- | ------------------------------------------------------ |
+| `createSecret(numBytes?)`                            | `string`              | Generate a base32-encoded random secret                |
+| `generate(secret, options)`                          | `string`              | Generate an HOTP or TOTP value (RFC 4226/6238)         |
+| `validate(otp, secret, options, window?)`            | `boolean`             | Validate an HOTP or TOTP value                         |
 | `validateWithCounter(otp, secret, options, window?)` | `number \| undefined` | Validate and report which counter or time step matched |
-| `generateURI(secret, options, urlOptions)` | `string`  | Build an `otpauth://` provisioning URI         |
+| `generateURI(secret, options, urlOptions)`           | `string`              | Build an `otpauth://` provisioning URI                 |
 
 `options` is an `OtpOptions` object with `type: 'hotp' | 'totp'`, plus `algorithm`, `counter` (HOTP), `periodSeconds` (TOTP), and `tokenLength`. `urlOptions` accepts `issuer` and an optional `label`.
 

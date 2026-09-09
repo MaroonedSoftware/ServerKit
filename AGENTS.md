@@ -50,7 +50,7 @@ Two audiences use these files:
 | `kysely`            | L1      | Kysely/PostgreSQL client wiring plus `pg` and Luxon type helpers                          | [kysely](./packages/kysely/AGENTS.md)                       |
 | `permissions-dsl`   | L1      | `.perm` surface syntax, compiler, fixtures, and the `pdsl` CLI                            | [permissions-dsl](./packages/permissions-dsl/AGENTS.md)     |
 | `servercore`        | L1      | Framework-agnostic HTTP core: module lifecycle, body parsers, error rendering, SSE        | [servercore](./packages/servercore/AGENTS.md)               |
-| `authentication`    | L2      | Auth factors, scheme handlers, sessions, JWT issuance, and account recovery               | [authentication](./packages/authentication/AGENTS.md)       |
+| `authentication`    | L2      | Auth factors, scheme handlers, sessions, JWT issuance, API keys, and account recovery     | [authentication](./packages/authentication/AGENTS.md)       |
 | `koa`               | L2      | Server builder, typed context, middleware stack, body parsing, SSE                        | [koa](./packages/koa/AGENTS.md)                             |
 | `fastify`           | L2      | Fastify server builder, plugin stack, request context, body parsing, zod schemas, SSE     | [fastify](./packages/fastify/AGENTS.md)                     |
 | `mcp`               | L2      | Model Context Protocol server over Streamable HTTP, wrapping the official SDK             | [mcp](./packages/mcp/AGENTS.md)                             |
