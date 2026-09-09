@@ -56,7 +56,7 @@ by area; type aliases for provider-specific payload shapes are grouped rather th
 | `AuthenticationSession`        | interface | `{ sessionToken, subject, issuedAt, expiresAt, lastAccessedAt, factors, claims, familyId? }`                      | All timestamps are Luxon `DateTime`.                                     |
 | `AuthenticationSessionFactor`  | interface | `{ issuedAt, authenticatedAt, method, methodId, kind }`                                                           | `authenticatedAt` is what recency policies read.                         |
 | `AuthenticationFactorKind`     | type      | `'knowledge' \| 'possession' \| 'biometric'`                                                                      | Classic MFA taxonomy.                                                    |
-| `AuthenticationFactorMethod`   | type      | `'phone' \| 'password' \| 'authenticator' \| 'email' \| 'fido' \| 'oidc'`                                         | **Note: no `'oauth2'`.** See Gotchas.                                    |
+| `AuthenticationFactorMethod`   | type      | `'phone' \| 'password' \| 'authenticator' \| 'email' \| 'fido' \| 'oidc' \| 'apikey'`                            | **Note: no `'oauth2'`.** See Gotchas. `'apikey'` is a machine credential, not an enrolled factor. |
 | `invalidAuthenticationSession` | constant  | Sentinel with empty strings and `DateTime.invalid('invalid')` fields                                              | Compare by **identity**; that is what `requirePolicy` does.              |
 | `SessionRevocationReason`      | type      | `'logout' \| 'rotate' \| 'theft' \| 'expiry'`                                                                     | —                                                                        |
 | `AuthenticationSessionHooks`   | interface | `onSessionCreated?`, `onSessionRefreshed?`, `onSessionRevoked?`, `onValidationFailed?`, `onRefreshReuseDetected?` | Fire **after** the cache write commits. Errors logged, never propagated. |
@@ -178,6 +178,17 @@ default off the route path — a `@maroonedsoftware/mcp` tool passing it to `req
 | `SupportVerificationCodeService` (+ `…Options`)                                                  | class          | Verify a caller's identity in a support conversation. |
 | `SupportVerificationSecretRepository`                                                            | abstract class | —                                                     |
 | `SupportVerificationSecret`, `SupportVerificationIssueResult`, `SupportVerificationVerifyResult` | interfaces     | —                                                     |
+
+### API keys (`src/apikey/`)
+
+| Export                                                                    | Kind           | Notes                                                                                  |
+| ------------------------------------------------------------------------- | -------------- | -------------------------------------------------------------------------------------- |
+| `ApiKeyRepository`                                                        | abstract class | `secretHash` needs a **unique index**; it is the hot-path lookup key.                   |
+| `ApiKey`, `ApiKeyCreateInput`, `ApiKeyUpdate`, `ApiKeyIssued`             | interfaces     | `ApiKeyIssued.token` is the only place the plaintext token exists.                      |
+| `ApiKeyValidation`, `ApiKeyRejectionReason`                               | types          | Discriminated result, never a throw — a handler that throws stops the chain.            |
+| `ApiKeySessionClaim`                                                      | interface      | Placed at `session.claims.apiKey`. Its presence is how a policy spots a machine caller. |
+| `formatApiKeyToken`, `parseApiKeyToken`, `hashApiKeyToken`, `apiKeyHint`  | functions      | `{prefix}_{type}_{body}{crc32}`. Parse is checksum-verified and does no I/O.            |
+| `encodeBase62`, `crc32`                                                   | functions      | Pure codec pieces. `encodeBase62` pads to a constant width — see Gotchas.               |
 
 ### Helpers (`src/helpers.ts`)
 
@@ -369,6 +380,7 @@ src/
                                   recovery.orchestrator
   support/                        types, support.verification.secret.repository,
                                   support.verification.code.service
+  apikey/                         types, api.key.token (codec), api.key.repository
   index.ts                        Barrel
 ```
 

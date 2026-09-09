@@ -56,4 +56,7 @@ export * from './recovery/recovery.orchestrator.js';
 export * from './support/types.js';
 export * from './support/support.verification.secret.repository.js';
 export * from './support/support.verification.code.service.js';
+export * from './apikey/types.js';
+export * from './apikey/api.key.token.js';
+export * from './apikey/api.key.repository.js';
 export * from './helpers.js';
