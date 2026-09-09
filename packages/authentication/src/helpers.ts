@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { type AuthenticationFactorKind, type AuthenticationFactorMethod, type AuthenticationSessionFactor } from './types.js';
 import { DateTime, Duration } from 'luxon';
 
@@ -70,4 +71,26 @@ export const maskPhone = (value: string): string => {
   const digits = value.replace(/\D/g, '');
   if (digits.length <= 2) return '•••• ';
   return `•••• ${digits.slice(-2)}`;
+};
+
+/**
+ * Compare two secrets in constant time with respect to their contents.
+ *
+ * Lengths are compared as **bytes**, not characters: `crypto.timingSafeEqual`
+ * throws a `RangeError` on unequal buffers, and two strings of equal character
+ * length can encode to different byte lengths.
+ *
+ * A mismatch in length is still detectable by timing, which is inherent to the
+ * primitive and not a problem for the fixed-length codes and tokens this package
+ * compares.
+ *
+ * @param a - First value.
+ * @param b - Second value.
+ * @returns `true` when the two are byte-for-byte equal.
+ */
+export const timingSafeCompare = (a: string, b: string): boolean => {
+  const left = Buffer.from(a, 'utf8');
+  const right = Buffer.from(b, 'utf8');
+  if (left.length !== right.length) return false;
+  return crypto.timingSafeEqual(left, right);
 };

@@ -186,6 +186,7 @@ default off the route path — a `@maroonedsoftware/mcp` tool passing it to `req
 | `isFactorRecent`           | function | `(factor: AuthenticationSessionFactor, now: DateTime, within: Duration) => boolean` | —                                           |
 | `maskEmail`                | function | `(value: string) => string` — `jordan@example.com` → `j*****@example.com`         | Used for pre-auth channel labels.           |
 | `maskPhone`                | function | `(value: string) => string` — `+12025550123` → `•••• 23`                       | Used for pre-auth channel labels.           |
+| `timingSafeCompare`        | function | `(a: string, b: string) => boolean` — constant-time secret comparison             | Compares byte lengths, so multibyte input cannot throw. |
 
 ## Canonical usage
 
@@ -349,7 +350,7 @@ src/
   authentication.scheme.handler.ts  AuthenticationHandlerMap, AuthenticationSchemeHandler
   chained.authentication.handler.ts ChainedAuthenticationHandler, AuthenticationHandlerChain
   authentication.session.service.ts Sessions, rotation, refresh + theft detection
-  helpers.ts                      matchesFactorConstraints, isFactorRecent, maskEmail, maskPhone
+  helpers.ts                      matchesFactorConstraints, isFactorRecent, maskEmail, maskPhone, timingSafeCompare
   jwt/                            JwtAuthenticationHandler, JwtAuthenticationIssuer(+Map)
   basic/                          BasicAuthenticationHandler, BasicAuthenticationIssuer
   factors/

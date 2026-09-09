@@ -1,4 +1,3 @@
-import crypto from 'node:crypto';
 import { Injectable } from 'injectkit';
 import { DateTime, Duration } from 'luxon';
 import { httpError, unauthorizedError } from '@maroonedsoftware/errors';
@@ -8,6 +7,7 @@ import { Logger } from '@maroonedsoftware/logger';
 import { isPolicyResultDenied, PolicyService } from '@maroonedsoftware/policies';
 import { RateLimiterCompatibleAbstract } from 'rate-limiter-flexible';
 import { OtpProvider, type TotpOptions } from '../providers/otp.provider.js';
+import { timingSafeCompare } from '../helpers.js';
 import { TargetActor } from '../mfa/types.js';
 import { SupportVerificationSecret, SupportVerificationSecretRepository } from './support.verification.secret.repository.js';
 import { SupportVerificationIssueResult, SupportVerificationVerifyResult } from './types.js';
@@ -196,7 +196,7 @@ export class SupportVerificationCodeService {
       for (const candidate of offset === 0 ? [currentCounter] : [currentCounter - offset, currentCounter + offset]) {
         const candidateAt = DateTime.fromSeconds(candidate * periodSeconds);
         const generated = this.otpProvider.generate(secret, { ...options, timestamp: candidateAt });
-        if (generated.length === code.length && timingSafeEqual(generated, code)) {
+        if (timingSafeCompare(generated, code)) {
           matchedCounter = candidate;
           break;
         }
@@ -260,9 +260,4 @@ export class SupportVerificationCodeService {
   async clearRateLimit(actorId: string): Promise<void> {
     await this.rateLimiter.delete(this.getRateLimitKey(actorId));
   }
-}
-
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
 }

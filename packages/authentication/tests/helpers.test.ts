@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { DateTime, Duration } from 'luxon';
-import { isFactorRecent, maskEmail, maskPhone, matchesFactorConstraints } from '../src/helpers.js';
+import { isFactorRecent, maskEmail, maskPhone, matchesFactorConstraints, timingSafeCompare } from '../src/helpers.js';
 import type { AuthenticationSessionFactor } from '../src/types.js';
 
 const baseFactor = (overrides: Partial<AuthenticationSessionFactor> = {}): AuthenticationSessionFactor => ({
@@ -92,5 +92,28 @@ describe('maskPhone', () => {
 
   it('reveals nothing when there are two or fewer digits', () => {
     expect(maskPhone('+1')).toBe('•••• ');
+  });
+});
+
+describe('timingSafeCompare', () => {
+  it('returns true for identical values', () => {
+    expect(timingSafeCompare('123456', '123456')).toBe(true);
+  });
+
+  it('returns false for different values of the same length', () => {
+    expect(timingSafeCompare('123456', '654321')).toBe(false);
+  });
+
+  it('returns false for different lengths', () => {
+    expect(timingSafeCompare('123456', '12345')).toBe(false);
+  });
+
+  it('does not throw when the values are the same character length but different byte lengths', () => {
+    expect(() => timingSafeCompare('12345é', '123456')).not.toThrow();
+    expect(timingSafeCompare('12345é', '123456')).toBe(false);
+  });
+
+  it('compares empty strings as equal', () => {
+    expect(timingSafeCompare('', '')).toBe(true);
   });
 });

@@ -6,6 +6,7 @@ import { httpError, unauthorizedError } from '@maroonedsoftware/errors';
 import { CacheProvider } from '@maroonedsoftware/cache';
 import { EmailFactorRepository } from './email.factor.repository.js';
 import { PolicyService } from '@maroonedsoftware/policies';
+import { timingSafeCompare } from '../../helpers.js';
 
 /** Default number of verification attempts allowed against a single challenge before it is invalidated. */
 const DEFAULT_MAX_VERIFICATION_ATTEMPTS = 5;
@@ -190,7 +191,7 @@ export class EmailFactorService {
       ) {
         throw httpError(400).withDetails({ code: 'invalid code' });
       }
-    } else if (payload.verificationMethod === 'magiclink' && payload.code !== code) {
+    } else if (payload.verificationMethod === 'magiclink' && !timingSafeCompare(payload.code, code)) {
       throw httpError(400).withDetails({ code: 'invalid magiclink' });
     }
   }
