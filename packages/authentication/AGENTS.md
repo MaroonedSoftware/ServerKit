@@ -377,6 +377,17 @@ const session = await sessions.createSession(completed.actor.id, claims, complet
   sink: do not store a secret there.
 - **`session.rotated` is one event, not two.** The hooks fire `onSessionCreated` + `onSessionRevoked`
   for a rotation and leave the consumer to correlate them. The event names both tokens.
+- **`password.verify.rate_limited` is its own event, not a `verify.failed` reason.** A wrong password
+  is one person mistyping; a burst of rate-limit refusals is the lockout signal. Collapsing them
+  hides the burst in the counts.
+- **`recovery.initiated` with no `actorId` is a probe.** The package deliberately issues a challenge
+  for an unknown identifier so a caller cannot enumerate accounts, so an event with no actor means
+  someone testing addresses. Alert on the rate.
+- **`recovery.channel.rejected` with `sub_challenge_mismatch` is an attack, not a user error.** It
+  means a proof issued against one account was presented on another account's challenge. Same for
+  `mfa.failed` with `post_verification_mismatch`, which is a defence-in-depth trip.
+- **`recovery.sessions_not_revoked` is a misconfiguration alarm.** It fires when the orchestrator has
+  no `AuthenticationSessionService` bound, which silently leaves every pre-recovery token working.
 - **The package never fills `AuditEventContext`.** It sits at L2 alongside the HTTP adapters, so it
   cannot reach a request. Fill `correlationId`, `ipAddress`, and the rest in your own request-scoped
   sink.
@@ -434,7 +445,7 @@ src/
   apikey/                         types, api.key.token (codec), api.key.repository,
                                   api.key.service, api.key.authentication.handler
   audit/                          types, audit.sink, audit.recorder, audit.event,
-                                  session.audit.event, api.key.audit.event
+                                  session/api.key/password/mfa/recovery .audit.event
   index.ts                        Barrel
 ```
 
