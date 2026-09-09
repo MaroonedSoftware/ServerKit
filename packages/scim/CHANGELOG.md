@@ -1,5 +1,58 @@
 # @maroonedsoftware/scim
 
+## 0.3.0
+
+### Minor Changes
+
+- b465baa: Apply `attributes` and `excludedAttributes` to SCIM responses, and strip attributes the schema
+  declares `returned: 'never'`. Both parameters were parsed into `ScimListQuery` and handed to the
+  repository, but nothing in the package ever applied them, and single-resource reads and writes did
+  not parse them at all. `password`, declared `writeOnly` and `returned: 'never'` on the User schema,
+  was returned verbatim by any repository that round-tripped what it stored.
+
+  Adds `projectScimResource(resource, schemas, projection)` and the `ScimProjection` type, and runs
+  every user and group response through it.
+
+- 7cf4b77: Add a `baseUrl` option to `createScimRouter` so `meta.location` and the `Location` response header
+  carry a real resource URI. Both were hardcoded to a root-relative `/Users/{id}`, so any deployment
+  mounting the router under a prefix such as `/scim/v2` published locations that provisioning clients
+  follow to a 404. RFC 7643 §3.1 wants the resource URI.
+
+  Omitting the option keeps the previous root-relative behaviour. Also fixes the README quick start,
+  which passed `userRepository`, `groupRepository`, `basePath`, and `serviceProviderConfig` — none of
+  which are members of `CreateScimRouterOptions`.
+
+### Patch Changes
+
+- bed763e: Honour `?count=0` on the SCIM list endpoints. RFC 7644 §3.4.2.4 gives a count below 1 its own
+  meaning, return no resources but still report `totalResults`, and it is the probe Okta and Entra
+  make when setting up a connection. The query-string parser treated any value below 1 as unset and
+  returned a full page, disagreeing with the `.search` body path, which already handled it correctly.
+- f9f09f7: Carry the real reason into the SCIM error envelope. `ScimError.toScimBody()` set `detail` from the
+  error's message, which is the HTTP status text, while every informative message in the package was
+  attached with `.withDetails({ message })` and never serialised. Okta and Entra saw
+  `"detail": "Conflict"` or `"Bad Request"` for every failure, with no indication of which attribute
+  collided or was missing.
+
+  `detail` now prefers a string `message` from `details`, falling back to the status text as before.
+
+- 3b4a127: Guard prototype keys in the SCIM PATCH merge. `applyScimPatch` assigned attacker-controlled keys
+  from the request body with plain property assignment, so a pathless `add` carrying `__proto__`
+  invoked the inherited setter and reparented the patched object instead of storing an attribute.
+  Merged keys are now defined as own data properties.
+- cef3608: Ignore a client-supplied `id` when creating a SCIM user or group. RFC 7643 §3.1 makes `id`
+  server-assigned and readOnly, but `create` previously took `payload.id` when present, so a POST
+  carrying an existing record's id passed the uniqueness check and reached the repository with a
+  colliding primary key.
+- Updated dependencies [e1ef261]
+- Updated dependencies [8a6163c]
+- Updated dependencies [7b77bae]
+- Updated dependencies [18c6070]
+- Updated dependencies [6a0c667]
+- Updated dependencies [bec7f86]
+  - @maroonedsoftware/authentication@4.33.0
+  - @maroonedsoftware/koa@3.2.5
+
 ## 0.2.24
 
 ### Patch Changes

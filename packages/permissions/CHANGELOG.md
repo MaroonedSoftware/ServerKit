@@ -1,5 +1,39 @@
 # @maroonedsoftware/permissions
 
+## 0.3.0
+
+### Minor Changes
+
+- 4ad43c5: Add reverse listings to the tuple repository contract: `listSubjects(namespace, objectId, relation)`
+  answers "who is on this object?" and `listObjects(namespace, relation, subject)` answers "what is
+  this subject on?". Neither existed, so there was no way to enumerate a relation's members without
+  reaching past the repository.
+
+  Both are optional on `PermissionsTupleRepository` so existing implementations keep compiling; check
+  for the method before calling it. `InMemoryTupleRepository` implements both. `listObjects` is a
+  direct-tuple index, not a Check, so a subject with access only through a `tupleToUserset` parent
+  does not appear in its results.
+
+- 4ad43c5: Enforce `RelationDef.subjects` on write. The field was documented as a write-time contract, but
+  nothing in the package enforced it and no shipped repository validated on the way in, so a relation
+  deliberately declared without `user.*` was still world-grantable by writing that tuple directly.
+
+  Adds `AuthorizationModel.isSubjectAllowed` and `assertTuplesAllowed`, plus a
+  `ModelValidatingTupleRepository` decorator that wraps any repository and validates before writing.
+  Reads pass straight through, and deletes are not validated.
+
+- 4ad43c5: Raise a typed `PermissionsError` for an unknown namespace or relation, and let callers tell a
+  denial from a depth-capped answer.
+
+  `AuthorizationModel.resolve` threw a plain `Error`, so a misspelt permission name at a call site
+  was indistinguishable from any other failure. It now throws `PermissionsError` carrying a `code`
+  of `'unknown_namespace'`, `'unknown_relation'`, or `'subject_not_allowed'`, with an
+  `IsPermissionsError` guard.
+
+  Adds `checkDetailed`, which returns `{ allowed, maxDepthExceeded, metrics }`. Exceeding the depth
+  cap made `check` return `false`, indistinguishable from a real denial; `maxDepthExceeded` separates
+  "could not determine" from "denied". `check` is unchanged.
+
 ## 0.2.9
 
 ### Patch Changes
