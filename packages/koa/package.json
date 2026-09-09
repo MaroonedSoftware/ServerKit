@@ -53,7 +53,6 @@
   },
   "dependencies": {
     "@maroonedsoftware/appconfig": "workspace:*",
-    "@maroonedsoftware/authentication": "workspace:*",
     "@maroonedsoftware/errors": "workspace:*",
     "@maroonedsoftware/logger": "workspace:*",
     "@maroonedsoftware/policies": "workspace:*",
@@ -64,6 +63,7 @@
   "peerDependencies": {
     "@koa/cors": "^5.0.0",
     "@koa/router": "^15.2.0",
+    "@maroonedsoftware/authentication": "workspace:^",
     "@maroonedsoftware/serverfeed": "workspace:*",
     "koa": "^3.1.1"
   },

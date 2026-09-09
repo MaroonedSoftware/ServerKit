@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { type AuthenticationFactorKind, type AuthenticationFactorMethod, type AuthenticationSessionFactor } from './types.js';
+import { type AuthenticationFactorKind, type AuthenticationFactorMethod, type AuthenticationSessionFactor, type SessionDevice } from './types.js';
 import { DateTime, Duration } from 'luxon';
 
 /**
@@ -93,4 +93,52 @@ export const timingSafeCompare = (a: string, b: string): boolean => {
   const right = Buffer.from(b, 'utf8');
   if (left.length !== right.length) return false;
   return crypto.timingSafeEqual(left, right);
+};
+
+/**
+ * Longest `User-Agent` this package stores on a session.
+ *
+ * The header is attacker-controlled and unbounded, so it is clamped rather than
+ * stored as given. 512 is what both ServerKit consumers already clamp to and
+ * what their wire contracts already declare, so nothing downstream has to move.
+ */
+export const MAX_USER_AGENT_LENGTH = 512;
+
+/** Trim a value, treating blank as absent. */
+const presentOrUndefined = (value: string | undefined): string | undefined => {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+};
+
+/**
+ * Clean up a {@link SessionDevice} before it is stored.
+ *
+ * Trims each field, drops blanks, and clamps the user agent to
+ * {@link MAX_USER_AGENT_LENGTH}.
+ *
+ * **Blank handling is the part that matters.** Both HTTP adapters set
+ * `userAgent` to `''` when the header is absent — Koa's `ctx.get` returns an
+ * empty string for a missing header, and the Fastify plugin defaults it
+ * explicitly — so without this every session created through them would record
+ * an empty user agent rather than no user agent, and a session list would show
+ * a blank column instead of nothing.
+ *
+ * @param device - The raw values, as the application read them off the request.
+ * @returns The cleaned block, or `undefined` when nothing survives, so an empty
+ *   object is never stored.
+ */
+export const normaliseSessionDevice = (device: SessionDevice | undefined): SessionDevice | undefined => {
+  if (!device) return undefined;
+
+  const ipAddress = presentOrUndefined(device.ipAddress);
+  const userAgent = presentOrUndefined(device.userAgent)?.slice(0, MAX_USER_AGENT_LENGTH);
+  const label = presentOrUndefined(device.label);
+
+  if (!ipAddress && !userAgent && !label) return undefined;
+
+  return {
+    ...(ipAddress === undefined ? {} : { ipAddress }),
+    ...(userAgent === undefined ? {} : { userAgent }),
+    ...(label === undefined ? {} : { label }),
+  };
 };

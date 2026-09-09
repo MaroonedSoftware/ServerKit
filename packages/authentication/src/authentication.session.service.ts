@@ -149,6 +149,7 @@ export class AuthenticationSessionService {
       })),
       claims: session.claims,
       familyId: session.familyId,
+      device: session.device,
     });
   }
 
@@ -169,6 +170,10 @@ export class AuthenticationSessionService {
       })),
       claims: session.claims,
       familyId: session.familyId,
+      // Absent on anything cached before this field existed, which is why it is
+      // optional rather than defaulted: an empty block would be a claim about
+      // the session that nobody made.
+      device: session.device,
     };
   }
 
