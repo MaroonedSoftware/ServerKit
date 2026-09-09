@@ -1051,6 +1051,59 @@ the call site or by subclassing). Subclass and re-register under
 
 ---
 
+### API keys
+
+`ApiKeyService` issues revocable, expiring, scoped machine credentials. Tokens are
+`{prefix}_{type}_{body}{checksum}` — 32 random bytes in base62 with a CRC32 over everything before
+them — so a truncated or mistyped credential is rejected before any storage read, and secret
+scanners can recognise a leaked key.
+
+Only the SHA-256 of the token and its leading characters are stored. A token cannot be recovered
+once issued; the remedy for a lost one is `rotate`.
+
+```typescript
+import { ApiKeyRepository, ApiKeyService, ApiKeyServiceOptions } from '@maroonedsoftware/authentication';
+
+registry.register(ApiKeyRepository).useClass(MyApiKeyRepository).asSingleton();
+registry.register(ApiKeyServiceOptions).useValue(new ApiKeyServiceOptions('acme'));
+registry.register(ApiKeyService).useClass(ApiKeyService).asSingleton();
+```
+
+```typescript
+const service = container.get(ApiKeyService);
+
+// Issue. `token` is the only copy — show it once, never log it.
+const { key, token } = await service.create({
+  owner: { kind: 'user', actorId: user.id },
+  name: 'CI deploy',
+  type: 'live',
+  scopes: ['deploy'],
+  metadata: { repo: 'serverkit' },
+  expiresAt: DateTime.utc().plus({ days: 90 }),
+});
+
+// Manage.
+await service.listForOwner({ kind: 'user', actorId: user.id });
+const rotated = await service.rotate(key.id); // old token dead immediately
+await service.revoke(key.id);
+```
+
+Your `ApiKeyRepository` needs a **unique index on `secretHash`**: it is the lookup key on the
+authentication hot path, and a duplicate would mean two keys share a token.
+
+**Revoke keys when an actor loses access.** Nothing in this package knows about your account
+lifecycle, so a key outlives a deleted user unless you say otherwise:
+
+```typescript
+await service.revokeAllForOwner({ kind: 'user', actorId: user.id }); // returns how many were revoked
+```
+
+There is no validation cache, so a revocation takes effect on the next request rather than at the
+end of a TTL. `lastUsedAt` writes are throttled to one per five minutes per key, so a busy key does
+not turn every request into a database write.
+
+---
+
 ## API Reference
 
 ### `AuthenticationSession`

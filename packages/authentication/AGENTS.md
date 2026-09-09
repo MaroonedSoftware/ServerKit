@@ -145,10 +145,11 @@ class) and an abstract `<Name>FactorRepository` you implement.
 | `auth.session.assurance.level`       | `DefaultAssuranceLevelPolicy`      | `AuthAssuranceLevelPolicyContext`         |
 | `auth.recovery.allowed`              | `RecoveryAllowedPolicy`            | `RecoveryAllowedPolicyContext`            |
 | `auth.support.verification.allowed`  | `SupportVerificationAllowedPolicy` | `SupportVerificationAllowedPolicyContext` |
+| `auth.api.key.allowed`               | `ApiKeyAllowedPolicy`              | `ApiKeyAllowedPolicyContext`              |
 
 | Export                         | Kind     | Shape                                                    | Notes                                                           |
 | ------------------------------ | -------- | -------------------------------------------------------- | --------------------------------------------------------------- |
-| `AuthenticationPolicyNames`    | type     | Union of the eleven names above                          | —                                                               |
+| `AuthenticationPolicyNames`    | type     | Union of the twelve names above                          | —                                                               |
 | `AuthenticationPolicyMappings` | constant | `Record<AuthenticationPolicyNames, Constructor<Policy>>` | Spread into your `PolicyRegistryMap`.                           |
 | `AuthenticationPolicyContexts` | type     | `Record<AuthenticationPolicyNames, …Context>`            | Intersect with your own `Policies` map for `BasePolicyService`. |
 | `MFA_SATISFIED_POLICY`         | constant | `'auth.session.mfa.satisfied'`                           | The one policy name exported as a constant — see below.         |
@@ -183,6 +184,7 @@ default off the route path — a `@maroonedsoftware/mcp` tool passing it to `req
 
 | Export                                                                    | Kind           | Notes                                                                                  |
 | ------------------------------------------------------------------------- | -------------- | -------------------------------------------------------------------------------------- |
+| `ApiKeyService` (+ `…Options`)                                            | class          | Issue, validate, rotate, revoke. `authenticate(token)` mints the session.               |
 | `ApiKeyRepository`                                                        | abstract class | `secretHash` needs a **unique index**; it is the hot-path lookup key.                   |
 | `ApiKey`, `ApiKeyCreateInput`, `ApiKeyUpdate`, `ApiKeyIssued`             | interfaces     | `ApiKeyIssued.token` is the only place the plaintext token exists.                      |
 | `ApiKeyValidation`, `ApiKeyRejectionReason`                               | types          | Discriminated result, never a throw — a handler that throws stops the chain.            |
@@ -324,6 +326,17 @@ const session = await sessions.createSession(completed.actor.id, claims, complet
 - **`AuthenticationFactorMethod` has no `'oauth2'` member**, despite `OAuth2FactorService` existing.
   An OAuth2 login has to be recorded under one of the six listed methods (`'oidc'` is the usual
   choice). Do not assume the factor list and the service list line up.
+- **API keys are hashed with SHA-256, not Argon2id.** A 32-byte random token cannot be guessed, so
+  a memory-hard KDF on the authentication hot path buys nothing and costs a denial-of-service
+  vector. The single digest is also what makes `secretHash` an index key, so validation is one read
+  rather than a scan-and-verify over every active hash. Do not "upgrade" it to a password hash.
+- **An API key session has one factor, so `requirePolicy()` rejects it.** That is deliberate: a
+  machine credential must not reach an MFA-gated route by accident. Machine routes opt in with
+  `API_KEY_SESSION_POLICY`, or `MFA_SATISFIED_OR_API_KEY_POLICY` for a route serving both.
+- **Nothing revokes an API key when its owner is deleted.** This package does not know your account
+  lifecycle. Call `ApiKeyService.revokeAllForOwner` from your own block and delete flows.
+- **`'auth.api.key.allowed'` runs on every machine request** with `operation: 'validate'`. Keep any
+  override cheap and cache anything that needs I/O.
 - **`PasswordStrengthProvider` makes a live network call.** The HaveIBeenPwned matcher is wired to
   `fetch` in the constructor, so every strength check hits an external API. That means latency on
   your signup path, and a hard dependency on outbound network in tests. Stub the provider in tests.
@@ -374,13 +387,14 @@ src/
                                   each: <name>.factor.service.ts + <name>.factor.repository.ts
   providers/                      argon2id.password.hash, password.hash, password.strength, jwt,
                                   otp (+ mock), pkce, oidc, oauth2, html.redirect
-  policies/                       eleven policies + policy.mappings.ts
+  policies/                       twelve policies + policy.mappings.ts
   mfa/                            types, mfa.challenge.service, mfa.orchestrator
   recovery/                       types, recovery.challenge.service, recovery.session.service,
                                   recovery.orchestrator
   support/                        types, support.verification.secret.repository,
                                   support.verification.code.service
-  apikey/                         types, api.key.token (codec), api.key.repository
+  apikey/                         types, api.key.token (codec), api.key.repository,
+                                  api.key.service
   index.ts                        Barrel
 ```
 

@@ -11,6 +11,7 @@ import { AuthRecentFactorPolicyContext, DefaultRecentFactorPolicy } from './auth
 import { AuthAssuranceLevelPolicyContext, DefaultAssuranceLevelPolicy } from './auth.assurance.level.policy.js';
 import { RecoveryAllowedPolicy, RecoveryAllowedPolicyContext } from './recovery.allowed.policy.js';
 import { SupportVerificationAllowedPolicy, SupportVerificationAllowedPolicyContext } from './support.verification.allowed.policy.js';
+import { ApiKeyAllowedPolicy, ApiKeyAllowedPolicyContext } from './api.key.allowed.policy.js';
 
 /**
  * Names of the policies bundled with this package. Use as the policy-name keys
@@ -27,7 +28,8 @@ export type AuthenticationPolicyNames =
   | 'auth.session.recent.factor'
   | 'auth.session.assurance.level'
   | 'auth.recovery.allowed'
-  | 'auth.support.verification.allowed';
+  | 'auth.support.verification.allowed'
+  | 'auth.api.key.allowed';
 
 /**
  * Default mapping from each bundled {@link AuthenticationPolicyNames} value to
@@ -47,6 +49,7 @@ export const AuthenticationPolicyMappings: Record<AuthenticationPolicyNames, Con
   'auth.session.assurance.level': DefaultAssuranceLevelPolicy,
   'auth.recovery.allowed': RecoveryAllowedPolicy,
   'auth.support.verification.allowed': SupportVerificationAllowedPolicy,
+  'auth.api.key.allowed': ApiKeyAllowedPolicy,
 };
 
 /**
@@ -67,4 +70,5 @@ export type AuthenticationPolicyContexts = {
   'auth.session.assurance.level': AuthAssuranceLevelPolicyContext;
   'auth.recovery.allowed': RecoveryAllowedPolicyContext;
   'auth.support.verification.allowed': SupportVerificationAllowedPolicyContext;
+  'auth.api.key.allowed': ApiKeyAllowedPolicyContext;
 };
