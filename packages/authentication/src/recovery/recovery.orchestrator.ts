@@ -9,6 +9,8 @@ import { RecoveryFactorService } from '../factors/recovery/recovery.factor.servi
 import { TargetActor } from '../mfa/types.js';
 import { AuthenticationSessionService } from '../authentication.session.service.js';
 import { maskEmail, maskPhone } from '../helpers.js';
+import { AuditRecorder } from '../audit/audit.recorder.js';
+import type { RecoveryRejectionReason } from '../audit/recovery.audit.event.js';
 import { RecoveryChallengeService } from './recovery.challenge.service.js';
 import { RecoverySessionService } from './recovery.session.service.js';
 import {
@@ -113,7 +115,20 @@ export class RecoveryOrchestrator {
      * and the revocation happens by default.
      */
     private readonly authenticationSessionService?: AuthenticationSessionService,
+    /** Records recovery progress and the credential changes it authorises. Defaulted, so audit is opt-in. */
+    private readonly audit: AuditRecorder = new AuditRecorder(),
   ) {}
+
+  /** Record a refused channel proof. */
+  private async auditRejected(challengeId: string, reason: RecoveryRejectionReason, actorId?: string, channel?: RecoveryChannel) {
+    await this.audit.record({
+      type: 'recovery.channel.rejected',
+      category: 'recovery',
+      outcome: 'failure',
+      ...(actorId === undefined ? {} : { actorId }),
+      data: { challengeId, reason, ...(channel === undefined ? {} : { channel }) },
+    });
+  }
 
   /**
    * Resolve `input` to an actor when possible. Returns `undefined` when no
@@ -197,6 +212,13 @@ export class RecoveryOrchestrator {
       eligibleChannels,
     });
     if (isPolicyResultDenied(policyResult)) {
+      await this.audit.record({
+        type: 'recovery.policy_denied',
+        category: 'recovery',
+        outcome: 'failure',
+        ...(actor === undefined ? {} : { actorId: actor.actorId }),
+        data: { reason: input.reason, ...(policyResult.reason === undefined ? {} : { policyReason: policyResult.reason }) },
+      });
       throw httpError(403)
         .withDetails({ reason: policyResult.reason })
         .withInternalDetails(policyResult.details ?? {});
@@ -206,6 +228,22 @@ export class RecoveryOrchestrator {
       actor,
       reason: input.reason,
       eligibleChannels,
+    });
+
+    // `actorResolved: false` is a probe: the package still issues a challenge for
+    // an unknown identifier so a caller cannot enumerate accounts, which means a
+    // run of these is someone testing addresses. Alert on the rate.
+    await this.audit.record({
+      type: 'recovery.initiated',
+      category: 'recovery',
+      outcome: 'success',
+      ...(actor === undefined ? {} : { actorId: actor.actorId }),
+      data: {
+        challengeId: challenge.challengeId,
+        reason: input.reason,
+        eligibleChannelCount: eligibleChannels.length,
+        actorResolved: actor !== undefined,
+      },
     });
 
     return {
@@ -242,10 +280,20 @@ export class RecoveryOrchestrator {
       return c.methodId === request.methodId;
     });
     if (!eligible) {
+      await this.auditRejected(challengeId, 'factor_not_eligible', challenge.actor.actorId, request.channel);
       throw httpError(400).withDetails({ channel: 'not eligible for this challenge' });
     }
 
     const { actorId } = challenge.actor;
+
+    // Recorded before dispatch, and never carrying the code the response holds.
+    await this.audit.record({
+      type: 'recovery.channel.issued',
+      category: 'recovery',
+      outcome: 'success',
+      actorId,
+      data: { challengeId, channel: request.channel, ...('methodId' in request && request.methodId ? { methodId: request.methodId } : {}) },
+    });
 
     switch (request.channel) {
       case 'email': {
@@ -302,12 +350,15 @@ export class RecoveryOrchestrator {
   async verifyChannel<K extends string = string>(challengeId: string, proof: RecoveryProof): Promise<VerifyChannelResult> {
     const challenge = await this.challengeService.peek(challengeId);
     if (!challenge) {
+      await this.auditRejected(challengeId, 'challenge_not_found', undefined, proof.channel);
       throw httpError(404).withDetails({ challengeId: 'not found' });
     }
     if (!challenge.actor) {
+      await this.auditRejected(challengeId, 'no_actor', undefined, proof.channel);
       throw httpError(400).withDetails({ challengeId: 'no actor resolved for this challenge' });
     }
     if (challenge.selectedChannel && challenge.selectedChannel !== proof.channel) {
+      await this.auditRejected(challengeId, 'channel_mismatch', challenge.actor.actorId, proof.channel);
       throw httpError(400).withDetails({ channel: 'does not match the selected channel' });
     }
 
@@ -317,9 +368,13 @@ export class RecoveryOrchestrator {
     // actor, minting that actor's recovery session.
     if (proof.channel !== 'recoveryCode') {
       if (!challenge.channelChallengeId) {
+        await this.auditRejected(challengeId, 'sub_challenge_mismatch', challenge.actor.actorId, proof.channel);
         throw httpError(400).withDetails({ channelChallengeId: 'no channel challenge has been issued for this recovery challenge' });
       }
       if (proof.channelChallengeId !== challenge.channelChallengeId) {
+        // A proof issued against one account presented on another's challenge.
+        // No legitimate client does this: alert on it.
+        await this.auditRejected(challengeId, 'sub_challenge_mismatch', challenge.actor.actorId, proof.channel);
         throw httpError(400).withDetails({ channelChallengeId: 'does not match the issued channel challenge' });
       }
     }
@@ -332,6 +387,7 @@ export class RecoveryOrchestrator {
       c => c.channel === verifiedVia.channel && (c.channel === 'recoveryCode' || c.methodId === verifiedVia.methodId),
     );
     if (!matchesEligible) {
+      await this.auditRejected(challengeId, 'factor_not_eligible', challenge.actor.actorId, verifiedVia.channel);
       throw httpError(400).withDetails({ channel: 'not eligible for this challenge' });
     }
 
@@ -344,6 +400,21 @@ export class RecoveryOrchestrator {
       reason: challenge.reason,
       verifiedVia,
       grantedActions,
+    });
+
+    // The out-of-band privilege grant: this is the moment someone gets the right
+    // to change a credential without the factor they lost.
+    await this.audit.record({
+      type: 'recovery.channel.verified',
+      category: 'privilege',
+      outcome: 'success',
+      actorId: challenge.actor.actorId,
+      data: {
+        challengeId,
+        channel: verifiedVia.channel,
+        ...(verifiedVia.methodId === undefined ? {} : { methodId: verifiedVia.methodId }),
+        grantedActions: [...grantedActions],
+      },
     });
 
     return {
@@ -397,7 +468,7 @@ export class RecoveryOrchestrator {
       case 'resetPassword': {
         await this.passwordFactorService.changePassword(actorId, action.newPassword);
         await this.passwordFactorService.clearRateLimit(actorId);
-        await this.revokeExistingSessions(actorId);
+        await this.revokeExistingSessions(actorId, 'resetPassword');
         break;
       }
       case 'unlockAccount': {
@@ -413,12 +484,21 @@ export class RecoveryOrchestrator {
       }
       case 'fullRecovery': {
         await this.hooksProvider.hooks.onFullRecovery?.({ actorId, identityProof: action.identityProof });
-        await this.revokeExistingSessions(actorId);
+        await this.revokeExistingSessions(actorId, 'fullRecovery');
         break;
       }
     }
 
     await this.sessionService.redeem(recoverySessionToken);
+
+    // The terminal event: an out-of-band credential change actually happened.
+    await this.audit.record({
+      type: 'recovery.completed',
+      category: 'credential',
+      outcome: 'success',
+      actorId,
+      data: { action: action.kind },
+    });
 
     return {
       actor: session.actor as TargetActor<K>,
@@ -432,7 +512,27 @@ export class RecoveryOrchestrator {
    * the recovery stop working. No-ops when no {@link AuthenticationSessionService}
    * was supplied, in which case the caller has to do this itself.
    */
-  private async revokeExistingSessions(actorId: string) {
-    await this.authenticationSessionService?.revokeAllForSubject(actorId, 'recovery');
+  private async revokeExistingSessions(actorId: string, action: RecoveryActionKind) {
+    if (!this.authenticationSessionService) {
+      // The optional dependency was never bound, so every pre-recovery token
+      // still works. This event is the only way that misconfiguration is visible.
+      await this.audit.record({
+        type: 'recovery.sessions_not_revoked',
+        category: 'privilege',
+        outcome: 'success',
+        actorId,
+        data: { action },
+      });
+      return;
+    }
+
+    const count = await this.authenticationSessionService.revokeAllForSubject(actorId, 'recovery');
+    await this.audit.record({
+      type: 'recovery.sessions_revoked',
+      category: 'privilege',
+      outcome: 'success',
+      actorId,
+      data: { action, count },
+    });
   }
 }

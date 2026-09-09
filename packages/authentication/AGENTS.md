@@ -51,16 +51,15 @@ by area; type aliases for provider-specific payload shapes are grouped rather th
 
 ### Session model (`src/types.ts`)
 
-| Export                         | Kind      | Shape                                                                                                             | Notes                                                                                             |
-| ------------------------------ | --------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `AuthenticationSession`        | interface | `{ sessionToken, subject, issuedAt, expiresAt, lastAccessedAt, factors, claims, familyId? }`                      | All timestamps are Luxon `DateTime`.                                                              |
-| `AuthenticationSessionFactor`  | interface | `{ issuedAt, authenticatedAt, method, methodId, kind }`                                                           | `authenticatedAt` is what recency policies read.                                                  |
-| `AuthenticationFactorKind`     | type      | `'knowledge' \| 'possession' \| 'biometric'`                                                                      | Classic MFA taxonomy.                                                                             |
-| `AuthenticationFactorMethod`   | type      | `'phone' \| 'password' \| 'authenticator' \| 'email' \| 'fido' \| 'oidc' \| 'apikey'`                             | **Note: no `'oauth2'`.** See Gotchas. `'apikey'` is a machine credential, not an enrolled factor. |
-| `invalidAuthenticationSession` | constant  | Sentinel with empty strings and `DateTime.invalid('invalid')` fields                                              | Compare by **identity**; that is what `requirePolicy` does.                                       |
-| `SessionRevocationReason`      | type      | `'logout' \| 'rotate' \| 'theft' \| 'expiry'`                                                                     | —                                                                                                 |
-| `AuthenticationSessionHooks`   | interface | `onSessionCreated?`, `onSessionRefreshed?`, `onSessionRevoked?`, `onValidationFailed?`, `onRefreshReuseDetected?` | Fire **after** the cache write commits. Errors logged, never propagated.                          |
-| `AuthenticationToken`          | type      | `{ accessToken, tokenType, expiresIn, … }`                                                                        | OAuth 2.0-shaped response.                                                                        |
+| Export                         | Kind      | Shape                                                                                        | Notes                                                                                             |
+| ------------------------------ | --------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `AuthenticationSession`        | interface | `{ sessionToken, subject, issuedAt, expiresAt, lastAccessedAt, factors, claims, familyId? }` | All timestamps are Luxon `DateTime`.                                                              |
+| `AuthenticationSessionFactor`  | interface | `{ issuedAt, authenticatedAt, method, methodId, kind }`                                      | `authenticatedAt` is what recency policies read.                                                  |
+| `AuthenticationFactorKind`     | type      | `'knowledge' \| 'possession' \| 'biometric'`                                                 | Classic MFA taxonomy.                                                                             |
+| `AuthenticationFactorMethod`   | type      | `'phone' \| 'password' \| 'authenticator' \| 'email' \| 'fido' \| 'oidc' \| 'apikey'`        | **Note: no `'oauth2'`.** See Gotchas. `'apikey'` is a machine credential, not an enrolled factor. |
+| `invalidAuthenticationSession` | constant  | Sentinel with empty strings and `DateTime.invalid('invalid')` fields                         | Compare by **identity**; that is what `requirePolicy` does.                                       |
+| `SessionRevocationReason`      | type      | `'logout' \| 'rotate' \| 'theft' \| 'expiry'`                                                | —                                                                                                 |
+| `AuthenticationToken`          | type      | `{ accessToken, tokenType, expiresIn, … }`                                                   | OAuth 2.0-shaped response.                                                                        |
 
 ### Scheme dispatch
 
@@ -81,18 +80,18 @@ by area; type aliases for provider-specific payload shapes are grouped rather th
 
 ### Sessions
 
-| Export                                                         | Kind   | Shape                                                                             | Notes                                                   |
-| -------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| `AuthenticationSessionServiceOptions`                          | class  | `(issuer, audience, expiresIn: Duration, refreshExpiresIn = 30 days, hooks = {})` | A class so it is an InjectKit token.                    |
-| `AuthenticationSessionService`                                 | class  | `@Injectable()`                                                                   | Backed by a `CacheProvider`.                            |
-| `#createSession` / `#updateSession` / `#createOrUpdateSession` | method | —                                                                                 | —                                                       |
-| `#getSession` / `#getSessionsForSubject`                       | method | —                                                                                 | Read paths; `#revokeAllForSubject` does the revoking.   |
-| `#revokeAllForSubject`                                         | method | `(subject: string, reason?: SessionRevocationReason) => Promise<number>`          | Revokes every session for a subject; returns the count. |
-| `#lookupSessionFromJwt`                                        | method | `(jwt: string, ignoreJwtExpiration?: boolean)`                                    | —                                                       |
-| `#deleteSession`                                               | method | `(sessionToken, reason: SessionRevocationReason = 'logout')`                      | —                                                       |
-| `#issueTokenForSession`                                        | method | `(sessionToken) => Promise<AuthenticationToken>`                                  | —                                                       |
-| `#rotateSession`                                               | method | `(sessionToken, claimOverrides?, expiration?)`                                    | For privilege changes. Carries `familyId` forward.      |
-| `#refreshSession`                                              | method | `(refreshToken) => Promise<AuthenticationToken>`                                  | Rotation with replay detection.                         |
+| Export                                                         | Kind   | Shape                                                                    | Notes                                                   |
+| -------------------------------------------------------------- | ------ | ------------------------------------------------------------------------ | ------------------------------------------------------- |
+| `AuthenticationSessionServiceOptions`                          | class  | `(issuer, audience, expiresIn: Duration, refreshExpiresIn = 30 days)`    | A class so it is an InjectKit token.                    |
+| `AuthenticationSessionService`                                 | class  | `@Injectable()`                                                          | Backed by a `CacheProvider`.                            |
+| `#createSession` / `#updateSession` / `#createOrUpdateSession` | method | —                                                                        | —                                                       |
+| `#getSession` / `#getSessionsForSubject`                       | method | —                                                                        | Read paths; `#revokeAllForSubject` does the revoking.   |
+| `#revokeAllForSubject`                                         | method | `(subject: string, reason?: SessionRevocationReason) => Promise<number>` | Revokes every session for a subject; returns the count. |
+| `#lookupSessionFromJwt`                                        | method | `(jwt: string, ignoreJwtExpiration?: boolean)`                           | —                                                       |
+| `#deleteSession`                                               | method | `(sessionToken, reason: SessionRevocationReason = 'logout')`             | —                                                       |
+| `#issueTokenForSession`                                        | method | `(sessionToken) => Promise<AuthenticationToken>`                         | —                                                       |
+| `#rotateSession`                                               | method | `(sessionToken, claimOverrides?, expiration?)`                           | For privilege changes. Carries `familyId` forward.      |
+| `#refreshSession`                                              | method | `(refreshToken) => Promise<AuthenticationToken>`                         | Rotation with replay detection.                         |
 
 ### Factors
 
@@ -197,6 +196,20 @@ default off the route path — a `@maroonedsoftware/mcp` tool passing it to `req
 | `formatApiKeyToken`, `parseApiKeyToken`, `hashApiKeyToken`, `apiKeyHint` | functions      | `{prefix}_{type}_{body}{crc32}`. Parse is checksum-verified and does no I/O.            |
 | `encodeBase62`, `crc32`                                                  | functions      | Pure codec pieces. `encodeBase62` pads to a constant width — see Gotchas.               |
 
+### Audit (`src/audit/`)
+
+| Export                                                      | Kind           | Notes                                                                                       |
+| ----------------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------- |
+| `AuditSink`                                                 | abstract class | The consumer's seam. `record(event)`. Unbound, nothing is recorded.                         |
+| `AuditRecorder` (+ `AuditOptions`)                          | class          | Stamps `occurredAt` and applies the failure policy. Services inject **this**, not the sink. |
+| `NoopAuditSink`, `LoggingAuditSink`, `CompositeAuditSink`   | classes        | Composite offers the event to every member, then rethrows what failed.                      |
+| `AuditEvent`, `AuthenticationAuditEvent`, `AuditEventInput` | types          | `AuditEvent<TType, TData>` is how a domain declares its events.                             |
+| `SessionAuditEvent`, `ApiKeyAuditEvent`                     | types          | The domains emitting today; `AuthenticationAuditEvent` unions them.                         |
+| `AuditSessionData`, `AuditApiKeyData`, `AuditSessionFactor` | interfaces     | Event payloads. `AuditSessionData.claims` passes through whole — see Gotchas.               |
+| `AuditEventBase`, `AuditEventContext`                       | interfaces     | `context` is filled by the app's sink, never by this package. See Gotchas.                  |
+| `AuditEventCategory`, `AuditOutcome`                        | types          | `'failure'` always means a credential verdict, never an infrastructure fault.               |
+| `AUDIT_SINK_FAILED_EVENT`                                   | constant       | Logged when a sink throws outside strict mode. **Alert on it.**                             |
+
 ### Helpers (`src/helpers.ts`)
 
 | Export                     | Kind     | Shape                                                                               | Notes                                                   |
@@ -236,17 +249,16 @@ registry.register(AuthenticationSchemeHandler).useClass(AuthenticationSchemeHand
 // registry.register(AuthenticationHandlerMap).useMap(AuthenticationHandlerMap).set('bearer', ChainedAuthenticationHandler);
 
 // Sessions
-registry.register(AuthenticationSessionServiceOptions).useValue(
-  new AuthenticationSessionServiceOptions(
-    'https://auth.example.com',
-    ['https://api.example.com'],
-    Duration.fromObject({ minutes: 15 }),
-    Duration.fromObject({ days: 30 }),
-    {
-      onRefreshReuseDetected: async ({ familyId, jti }) => alerts.refreshTokenReplay(familyId, jti),
-    },
-  ),
-);
+registry
+  .register(AuthenticationSessionServiceOptions)
+  .useValue(
+    new AuthenticationSessionServiceOptions(
+      'https://auth.example.com',
+      ['https://api.example.com'],
+      Duration.fromObject({ minutes: 15 }),
+      Duration.fromObject({ days: 30 }),
+    ),
+  );
 
 // Policies — bundled mappings spread into your registry
 const policies = new PolicyRegistryMap();
@@ -315,8 +327,9 @@ const session = await sessions.createSession(completed.actor.id, claims, complet
   `AuthenticationSessionService` was passed to the constructor (bind it in DI and this is the
   default). Construct the orchestrator without one and prior tokens keep working until the caller
   revokes them.
-- Register `AuthenticationSessionHooks` for audit and alerting rather than wrapping the service.
-  Wire `onRefreshReuseDetected` to a real alert — it is a token-theft signal.
+- **Bind an `AuditSink` for audit.** It covers the whole package, carries a common envelope, and
+  attributes an `actorId` on validation failures. It replaces `AuthenticationSessionHooks`, which is
+  gone. Alert on `session.refresh_reuse_detected` — it is a token-theft signal.
 - Spread `AuthenticationPolicyMappings` into your `PolicyRegistryMap` rather than listing eleven
   bindings, and intersect `AuthenticationPolicyContexts` into your `Policies` type.
 - Use `requirePolicy()` from `@maroonedsoftware/koa` on routes rather than reading
@@ -347,10 +360,48 @@ const session = await sessions.createSession(completed.actor.id, claims, complet
   your signup path, and a hard dependency on outbound network in tests. Stub the provider in tests.
 - **`ensureStrength` requires a score of 3 or higher** out of 4. That is stricter than many products
   expect and it throws rather than returning a result.
-- **Hooks are fire-and-forget from the caller's perspective.** They run after the cache commits, are
-  awaited sequentially, and their errors are logged but never propagated — deliberately, so a
-  failing audit sink cannot break login. A hook that silently fails is invisible unless you watch
-  logs.
+- **`RecoveryOrchestratorHooks` is unguarded, unlike audit.** A throw there aborts the recovery,
+  deliberately: `onRebindMfaFactor` is where the application mutates the factor, so a failure to do
+  that work must not look like success. Do not model an observer on it.
+- **An audit sink failure is swallowed by default, but it is logged.** `AuditRecorder` catches, logs
+  `AUDIT_SINK_FAILED_EVENT` at `error`, and lets the operation continue, so an audit store outage
+  cannot become a login outage. Alert on that event or the outage is invisible. `AuditOptions.strict`
+  inverts it: a sink failure aborts the operation, which is what some compliance regimes require and
+  which makes a sink outage a login outage. Choose deliberately.
+- **`AuditSessionData.claims` passes through whole.** An app that stamps `loginIp` / `loginUserAgent`
+  onto a session at login needs them back on a later revoke, which happens on a different request
+  where the live context describes the wrong caller. So whatever you put in `claims` reaches your
+  sink: do not store a secret there.
+- **`session.rotated` is one event, not two.** A rotation is a single record naming both tokens, so
+  a consumer never has to correlate a create with a revoke to see one session replace another.
+- **`password.verify.rate_limited` is its own event, not a `verify.failed` reason.** A wrong password
+  is one person mistyping; a burst of rate-limit refusals is the lockout signal. Collapsing them
+  hides the burst in the counts.
+- **`recovery.initiated` with no `actorId` is a probe.** The package deliberately issues a challenge
+  for an unknown identifier so a caller cannot enumerate accounts, so an event with no actor means
+  someone testing addresses. Alert on the rate.
+- **`recovery.channel.rejected` with `sub_challenge_mismatch` is an attack, not a user error.** It
+  means a proof issued against one account was presented on another account's challenge. Same for
+  `mfa.failed` with `post_verification_mismatch`, which is a defence-in-depth trip.
+- **`recovery.sessions_not_revoked` is a misconfiguration alarm.** It fires when the orchestrator has
+  no `AuthenticationSessionService` bound, which silently leaves every pre-recovery token working.
+- **`authenticator.validation.replayed` is not an `invalid_code`.** A correct-but-replayed code means
+  someone observed a valid one, which is interception rather than a typo. Same reasoning as the
+  password rate limit: keep the signal separable.
+- **A challenge event never carries its code.** The email, phone, and authenticator services all
+  return a code or token to their caller for delivery. None of that reaches an event, and the
+  registration URI and QR code carry the TOTP secret too.
+- **`oidc.linked.auto` / `oauth2.linked.auto` are the takeover-adjacent path.** The package links a
+  provider identity to an existing account on a verified-email match alone, so anyone who can get an
+  identity provider to assert an address gains that account. Recorded with provider, subject, and
+  email so the join can be reviewed.
+- **The package never fills `AuditEventContext`.** It sits at L2 alongside the HTTP adapters, so it
+  cannot reach a request. Fill `correlationId`, `ipAddress`, and the rest in your own request-scoped
+  sink.
+- **`outcome: 'failure'` is always a credential verdict.** Events are emitted at the decision point,
+  never from a catch block, so a cache outage or a mailer 503 produces no event rather than a false
+  failure. Keep it that way when adding one: an operator's audit feed must not fill with their own
+  downtime.
 - **`FactorRepository.findFactor` is optional.** A service path that needs global lookup against a
   repository that did not implement it fails at runtime, not at compile time.
 - **Recovery deliberately cannot be used to probe for account existence.** An unknown identifier
@@ -400,6 +451,8 @@ src/
                                   support.verification.code.service
   apikey/                         types, api.key.token (codec), api.key.repository,
                                   api.key.service, api.key.authentication.handler
+  audit/                          types, audit.sink, audit.recorder, audit.event, and one
+                                  <domain>.audit.event.ts per emitting domain
   index.ts                        Barrel
 ```
 
@@ -412,7 +465,7 @@ Invariants a change must not break:
 - Sessions are authoritative and JWTs are references. Any validation path must consult the session
   store, or revocation stops working.
 - Refresh-token family tracking is a security control: replaying a consumed token must revoke the
-  whole family before `onRefreshReuseDetected` fires.
+  whole family before `session.refresh_reuse_detected` is recorded.
 - Hook failures must stay non-propagating.
 - `AuthenticationPolicyMappings` and `AuthenticationPolicyContexts` must stay in sync with
   `AuthenticationPolicyNames`. All three live in `policy.mappings.ts` for exactly that reason.

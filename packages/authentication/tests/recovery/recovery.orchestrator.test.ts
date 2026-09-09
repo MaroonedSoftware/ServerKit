@@ -387,7 +387,7 @@ describe('RecoveryOrchestrator', () => {
       expect(setup.passwordFactor.clearRateLimit).toHaveBeenCalledWith(actor.actorId);
     });
 
-    it('resetPassword revokes the actor\'s existing authentication sessions', async () => {
+    it("resetPassword revokes the actor's existing authentication sessions", async () => {
       const { setup, verified } = await verify('password_reset');
 
       await setup.orchestrator.completeRecovery(verified.recoverySessionToken, {
@@ -398,7 +398,7 @@ describe('RecoveryOrchestrator', () => {
       expect(setup.authenticationSessionService.revokeAllForSubject).toHaveBeenCalledWith(actor.actorId, 'recovery');
     });
 
-    it('fullRecovery revokes the actor\'s existing authentication sessions', async () => {
+    it("fullRecovery revokes the actor's existing authentication sessions", async () => {
       const { setup, verified } = await verify('full_recovery');
 
       await setup.orchestrator.completeRecovery(verified.recoverySessionToken, { kind: 'fullRecovery', identityProof: { ticket: 'abc' } });

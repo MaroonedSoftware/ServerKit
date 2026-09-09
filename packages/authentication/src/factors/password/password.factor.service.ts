@@ -3,6 +3,8 @@ import { Injectable } from 'injectkit';
 import { RateLimiterCompatibleAbstract } from 'rate-limiter-flexible';
 import { httpError, unauthorizedError } from '@maroonedsoftware/errors';
 import { PolicyService } from '@maroonedsoftware/policies';
+import { AuditRecorder } from '../../audit/audit.recorder.js';
+import type { PasswordVerifyFailureReason } from '../../audit/password.audit.event.js';
 import { PasswordFactorRepository, PasswordValue } from './password.factor.repository.js';
 import { PasswordStrengthProvider } from '../../providers/password.strength.provider.js';
 import { PasswordHashProvider } from '../../providers/password.hash.provider.js';
@@ -44,7 +46,20 @@ export class PasswordFactorService {
     private readonly passwordHashProvider: PasswordHashProvider,
     private readonly policyService: PolicyService,
     private readonly cache: CacheProvider,
+    /** Records verification outcomes and credential changes. Defaulted, so audit is opt-in. */
+    private readonly audit: AuditRecorder = new AuditRecorder(),
   ) {}
+
+  /** Record a refused password. Emitted at the decision point, never from a catch block. */
+  private async auditVerifyFailed(actorId: string, reason: PasswordVerifyFailureReason, factorId?: string) {
+    await this.audit.record({
+      type: 'password.verify.failed',
+      category: 'login',
+      outcome: 'failure',
+      actorId,
+      data: { reason, ...(factorId === undefined ? {} : { factorId }) },
+    });
+  }
 
   private getRegistrationKey(key: string) {
     return `password_factor_registration_${key}`;
@@ -206,6 +221,14 @@ export class PasswordFactorService {
 
     const value = await this.passwordHashProvider.hash(password);
     const factor = await this.passwordFactorRepository.createFactor(actorId, { ...value, needsReset });
+    await this.audit.record({
+      type: 'password.created',
+      category: 'credential',
+      outcome: 'success',
+      actorId,
+      data: { factorId: factor.id, needsReset },
+    });
+
     return factor;
   }
 
@@ -224,12 +247,21 @@ export class PasswordFactorService {
     await this.ensurePasswordAllowed(password, previousPasswords);
 
     factor = await this.passwordFactorRepository.updateFactor(actorId, { ...(await this.passwordHashProvider.hash(password)), needsReset });
+    await this.audit.record({
+      type: 'password.updated',
+      category: 'credential',
+      outcome: 'success',
+      actorId,
+      data: { factorId: factor.id, needsReset },
+    });
+
     return factor;
   }
 
   /** Permanently removes the actor's password factor. */
   async deleteFactor(actorId: string) {
     await this.passwordFactorRepository.deleteFactor(actorId, actorId);
+    await this.audit.record({ type: 'password.deleted', category: 'credential', outcome: 'success', actorId, data: {} });
   }
 
   /**
@@ -242,6 +274,10 @@ export class PasswordFactorService {
     try {
       await this.rateLimiter.consume(actorId);
     } catch (error) {
+      // Its own event, not a `verify.failed` reason: a wrong password is one
+      // person mistyping, a burst of these is the lockout signal, and collapsing
+      // them would hide that burst in the counts.
+      await this.audit.record({ type: 'password.verify.rate_limited', category: 'login', outcome: 'failure', actorId, data: {} });
       throw httpError(429)
         .withInternalDetails({ message: `password authentication has been rate limited for actor: ${actorId}` })
         .withCause(error as Error);
@@ -250,18 +286,29 @@ export class PasswordFactorService {
     const passwordFactor = await this.passwordFactorRepository.getFactor(actorId, actorId);
 
     if (!passwordFactor || !passwordFactor.active) {
+      await this.auditVerifyFailed(actorId, 'no_active_factor');
       throw unauthorizedError('Bearer error="invalid_factor"').withInternalDetails({ message: `${actorId} missing active password factor` });
     }
 
     if (passwordFactor.needsReset) {
+      await this.auditVerifyFailed(actorId, 'reset_required', passwordFactor.id);
       throw unauthorizedError('Bearer error="reset_password"').withInternalDetails({ message: `${actorId} needs to reset password` });
     }
 
     if (!(await this.passwordHashProvider.verify(password, passwordFactor.value.hash, passwordFactor.value.salt))) {
+      await this.auditVerifyFailed(actorId, 'invalid_password', passwordFactor.id);
       throw unauthorizedError('Bearer error="invalid_credentials"').withInternalDetails({ message: `${actorId} invalid password attempt` });
     }
 
     await this.rateLimiter.reward(actorId);
+    await this.audit.record({
+      type: 'password.verify.succeeded',
+      category: 'login',
+      outcome: 'success',
+      actorId,
+      data: { factorId: passwordFactor.id },
+    });
+
     return passwordFactor;
   }
 
@@ -280,6 +327,16 @@ export class PasswordFactorService {
 
     const value = await this.passwordHashProvider.hash(password);
     const updatedFactor = await this.passwordFactorRepository.updateFactor(actorId, { ...value, needsReset: false });
+    // The recovery path's credential change: RecoveryOrchestrator calls this to
+    // complete a reset, so it is what an auditor looks for after a recovery.
+    await this.audit.record({
+      type: 'password.changed',
+      category: 'credential',
+      outcome: 'success',
+      actorId,
+      data: { factorId: updatedFactor.id },
+    });
+
     return updatedFactor;
   }
 
@@ -321,6 +378,9 @@ export class PasswordFactorService {
    */
   async clearRateLimit(actorId: string) {
     await this.rateLimiter.delete(actorId);
+    // A privilege change, not bookkeeping: it lifts a lockout. "Who unlocked
+    // this account" is a question about this event.
+    await this.audit.record({ type: 'password.rate_limit_cleared', category: 'privilege', outcome: 'success', actorId, data: {} });
   }
 
   /**

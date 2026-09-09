@@ -8,6 +8,8 @@ import { FidoFactorService } from '../factors/fido/fido.factor.service.js';
 import { AuthenticatorFactorService } from '../factors/authenticator/authenticator.factor.service.js';
 import { EmailFactorService } from '../factors/email/email.factor.service.js';
 import { AuthMfaRequiredPolicyFactor } from '../policies/auth.mfa.required.policy.js';
+import { AuditRecorder } from '../audit/audit.recorder.js';
+import type { MfaFailureReason } from '../audit/mfa.audit.event.js';
 import { MfaChallengeService } from './mfa.challenge.service.js';
 import {
   CompleteMfaResult,
@@ -54,7 +56,20 @@ export class MfaOrchestrator {
     private readonly fidoFactorService: FidoFactorService,
     private readonly authenticatorFactorService: AuthenticatorFactorService,
     private readonly emailFactorService: EmailFactorService,
+    /** Records gate decisions and completion outcomes. Defaulted, so audit is opt-in. */
+    private readonly audit: AuditRecorder = new AuditRecorder(),
   ) {}
+
+  /** Record a refused completion. */
+  private async auditFailed(reason: MfaFailureReason, mfaChallengeId?: string, actorId?: string, method?: AuthenticationFactorMethod) {
+    await this.audit.record({
+      type: 'mfa.failed',
+      category: 'login',
+      outcome: 'failure',
+      ...(actorId === undefined ? {} : { actorId }),
+      data: { reason, ...(mfaChallengeId === undefined ? {} : { mfaChallengeId }), ...(method === undefined ? {} : { method }) },
+    });
+  }
 
   /**
    * Decide whether MFA is required for `actor` having just satisfied
@@ -77,11 +92,32 @@ export class MfaOrchestrator {
     const result = await this.policyService.check('auth.session.mfa.required', { actor, primaryFactor, availableFactors });
 
     if (!isPolicyResultDenied(result)) {
+      // A skipped step-up is a decision, and an auditor reviewing an incident
+      // needs to see it was made — not only that MFA was satisfied when it was.
+      await this.audit.record({
+        type: 'mfa.challenge.skipped',
+        category: 'privilege',
+        outcome: 'success',
+        actorId: actor.actorId,
+        data: { primaryFactor: { method: primaryFactor.method, methodId: primaryFactor.methodId } },
+      });
+
       return { kind: 'allow', actor, primaryFactor };
     }
 
     const eligibleFactors = (result.details?.eligibleFactors ?? []) as MfaEligibleFactor[];
     const challenge = (await this.challengeService.issue({ actor, primaryFactor, eligibleFactors })) as MfaChallengePayload<K>;
+    await this.audit.record({
+      type: 'mfa.challenge.issued',
+      category: 'privilege',
+      outcome: 'success',
+      actorId: actor.actorId,
+      data: {
+        mfaChallengeId: challenge.challengeId,
+        eligibleFactors: eligibleFactors.map(({ method, methodId }) => ({ method, methodId })),
+      },
+    });
+
     return { kind: 'challenge', challenge };
   }
 
@@ -103,15 +139,34 @@ export class MfaOrchestrator {
   async issueFactorChallenge(mfaChallengeId: string, request: FactorChallengeStartRequest): Promise<FactorChallengeStartResponse> {
     const challenge = await this.challengeService.peek(mfaChallengeId);
     if (!challenge) {
+      await this.auditFailed('challenge_not_found', mfaChallengeId);
       throw httpError(404).withDetails({ mfaChallengeId: 'not found' });
     }
 
     const eligible = challenge.eligibleFactors.find(f => f.method === request.method && f.methodId === request.methodId);
     if (!eligible) {
+      // Asking for a challenge against a factor never offered is probing, not a
+      // user error.
+      await this.audit.record({
+        type: 'mfa.factor_challenge.ineligible',
+        category: 'privilege',
+        outcome: 'failure',
+        actorId: challenge.actor.actorId,
+        data: { mfaChallengeId, method: request.method },
+      });
       throw httpError(400).withDetails({ method: 'not eligible for this challenge' });
     }
 
     const { actorId } = challenge.actor;
+
+    // Recorded before dispatch, and never carrying the code the response holds.
+    await this.audit.record({
+      type: 'mfa.factor_challenge.issued',
+      category: 'privilege',
+      outcome: 'success',
+      actorId,
+      data: { mfaChallengeId, method: request.method, ...(request.methodId ? { methodId: request.methodId } : {}) },
+    });
 
     switch (request.method) {
       case 'phone': {
@@ -183,6 +238,7 @@ export class MfaOrchestrator {
   async completeMfa<K extends string = string>(mfaChallengeId: string, proof: FactorChallengeProof): Promise<CompleteMfaResult<K>> {
     const challenge = (await this.challengeService.peek(mfaChallengeId)) as MfaChallengePayload<K> | null;
     if (!challenge) {
+      await this.auditFailed('challenge_not_found', mfaChallengeId, undefined, proof.method);
       throw httpError(404).withDetails({ mfaChallengeId: 'not found' });
     }
 
@@ -190,13 +246,16 @@ export class MfaOrchestrator {
     // ineligible proof does not burn the single-use sub-challenge behind it.
     const eligibleForMethod = challenge.eligibleFactors.filter(f => f.method === proof.method);
     if (eligibleForMethod.length === 0) {
+      await this.auditFailed('factor_not_eligible', mfaChallengeId, challenge.actor.actorId, proof.method);
       throw httpError(400).withDetails({ method: 'proof does not match an eligible factor' });
     }
     if (proof.method === 'authenticator' && !eligibleForMethod.some(f => f.methodId === proof.methodId)) {
+      await this.auditFailed('method_id_mismatch', mfaChallengeId, challenge.actor.actorId, proof.method);
       throw httpError(400).withDetails({ method: 'proof does not match an eligible factor' });
     }
 
     if (!(await this.challengeService.lockForCompletion(mfaChallengeId))) {
+      await this.auditFailed('completion_in_flight', mfaChallengeId, challenge.actor.actorId, proof.method);
       throw httpError(409).withDetails({ mfaChallengeId: 'a completion for this challenge is already in flight' });
     }
 
@@ -206,6 +265,7 @@ export class MfaOrchestrator {
     } catch (error) {
       // The proof was wrong, not concurrent. Let the actor try again.
       await this.challengeService.releaseCompletionLock(mfaChallengeId);
+      await this.auditFailed('proof_rejected', mfaChallengeId, challenge.actor.actorId, proof.method);
       throw error;
     }
 
@@ -213,10 +273,14 @@ export class MfaOrchestrator {
     // full eligibility check has to run here as well.
     const matchesEligible = challenge.eligibleFactors.some(f => f.method === verifiedFactor.method && f.methodId === verifiedFactor.methodId);
     if (!matchesEligible) {
+      // Defence in depth: reaching this means the pre-check was bypassed, so it
+      // is an attack signal rather than a user error.
+      await this.auditFailed('post_verification_mismatch', mfaChallengeId, challenge.actor.actorId, verifiedFactor.method);
       throw httpError(400).withDetails({ method: 'proof does not match an eligible factor' });
     }
 
     if (!(await this.challengeService.redeem(mfaChallengeId))) {
+      await this.auditFailed('challenge_not_found', mfaChallengeId, challenge.actor.actorId, proof.method);
       throw httpError(404).withDetails({ mfaChallengeId: 'not found' });
     }
 
@@ -227,6 +291,18 @@ export class MfaOrchestrator {
       issuedAt: DateTime.utc(),
       authenticatedAt: DateTime.utc(),
     };
+
+    await this.audit.record({
+      type: 'mfa.completed',
+      category: 'login',
+      outcome: 'success',
+      actorId: challenge.actor.actorId,
+      data: {
+        mfaChallengeId,
+        primaryFactor: { method: challenge.primaryFactor.method, methodId: challenge.primaryFactor.methodId },
+        secondaryFactor: { method: secondaryFactor.method, methodId: secondaryFactor.methodId },
+      },
+    });
 
     return { actor: challenge.actor, primaryFactor: challenge.primaryFactor, secondaryFactor };
   }

@@ -441,9 +441,9 @@ describe('MfaOrchestrator', () => {
 
       vi.mocked(phoneFactor.verifyPhoneChallenge).mockRejectedValueOnce(new Error('bad code'));
 
-      await expect(
-        orchestrator.completeMfa(challenge.challengeId, { method: 'phone', challengeId: 'phone-chal-1', code: 'wrong' }),
-      ).rejects.toThrow('bad code');
+      await expect(orchestrator.completeMfa(challenge.challengeId, { method: 'phone', challengeId: 'phone-chal-1', code: 'wrong' })).rejects.toThrow(
+        'bad code',
+      );
 
       // A typo must not lock the actor out of their own challenge.
       await expect(
