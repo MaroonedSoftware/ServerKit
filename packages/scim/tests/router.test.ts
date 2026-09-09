@@ -212,6 +212,63 @@ describe('createScimRouter — integration', () => {
       expect(res.body.Resources).toHaveLength(1);
     });
 
+    it('never returns password, even though the repository stored it', async () => {
+      const { app } = buildApp();
+      const created = await request(app.callback())
+        .post('/Users')
+        .set('Content-Type', SCIM_MEDIA_TYPE)
+        .send({ userName: 'bjensen', password: 'hunter2' });
+
+      expect(created.body.password).toBeUndefined();
+
+      const fetched = await request(app.callback()).get(`/Users/${created.body.id}`);
+      expect(fetched.body.password).toBeUndefined();
+
+      const listed = await request(app.callback()).get('/Users');
+      expect(listed.body.Resources[0].password).toBeUndefined();
+    });
+
+    it('GET /Users/:id?attributes= returns only the requested attributes plus the core ones', async () => {
+      const { app } = buildApp();
+      const created = await request(app.callback())
+        .post('/Users')
+        .set('Content-Type', SCIM_MEDIA_TYPE)
+        .send({ userName: 'bjensen', displayName: 'Barbara Jensen' });
+
+      const res = await request(app.callback()).get(`/Users/${created.body.id}?attributes=userName`);
+
+      expect(res.body.userName).toBe('bjensen');
+      expect(res.body.displayName).toBeUndefined();
+      expect(res.body.id).toBe(created.body.id);
+      expect(res.body.schemas).toBeDefined();
+    });
+
+    it('GET /Users?excludedAttributes= omits the named attribute from every resource', async () => {
+      const { app } = buildApp();
+      await request(app.callback())
+        .post('/Users')
+        .set('Content-Type', SCIM_MEDIA_TYPE)
+        .send({ userName: 'bjensen', displayName: 'Barbara Jensen' });
+
+      const res = await request(app.callback()).get('/Users?excludedAttributes=displayName');
+
+      expect(res.body.Resources[0].userName).toBe('bjensen');
+      expect(res.body.Resources[0].displayName).toBeUndefined();
+    });
+
+    it('POST /Users/.search honours attributes from the request body', async () => {
+      const { app } = buildApp();
+      await request(app.callback())
+        .post('/Users')
+        .set('Content-Type', SCIM_MEDIA_TYPE)
+        .send({ userName: 'bjensen', displayName: 'Barbara Jensen' });
+
+      const res = await request(app.callback()).post('/Users/.search').set('Content-Type', SCIM_MEDIA_TYPE).send({ attributes: ['userName'] });
+
+      expect(res.body.Resources[0].userName).toBe('bjensen');
+      expect(res.body.Resources[0].displayName).toBeUndefined();
+    });
+
     it('POST /Users 400 names the missing required attribute', async () => {
       const { app } = buildApp();
       const res = await request(app.callback()).post('/Users').set('Content-Type', SCIM_MEDIA_TYPE).send({});

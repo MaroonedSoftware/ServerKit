@@ -9,6 +9,7 @@ This package provides the protocol layer — schemas, filter parser, PATCH appli
 - **Resource schemas** — `User`, `Group`, and the `EnterpriseUser` extension (RFC 7643).
 - **Filter parser** — full SCIM filter grammar (RFC 7644 §3.4.2.2) returning a typed AST.
 - **PATCH applier** — `add` / `replace` / `remove` ops with the path mini-language (RFC 7644 §3.5.2).
+- **Attribute projection** — `projectScimResource(resource, schemas, projection)` applies `attributes` / `excludedAttributes` (RFC 7644 §3.9) and always strips `returned: 'never'` attributes such as `password`. The router applies it to every user and group response.
 - **Error envelope** — `scimError(status, scimType?, statusText?)` builder producing the SCIM error JSON; the operator-facing reason goes on `.withDetails({ message })` and is rendered as the envelope's `detail`.
 - **Abstract repositories** — `ScimUserRepository`, `ScimGroupRepository`. The consumer implements these against their datastore.
 - **Services** — `ScimUserService`, `ScimGroupService`, `ScimServiceProviderService`.

@@ -95,6 +95,8 @@ contract is inseparable from HTTP.
 | `ScimUserRepository`                                                  | abstract class | Implement over your datastore.                                                                                                                      |
 | `ScimGroupRepository`                                                 | abstract class | Implement over your datastore.                                                                                                                      |
 | `ScimListQuery`                                                       | interface      | `{ filter?: ScimFilterNode; startIndex; count; sortBy?; sortOrder?; attributes?; excludedAttributes? }` — **the parsed AST**, never the raw string. |
+| `projectScimResource`                                                 | function       | `(resource, schemas: ScimSchema[], projection?) => resource` — applies `attributes` / `excludedAttributes` and strips `returned: 'never'`. |
+| `ScimProjection`                                                      | interface      | `{ attributes?: string[]; excludedAttributes?: string[] }` |
 | `ScimListResult<TResource>`                                           | interface      | `{ resources; totalResults }` — `totalResults` is the **filter-matching total**, not the page size.                                                 |
 | `ScimSortOrder`                                                       | type           | `'ascending' \| 'descending'`                                                                                                                       |
 | `ScimUserService` / `ScimGroupService` / `ScimServiceProviderService` | class          | Sit between the router and the repositories.                                                                                                        |
@@ -207,6 +209,11 @@ app.use(router.routes()).use(router.allowedMethods());
   `scimContentTypeMiddleware` is what actually enforces the media type if you want strictness.
 - **`schemas` on a resource is a required array of URNs**, not decoration. Omitting the enterprise
   URN on a user with enterprise attributes makes clients ignore them.
+- **Responses are projected by the router, not the repository.** `createScimRouter` runs every user
+  and group response through `projectScimResource`, which applies `attributes` /
+  `excludedAttributes` and strips attributes the schema declares `returned: 'never'`. A repository
+  that stores and returns `password` verbatim is therefore safe on the wire — but do not rely on
+  that if you serve resources through your own routes, and prefer not to store it at all.
 
 ## Working inside this package
 

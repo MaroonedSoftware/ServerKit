@@ -12,6 +12,10 @@ import { type ScimListQuery, type ScimSortOrder } from '../repositories/reposito
 import { parseScimFilter } from '../filter/filter.parser.js';
 import { scimError } from '../errors/scim.error.js';
 import { SCIM_MEDIA_TYPE } from '../middleware/scim.content.type.middleware.js';
+import { projectScimResource, type ScimProjection } from '../projection/attribute.projection.js';
+import { userSchema } from '../schemas/user.schema.js';
+import { groupSchema } from '../schemas/group.schema.js';
+import { enterpriseUserSchema } from '../schemas/enterprise.user.schema.js';
 
 /**
  * Options for {@link createScimRouter}. The caller constructs the three
@@ -90,7 +94,7 @@ export const createScimRouter = (options: CreateScimRouterOptions): Router<unkno
   router.get('/Users', ...guards, async ctx => {
     const query = parseListQueryFromUrl(ctx.query, maxResults);
     const result = await options.userService.list(query);
-    ctx.body = listEnvelope(result.resources, query, result.totalResults);
+    ctx.body = listEnvelope(result.resources.map(user => projectUser(user, query)), query, result.totalResults);
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
@@ -98,7 +102,7 @@ export const createScimRouter = (options: CreateScimRouterOptions): Router<unkno
     const requestBody = takeRequestBody(ctx);
     const query = parseListQueryFromBody(requestBody, maxResults);
     const result = await options.userService.list(query);
-    ctx.body = listEnvelope(result.resources, query, result.totalResults);
+    ctx.body = listEnvelope(result.resources.map(user => projectUser(user, query)), query, result.totalResults);
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
@@ -106,26 +110,26 @@ export const createScimRouter = (options: CreateScimRouterOptions): Router<unkno
     const payload = takeRequestBody(ctx) as Partial<ScimUser>;
     const created = await options.userService.create(payload);
     ctx.status = 201;
-    ctx.body = created;
+    ctx.body = projectUser(created, parseProjectionFromUrl(ctx.query));
     ctx.type = SCIM_MEDIA_TYPE;
     if (created.meta.location) ctx.set('Location', created.meta.location);
   });
 
   router.get('/Users/:id', ...guards, async ctx => {
-    ctx.body = await options.userService.get(ctx.params.id!);
+    ctx.body = projectUser(await options.userService.get(ctx.params.id!), parseProjectionFromUrl(ctx.query));
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
   router.put('/Users/:id', ...guards, json, async ctx => {
     const payload = takeRequestBody(ctx) as Partial<ScimUser>;
-    ctx.body = await options.userService.replace(ctx.params.id!, payload);
+    ctx.body = projectUser(await options.userService.replace(ctx.params.id!, payload), parseProjectionFromUrl(ctx.query));
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
   router.patch('/Users/:id', ...guards, json, async ctx => {
     const requestBody = takeRequestBody(ctx) as Partial<ScimPatchRequest>;
     const ops = validatePatchRequest(requestBody);
-    ctx.body = await options.userService.patch(ctx.params.id!, ops);
+    ctx.body = projectUser(await options.userService.patch(ctx.params.id!, ops), parseProjectionFromUrl(ctx.query));
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
@@ -138,7 +142,7 @@ export const createScimRouter = (options: CreateScimRouterOptions): Router<unkno
   router.get('/Groups', ...guards, async ctx => {
     const query = parseListQueryFromUrl(ctx.query, maxResults);
     const result = await options.groupService.list(query);
-    ctx.body = listEnvelope(result.resources, query, result.totalResults);
+    ctx.body = listEnvelope(result.resources.map(group => projectGroup(group, query)), query, result.totalResults);
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
@@ -146,7 +150,7 @@ export const createScimRouter = (options: CreateScimRouterOptions): Router<unkno
     const requestBody = takeRequestBody(ctx);
     const query = parseListQueryFromBody(requestBody, maxResults);
     const result = await options.groupService.list(query);
-    ctx.body = listEnvelope(result.resources, query, result.totalResults);
+    ctx.body = listEnvelope(result.resources.map(group => projectGroup(group, query)), query, result.totalResults);
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
@@ -154,26 +158,26 @@ export const createScimRouter = (options: CreateScimRouterOptions): Router<unkno
     const payload = takeRequestBody(ctx) as Partial<ScimGroup>;
     const created = await options.groupService.create(payload);
     ctx.status = 201;
-    ctx.body = created;
+    ctx.body = projectGroup(created, parseProjectionFromUrl(ctx.query));
     ctx.type = SCIM_MEDIA_TYPE;
     if (created.meta.location) ctx.set('Location', created.meta.location);
   });
 
   router.get('/Groups/:id', ...guards, async ctx => {
-    ctx.body = await options.groupService.get(ctx.params.id!);
+    ctx.body = projectGroup(await options.groupService.get(ctx.params.id!), parseProjectionFromUrl(ctx.query));
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
   router.put('/Groups/:id', ...guards, json, async ctx => {
     const payload = takeRequestBody(ctx) as Partial<ScimGroup>;
-    ctx.body = await options.groupService.replace(ctx.params.id!, payload);
+    ctx.body = projectGroup(await options.groupService.replace(ctx.params.id!, payload), parseProjectionFromUrl(ctx.query));
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
   router.patch('/Groups/:id', ...guards, json, async ctx => {
     const requestBody = takeRequestBody(ctx) as Partial<ScimPatchRequest>;
     const ops = validatePatchRequest(requestBody);
-    ctx.body = await options.groupService.patch(ctx.params.id!, ops);
+    ctx.body = projectGroup(await options.groupService.patch(ctx.params.id!, ops), parseProjectionFromUrl(ctx.query));
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
@@ -184,6 +188,31 @@ export const createScimRouter = (options: CreateScimRouterOptions): Router<unkno
 
   return router;
 };
+
+/** Schemas a `/Users` response is projected against: the core one plus the enterprise extension. */
+const userSchemas = [userSchema, enterpriseUserSchema];
+
+/**
+ * Project a user for the wire. Applies the requested `attributes` /
+ * `excludedAttributes` and always strips attributes the schema declares
+ * `returned: 'never'` — notably `password`, which is `writeOnly` and must never
+ * come back out of a repository that stored what it was given.
+ */
+const projectUser = (user: ScimUser, projection: ScimProjection): ScimUser =>
+  projectScimResource(user as unknown as Record<string, unknown>, userSchemas, projection) as unknown as ScimUser;
+
+/** Project a group for the wire. See {@link projectUser}. */
+const projectGroup = (group: ScimGroup, projection: ScimProjection): ScimGroup =>
+  projectScimResource(group as unknown as Record<string, unknown>, [groupSchema], projection) as unknown as ScimGroup;
+
+/**
+ * Read the `attributes` / `excludedAttributes` projection from a query string.
+ * RFC 7644 §3.9 allows them on single-resource reads and writes as well as lists.
+ */
+const parseProjectionFromUrl = (query: ServerKitContext['query']): ScimProjection => ({
+  attributes: parseCsvParam(pickStringParam(query, 'attributes')),
+  excludedAttributes: parseCsvParam(pickStringParam(query, 'excludedAttributes')),
+});
 
 /**
  * `bodyParserMiddleware` writes the parsed request body to `ctx.parsedBody`
