@@ -65,7 +65,7 @@ export interface AuthenticationSession {
 /**
  * The reason a session was revoked, surfaced to {@link AuthenticationSessionHooks.onSessionRevoked}.
  */
-export type SessionRevocationReason = 'logout' | 'rotate' | 'theft' | 'expiry';
+export type SessionRevocationReason = 'logout' | 'rotate' | 'theft' | 'expiry' | 'recovery';
 
 /**
  * Lifecycle callbacks consumers can register on {@link AuthenticationSessionServiceOptions}

@@ -7,6 +7,7 @@ import { PhoneFactorService } from '../factors/phone/phone.factor.service.js';
 import { PasswordFactorService } from '../factors/password/password.factor.service.js';
 import { RecoveryFactorService } from '../factors/recovery/recovery.factor.service.js';
 import { TargetActor } from '../mfa/types.js';
+import { AuthenticationSessionService } from '../authentication.session.service.js';
 import { maskEmail, maskPhone } from '../helpers.js';
 import { RecoveryChallengeService } from './recovery.challenge.service.js';
 import { RecoverySessionService } from './recovery.session.service.js';
@@ -89,10 +90,10 @@ export class RecoveryOrchestratorHooksProvider {
  *    `grantedActions`. The orchestrator dispatches to the relevant factor
  *    service (or hook) and redeems the recovery session.
  *
- * The orchestrator **does not** invalidate pre-existing authentication
- * sessions. For `resetPassword` and `fullRecovery`, the caller should
- * enumerate `AuthenticationSessionService.getSessionsForSubject(actorId)` and
- * delete each, so prior tokens cannot continue to authorise requests.
+ * When an {@link AuthenticationSessionService} is supplied, `resetPassword` and
+ * `fullRecovery` revoke the actor's existing authentication sessions (reason
+ * `'recovery'`) so tokens minted before the recovery stop working. Construct the
+ * orchestrator without one and that step is the caller's responsibility.
  */
 @Injectable()
 export class RecoveryOrchestrator {
@@ -105,6 +106,13 @@ export class RecoveryOrchestrator {
     private readonly passwordFactorService: PasswordFactorService,
     private readonly recoveryFactorService: RecoveryFactorService,
     private readonly hooksProvider: RecoveryOrchestratorHooksProvider = new RecoveryOrchestratorHooksProvider(),
+    /**
+     * Used to revoke the actor's existing authentication sessions after a
+     * `resetPassword` or `fullRecovery`. Optional so the orchestrator can still be
+     * constructed standalone; bind it in DI (as any app using sessions already does)
+     * and the revocation happens by default.
+     */
+    private readonly authenticationSessionService?: AuthenticationSessionService,
   ) {}
 
   /**
@@ -367,10 +375,9 @@ export class RecoveryOrchestrator {
    * recovery session. The session is single-use and is redeemed regardless of
    * action success.
    *
-   * **Does not** invalidate authentication sessions. The caller should call
-   * `AuthenticationSessionService.getSessionsForSubject(actorId)` and delete
-   * each pre-existing session after a successful `resetPassword` or
-   * `fullRecovery`.
+   * A successful `resetPassword` or `fullRecovery` revokes the actor's existing
+   * authentication sessions when an {@link AuthenticationSessionService} was
+   * supplied to the constructor; without one, the caller must do it.
    *
    * @throws HTTP 404 when the recovery session has expired or does not exist.
    * @throws HTTP 403 when the requested action is not in the session's `grantedActions`.
@@ -390,6 +397,7 @@ export class RecoveryOrchestrator {
       case 'resetPassword': {
         await this.passwordFactorService.changePassword(actorId, action.newPassword);
         await this.passwordFactorService.clearRateLimit(actorId);
+        await this.revokeExistingSessions(actorId);
         break;
       }
       case 'unlockAccount': {
@@ -405,6 +413,7 @@ export class RecoveryOrchestrator {
       }
       case 'fullRecovery': {
         await this.hooksProvider.hooks.onFullRecovery?.({ actorId, identityProof: action.identityProof });
+        await this.revokeExistingSessions(actorId);
         break;
       }
     }
@@ -416,5 +425,14 @@ export class RecoveryOrchestrator {
       action,
       performedAt: DateTime.utc(),
     };
+  }
+
+  /**
+   * Revoke the actor's existing authentication sessions so tokens minted before
+   * the recovery stop working. No-ops when no {@link AuthenticationSessionService}
+   * was supplied, in which case the caller has to do this itself.
+   */
+  private async revokeExistingSessions(actorId: string) {
+    await this.authenticationSessionService?.revokeAllForSubject(actorId, 'recovery');
   }
 }

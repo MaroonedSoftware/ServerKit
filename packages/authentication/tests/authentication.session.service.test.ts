@@ -313,6 +313,73 @@ describe('AuthenticationSessionService', () => {
     });
   });
 
+  describe('revokeAllForSubject', () => {
+    // A stateful cache: revocation reads the subject index, then each session, then
+    // rewrites the index as sessions are removed.
+    const makeStatefulCache = (seed: Record<string, string>) => {
+      const store = new Map<string, string>(Object.entries(seed));
+      return {
+        get: vi.fn(async (key: string) => store.get(key) ?? null),
+        set: vi.fn(async (key: string, value: string) => {
+          store.set(key, value);
+        }),
+        add: vi.fn(async () => true),
+        update: vi.fn(async (key: string, value: string) => {
+          store.set(key, value);
+        }),
+        delete: vi.fn(async (key: string) => {
+          const had = store.has(key);
+          store.delete(key);
+          return had ? key : null;
+        }),
+      } as unknown as CacheProvider;
+    };
+
+    it('returns 0 and revokes nothing when the subject has no sessions', async () => {
+      cache.get = vi.fn().mockResolvedValue(null);
+      await expect(service.revokeAllForSubject('user-1')).resolves.toBe(0);
+      expect(cache.delete).not.toHaveBeenCalled();
+    });
+
+    it('revokes every session for the subject', async () => {
+      const statefulCache = makeStatefulCache({
+        'auth_session_subject_user-1': JSON.stringify(['token-a', 'token-b']),
+        'auth_session_token-a': JSON.stringify(makeStoredSession({ sessionToken: 'token-a', familyId: undefined })),
+        'auth_session_token-b': JSON.stringify(makeStoredSession({ sessionToken: 'token-b', familyId: undefined })),
+      });
+      service = new AuthenticationSessionService(makeOptions(), statefulCache, jwtProvider, logger);
+
+      await expect(service.revokeAllForSubject('user-1')).resolves.toBe(2);
+
+      expect(await statefulCache.get('auth_session_token-a')).toBeNull();
+      expect(await statefulCache.get('auth_session_token-b')).toBeNull();
+    });
+
+    it('fires onSessionRevoked once per session with the supplied reason', async () => {
+      const onSessionRevoked = vi.fn();
+      const statefulCache = makeStatefulCache({
+        'auth_session_subject_user-1': JSON.stringify(['token-a', 'token-b']),
+        'auth_session_token-a': JSON.stringify(makeStoredSession({ sessionToken: 'token-a', familyId: undefined })),
+        'auth_session_token-b': JSON.stringify(makeStoredSession({ sessionToken: 'token-b', familyId: undefined })),
+      });
+      service = new AuthenticationSessionService(makeOptions({ onSessionRevoked }), statefulCache, jwtProvider, logger);
+
+      await service.revokeAllForSubject('user-1', 'recovery');
+
+      expect(onSessionRevoked).toHaveBeenCalledTimes(2);
+      expect(onSessionRevoked.mock.calls.every(c => c[1]?.reason === 'recovery')).toBe(true);
+    });
+
+    it('skips index entries whose session has already expired out of cache', async () => {
+      const statefulCache = makeStatefulCache({
+        'auth_session_subject_user-1': JSON.stringify(['stale-token']),
+      });
+      service = new AuthenticationSessionService(makeOptions(), statefulCache, jwtProvider, logger);
+
+      await expect(service.revokeAllForSubject('user-1')).resolves.toBe(0);
+    });
+  });
+
   describe('issueTokenForSession', () => {
     it('throws 401 when the session does not exist', async () => {
       cache.get = vi.fn().mockResolvedValue(null);

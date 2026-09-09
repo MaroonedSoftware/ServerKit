@@ -983,6 +983,9 @@ container.bind(RecoveryOrchestratorHooksProvider).toConstantValue(
 );
 container.bind(RecoveryOrchestrator).toSelf();
 // RecoveryAllowedPolicy is registered automatically via AuthenticationPolicyMappings.
+// AuthenticationSessionService is an optional constructor dependency: bind it (as any app
+// using sessions already does) and completeRecovery revokes the actor's existing sessions
+// after a password reset or full recovery.
 ```
 
 Forgot-password flow:
@@ -1021,9 +1024,9 @@ await recoveryOrchestrator.completeRecovery(verified.recoverySessionToken, {
   newPassword: input.newPassword,
 });
 
-// 5. Invalidate the actor's existing auth sessions so prior tokens don't keep working.
-const sessions = await sessionService.getSessionsForSubject(actorId);
-await Promise.all(sessions.map(s => sessionService.deleteSession(s.sessionToken)));
+// `completeRecovery` has already revoked the actor's existing auth sessions (reason
+// 'recovery'), because the orchestrator was constructed with an AuthenticationSessionService.
+// Without one, do it yourself: await sessionService.revokeAllForSubject(actorId, 'recovery');
 ```
 
 Recovery codes (issued from authenticated settings UI, redeemed during MFA
@@ -1160,6 +1163,7 @@ Abstract base class. Implement `verify(username: string, password: string): Prom
 | `lookupSessionFromJwt(jwt, ignoreExpiration?)`                        | `Promise<{ session, jwtPayload }>`                     | Validate a JWT and retrieve its session                                                   |
 | `getSession(token)`                                                   | `Promise<AuthenticationSession \| undefined>`          | Retrieve a session by token                                                               |
 | `getSessionsForSubject(subject)`                                      | `Promise<AuthenticationSession[]>`                     | Get all active sessions for a subject                                                     |
+| `revokeAllForSubject(subject, reason?)`                               | `Promise<number>`                                      | Revoke every active session for a subject; returns how many were revoked                  |
 | `issueTokenForSession(sessionToken)`                                  | `Promise<AuthenticationToken>`                         | Issue an access token AND a single-use refresh token                                      |
 | `refreshSession(refreshToken)`                                        | `Promise<AuthenticationToken>`                         | Rotate the refresh token's `jti`; revokes the family on replay                            |
 | `rotateSession(token, claimOverrides?, expiration?)`                  | `Promise<{ session, accessToken, refreshToken, ... }>` | Mint a new session for a privilege change (e.g. MFA step-up)                              |

@@ -85,7 +85,8 @@ by area; type aliases for provider-specific payload shapes are grouped rather th
 | `AuthenticationSessionServiceOptions`                          | class  | `(issuer, audience, expiresIn: Duration, refreshExpiresIn = 30 days, hooks = {})` | A class so it is an InjectKit token.                   |
 | `AuthenticationSessionService`                                 | class  | `@Injectable()`                                                                   | Backed by a `CacheProvider`.                           |
 | `#createSession` / `#updateSession` / `#createOrUpdateSession` | method | —                                                                                 | —                                                      |
-| `#getSession` / `#getSessionsForSubject`                       | method | —                                                                                 | The second is how you revoke every session for a user. |
+| `#getSession` / `#getSessionsForSubject`                       | method | —                                                                                 | Read paths; `#revokeAllForSubject` does the revoking. |
+| `#revokeAllForSubject`                                        | method | `(subject: string, reason?: SessionRevocationReason) => Promise<number>`          | Revokes every session for a subject; returns the count. |
 | `#lookupSessionFromJwt`                                        | method | `(jwt: string, ignoreJwtExpiration?: boolean)`                                    | —                                                      |
 | `#deleteSession`                                               | method | `(sessionToken, reason: SessionRevocationReason = 'logout')`                      | —                                                      |
 | `#issueTokenForSession`                                        | method | `(sessionToken) => Promise<AuthenticationToken>`                                  | —                                                      |
@@ -291,9 +292,11 @@ const session = await sessions.createSession(completed.actor.id, claims, complet
   after verification, because challenge-based proofs only resolve to a factor at that point. One
   completion runs at a time: a concurrent second call gets a 409, and the lock is released when a
   proof fails so a typo does not strand the challenge.
-- **`RecoveryOrchestrator` does not invalidate existing sessions.** After `resetPassword` or
-  `fullRecovery`, enumerate `getSessionsForSubject(actorId)` and delete each one, or prior tokens
-  keep working.
+- **`RecoveryOrchestrator` revokes sessions only when it was given the session service.**
+  `resetPassword` and `fullRecovery` call `revokeAllForSubject(actorId, 'recovery')` when an
+  `AuthenticationSessionService` was passed to the constructor (bind it in DI and this is the
+  default). Construct the orchestrator without one and prior tokens keep working until the caller
+  revokes them.
 - Register `AuthenticationSessionHooks` for audit and alerting rather than wrapping the service.
   Wire `onRefreshReuseDetected` to a real alert — it is a token-theft signal.
 - Spread `AuthenticationPolicyMappings` into your `PolicyRegistryMap` rather than listing eleven
