@@ -15,6 +15,11 @@ const makeCache = () => {
       update: vi.fn(async (key: string, value: string) => {
         store.set(key, value);
       }),
+      add: vi.fn(async (key: string, value: string) => {
+        if (store.has(key)) return false;
+        store.set(key, value);
+        return true;
+      }),
       delete: vi.fn(async (key: string) => {
         const had = store.has(key);
         store.delete(key);

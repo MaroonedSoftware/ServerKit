@@ -822,6 +822,12 @@ const session = await sessionService.createSession(completed.actor.actorId, { ro
 const token = await sessionService.issueTokenForSession(session.sessionToken);
 ```
 
+`completeMfa` rejects a proof aimed at a factor the challenge never offered *before*
+handing it to a factor service, so an ineligible proof cannot spend the single-use
+sub-challenge behind it. Only one completion runs at a time for a given challenge:
+a concurrent second call gets a 409, and the lock is released when a proof fails so a
+mistyped code does not strand the challenge.
+
 ### Step-up policies
 
 Two policies gate sensitive operations on the freshness and shape of factors

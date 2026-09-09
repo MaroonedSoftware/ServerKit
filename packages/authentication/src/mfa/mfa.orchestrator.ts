@@ -168,9 +168,16 @@ export class MfaOrchestrator {
    * (carried over from the challenge), and the verified secondary factor. The
    * caller is responsible for minting a session and shaping the wire response.
    *
+   * Eligibility is checked as far as the proof allows *before* the proof is handed to
+   * a factor service, so a proof aimed at a factor this challenge never offered cannot
+   * consume the underlying single-use sub-challenge. One completion runs at a time:
+   * concurrent calls for the same challenge are rejected rather than both succeeding,
+   * and the lock is released when a proof fails so the actor can retry.
+   *
    * @throws HTTP 404 when `mfaChallengeId` has expired or does not exist, or when an
    *   email proof carries an `issueMethod` the underlying challenge was not issued under.
    * @throws HTTP 400 when the proof does not match the challenge's eligible list.
+   * @throws HTTP 409 when another completion for the same challenge is already in flight.
    * @throws Whatever the per-factor `verify*` call throws when the proof is invalid.
    */
   async completeMfa<K extends string = string>(mfaChallengeId: string, proof: FactorChallengeProof): Promise<CompleteMfaResult<K>> {
@@ -179,14 +186,39 @@ export class MfaOrchestrator {
       throw httpError(404).withDetails({ mfaChallengeId: 'not found' });
     }
 
-    const verifiedFactor = await this.verifyProof(challenge.actor.actorId, proof);
+    // Reject what can be rejected before the proof reaches a factor service, so an
+    // ineligible proof does not burn the single-use sub-challenge behind it.
+    const eligibleForMethod = challenge.eligibleFactors.filter(f => f.method === proof.method);
+    if (eligibleForMethod.length === 0) {
+      throw httpError(400).withDetails({ method: 'proof does not match an eligible factor' });
+    }
+    if (proof.method === 'authenticator' && !eligibleForMethod.some(f => f.methodId === proof.methodId)) {
+      throw httpError(400).withDetails({ method: 'proof does not match an eligible factor' });
+    }
 
+    if (!(await this.challengeService.lockForCompletion(mfaChallengeId))) {
+      throw httpError(409).withDetails({ mfaChallengeId: 'a completion for this challenge is already in flight' });
+    }
+
+    let verifiedFactor: Awaited<ReturnType<MfaOrchestrator['verifyProof']>>;
+    try {
+      verifiedFactor = await this.verifyProof(challenge.actor.actorId, proof);
+    } catch (error) {
+      // The proof was wrong, not concurrent. Let the actor try again.
+      await this.challengeService.releaseCompletionLock(mfaChallengeId);
+      throw error;
+    }
+
+    // The methodId is only known after verification for challenge-based proofs, so the
+    // full eligibility check has to run here as well.
     const matchesEligible = challenge.eligibleFactors.some(f => f.method === verifiedFactor.method && f.methodId === verifiedFactor.methodId);
     if (!matchesEligible) {
       throw httpError(400).withDetails({ method: 'proof does not match an eligible factor' });
     }
 
-    await this.challengeService.redeem(mfaChallengeId);
+    if (!(await this.challengeService.redeem(mfaChallengeId))) {
+      throw httpError(404).withDetails({ mfaChallengeId: 'not found' });
+    }
 
     const secondaryFactor: AuthenticationSessionFactor = {
       method: verifiedFactor.method,
