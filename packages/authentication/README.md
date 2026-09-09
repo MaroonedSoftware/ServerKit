@@ -168,14 +168,33 @@ registry.register(McpAuthenticationHandler).useClass(McpAuthenticationHandler).a
 registry.register(JwtAuthenticationHandler).useClass(JwtAuthenticationHandler).asSingleton();
 
 // Registration order is try order — most specific first.
-registry
-  .register(AuthenticationHandlerChain)
-  .useArray(AuthenticationHandlerChain)
-  .push(McpAuthenticationHandler)
-  .push(JwtAuthenticationHandler);
+registry.register(AuthenticationHandlerChain).useArray(AuthenticationHandlerChain).push(McpAuthenticationHandler).push(JwtAuthenticationHandler);
 
 registry.register(ChainedAuthenticationHandler).useClass(ChainedAuthenticationHandler).asSingleton();
 registry.register(AuthenticationHandlerMap).useMap(AuthenticationHandlerMap).set('bearer', ChainedAuthenticationHandler);
+```
+
+An API key handler belongs **first** in the chain. Its prefix test costs no I/O, so a JWT falls
+through without a database round trip, whereas a JWT handler asked about an API key has to decode
+it first:
+
+```typescript
+import { ApiKeyAuthenticationHandler } from '@maroonedsoftware/authentication';
+
+registry.register(AuthenticationHandlerChain).useArray(AuthenticationHandlerChain).push(ApiKeyAuthenticationHandler).push(JwtAuthenticationHandler);
+```
+
+To accept `Authorization: ApiKey sk_…` as well, add the scheme to `ApiKeyServiceOptions` and
+register the handler directly — nothing else claims that scheme, so it needs no chain:
+
+```typescript
+registry.register(ApiKeyServiceOptions).useValue(new ApiKeyServiceOptions('sk', 32, undefined, undefined, undefined, ['bearer', 'apikey']));
+
+registry
+  .register(AuthenticationHandlerMap)
+  .useMap(AuthenticationHandlerMap)
+  .set('bearer', ChainedAuthenticationHandler)
+  .set('apikey', ApiKeyAuthenticationHandler);
 ```
 
 Each handler is tried in turn and the first session that is not `invalidAuthenticationSession` wins. A handler that does not recognise the credential returns the sentinel, so "not mine" and "mine but invalid" look the same to the chain — deliberately, so that no single member can confirm to a caller that a credential is genuinely invalid.
@@ -823,7 +842,7 @@ const session = await sessionService.createSession(completed.actor.actorId, { ro
 const token = await sessionService.issueTokenForSession(session.sessionToken);
 ```
 
-`completeMfa` rejects a proof aimed at a factor the challenge never offered *before*
+`completeMfa` rejects a proof aimed at a factor the challenge never offered _before_
 handing it to a factor service, so an ineligible proof cannot spend the single-use
 sub-challenge behind it. Only one completion runs at a time for a given challenge:
 a concurrent second call gets a 409, and the lock is released when a proof fails so a
@@ -1098,6 +1117,23 @@ lifecycle, so a key outlives a deleted user unless you say otherwise:
 await service.revokeAllForOwner({ kind: 'user', actorId: user.id }); // returns how many were revoked
 ```
 
+A key session carries one factor, so `requirePolicy()`'s default MFA gate rejects it. That is
+deliberate — a machine credential must not reach an MFA-gated route by accident. Machine routes name
+a policy instead:
+
+```typescript
+import { API_KEY_SESSION_POLICY, MFA_SATISFIED_OR_API_KEY_POLICY } from '@maroonedsoftware/authentication';
+
+// Machine-only, and the key must carry the `deploy` scope.
+router.post('/v1/deploys', requirePolicy({ policy: API_KEY_SESSION_POLICY }), handler);
+
+// Serves a browser and an integration from one path.
+router.get('/v1/reports', requirePolicy({ policy: MFA_SATISFIED_OR_API_KEY_POLICY }), handler);
+```
+
+Scope enforcement lives in the policy rather than the service, because what a scope permits is a
+property of the route and the service has no idea which route a key was presented to.
+
 There is no validation cache, so a revocation takes effect on the next request rather than at the
 end of a TTL. `lastUsedAt` writes are throttled to one per five minutes per key, so a busy key does
 not turn every request into a database write.
@@ -1275,13 +1311,13 @@ Constructed with `(logger, pemPrivateKey, pemPublicKey?)`. When `pemPublicKey` i
 
 ### `OtpProvider`
 
-| Method                                     | Returns   | Description                                    |
-| ------------------------------------------ | --------- | ---------------------------------------------- |
-| `createSecret(numBytes?)`                  | `string`  | Generate a base32-encoded random secret        |
-| `generate(secret, options)`                | `string`  | Generate an HOTP or TOTP value (RFC 4226/6238) |
-| `validate(otp, secret, options, window?)`  | `boolean` | Validate an HOTP or TOTP value                 |
+| Method                                               | Returns               | Description                                            |
+| ---------------------------------------------------- | --------------------- | ------------------------------------------------------ |
+| `createSecret(numBytes?)`                            | `string`              | Generate a base32-encoded random secret                |
+| `generate(secret, options)`                          | `string`              | Generate an HOTP or TOTP value (RFC 4226/6238)         |
+| `validate(otp, secret, options, window?)`            | `boolean`             | Validate an HOTP or TOTP value                         |
 | `validateWithCounter(otp, secret, options, window?)` | `number \| undefined` | Validate and report which counter or time step matched |
-| `generateURI(secret, options, urlOptions)` | `string`  | Build an `otpauth://` provisioning URI         |
+| `generateURI(secret, options, urlOptions)`           | `string`              | Build an `otpauth://` provisioning URI                 |
 
 `options` is an `OtpOptions` object with `type: 'hotp' | 'totp'`, plus `algorithm`, `counter` (HOTP), `periodSeconds` (TOTP), and `tokenLength`. `urlOptions` accepts `issuer` and an optional `label`.
 
