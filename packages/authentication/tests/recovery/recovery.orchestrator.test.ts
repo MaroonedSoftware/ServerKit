@@ -227,10 +227,25 @@ describe('RecoveryOrchestrator', () => {
 
       expect(result.recoverySessionToken).toBeTruthy();
       expect(result.grantedActions).toEqual(['resetPassword']);
-      expect(emailFactor.verifyEmailChallenge).toHaveBeenCalledWith('email-chal-1', '123456');
+      expect(emailFactor.verifyEmailChallenge).toHaveBeenCalledWith('email-chal-1', '123456', undefined);
 
       // Parent challenge is redeemed (single-use).
       expect(await challengeService.peek(initiated.challengeId)).toBeNull();
+    });
+
+    it("forwards an email proof's issueMethod to the email factor service", async () => {
+      const { orchestrator, emailFactor } = makeOrchestrator();
+      const initiated = await orchestrator.initiateRecovery({ actorId: actor.actorId, reason: 'password_reset' });
+      await orchestrator.issueChannelChallenge(initiated.challengeId, { channel: 'email', methodId: 'email-1', issueMethod: 'magiclink' });
+
+      await orchestrator.verifyChannel(initiated.challengeId, {
+        channel: 'email',
+        channelChallengeId: 'email-chal-1',
+        code: 'the-magic-token',
+        issueMethod: 'magiclink',
+      });
+
+      expect(emailFactor.verifyEmailChallenge).toHaveBeenCalledWith('email-chal-1', 'the-magic-token', 'magiclink');
     });
 
     it('grants rebindMfaFactor when reason is mfa_recovery', async () => {

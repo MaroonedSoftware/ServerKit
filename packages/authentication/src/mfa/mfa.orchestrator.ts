@@ -168,7 +168,8 @@ export class MfaOrchestrator {
    * (carried over from the challenge), and the verified secondary factor. The
    * caller is responsible for minting a session and shaping the wire response.
    *
-   * @throws HTTP 404 when `mfaChallengeId` has expired or does not exist.
+   * @throws HTTP 404 when `mfaChallengeId` has expired or does not exist, or when an
+   *   email proof carries an `issueMethod` the underlying challenge was not issued under.
    * @throws HTTP 400 when the proof does not match the challenge's eligible list.
    * @throws Whatever the per-factor `verify*` call throws when the proof is invalid.
    */
@@ -208,7 +209,7 @@ export class MfaOrchestrator {
         return { method: 'phone', methodId: factor.id, kind: 'possession' };
       }
       case 'email': {
-        const factor = await this.emailFactorService.verifyEmailChallenge(proof.challengeId, proof.code);
+        const factor = await this.emailFactorService.verifyEmailChallenge(proof.challengeId, proof.code, proof.issueMethod);
         return { method: 'email', methodId: factor.id, kind: 'possession' };
       }
       case 'authenticator': {

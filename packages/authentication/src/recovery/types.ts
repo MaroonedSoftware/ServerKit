@@ -132,7 +132,16 @@ export type RecoveryChannelChallengeResponse =
 
 /** Proof submitted by the client to verify a recovery channel. */
 export type RecoveryProof =
-  | { channel: 'email'; channelChallengeId: string; code: string }
+  | {
+      channel: 'email';
+      channelChallengeId: string;
+      code: string;
+      /**
+       * Verification method the channel challenge was expected to be issued under. When
+       * set, a challenge issued under the other method is rejected as not found.
+       */
+      issueMethod?: 'code' | 'magiclink';
+    }
   | { channel: 'phone'; channelChallengeId: string; code: string }
   | { channel: 'recoveryCode'; code: string };
 
