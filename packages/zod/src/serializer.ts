@@ -56,12 +56,14 @@ export const compileSerializer = <T extends ZodType>(schema: T, options?: Compil
   // `definitions` (not `$defs`) with matching `$ref`s. The payload also carries a
   // non-JSON `~standard` property (Standard Schema interop functions); it is
   // non-enumerable today, but strip defensively rather than rely on that.
-  const jsonSchema: Record<string, unknown> = { ...z.toJSONSchema(schema, {
-    target: 'draft-07',
-    io: 'output',
-    unrepresentable: options?.unrepresentable ?? 'throw',
-    override: options?.override,
-  }) };
+  const jsonSchema: Record<string, unknown> = {
+    ...z.toJSONSchema(schema, {
+      target: 'draft-07',
+      io: 'output',
+      unrepresentable: options?.unrepresentable ?? 'throw',
+      override: options?.override,
+    }),
+  };
   delete jsonSchema['~standard'];
 
   // fast-json-stringify types its input as a closed Schema union; the generated document is a

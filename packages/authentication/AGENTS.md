@@ -55,6 +55,7 @@ by area; type aliases for provider-specific payload shapes are grouped rather th
 | ------------------------------ | --------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `AuthenticationSession`        | interface | `{ sessionToken, subject, issuedAt, expiresAt, lastAccessedAt, factors, claims, familyId? }` | All timestamps are Luxon `DateTime`.                                                              |
 | `AuthenticationSessionFactor`  | interface | `{ issuedAt, authenticatedAt, method, methodId, kind }`                                      | `authenticatedAt` is what recency policies read.                                                  |
+| `SessionDevice`                | interface | `{ ipAddress?, userAgent?, label? }`                                                         | Optional `device` on the session. Where it **began**, not where last used.                        |
 | `AuthenticationFactorKind`     | type      | `'knowledge' \| 'possession' \| 'biometric'`                                                 | Classic MFA taxonomy.                                                                             |
 | `AuthenticationFactorMethod`   | type      | `'phone' \| 'password' \| 'authenticator' \| 'email' \| 'fido' \| 'oidc' \| 'apikey'`        | **Note: no `'oauth2'`.** See Gotchas. `'apikey'` is a machine credential, not an enrolled factor. |
 | `invalidAuthenticationSession` | constant  | Sentinel with empty strings and `DateTime.invalid('invalid')` fields                         | Compare by **identity**; that is what `requirePolicy` does.                                       |
@@ -212,13 +213,16 @@ default off the route path — a `@maroonedsoftware/mcp` tool passing it to `req
 
 ### Helpers (`src/helpers.ts`)
 
-| Export                     | Kind     | Shape                                                                               | Notes                                                   |
-| -------------------------- | -------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| `matchesFactorConstraints` | function | Matches a session factor against a `StepUpRequirement`-style constraint set         | Used by the recency and assurance policies.             |
-| `isFactorRecent`           | function | `(factor: AuthenticationSessionFactor, now: DateTime, within: Duration) => boolean` | —                                                       |
-| `maskEmail`                | function | `(value: string) => string` — `jordan@example.com` → `j*****@example.com`           | Used for pre-auth channel labels.                       |
-| `maskPhone`                | function | `(value: string) => string` — `+12025550123` → `•••• 23`                            | Used for pre-auth channel labels.                       |
-| `timingSafeCompare`        | function | `(a: string, b: string) => boolean` — constant-time secret comparison               | Compares byte lengths, so multibyte input cannot throw. |
+| Export                     | Kind     | Shape                                                                               | Notes                                                                    |
+| -------------------------- | -------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `matchesFactorConstraints` | function | Matches a session factor against a `StepUpRequirement`-style constraint set         | Used by the recency and assurance policies.                              |
+| `isFactorRecent`           | function | `(factor: AuthenticationSessionFactor, now: DateTime, within: Duration) => boolean` | —                                                                        |
+| `maskEmail`                | function | `(value: string) => string` — `jordan@example.com` → `j*****@example.com`           | Used for pre-auth channel labels.                                        |
+| `maskPhone`                | function | `(value: string) => string` — `+12025550123` → `•••• 23`                            | Used for pre-auth channel labels.                                        |
+| `timingSafeCompare`        | function | `(a: string, b: string) => boolean` — constant-time secret comparison               | Compares byte lengths, so multibyte input cannot throw.                  |
+| `normaliseSessionDevice`   | function | `(device) => SessionDevice \| undefined`                                            | Trims, drops blanks, clamps the UA. `undefined` for an empty block.      |
+| `describeSession`          | function | `(session) => DescribedSession`                                                     | Display projection for a session list; ISO timestamps, flattened device. |
+| `MAX_USER_AGENT_LENGTH`    | constant | `512`                                                                               | Matches what both consumers already clamp to.                            |
 
 ## Canonical usage
 
@@ -395,6 +399,19 @@ const session = await sessions.createSession(completed.actor.id, claims, complet
   provider identity to an existing account on a verified-email match alone, so anyone who can get an
   identity provider to assert an address gains that account. Recorded with provider, subject, and
   email so the join can be reviewed.
+- **A blank `userAgent` means absent, and that is load-bearing.** Both adapters set it to `''` when
+  the header is missing — Koa's `ctx.get`, and the Fastify plugin explicitly — so
+  `normaliseSessionDevice` drops it. Skip that and every session records an empty string.
+- **`serializeSession` is an allowlist, not a spread.** A field added to `AuthenticationSession` and
+  forgotten there is returned by `createSession` and gone by the next `getSession` — a bug that only
+  appears on the second request. Add to both it and `deserializeSession`.
+- **`session.device` describes where the session began.** A rotation carries it forward rather than
+  re-stamping, since a step-up happens on a live request but the origin has not changed. Pass a block
+  to `rotateSession` to override.
+- **The package does not parse user agents.** `SessionDevice.label` is the application's to compose:
+  doing it well needs a signature database that goes stale, and doing it badly is worse than not.
+- **`SessionDevice.ipAddress` is not validated.** Stored as given. An app writing it to a Postgres
+  `inet` column owns that check.
 - **The package never fills `AuditEventContext`.** It sits at L2 alongside the HTTP adapters, so it
   cannot reach a request. Fill `correlationId`, `ipAddress`, and the rest in your own request-scoped
   sink.
@@ -433,7 +450,8 @@ src/
   authentication.scheme.handler.ts  AuthenticationHandlerMap, AuthenticationSchemeHandler
   chained.authentication.handler.ts ChainedAuthenticationHandler, AuthenticationHandlerChain
   authentication.session.service.ts Sessions, rotation, refresh + theft detection
-  helpers.ts                      matchesFactorConstraints, isFactorRecent, maskEmail, maskPhone, timingSafeCompare
+  helpers.ts                      matchesFactorConstraints, isFactorRecent, maskEmail, maskPhone,
+                                  timingSafeCompare, normaliseSessionDevice, describeSession
   jwt/                            JwtAuthenticationHandler, JwtAuthenticationIssuer(+Map)
   basic/                          BasicAuthenticationHandler, BasicAuthenticationIssuer
   factors/

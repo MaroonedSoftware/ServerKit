@@ -246,10 +246,7 @@ describe('createScimRouter — integration', () => {
 
     it('GET /Users?excludedAttributes= omits the named attribute from every resource', async () => {
       const { app } = buildApp();
-      await request(app.callback())
-        .post('/Users')
-        .set('Content-Type', SCIM_MEDIA_TYPE)
-        .send({ userName: 'bjensen', displayName: 'Barbara Jensen' });
+      await request(app.callback()).post('/Users').set('Content-Type', SCIM_MEDIA_TYPE).send({ userName: 'bjensen', displayName: 'Barbara Jensen' });
 
       const res = await request(app.callback()).get('/Users?excludedAttributes=displayName');
 
@@ -259,12 +256,12 @@ describe('createScimRouter — integration', () => {
 
     it('POST /Users/.search honours attributes from the request body', async () => {
       const { app } = buildApp();
-      await request(app.callback())
-        .post('/Users')
-        .set('Content-Type', SCIM_MEDIA_TYPE)
-        .send({ userName: 'bjensen', displayName: 'Barbara Jensen' });
+      await request(app.callback()).post('/Users').set('Content-Type', SCIM_MEDIA_TYPE).send({ userName: 'bjensen', displayName: 'Barbara Jensen' });
 
-      const res = await request(app.callback()).post('/Users/.search').set('Content-Type', SCIM_MEDIA_TYPE).send({ attributes: ['userName'] });
+      const res = await request(app.callback())
+        .post('/Users/.search')
+        .set('Content-Type', SCIM_MEDIA_TYPE)
+        .send({ attributes: ['userName'] });
 
       expect(res.body.Resources[0].userName).toBe('bjensen');
       expect(res.body.Resources[0].displayName).toBeUndefined();

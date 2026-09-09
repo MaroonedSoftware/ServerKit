@@ -39,6 +39,54 @@ export interface AuthenticationSessionFactor {
 }
 
 /**
+ * Where a session was established from.
+ *
+ * Describes the request that *began* the session, not wherever it was last used.
+ * A revoke or a refresh happens on a different request, so the live context at
+ * that point describes a different caller — which is exactly why this is stored
+ * on the session rather than read from the request each time.
+ *
+ * Every field is optional, and the whole block is absent when none is known. It
+ * is filled by the application: this package sits at L2 alongside the HTTP
+ * adapters and cannot reach a request. Both adapters already carry what it needs
+ * on their context as `ipAddress` and `userAgent`.
+ *
+ * ```ts
+ * await sessionService.createSession(user.id, claims, factor, undefined, {
+ *   ipAddress: ctx.ipAddress,
+ *   userAgent: ctx.userAgent,
+ * });
+ * ```
+ */
+export interface SessionDevice {
+  /**
+   * The caller's IP address, as the application resolved it.
+   *
+   * **Not validated.** Whatever is passed is stored verbatim, because a correct
+   * IPv4/IPv6 validator is more surface than this earns and the adapters already
+   * defer to the framework's own `trustProxy` handling. An application writing
+   * this to a typed column — Postgres `inet` rejects malformed input — owns that
+   * check.
+   */
+  ipAddress?: string;
+  /**
+   * The `User-Agent` header, truncated to {@link MAX_USER_AGENT_LENGTH}.
+   *
+   * Truncation is not cosmetic: the header is attacker-controlled and otherwise
+   * unbounded.
+   */
+  userAgent?: string;
+  /**
+   * A human-readable name for the device, e.g. `'Chrome on macOS'`.
+   *
+   * The application's to compose. This package does not parse user agents —
+   * doing it well means a dependency on a signature database that goes stale,
+   * and doing it badly is worse than not doing it.
+   */
+  label?: string;
+}
+
+/**
  * A server-side authentication session stored in cache.
  * The session is the authoritative record; a JWT issued from it is just a
  * short-lived signed reference — revoke the session to invalidate all tokens.
@@ -65,6 +113,15 @@ export interface AuthenticationSession {
    * {@link AuthenticationSession} rotations triggered by privilege changes.
    */
   familyId?: string;
+  /**
+   * Where the session was established from, when the application supplied it.
+   *
+   * Absent on sessions created without it, including every session cached before
+   * this field existed and every session an API key establishes — a machine
+   * credential has no device, and inventing one would put a misleading row in a
+   * user's session list.
+   */
+  device?: SessionDevice;
 }
 
 /**

@@ -20,8 +20,7 @@ export interface ScimProjection {
  */
 const ALWAYS_RETURNED = new Set(['id', 'schemas', 'meta']);
 
-const isPlainObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
+const isPlainObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /**
  * Split an attribute path into segments, tolerating the fully-qualified form
@@ -101,11 +100,7 @@ type ProjectionMode = 'include' | 'exclude' | 'default';
  * @param projection - The requested projection; omit for schema rules only.
  * @returns A new resource object with the projection applied.
  */
-export const projectScimResource = <T extends Record<string, unknown>>(
-  resource: T,
-  schemas: ScimSchema[],
-  projection: ScimProjection = {},
-): T => {
+export const projectScimResource = <T extends Record<string, unknown>>(resource: T, schemas: ScimSchema[], projection: ScimProjection = {}): T => {
   const requested = new PathSet(projection.attributes ?? []);
   const excluded = new PathSet(projection.excludedAttributes ?? []);
   const mode: ProjectionMode = !requested.empty ? 'include' : !excluded.empty ? 'exclude' : 'default';

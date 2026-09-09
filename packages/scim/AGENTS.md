@@ -80,13 +80,13 @@ contract is inseparable from HTTP.
 
 ### Errors
 
-| Export            | Kind       | Shape                                                       | Notes                                        |
-| ----------------- | ---------- | ----------------------------------------------------------- | -------------------------------------------- |
-| `ScimError`       | class      | `extends HttpError`                                         | So `errorMiddleware` already understands it. |
+| Export            | Kind       | Shape                                                       | Notes                                                                                                                                                                  |
+| ----------------- | ---------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ScimError`       | class      | `extends HttpError`                                         | So `errorMiddleware` already understands it.                                                                                                                           |
 | `scimError`       | function   | `(status, scimType?, statusText?) => ScimError`             | The factory to use. The third argument is the HTTP status text; put the operator-facing reason on `.withDetails({ message })`, which `toScimBody` renders as `detail`. |
-| `IsScimError`     | type guard | —                                                           | —                                            |
-| `ScimErrorType`   | type       | `'invalidFilter'`, `'insufficientScope'`, `'mutability'`, … | RFC 7644 §3.12 `scimType` values.            |
-| `ScimErrorSchema` | constant   | The error envelope URN                                      | —                                            |
+| `IsScimError`     | type guard | —                                                           | —                                                                                                                                                                      |
+| `ScimErrorType`   | type       | `'invalidFilter'`, `'insufficientScope'`, `'mutability'`, … | RFC 7644 §3.12 `scimType` values.                                                                                                                                      |
+| `ScimErrorSchema` | constant   | The error envelope URN                                      | —                                                                                                                                                                      |
 
 ### Repositories and services
 
@@ -95,21 +95,21 @@ contract is inseparable from HTTP.
 | `ScimUserRepository`                                                  | abstract class | Implement over your datastore.                                                                                                                      |
 | `ScimGroupRepository`                                                 | abstract class | Implement over your datastore.                                                                                                                      |
 | `ScimListQuery`                                                       | interface      | `{ filter?: ScimFilterNode; startIndex; count; sortBy?; sortOrder?; attributes?; excludedAttributes? }` — **the parsed AST**, never the raw string. |
-| `projectScimResource`                                                 | function       | `(resource, schemas: ScimSchema[], projection?) => resource` — applies `attributes` / `excludedAttributes` and strips `returned: 'never'`. |
-| `ScimProjection`                                                      | interface      | `{ attributes?: string[]; excludedAttributes?: string[] }` |
+| `projectScimResource`                                                 | function       | `(resource, schemas: ScimSchema[], projection?) => resource` — applies `attributes` / `excludedAttributes` and strips `returned: 'never'`.          |
+| `ScimProjection`                                                      | interface      | `{ attributes?: string[]; excludedAttributes?: string[] }`                                                                                          |
 | `ScimListResult<TResource>`                                           | interface      | `{ resources; totalResults }` — `totalResults` is the **filter-matching total**, not the page size.                                                 |
 | `ScimSortOrder`                                                       | type           | `'ascending' \| 'descending'`                                                                                                                       |
 | `ScimUserService` / `ScimGroupService` / `ScimServiceProviderService` | class          | Sit between the router and the repositories.                                                                                                        |
 
 ### Middleware and router
 
-| Export                      | Kind      | Shape                                                                              | Notes                                                                                 |
-| --------------------------- | --------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `scimErrorMiddleware`       | function  | `() => ServerKitMiddleware`                                                        | **Replaces** `errorMiddleware()` on the SCIM mountpoint.                              |
-| `scimContentTypeMiddleware` | function  | `() => ServerKitMiddleware`                                                        | Enforces `application/scim+json`.                                                     |
-| `SCIM_MEDIA_TYPE`           | constant  | `'application/scim+json'`                                                          | —                                                                                     |
-| `requireScimScope`          | function  | `(scope: string) => ServerKitRouterMiddleware`                                     | Reads `ctx.authenticationSession.claims.scimScopes`. `*` grants everything.           |
-| `createScimRouter`          | function  | `(options: CreateScimRouterOptions) => Router<unknown, ServerKitContext>`          | Mounts every endpoint below.                                                          |
+| Export                      | Kind      | Shape                                                                                        | Notes                                                                                                                                              |
+| --------------------------- | --------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scimErrorMiddleware`       | function  | `() => ServerKitMiddleware`                                                                  | **Replaces** `errorMiddleware()` on the SCIM mountpoint.                                                                                           |
+| `scimContentTypeMiddleware` | function  | `() => ServerKitMiddleware`                                                                  | Enforces `application/scim+json`.                                                                                                                  |
+| `SCIM_MEDIA_TYPE`           | constant  | `'application/scim+json'`                                                                    | —                                                                                                                                                  |
+| `requireScimScope`          | function  | `(scope: string) => ServerKitRouterMiddleware`                                               | Reads `ctx.authenticationSession.claims.scimScopes`. `*` grants everything.                                                                        |
+| `createScimRouter`          | function  | `(options: CreateScimRouterOptions) => Router<unknown, ServerKitContext>`                    | Mounts every endpoint below.                                                                                                                       |
 | `CreateScimRouterOptions`   | interface | `{ userService, groupService, serviceProviderService, routeGuards?, maxResults?, baseUrl? }` | `maxResults` defaults to the service-provider config's `filter.maxResults`, then 200. Set `baseUrl` whenever the router is mounted under a prefix. |
 
 Endpoints mounted: `GET|POST /Users`, `GET|PUT|PATCH|DELETE /Users/:id`, `POST /Users/.search`, the

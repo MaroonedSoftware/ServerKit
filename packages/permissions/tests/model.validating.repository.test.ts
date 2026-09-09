@@ -101,9 +101,9 @@ describe('ModelValidatingTupleRepository', () => {
   it('writes nothing when any tuple in the batch fails', async () => {
     const { inner, repo } = makeRepo();
 
-    await expect(
-      repo.write([parseTuple('document:readme.viewer@user:alice'), parseTuple('document:readme.owner@user.*')]),
-    ).rejects.toBeInstanceOf(PermissionsError);
+    await expect(repo.write([parseTuple('document:readme.viewer@user:alice'), parseTuple('document:readme.owner@user.*')])).rejects.toBeInstanceOf(
+      PermissionsError,
+    );
 
     expect(inner.all()).toEqual([]);
   });

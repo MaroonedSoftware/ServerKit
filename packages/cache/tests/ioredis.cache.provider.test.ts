@@ -103,7 +103,9 @@ describe('add', () => {
   });
 
   it('returns true then false across two calls for the same key', async () => {
-    vi.mocked(mockRedis.set).mockResolvedValueOnce('OK').mockResolvedValueOnce(null as never);
+    vi.mocked(mockRedis.set)
+      .mockResolvedValueOnce('OK')
+      .mockResolvedValueOnce(null as never);
 
     expect(await provider.add('lock', 'held')).toBe(true);
     expect(await provider.add('lock', 'held')).toBe(false);

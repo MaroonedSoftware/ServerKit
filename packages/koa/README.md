@@ -5,10 +5,17 @@ Koa utilities and middleware for ServerKit: typed context, router, CORS, error h
 ## Installation
 
 ```bash
-pnpm add @maroonedsoftware/koa koa @koa/router @koa/cors
+pnpm add @maroonedsoftware/koa koa @koa/router @koa/cors @maroonedsoftware/authentication
 ```
 
-Peer dependencies: `koa`, `@koa/router`, `@koa/cors`.
+Peer dependencies: `koa`, `@koa/router`, `@koa/cors`, `@maroonedsoftware/authentication`.
+
+`@maroonedsoftware/authentication` is a peer rather than a bundled dependency because
+`authenticationMiddleware` resolves `AuthenticationSchemeHandler` out of the DI container by class
+identity. If your app installs its own copy at a different version, the class this package holds is
+not the class your module registered, and every request fails with
+`Registration for AuthenticationSchemeHandler not found` — at runtime, with nothing wrong at the
+type level. One installed copy is the whole point, so install it alongside.
 
 The body parsers, SSE transport, signature policy, and `RateLimiter` token come from
 [`@maroonedsoftware/servercore`](../servercore/README.md), the framework-neutral core shared with

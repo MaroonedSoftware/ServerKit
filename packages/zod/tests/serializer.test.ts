@@ -79,9 +79,7 @@ describe('compileSerializer', () => {
   });
 
   it('throws at compile time for a transform', () => {
-    expect(() => compileSerializer(z.object({ t: z.string().transform(v => v.trim()) }))).toThrow(
-      'Transforms cannot be represented in JSON Schema',
-    );
+    expect(() => compileSerializer(z.object({ t: z.string().transform(v => v.trim()) }))).toThrow('Transforms cannot be represented in JSON Schema');
   });
 
   it('throws at compile time for a z.custom field', () => {

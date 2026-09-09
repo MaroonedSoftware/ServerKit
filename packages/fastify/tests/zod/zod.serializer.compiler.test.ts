@@ -36,10 +36,8 @@ describe('zodSerializerCompiler', () => {
   it('serializes each status code with its own schema', async () => {
     const { app: instance } = await createTestApp({ plugins });
     const app = instance.withTypeProvider<ZodTypeProvider>();
-    app.get(
-      '/maybe',
-      { schema: { response: { 200: User, 202: z.object({ queued: z.boolean() }) } } },
-      async (_request, reply) => reply.status(202).send({ queued: true }),
+    app.get('/maybe', { schema: { response: { 200: User, 202: z.object({ queued: z.boolean() }) } } }, async (_request, reply) =>
+      reply.status(202).send({ queued: true }),
     );
 
     const response = await app.inject({ method: 'GET', url: '/maybe' });

@@ -47,27 +47,27 @@ it reads the `Authorization` header, which the authentication stack deletes.
 
 ### Config and errors
 
-| Export                           | Kind                       | Shape                                                                                           | Notes                                                                                              |
-| -------------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Export                           | Kind                       | Shape                                                                                                     | Notes                                                                                                                                             |
+| -------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `McpConfig`                      | interface + abstract class | `{ serverName, version, sessionMode?, bearerToken?, allowUnauthenticated?, subject?, requestTimeoutMs? }` | Declaration-merged so one symbol is type and DI token. `requestTimeoutMs` aborts `context.signal`; `subject` names the MCP client on the session. |
-| `McpSessionMode`                 | type                       | `'stateless' \| 'stateful'`                                                                     | Default `'stateless'`.                                                                             |
-| `MCP_DEFAULT_REQUEST_TIMEOUT_MS` | constant                   | `30_000`                                                                                        | Applied when `requestTimeoutMs` is unset.                                                          |
-| `McpError`                       | class                      | `extends ServerkitError`                                                                        | —                                                                                                  |
-| `IsMcpError`                     | type guard                 | `(error: unknown) => error is McpError`                                                         | —                                                                                                  |
+| `McpSessionMode`                 | type                       | `'stateless' \| 'stateful'`                                                                               | Default `'stateless'`.                                                                                                                            |
+| `MCP_DEFAULT_REQUEST_TIMEOUT_MS` | constant                   | `30_000`                                                                                                  | Applied when `requestTimeoutMs` is unset.                                                                                                         |
+| `McpError`                       | class                      | `extends ServerkitError`                                                                                  | —                                                                                                                                                 |
+| `IsMcpError`                     | type guard                 | `(error: unknown) => error is McpError`                                                                   | —                                                                                                                                                 |
 
 ### Auth
 
-| Export                            | Kind      | Shape                                                                                                         | Notes                                                                                                                            |
-| --------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `McpAuthenticationHandler`        | class     | `@Injectable() implements AuthenticationHandler`                                                              | **How you authenticate.** Resolves the shared token into an `AuthenticationSession`. Register under `bearer`.                     |
-| `MCP_DEFAULT_SUBJECT`             | constant  | `'mcp'`                                                                                                       | `session.subject` when `McpConfig.subject` is unset.                                                                              |
-| `compareMcpToken`                 | function  | `(provided: string, expected: string) => boolean`                                                             | Constant-time, with the length guard. Blank either side is `false`.                                                               |
-| `isBlankBearerToken`              | function  | `(bearerToken: string \| undefined) => boolean`                                                                | `true` only when a token was configured **and** is blank. `undefined` needs `allowUnauthenticated`; blank is refused either way.  |
-| `requireMcpPolicy`                | function  | `(context, policies: PolicyService, options?: { policy?: string \| false }) => Promise<AuthenticationSession>` | **The per-tool guard.** Session plus optional policy. `policy` defaults to `false` — see Gotchas.                                 |
-| `RequireMcpPolicyOptions`         | interface | `{ policy?: string \| false }`                                                                                | Pass `MFA_SATISFIED_POLICY` to mirror the HTTP `requirePolicy()` default.                                                         |
-| `requireMcpAuthenticationSession` | function  | `(context: McpAuthenticatedContext) => AuthenticationSession`                                                 | Narrows a handler context or **throws** 401. Treats a missing session as unauthenticated. `requireMcpPolicy` wraps it.            |
-| `McpAuthenticatedContext`         | type      | `{ authenticationSession?: AuthenticationSession }`                                                           | Structural, so a tool, resource, or request context all satisfy it.                                                               |
-| `McpAuthFailureReason`            | type      | `'missing_token' \| 'invalid_token'`                                                                           | Lands in `internalDetails.reason`.                                                                                                |
+| Export                            | Kind      | Shape                                                                                                          | Notes                                                                                                                            |
+| --------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `McpAuthenticationHandler`        | class     | `@Injectable() implements AuthenticationHandler`                                                               | **How you authenticate.** Resolves the shared token into an `AuthenticationSession`. Register under `bearer`.                    |
+| `MCP_DEFAULT_SUBJECT`             | constant  | `'mcp'`                                                                                                        | `session.subject` when `McpConfig.subject` is unset.                                                                             |
+| `compareMcpToken`                 | function  | `(provided: string, expected: string) => boolean`                                                              | Constant-time, with the length guard. Blank either side is `false`.                                                              |
+| `isBlankBearerToken`              | function  | `(bearerToken: string \| undefined) => boolean`                                                                | `true` only when a token was configured **and** is blank. `undefined` needs `allowUnauthenticated`; blank is refused either way. |
+| `requireMcpPolicy`                | function  | `(context, policies: PolicyService, options?: { policy?: string \| false }) => Promise<AuthenticationSession>` | **The per-tool guard.** Session plus optional policy. `policy` defaults to `false` — see Gotchas.                                |
+| `RequireMcpPolicyOptions`         | interface | `{ policy?: string \| false }`                                                                                 | Pass `MFA_SATISFIED_POLICY` to mirror the HTTP `requirePolicy()` default.                                                        |
+| `requireMcpAuthenticationSession` | function  | `(context: McpAuthenticatedContext) => AuthenticationSession`                                                  | Narrows a handler context or **throws** 401. Treats a missing session as unauthenticated. `requireMcpPolicy` wraps it.           |
+| `McpAuthenticatedContext`         | type      | `{ authenticationSession?: AuthenticationSession }`                                                            | Structural, so a tool, resource, or request context all satisfy it.                                                              |
+| `McpAuthFailureReason`            | type      | `'missing_token' \| 'invalid_token'`                                                                           | Lands in `internalDetails.reason`.                                                                                               |
 
 #### Deprecated: the header-reading path
 
@@ -76,18 +76,18 @@ All still functional, all removed in a later major. They re-read the `Authorizat
 resolved it — so this path only works on a server with no authentication stack, and it carries a
 second identity model (`context.auth`) alongside `context.authenticationSession`.
 
-| Export                     | Kind      | Shape                                                                                                      | Replacement                                       |
-| -------------------------- | --------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| `assertMcpAuth`            | function  | `(container, getHeader) => Promise<McpAuthInfo \| undefined>`                                               | `McpAuthenticationHandler` + `requirePolicy`      |
-| `McpAuthPolicy`            | class     | `extends Policy<McpAuthPolicyContext>`                                                                     | `McpAuthenticationHandler`                        |
-| `MCP_AUTH_POLICY`          | constant  | `'mcp.auth.valid'`                                                                                         | —                                                 |
-| `McpAuthPolicyContext`     | interface | `{ getHeader: (name) => string; options: McpAuthOptions; rawBody?: unknown; onResolved?: (auth) => void }` | —                                                 |
-| `verifyMcpBearer`          | function  | `(input: VerifyMcpBearerInput) => McpAuthInfo`                                                             | `compareMcpToken` + `isBlankBearerToken`          |
-| `VerifyMcpBearerInput`     | type      | `{ authorization: string \| undefined; expectedToken: string }`                                             | —                                                 |
-| `McpAuthInfo`              | interface | `{ token: string; subject?: string; scopes?: string[] }`                                                   | `AuthenticationSession`                           |
-| `McpAuthOptions`           | type      | `Pick<McpConfig, 'bearerToken' \| 'allowUnauthenticated'>`                                                  | `McpConfig`                                       |
-| `MCP_AUTHORIZATION_HEADER` | constant  | `'Authorization'`                                                                                          | —                                                 |
-| `McpContextBase.auth`      | field     | `McpAuthInfo \| undefined`                                                                                  | `McpContextBase.authenticationSession`            |
+| Export                     | Kind      | Shape                                                                                                      | Replacement                                  |
+| -------------------------- | --------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `assertMcpAuth`            | function  | `(container, getHeader) => Promise<McpAuthInfo \| undefined>`                                              | `McpAuthenticationHandler` + `requirePolicy` |
+| `McpAuthPolicy`            | class     | `extends Policy<McpAuthPolicyContext>`                                                                     | `McpAuthenticationHandler`                   |
+| `MCP_AUTH_POLICY`          | constant  | `'mcp.auth.valid'`                                                                                         | —                                            |
+| `McpAuthPolicyContext`     | interface | `{ getHeader: (name) => string; options: McpAuthOptions; rawBody?: unknown; onResolved?: (auth) => void }` | —                                            |
+| `verifyMcpBearer`          | function  | `(input: VerifyMcpBearerInput) => McpAuthInfo`                                                             | `compareMcpToken` + `isBlankBearerToken`     |
+| `VerifyMcpBearerInput`     | type      | `{ authorization: string \| undefined; expectedToken: string }`                                            | —                                            |
+| `McpAuthInfo`              | interface | `{ token: string; subject?: string; scopes?: string[] }`                                                   | `AuthenticationSession`                      |
+| `McpAuthOptions`           | type      | `Pick<McpConfig, 'bearerToken' \| 'allowUnauthenticated'>`                                                 | `McpConfig`                                  |
+| `MCP_AUTHORIZATION_HEADER` | constant  | `'Authorization'`                                                                                          | —                                            |
+| `McpContextBase.auth`      | field     | `McpAuthInfo \| undefined`                                                                                 | `McpContextBase.authenticationSession`       |
 
 ### Request context
 
@@ -222,7 +222,10 @@ app.post('/mcp', { config: { body: ['application/json'] }, preHandler: [requireP
 
   if (dispatcher.sessionMode === 'stateful') {
     reply.hijack(); // the SDK transport owns the response
-    await dispatcher.dispatchStateful({ req: request.raw, res: reply.raw, body: request.body, sessionId: request.headers['mcp-session-id'] as string }, context);
+    await dispatcher.dispatchStateful(
+      { req: request.raw, res: reply.raw, body: request.body, sessionId: request.headers['mcp-session-id'] as string },
+      context,
+    );
     return;
   }
 

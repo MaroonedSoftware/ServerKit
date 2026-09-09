@@ -112,7 +112,11 @@ export const createScimRouter = (options: CreateScimRouterOptions): Router<unkno
   router.get('/Users', ...guards, async ctx => {
     const query = parseListQueryFromUrl(ctx.query, maxResults);
     const result = await options.userService.list(query);
-    ctx.body = listEnvelope(result.resources.map(user => projectUser(withLocation(user, 'Users'), query)), query, result.totalResults);
+    ctx.body = listEnvelope(
+      result.resources.map(user => projectUser(withLocation(user, 'Users'), query)),
+      query,
+      result.totalResults,
+    );
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
@@ -120,7 +124,11 @@ export const createScimRouter = (options: CreateScimRouterOptions): Router<unkno
     const requestBody = takeRequestBody(ctx);
     const query = parseListQueryFromBody(requestBody, maxResults);
     const result = await options.userService.list(query);
-    ctx.body = listEnvelope(result.resources.map(user => projectUser(withLocation(user, 'Users'), query)), query, result.totalResults);
+    ctx.body = listEnvelope(
+      result.resources.map(user => projectUser(withLocation(user, 'Users'), query)),
+      query,
+      result.totalResults,
+    );
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
@@ -161,7 +169,11 @@ export const createScimRouter = (options: CreateScimRouterOptions): Router<unkno
   router.get('/Groups', ...guards, async ctx => {
     const query = parseListQueryFromUrl(ctx.query, maxResults);
     const result = await options.groupService.list(query);
-    ctx.body = listEnvelope(result.resources.map(group => projectGroup(withLocation(group, 'Groups'), query)), query, result.totalResults);
+    ctx.body = listEnvelope(
+      result.resources.map(group => projectGroup(withLocation(group, 'Groups'), query)),
+      query,
+      result.totalResults,
+    );
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
@@ -169,7 +181,11 @@ export const createScimRouter = (options: CreateScimRouterOptions): Router<unkno
     const requestBody = takeRequestBody(ctx);
     const query = parseListQueryFromBody(requestBody, maxResults);
     const result = await options.groupService.list(query);
-    ctx.body = listEnvelope(result.resources.map(group => projectGroup(withLocation(group, 'Groups'), query)), query, result.totalResults);
+    ctx.body = listEnvelope(
+      result.resources.map(group => projectGroup(withLocation(group, 'Groups'), query)),
+      query,
+      result.totalResults,
+    );
     ctx.type = SCIM_MEDIA_TYPE;
   });
 

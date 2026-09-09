@@ -1,7 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { DateTime } from 'luxon';
 import { Injectable } from 'injectkit';
-import { invalidAuthenticationSession, type AuthenticationHandler, type AuthenticationSession, type AuthorizationScheme } from '@maroonedsoftware/authentication';
+import {
+  invalidAuthenticationSession,
+  type AuthenticationHandler,
+  type AuthenticationSession,
+  type AuthorizationScheme,
+} from '@maroonedsoftware/authentication';
 import { Logger } from '@maroonedsoftware/logger';
 import { McpConfig, MCP_DEFAULT_REQUEST_TIMEOUT_MS } from './mcp.config.js';
 import { compareMcpToken, isBlankBearerToken } from './mcp.auth.js';
@@ -75,7 +80,9 @@ export class McpAuthenticationHandler implements AuthenticationHandler {
         // No token, and nobody said they meant it. An endpoint is never open by
         // omission: running unauthenticated has to be stated in config, where it
         // can be reviewed and grepped for. A missing key cannot be.
-        throw new McpError('MCP endpoint has no bearerToken configured; set McpConfig.allowUnauthenticated to run without authentication').withInternalDetails({
+        throw new McpError(
+          'MCP endpoint has no bearerToken configured; set McpConfig.allowUnauthenticated to run without authentication',
+        ).withInternalDetails({
           kind: 'misconfiguration',
           field: 'allowUnauthenticated',
         });
