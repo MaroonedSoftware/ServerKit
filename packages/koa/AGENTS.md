@@ -21,17 +21,25 @@ This is where the composition-root story for a ServerKit app lives. It is also t
 pnpm add @maroonedsoftware/koa koa @koa/router @koa/cors
 ```
 
-Required peers: `koa`, `@koa/router`, `@koa/cors`. Optional peer:
-`@maroonedsoftware/serverfeed` (for the `./serverfeed` subpath).
+Required peers: `koa`, `@koa/router`, `@koa/cors`, `@maroonedsoftware/authentication`. Optional
+peer: `@maroonedsoftware/serverfeed` (for the `./serverfeed` subpath).
 
-Runtime dependencies: `appconfig`, `authentication`, `errors`, `logger`, `policies`,
+`authentication` is a peer and not a dependency because `authenticationMiddleware` resolves
+`AuthenticationSchemeHandler` **by class identity** out of the DI container. A second installed
+copy is a second class of the same name, and the app's registration then matches neither — every
+request fails with `Registration for AuthenticationSchemeHandler not found`, at runtime, with
+nothing wrong at the type level. Its range is `workspace:^` rather than `workspace:*` for the same
+reason: `workspace:*` publishes as an exact pin, so a peer declared that way conflicts on the next
+patch release and invites the duplicate straight back in.
+
+Runtime dependencies: `appconfig`, `errors`, `logger`, `policies`,
 `servercore`, plus `injectkit` and `luxon`. The body parsers, SSE transport, signature policy,
 and `RateLimiter` token are `servercore`'s and are re-exported here by name.
 
 ## Position in the graph
 
-- **Depends on:** `servercore` (the framework-neutral core), `appconfig`, `authentication`,
-  `errors`, `logger`, `policies`.
+- **Depends on:** `servercore` (the framework-neutral core), `appconfig`,
+  `errors`, `logger`, `policies`. `authentication` is a required PEER, see above.
 - **Depended on by:** `scim`.
 - **Subpath exports:**
   - `.` — everything below.

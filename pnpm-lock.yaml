@@ -526,7 +526,7 @@ importers:
         specifier: workspace:*
         version: link:../appconfig
       '@maroonedsoftware/authentication':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../authentication
       '@maroonedsoftware/errors':
         specifier: workspace:*

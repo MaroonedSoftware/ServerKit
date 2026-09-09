@@ -2,9 +2,10 @@ import { Injectable } from 'injectkit';
 import { unauthorizedError } from '@maroonedsoftware/errors';
 import { DateTime, Duration } from 'luxon';
 import { deepmergeCustom } from 'deepmerge-ts';
+import { normaliseSessionDevice } from './helpers.js';
 import { AuditRecorder } from './audit/audit.recorder.js';
 import type { AuditSessionData, SessionValidationFailureReason } from './audit/session.audit.event.js';
-import { AuthenticationSession, AuthenticationSessionFactor, AuthenticationToken, SessionRevocationReason } from './types.js';
+import { AuthenticationSession, AuthenticationSessionFactor, AuthenticationToken, SessionDevice, SessionRevocationReason } from './types.js';
 import { CacheProvider } from '@maroonedsoftware/cache';
 import { JwtProvider } from './providers/jwt.provider.js';
 
@@ -251,6 +252,8 @@ export class AuthenticationSessionService {
    * @param claims     - Arbitrary key/value pairs to embed in tokens issued from this session.
    * @param factors    - One or more authentication factors that have been satisfied.
    * @param expiration - Session lifetime; defaults to {@link AuthenticationSessionServiceOptions.expiresIn}.
+   * @param device     - Where the request came from, for a session list and for audit events.
+   *   Normalised on the way in; omit it and the session simply carries none.
    * @returns The newly created {@link AuthenticationSession}.
    */
   async createSession(
@@ -258,11 +261,13 @@ export class AuthenticationSessionService {
     claims: Record<string, unknown>,
     factors: AuthenticationSessionFactor | AuthenticationSessionFactor[],
     expiration?: Duration,
+    device?: SessionDevice,
   ) {
     const sessionToken = crypto.randomUUID();
     const familyId = crypto.randomUUID();
     const now = DateTime.utc();
     expiration ??= this.options.expiresIn;
+    const normalisedDevice = normaliseSessionDevice(device);
 
     const session: AuthenticationSession = {
       sessionToken: sessionToken,
@@ -273,6 +278,7 @@ export class AuthenticationSessionService {
       factors: Array.isArray(factors) ? factors : [factors],
       claims,
       familyId,
+      ...(normalisedDevice === undefined ? {} : { device: normalisedDevice }),
     };
 
     await this.cache.set(this.getSessionKey(sessionToken), this.serializeSession(session), expiration);
@@ -394,16 +400,20 @@ export class AuthenticationSessionService {
     claims: Record<string, unknown>,
     factor: AuthenticationSessionFactor,
     expiration?: Duration,
+    device?: SessionDevice,
   ) {
     if (sessionToken) {
       const session = await this.getSession(sessionToken);
 
       if (session) {
+        // Only the create arm takes the device: updating a live session must not
+        // rewrite where it began, and this arm is reached when the caller already
+        // had one.
         return await this.updateSession(sessionToken, subject, expiration, claims, factor);
       }
     }
 
-    return await this.createSession(subject, claims, factor, expiration);
+    return await this.createSession(subject, claims, factor, expiration, device);
   }
 
   /**
@@ -604,7 +614,7 @@ export class AuthenticationSessionService {
    * @returns The new session and a fresh access/refresh token pair bound to it.
    * @throws 401 when the source session does not exist.
    */
-  async rotateSession(sessionToken: string, claimOverrides: Record<string, unknown> = {}, expiration?: Duration) {
+  async rotateSession(sessionToken: string, claimOverrides: Record<string, unknown> = {}, expiration?: Duration, device?: SessionDevice) {
     const oldSession = await this.getSession(sessionToken);
     if (!oldSession) {
       throw unauthorizedError('Bearer error="invalid_token"');
@@ -625,6 +635,7 @@ export class AuthenticationSessionService {
     const now = DateTime.utc();
     expiration ??= this.options.expiresIn;
     const familyId = oldSession.familyId ?? crypto.randomUUID();
+    const rotatedDevice = normaliseSessionDevice(device) ?? oldSession.device;
 
     const newSession: AuthenticationSession = {
       sessionToken: newSessionToken,
@@ -635,6 +646,10 @@ export class AuthenticationSessionService {
       factors: oldSession.factors,
       claims: deepmerge(oldSession.claims, claimOverrides) as Record<string, unknown>,
       familyId,
+      // Carried forward unless the caller re-stamps it. A step-up happens on a
+      // live request, but the session's origin is where it *began* — the same
+      // reason the claims carry forward rather than being rebuilt.
+      ...(rotatedDevice === undefined ? {} : { device: rotatedDevice }),
     };
 
     await this.cache.set(this.getSessionKey(newSessionToken), this.serializeSession(newSession), expiration);

@@ -134,3 +134,82 @@ describe('device metadata survives the cache round trip', () => {
     expect(JSON.parse(cache.store.get(key)!).device).toBeUndefined();
   });
 });
+
+describe('the write paths', () => {
+  const device = { ipAddress: '203.0.113.7', userAgent: 'curl/8', label: 'Laptop' };
+
+  it('records what createSession was given', async () => {
+    const created = await build().createSession('user-1', {}, factor, undefined, device);
+
+    expect(created.device).toEqual(device);
+  });
+
+  it('normalises on the way in', async () => {
+    const created = await build().createSession('user-1', {}, factor, undefined, {
+      ipAddress: ' 203.0.113.7 ',
+      userAgent: '',
+    });
+
+    expect(created.device).toEqual({ ipAddress: '203.0.113.7' });
+  });
+
+  it('carries the device forward across a rotation', async () => {
+    // A step-up happens on a live request, but the session's origin is where it
+    // began — the same reason claims carry forward rather than being rebuilt.
+    const service = build();
+    const created = await service.createSession('user-1', {}, factor, undefined, device);
+
+    const rotated = await service.rotateSession(created.sessionToken, { acr: 'high' });
+
+    expect(rotated.session.sessionToken).not.toBe(created.sessionToken);
+    expect(rotated.session.device).toEqual(device);
+  });
+
+  it('lets a rotation re-stamp the device when the caller supplies one', async () => {
+    const service = build();
+    const created = await service.createSession('user-1', {}, factor, undefined, device);
+
+    const rotated = await service.rotateSession(created.sessionToken, {}, undefined, { ipAddress: '198.51.100.4' });
+
+    expect(rotated.session.device).toEqual({ ipAddress: '198.51.100.4' });
+  });
+
+  it('does not blank the device when a rotation supplies an empty one', async () => {
+    // `{ userAgent: '' }` normalises to nothing, and nothing means "not given",
+    // so the original survives rather than being wiped by an adapter default.
+    const service = build();
+    const created = await service.createSession('user-1', {}, factor, undefined, device);
+
+    const rotated = await service.rotateSession(created.sessionToken, {}, undefined, { userAgent: '' });
+
+    expect(rotated.session.device).toEqual(device);
+  });
+
+  it('passes the device through createOrUpdateSession when it creates', async () => {
+    const created = await build().createOrUpdateSession(undefined, 'user-1', {}, factor, undefined, device);
+
+    expect(created.device).toEqual(device);
+  });
+
+  it('leaves an existing session alone when createOrUpdateSession updates', async () => {
+    const service = build();
+    const created = await service.createSession('user-1', {}, factor, undefined, device);
+
+    // Updating a live session must not rewrite where it began.
+    const updated = await service.createOrUpdateSession(created.sessionToken, 'user-1', { plan: 'pro' }, factor, undefined, {
+      ipAddress: '198.51.100.4',
+    });
+
+    expect(updated.device).toEqual(device);
+  });
+
+  it('survives a rotation through the cache, not just in memory', async () => {
+    const service = build();
+    const created = await service.createSession('user-1', {}, factor, undefined, device);
+    const rotated = await service.rotateSession(created.sessionToken);
+
+    const read = await service.getSession(rotated.session.sessionToken);
+
+    expect(read?.device).toEqual(device);
+  });
+});
