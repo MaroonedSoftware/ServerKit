@@ -1216,13 +1216,14 @@ Constructed with `(logger, pemPrivateKey, pemPublicKey?)`. When `pemPublicKey` i
 | `createSecret(numBytes?)`                  | `string`  | Generate a base32-encoded random secret        |
 | `generate(secret, options)`                | `string`  | Generate an HOTP or TOTP value (RFC 4226/6238) |
 | `validate(otp, secret, options, window?)`  | `boolean` | Validate an HOTP or TOTP value                 |
+| `validateWithCounter(otp, secret, options, window?)` | `number \| undefined` | Validate and report which counter or time step matched |
 | `generateURI(secret, options, urlOptions)` | `string`  | Build an `otpauth://` provisioning URI         |
 
 `options` is an `OtpOptions` object with `type: 'hotp' | 'totp'`, plus `algorithm`, `counter` (HOTP), `periodSeconds` (TOTP), and `tokenLength`. `urlOptions` accepts `issuer` and an optional `label`.
 
 ### `OtpProviderMock`
 
-Drop-in replacement for `OtpProvider` for local development and integration tests. `generate` always returns `'000000'`, `validate` always returns `true`, and each call logs a `WARN` via the injected `Logger`. Never register in production.
+Drop-in replacement for `OtpProvider` for local development and integration tests. `generate` always returns `'000000'`, `validate` always returns `true`, `validateWithCounter` always returns the current step, and each call logs a `WARN` via the injected `Logger`. Never register in production.
 
 ### `PasswordStrengthProvider`
 

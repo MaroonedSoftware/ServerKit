@@ -199,4 +199,46 @@ describe('OtpProvider', () => {
       expect(new URL(uri).pathname).not.toContain(':');
     });
   });
+  describe('validateWithCounter', () => {
+    const secret = 'JBSWY3DPEHPK3PXP';
+
+    it('returns the counter that matched for hotp', () => {
+      const options = { type: 'hotp' as const, counter: 12, algorithm: 'sha1' as const, tokenLength: 6 };
+      const code = provider.generate(secret, options);
+      expect(provider.validateWithCounter(code, secret, options)).toBe(12);
+    });
+
+    it('returns the drifted counter when the code came from a neighbouring step', () => {
+      const options = { type: 'hotp' as const, algorithm: 'sha1' as const, tokenLength: 6 };
+      const code = provider.generate(secret, { ...options, counter: 13 });
+      expect(provider.validateWithCounter(code, secret, { ...options, counter: 12 })).toBe(13);
+    });
+
+    it('returns the time step that matched for totp', () => {
+      const timestamp = DateTime.fromSeconds(1_740_000_000, { zone: 'utc' });
+      const options = { type: 'totp' as const, periodSeconds: 30, algorithm: 'sha1' as const, tokenLength: 6, timestamp };
+      const code = provider.generate(secret, options);
+      expect(provider.validateWithCounter(code, secret, options)).toBe(Math.floor(1_740_000_000 / 30));
+    });
+
+    it('returns undefined for an invalid code', () => {
+      const options = { type: 'hotp' as const, counter: 12, algorithm: 'sha1' as const, tokenLength: 6 };
+      expect(provider.validateWithCounter('000000', secret, { ...options, counter: 900 })).toBeUndefined();
+    });
+
+    it('rejects a multibyte code of the right character length without throwing', () => {
+      // `timingSafeEqual` throws a RangeError on unequal buffer lengths, so the guard
+      // has to compare bytes: this input is 6 characters but 7 bytes.
+      const options = { type: 'hotp' as const, counter: 12, algorithm: 'sha1' as const, tokenLength: 6 };
+      expect(() => provider.validateWithCounter('1234\u00e95', secret, options)).not.toThrow();
+      expect(provider.validateWithCounter('1234\u00e95', secret, options)).toBeUndefined();
+    });
+
+    it('agrees with validate on the same inputs', () => {
+      const options = { type: 'hotp' as const, counter: 3, algorithm: 'sha1' as const, tokenLength: 6 };
+      const code = provider.generate(secret, options);
+      expect(provider.validate(code, secret, options)).toBe(true);
+      expect(provider.validate('111111', secret, { ...options, counter: 800 })).toBe(false);
+    });
+  });
 });

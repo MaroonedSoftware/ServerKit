@@ -144,32 +144,62 @@ export class OtpProvider {
     const otpOptions = { ...defaultOtpOptions, ...options };
 
     if (isHotpOptions(otpOptions)) {
+      return this.validateHOTP(otp, secret, otpOptions, window) !== undefined;
+    } else if (isTotpOptions(otpOptions)) {
+      return this.validateTOTP(otp, secret, otpOptions, window) !== undefined;
+    }
+  }
+
+  /**
+   * Validate an OTP and report **which** counter step matched.
+   *
+   * Same acceptance rules as {@link validate}; the extra return value is what a
+   * caller needs to advance a stored HOTP counter past the code just used, or to
+   * record a consumed TOTP step so the same code cannot be replayed inside its
+   * drift window.
+   *
+   * @param otp     - The code submitted by the user.
+   * @param secret  - Base32-encoded secret.
+   * @param options - OTP options used when the code was generated.
+   * @param window  - Number of steps either side of the current counter/period to accept (default `1`).
+   * @returns The matching counter (HOTP) or time step (TOTP), or `undefined` when the code is invalid.
+   */
+  validateWithCounter(otp: string, secret: string, options: Partial<HotpOptions | TotpOptions>, window: number = 1): number | undefined {
+    const otpOptions = { ...defaultOtpOptions, ...options };
+
+    if (isHotpOptions(otpOptions)) {
       return this.validateHOTP(otp, secret, otpOptions, window);
     } else if (isTotpOptions(otpOptions)) {
       return this.validateTOTP(otp, secret, otpOptions, window);
     }
+    return undefined;
   }
 
-  private validateHOTP(otp: string, secret: string, options: HotpOptions, window: number = 1) {
-    if (otp.length !== options.tokenLength) {
-      return false;
-    }
+  private validateHOTP(otp: string, secret: string, options: HotpOptions, window: number = 1): number | undefined {
     const { tokenLength, algorithm, counter } = options;
+
+    // Compare byte lengths, not character counts: `timingSafeEqual` throws a
+    // `RangeError` on mismatched buffers, and a multibyte submission such as
+    // "1234\u00e95" is `tokenLength` characters but more than `tokenLength` bytes.
+    const submitted = Buffer.from(otp, 'utf8');
+    if (submitted.length !== tokenLength) {
+      return undefined;
+    }
+
     const check = (i: number) => {
       const generatedToken = this.generateHOTP(secret, i, tokenLength, algorithm);
-      return crypto.timingSafeEqual(Buffer.from(otp), Buffer.from(generatedToken));
+      return crypto.timingSafeEqual(submitted, Buffer.from(generatedToken, 'utf8'));
     };
 
     for (let i = 0; i <= window; ++i) {
-      if (check(counter - i) || check(counter + i)) {
-        return true;
-      }
+      if (check(counter - i)) return counter - i;
+      if (check(counter + i)) return counter + i;
     }
 
-    return false;
+    return undefined;
   }
 
-  private validateTOTP(otp: string, secret: string, options: TotpOptions, window: number = 1) {
+  private validateTOTP(otp: string, secret: string, options: TotpOptions, window: number = 1): number | undefined {
     const { timestamp, periodSeconds } = options;
     const counter = Math.floor((timestamp?.toSeconds() ?? DateTime.utc().toSeconds()) / periodSeconds);
 

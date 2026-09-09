@@ -102,7 +102,7 @@ class) and an abstract `<Name>FactorRepository` you implement.
 | Password        | `PasswordFactorService`      | `PasswordFactorRepository`      | Types: `PasswordFactor`, `PasswordValue`.                                                                                         |
 | Email           | `EmailFactorService`         | `EmailFactorRepository`         | OTP and magic link, one pending challenge slot each. Type: `EmailFactor`.                                                         |
 | Phone           | `PhoneFactorService`         | `PhoneFactorRepository`         | OTP. Type: `PhoneFactor`.                                                                                                         |
-| Authenticator   | `AuthenticatorFactorService` | `AuthenticatorFactorRepository` | TOTP/HOTP. Types: `AuthenticatorFactor`, `AuthenticatorFactorOptions`.                                                            |
+| Authenticator   | `AuthenticatorFactorService` | `AuthenticatorFactorRepository` | TOTP/HOTP. Types: `AuthenticatorFactor`, `AuthenticatorFactorOptions`. The repository must implement `updateFactorCounter`.       |
 | FIDO / WebAuthn | `FidoFactorService`          | `FidoFactorRepository`          | Types: `FidoFactor`, `PublicKeyCredential*`, `AuthenticatorTransport`, `RegisterFidoFactorOptions`, `AuthorizeFidoFactorOptions`. |
 | OIDC            | `OidcFactorService`          | `OidcFactorRepository`          | Plus `OidcActorEmailLookup`, `OidcProfile`, `OidcAuthorizationResult`, `OidcAuthenticatedExchange`.                               |
 | OAuth2          | `OAuth2FactorService`        | `OAuth2FactorRepository`        | Plus `OAuth2ActorEmailLookup`, `OAuth2Profile`, `OAuth2Tokens`.                                                                   |
@@ -122,7 +122,7 @@ class) and an abstract `<Name>FactorRepository` you implement.
 | `Argon2idPasswordHashProvider`                            | class          | Uses `ARGON2ID_DEFAULTS` from `@maroonedsoftware/encryption`. Result type `PasswordHashResult`.                                   |
 | `PasswordStrengthProvider`                                | class          | zxcvbn-ts (English dictionary + adjacency graphs) **plus a live HaveIBeenPwned check**. Score 0–4; `ensureStrength` requires ≥ 3. |
 | `JwtProvider`                                             | class          | —                                                                                                                                 |
-| `OtpProvider`                                             | class          | Types: `OtpType`, `OtpOptions`, `TotpOptions`, `HotpOptions`, `OtpUrlOptions`, `OtpValidationOptions`, `defaultOtpOptions`.       |
+| `OtpProvider`                                             | class          | `validate` returns a boolean; `validateWithCounter` returns the matching step. Types: `OtpType`, `OtpOptions`, `TotpOptions`, `HotpOptions`, `OtpUrlOptions`, `OtpValidationOptions`, `defaultOtpOptions`. |
 | `OtpProviderMock`                                         | class          | `extends OtpProvider`. Tests only.                                                                                                |
 | `PkceProvider`                                            | class          | —                                                                                                                                 |
 | `OidcProviderRegistry` / `OidcProviderRegistryConfig`     | class          | Types: `OidcProviderConfig`.                                                                                                      |
@@ -279,6 +279,11 @@ const session = await sessions.createSession(completed.actor.id, claims, complet
   the code is checked, so a magic link callback cannot be used to guess at an OTP.
 - The orchestrators do **not** mint sessions. Call `createSession` / `issueTokenForSession` yourself
   from the returned data.
+- **Authenticator codes are single-use, and the repository has to help.** `validateFactor` advances
+  an HOTP factor's stored `counter` past the matching step via
+  `AuthenticatorFactorRepository.updateFactorCounter`, and marks a consumed TOTP step in cache under
+  `authenticator_factor_consumed_{actorId}_{factorId}_{step}`. A repository that no-ops
+  `updateFactorCounter` leaves HOTP codes valid forever.
 - **`RecoveryOrchestrator` does not invalidate existing sessions.** After `resetPassword` or
   `fullRecovery`, enumerate `getSessionsForSubject(actorId)` and delete each one, or prior tokens
   keep working.

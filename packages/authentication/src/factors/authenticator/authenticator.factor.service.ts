@@ -1,7 +1,7 @@
 import { Injectable } from 'injectkit';
 import { toDataURL } from 'qrcode';
 import { type OtpOptions, OtpProvider } from '../../providers/otp.provider.js';
-import { AuthenticatorFactorRepository } from './authenticator.factor.repository.js';
+import { type AuthenticatorFactor, AuthenticatorFactorRepository } from './authenticator.factor.repository.js';
 import { httpError, unauthorizedError } from '@maroonedsoftware/errors';
 import { EncryptionProvider } from '@maroonedsoftware/encryption';
 import { DateTime, Duration } from 'luxon';
@@ -12,6 +12,10 @@ import crypto from 'node:crypto';
 const DEFAULT_MAX_VALIDATION_ATTEMPTS = 5;
 /** Default sliding window over which failed validation attempts are counted. */
 const DEFAULT_VALIDATION_ATTEMPT_WINDOW = Duration.fromDurationLike({ minutes: 5 });
+/** Counter/period steps either side of the current one that {@link OtpProvider.validate} accepts. */
+const DEFAULT_VALIDATION_DRIFT_WINDOW = 1;
+/** TOTP period assumed when a factor does not carry one, matching {@link defaultOtpOptions}. */
+const DEFAULT_TOTP_PERIOD_SECONDS = 30;
 
 /**
  * Configuration options for {@link AuthenticatorFactorService}.
@@ -84,6 +88,10 @@ export class AuthenticatorFactorService {
 
   private getAttemptKey(actorId: string, factorId: string) {
     return `authenticator_factor_attempts_${actorId}_${factorId}`;
+  }
+
+  private getConsumedKey(actorId: string, factorId: string, counter: number) {
+    return `authenticator_factor_consumed_${actorId}_${factorId}_${counter}`;
   }
 
   private async cacheRegistration(payload: RegistrationPayload, expiration: Duration) {
@@ -250,8 +258,13 @@ export class AuthenticatorFactorService {
    * attempts are blocked with a 429 until the window elapses; a successful
    * validation clears the counter.
    *
+   * A code can only be used once. HOTP factors have their stored `counter` advanced
+   * past the step that matched; TOTP factors record the consumed step in cache for
+   * the length of the drift window, so a code replayed while it would still
+   * validate is rejected as invalid.
+   *
    * @returns The verified {@link AuthenticatorFactor}.
-   * @throws HTTP 401 when the factor does not exist, is inactive, or the code is invalid.
+   * @throws HTTP 401 when the factor does not exist, is inactive, or the code is invalid or already used.
    * @throws HTTP 429 when too many failed attempts have been made within the window.
    */
   async validateFactor(actorId: string, factorId: string, code: string) {
@@ -271,15 +284,43 @@ export class AuthenticatorFactorService {
 
     const secret = this.encryptionProvider.decrypt(factor.secretHash);
 
-    if (!this.otpProvider.validate(code, secret, factor)) {
+    const matchedCounter = this.otpProvider.validateWithCounter(code, secret, factor);
+    if (matchedCounter === undefined) {
       const window = this.options.validationAttemptWindow ?? DEFAULT_VALIDATION_ATTEMPT_WINDOW;
       await this.cache.set(attemptKey, String(attempts + 1), window);
       throw unauthorizedError('Bearer error="invalid_code"');
     }
 
+    if (factor.type === 'hotp') {
+      // Advance past the step that just matched so the same code cannot be
+      // presented again. Without this an HOTP code stays valid indefinitely.
+      await this.authenticatorFactorRepository.updateFactorCounter(actorId, factorId, matchedCounter + 1);
+    } else {
+      // TOTP counters come from the clock, so replay is bounded by a consumed-step
+      // marker instead. `add` is set-if-absent, so a concurrent second use of the
+      // same code loses the race and is rejected.
+      const consumedKey = this.getConsumedKey(actorId, factorId, matchedCounter);
+      const claimed = await this.cache.add(consumedKey, '1', { ttl: this.getConsumedTtl(factor) });
+      if (!claimed) {
+        const window = this.options.validationAttemptWindow ?? DEFAULT_VALIDATION_ATTEMPT_WINDOW;
+        await this.cache.set(attemptKey, String(attempts + 1), window);
+        throw unauthorizedError('Bearer error="invalid_code"');
+      }
+    }
+
     await this.cache.delete(attemptKey);
 
     return factor;
+  }
+
+  /**
+   * How long a consumed TOTP step is remembered. Covers the matched step plus the
+   * drift window either side of it, so a code cannot be replayed for as long as it
+   * would otherwise still validate.
+   */
+  private getConsumedTtl(factor: AuthenticatorFactor) {
+    const periodSeconds = factor.periodSeconds ?? DEFAULT_TOTP_PERIOD_SECONDS;
+    return Duration.fromObject({ seconds: periodSeconds * (DEFAULT_VALIDATION_DRIFT_WINDOW * 2 + 1) });
   }
 
   /** Retrieve an authenticator factor by id, scoped to the owning actor. Returns `undefined` when no match exists. */

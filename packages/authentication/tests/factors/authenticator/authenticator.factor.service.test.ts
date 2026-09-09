@@ -17,6 +17,7 @@ const makeCacheProvider = () =>
     get: vi.fn().mockResolvedValue(null),
     set: vi.fn().mockResolvedValue(undefined),
     update: vi.fn().mockResolvedValue(undefined),
+    add: vi.fn().mockResolvedValue(true),
     delete: vi.fn().mockResolvedValue(null),
   }) as unknown as CacheProvider;
 
@@ -31,6 +32,11 @@ const makeStatefulCache = (initial: Record<string, string> = {}) => {
     update: vi.fn(async (key: string, value: string) => {
       store.set(key, value);
     }),
+    add: vi.fn(async (key: string, value: string) => {
+      if (store.has(key)) return false;
+      store.set(key, value);
+      return true;
+    }),
     delete: vi.fn(async (key: string) => {
       const existed = store.has(key);
       store.delete(key);
@@ -44,6 +50,7 @@ const makeOtpProvider = () =>
     createSecret: vi.fn().mockReturnValue('TESTSECRET'),
     generate: vi.fn().mockReturnValue('123456'),
     validate: vi.fn().mockReturnValue(true),
+    validateWithCounter: vi.fn().mockReturnValue(0),
     generateURI: vi.fn().mockReturnValue('otpauth://totp/Example:actor-1?secret=TESTSECRET'),
   }) as unknown as OtpProvider;
 
@@ -58,6 +65,7 @@ const makeRepository = () =>
     createFactor: vi.fn(),
     getFactor: vi.fn(),
     deleteFactor: vi.fn(),
+    updateFactorCounter: vi.fn(),
   }) as unknown as AuthenticatorFactorRepository;
 
 const makeAuthenticatorFactor = (overrides: Partial<AuthenticatorFactor> = {}): AuthenticatorFactor => ({
@@ -312,7 +320,7 @@ describe('AuthenticatorFactorService', () => {
 
     it('throws 401 when the OTP code is invalid', async () => {
       repo.getFactor = vi.fn().mockResolvedValue(makeAuthenticatorFactor());
-      vi.mocked(otpProvider.validate).mockReturnValue(false);
+      vi.mocked(otpProvider.validateWithCounter).mockReturnValue(undefined);
       await expect(service.validateFactor('actor-1', 'factor-1', 'wrong')).rejects.toMatchObject({ statusCode: 401 });
     });
 
@@ -326,7 +334,7 @@ describe('AuthenticatorFactorService', () => {
       const factor = makeAuthenticatorFactor();
       repo.getFactor = vi.fn().mockResolvedValue(factor);
       await service.validateFactor('actor-1', 'factor-1', '123456');
-      expect(otpProvider.validate).toHaveBeenCalledWith('123456', 'TESTSECRET', factor);
+      expect(otpProvider.validateWithCounter).toHaveBeenCalledWith('123456', 'TESTSECRET', factor);
     });
 
     it('returns the verified factor for a valid code', async () => {
@@ -339,7 +347,7 @@ describe('AuthenticatorFactorService', () => {
       const statefulCache = makeStatefulCache();
       service = new AuthenticatorFactorService(makeOptions(), otpProvider, repo, encryptionProvider, statefulCache);
       repo.getFactor = vi.fn().mockResolvedValue(makeAuthenticatorFactor());
-      vi.mocked(otpProvider.validate).mockReturnValue(false);
+      vi.mocked(otpProvider.validateWithCounter).mockReturnValue(undefined);
 
       await expect(service.validateFactor('actor-1', 'factor-1', 'wrong')).rejects.toMatchObject({ statusCode: 401 });
 
@@ -350,7 +358,7 @@ describe('AuthenticatorFactorService', () => {
       const statefulCache = makeStatefulCache({ 'authenticator_factor_attempts_actor-1_factor-1': '2' });
       service = new AuthenticatorFactorService(makeOptions(), otpProvider, repo, encryptionProvider, statefulCache);
       repo.getFactor = vi.fn().mockResolvedValue(makeAuthenticatorFactor());
-      vi.mocked(otpProvider.validate).mockReturnValue(true);
+      vi.mocked(otpProvider.validateWithCounter).mockReturnValue(0);
 
       await service.validateFactor('actor-1', 'factor-1', '123456');
 
@@ -368,7 +376,7 @@ describe('AuthenticatorFactorService', () => {
         statefulCache,
       );
       repo.getFactor = vi.fn().mockResolvedValue(makeAuthenticatorFactor());
-      vi.mocked(otpProvider.validate).mockReturnValue(false);
+      vi.mocked(otpProvider.validateWithCounter).mockReturnValue(undefined);
 
       // 5 failed attempts are allowed, each returning an invalid-code 401.
       for (let i = 0; i < 5; i++) {
@@ -376,8 +384,73 @@ describe('AuthenticatorFactorService', () => {
       }
 
       // The 6th attempt is blocked with a 429 — even a valid code cannot get through.
-      vi.mocked(otpProvider.validate).mockReturnValue(true);
+      vi.mocked(otpProvider.validateWithCounter).mockReturnValue(0);
       await expect(service.validateFactor('actor-1', 'factor-1', '123456')).rejects.toMatchObject({ statusCode: 429 });
+    });
+
+    it('advances a hotp factor past the counter that matched', async () => {
+      repo.getFactor = vi.fn().mockResolvedValue(makeAuthenticatorFactor({ type: 'hotp', counter: 7 }));
+      vi.mocked(otpProvider.validateWithCounter).mockReturnValue(8);
+
+      await service.validateFactor('actor-1', 'factor-1', '123456');
+
+      expect(repo.updateFactorCounter).toHaveBeenCalledWith('actor-1', 'factor-1', 9);
+    });
+
+    it('rejects a hotp code presented a second time', async () => {
+      // A stored counter that never moves is what made replay possible; the repository
+      // is the source of truth, so drive it from what updateFactorCounter recorded.
+      let stored = 7;
+      repo.getFactor = vi.fn(async () => makeAuthenticatorFactor({ type: 'hotp', counter: stored }));
+      repo.updateFactorCounter = vi.fn(async (_actorId: string, _factorId: string, counter: number) => {
+        stored = counter;
+      });
+      vi.mocked(otpProvider.validateWithCounter).mockImplementation((_otp, _secret, options) =>
+        (options as { counter: number }).counter === 7 ? 7 : undefined,
+      );
+
+      await service.validateFactor('actor-1', 'factor-1', '123456');
+      await expect(service.validateFactor('actor-1', 'factor-1', '123456')).rejects.toMatchObject({ statusCode: 401 });
+    });
+
+    it('does not touch the stored counter for a totp factor', async () => {
+      repo.getFactor = vi.fn().mockResolvedValue(makeAuthenticatorFactor({ type: 'totp' }));
+      vi.mocked(otpProvider.validateWithCounter).mockReturnValue(58000000);
+
+      await service.validateFactor('actor-1', 'factor-1', '123456');
+
+      expect(repo.updateFactorCounter).not.toHaveBeenCalled();
+    });
+
+    it('rejects a totp code replayed within its drift window', async () => {
+      const statefulCache = makeStatefulCache();
+      service = new AuthenticatorFactorService(makeOptions(), otpProvider, repo, encryptionProvider, statefulCache);
+      repo.getFactor = vi.fn().mockResolvedValue(makeAuthenticatorFactor({ type: 'totp' }));
+      vi.mocked(otpProvider.validateWithCounter).mockReturnValue(58000000);
+
+      await expect(service.validateFactor('actor-1', 'factor-1', '123456')).resolves.toBeDefined();
+      await expect(service.validateFactor('actor-1', 'factor-1', '123456')).rejects.toMatchObject({ statusCode: 401 });
+    });
+
+    it('marks the consumed totp step under a key scoped to the actor, factor, and step', async () => {
+      const statefulCache = makeStatefulCache();
+      service = new AuthenticatorFactorService(makeOptions(), otpProvider, repo, encryptionProvider, statefulCache);
+      repo.getFactor = vi.fn().mockResolvedValue(makeAuthenticatorFactor({ type: 'totp' }));
+      vi.mocked(otpProvider.validateWithCounter).mockReturnValue(58000000);
+
+      await service.validateFactor('actor-1', 'factor-1', '123456');
+
+      expect(statefulCache.add).toHaveBeenCalledWith('authenticator_factor_consumed_actor-1_factor-1_58000000', '1', expect.anything());
+    });
+
+    it('still accepts a different totp step after one has been consumed', async () => {
+      const statefulCache = makeStatefulCache();
+      service = new AuthenticatorFactorService(makeOptions(), otpProvider, repo, encryptionProvider, statefulCache);
+      repo.getFactor = vi.fn().mockResolvedValue(makeAuthenticatorFactor({ type: 'totp' }));
+      vi.mocked(otpProvider.validateWithCounter).mockReturnValueOnce(58000000).mockReturnValueOnce(58000001);
+
+      await expect(service.validateFactor('actor-1', 'factor-1', '123456')).resolves.toBeDefined();
+      await expect(service.validateFactor('actor-1', 'factor-1', '654321')).resolves.toBeDefined();
     });
   });
 
