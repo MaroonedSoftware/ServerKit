@@ -107,8 +107,18 @@ export class EmailFactorService {
     return response ? (JSON.parse(response) as IssuePayload) : undefined;
   }
 
-  private async lookupChallengeByActorAndFactor(actorId: string, factorId: string) {
-    const challengeId = await this.cache.get(this.getChallengeKey(`${actorId}_${factorId}`));
+  /**
+   * Cache key of the pending-challenge slot for one actor+factor+method triple.
+   *
+   * Each verification method gets its own slot, so a pending OTP and a pending
+   * magic link for the same factor never displace or shadow one another.
+   */
+  private getChallengeSlotKey(actorId: string, factorId: string, verificationMethod: 'code' | 'magiclink') {
+    return this.getChallengeKey(`${actorId}_${factorId}_${verificationMethod}`);
+  }
+
+  private async lookupChallengeByActorAndFactor(actorId: string, factorId: string, verificationMethod: 'code' | 'magiclink') {
+    const challengeId = await this.cache.get(this.getChallengeSlotKey(actorId, factorId, verificationMethod));
     return challengeId ? await this.lookupChallenge(challengeId) : undefined;
   }
 
@@ -116,7 +126,7 @@ export class EmailFactorService {
     const challengeId = crypto.randomBytes(32).toString('base64url');
     payload.id = challengeId;
     await this.cache.set(this.getChallengeKey(challengeId), JSON.stringify(payload), expiration);
-    await this.cache.set(this.getChallengeKey(`${payload.actorId}_${payload.factorId}`), challengeId, expiration);
+    await this.cache.set(this.getChallengeSlotKey(payload.actorId, payload.factorId, payload.verificationMethod), challengeId, expiration);
     return challengeId;
   }
 
@@ -305,10 +315,13 @@ export class EmailFactorService {
    * The caller is responsible for sending the `code` to the `email` address returned.
    * Complete challenge by calling {@link verifyEmailChallenge}.
    *
-   * Idempotent: if a pending challenge is already cached for this
-   * actor+factor pair, the existing `challengeId` and `code` are returned
-   * and `alreadyIssued` is set to `true`. Use this flag to suppress duplicate
-   * "we just emailed you" notifications.
+   * Idempotent **per verification method**: if a pending challenge is already
+   * cached for this actor+factor+`issueMethod` triple, the existing `challengeId`
+   * and `code` are returned and `alreadyIssued` is set to `true`. Use this flag to
+   * suppress duplicate "we just emailed you" notifications.
+   *
+   * Each method has its own slot, so an OTP and a magic link can be pending for the
+   * same factor at once, and asking for a magic link never returns a cached OTP.
    *
    * @param actorId            - The actor that owns the factor.
    * @param factorId           - The id of the email factor to verify against.
@@ -327,7 +340,7 @@ export class EmailFactorService {
     }
     const email = factor.value;
 
-    const existingChallenge = await this.lookupChallengeByActorAndFactor(actorId, factorId);
+    const existingChallenge = await this.lookupChallengeByActorAndFactor(actorId, factorId, issueMethod);
     if (existingChallenge) {
       return {
         email,
@@ -352,8 +365,9 @@ export class EmailFactorService {
   /**
    * Complete an email challenge.
    *
-   * On success the cached challenge entries (under both the challenge id
-   * and the actor+factor pair) are deleted so the code/token cannot be replayed.
+   * On success the cached challenge entries (under both the challenge id and the
+   * actor+factor+method slot) are deleted so the code/token cannot be replayed. A
+   * pending challenge for the *other* method on the same factor is left untouched.
    *
    * The factor is re-loaded and re-checked for `active = true` before the code
    * is verified, so a factor deactivated between {@link issueEmailChallenge}
@@ -361,15 +375,27 @@ export class EmailFactorService {
    *
    * @param challengeId - The challenge reference returned by {@link issueEmailChallenge}.
    * @param code           - The code or magic link token submitted by the user.
+   * @param method         - Optional expected verification method. When supplied, a
+   *   challenge issued under the other method is rejected as if it did not exist, so
+   *   a route that only serves one flow (a magic link callback, say) cannot be used to
+   *   guess at the other's code. Omit it to accept whichever method the challenge was
+   *   issued under.
    * @returns The verified {@link EmailFactor}.
-   * @throws HTTP 404 when the challenge has expired or does not exist.
+   * @throws HTTP 404 when the challenge has expired, does not exist, or was issued
+   *   under a verification method other than `method`.
    * @throws HTTP 401 (`WWW-Authenticate: Bearer error="invalid_factor"`) when
    *   the factor has been deleted or deactivated since the challenge was issued.
    * @throws HTTP 400 when the code/token is invalid.
    */
-  async verifyEmailChallenge(challengeId: string, code: string) {
+  async verifyEmailChallenge(challengeId: string, code: string, method?: 'code' | 'magiclink') {
     const payload = await this.lookupChallenge(challengeId);
     if (!payload) {
+      throw httpError(404).withDetails({ challengeId: 'not found' });
+    }
+
+    // A method mismatch is reported as a miss, and checked before the factor lookup and the
+    // code check, so a cross-method probe neither burns an attempt nor reveals factor state.
+    if (method && payload.verificationMethod !== method) {
       throw httpError(404).withDetails({ challengeId: 'not found' });
     }
 
@@ -386,7 +412,7 @@ export class EmailFactorService {
     }
 
     await this.cache.delete(this.getChallengeKey(challengeId));
-    await this.cache.delete(this.getChallengeKey(`${payload.actorId}_${payload.factorId}`));
+    await this.cache.delete(this.getChallengeSlotKey(payload.actorId, payload.factorId, payload.verificationMethod));
 
     return factor;
   }
@@ -406,7 +432,7 @@ export class EmailFactorService {
 
     if (attempts >= maxAttempts) {
       await this.cache.delete(this.getChallengeKey(challengeId));
-      await this.cache.delete(this.getChallengeKey(`${payload.actorId}_${payload.factorId}`));
+      await this.cache.delete(this.getChallengeSlotKey(payload.actorId, payload.factorId, payload.verificationMethod));
       throw httpError(429).withDetails({ code: 'too many attempts' });
     }
 

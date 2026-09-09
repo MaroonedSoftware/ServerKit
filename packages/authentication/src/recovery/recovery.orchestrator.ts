@@ -272,7 +272,8 @@ export class RecoveryOrchestrator {
    * recovery challenge is redeemed (single-use) and a recovery session is
    * minted whose `grantedActions` are derived from the original `reason`.
    *
-   * @throws HTTP 404 when the recovery challenge has expired or does not exist.
+   * @throws HTTP 404 when the recovery challenge has expired or does not exist, or when an
+   *   email proof carries an `issueMethod` the underlying channel challenge was not issued under.
    * @throws HTTP 400 when the proof's channel doesn't match the selected channel.
    * @throws Whatever the per-factor `verify*` call throws when the proof is invalid.
    */
@@ -311,7 +312,7 @@ export class RecoveryOrchestrator {
   private async verifyProof(actorId: string, proof: RecoveryProof): Promise<{ channel: RecoveryChannel; methodId?: string }> {
     switch (proof.channel) {
       case 'email': {
-        const factor = await this.emailFactorService.verifyEmailChallenge(proof.channelChallengeId, proof.code);
+        const factor = await this.emailFactorService.verifyEmailChallenge(proof.channelChallengeId, proof.code, proof.issueMethod);
         return { channel: 'email', methodId: factor.id };
       }
       case 'phone': {

@@ -130,6 +130,16 @@ export type FactorChallengeStartResponse =
  */
 export type FactorChallengeProof =
   | { method: 'phone'; challengeId: string; code: string }
-  | { method: 'email'; challengeId: string; code: string }
+  | {
+      method: 'email';
+      challengeId: string;
+      code: string;
+      /**
+       * Verification method the challenge was expected to be issued under. When set,
+       * a challenge issued under the other method is rejected as not found, so a route
+       * serving only one flow cannot redeem the other's challenge.
+       */
+      issueMethod?: 'code' | 'magiclink';
+    }
   | { method: 'authenticator'; methodId: string; code: string }
   | { method: 'fido'; challengeId: string; credential: unknown };

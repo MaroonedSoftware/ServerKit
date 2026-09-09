@@ -100,7 +100,7 @@ class) and an abstract `<Name>FactorRepository` you implement.
 | Factor          | Service                      | Repository                      | Notes                                                                                                                             |
 | --------------- | ---------------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | Password        | `PasswordFactorService`      | `PasswordFactorRepository`      | Types: `PasswordFactor`, `PasswordValue`.                                                                                         |
-| Email           | `EmailFactorService`         | `EmailFactorRepository`         | OTP and magic link. Type: `EmailFactor`.                                                                                          |
+| Email           | `EmailFactorService`         | `EmailFactorRepository`         | OTP and magic link, one pending challenge slot each. Type: `EmailFactor`.                                                         |
 | Phone           | `PhoneFactorService`         | `PhoneFactorRepository`         | OTP. Type: `PhoneFactor`.                                                                                                         |
 | Authenticator   | `AuthenticatorFactorService` | `AuthenticatorFactorRepository` | TOTP/HOTP. Types: `AuthenticatorFactor`, `AuthenticatorFactorOptions`.                                                            |
 | FIDO / WebAuthn | `FidoFactorService`          | `FidoFactorRepository`          | Types: `FidoFactor`, `PublicKeyCredential*`, `AuthenticatorTransport`, `RegisterFidoFactorOptions`, `AuthorizeFidoFactorOptions`. |
@@ -269,6 +269,12 @@ const session = await sessions.createSession(completed.actor.id, claims, complet
   is genuinely globally unique (email, OIDC `sub`, FIDO credential id) — see Gotchas.
 - The orchestrators do **not** deliver codes. `issueFactorChallenge` returns the code and recipient
   for `phone` and `email`; sending it via SMS or email is yours.
+- **An email factor holds one pending challenge slot per verification method.** `alreadyIssued` is
+  answered per method, so a pending OTP never suppresses a magic link send (or the reverse), and
+  redeeming one method leaves the other's challenge pending. Pass the expected method as the third
+  argument to `verifyEmailChallenge` (or as `issueMethod` on an email `FactorChallengeProof` /
+  `RecoveryProof`) on any route that serves only one flow: a mismatch is refused with a 404 before
+  the code is checked, so a magic link callback cannot be used to guess at an OTP.
 - The orchestrators do **not** mint sessions. Call `createSession` / `issueTokenForSession` yourself
   from the returned data.
 - **`RecoveryOrchestrator` does not invalidate existing sessions.** After `resetPassword` or

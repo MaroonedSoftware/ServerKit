@@ -49,6 +49,8 @@ const actor = { kind: 'user', actorId: 'user-7' };
 
 const phoneEligible = [{ method: 'phone' as const, methodId: 'phone-1', kind: 'possession' as const }];
 
+const emailEligible = [{ method: 'email' as const, methodId: 'email-1', kind: 'possession' as const }];
+
 const makeOrchestrator = (overrides: { policy: PolicyResult }) => {
   const cache = makeCache();
   const challengeService = new MfaChallengeService(new MfaChallengeServiceOptions(), cache);
@@ -83,7 +85,7 @@ const makeOrchestrator = (overrides: { policy: PolicyResult }) => {
 
   const orchestrator = new MfaOrchestrator(challengeService, policyService, phoneFactor, fidoFactor, authenticatorFactor, emailFactor);
 
-  return { orchestrator, challengeService, phoneFactor, policyService };
+  return { orchestrator, challengeService, phoneFactor, emailFactor, policyService };
 };
 
 describe('MfaOrchestrator', () => {
@@ -318,6 +320,50 @@ describe('MfaOrchestrator', () => {
       expect(completed.primaryFactor).toMatchObject({ method: 'password', methodId: 'pw-1', kind: 'knowledge' });
       expect(completed.secondaryFactor).toMatchObject({ method: 'phone', methodId: 'phone-1', kind: 'possession' });
       expect(phoneFactor.verifyPhoneChallenge).toHaveBeenCalledWith('phone-chal-1', '123456');
+    });
+
+    it("forwards an email proof's issueMethod to the email factor service", async () => {
+      const { orchestrator, emailFactor } = makeOrchestrator({
+        policy: { allowed: false, reason: 'mfa_required', details: { eligibleFactors: emailEligible } },
+      });
+      vi.mocked(emailFactor.verifyEmailChallenge).mockResolvedValue({
+        id: 'email-1',
+        actorId: actor.actorId,
+        active: true,
+        value: 'user@example.com',
+      });
+
+      const issued = await orchestrator.issueOrChallenge(actor, primaryFactor, emailEligible);
+      if (issued.kind !== 'challenge') throw new Error('expected a challenge');
+
+      const completed = await orchestrator.completeMfa(issued.challenge.challengeId, {
+        method: 'email',
+        challengeId: 'email-chal-1',
+        code: 'the-magic-token',
+        issueMethod: 'magiclink',
+      });
+
+      expect(completed.secondaryFactor).toMatchObject({ method: 'email', methodId: 'email-1', kind: 'possession' });
+      expect(emailFactor.verifyEmailChallenge).toHaveBeenCalledWith('email-chal-1', 'the-magic-token', 'magiclink');
+    });
+
+    it('leaves the expected method unset when an email proof omits issueMethod', async () => {
+      const { orchestrator, emailFactor } = makeOrchestrator({
+        policy: { allowed: false, reason: 'mfa_required', details: { eligibleFactors: emailEligible } },
+      });
+      vi.mocked(emailFactor.verifyEmailChallenge).mockResolvedValue({
+        id: 'email-1',
+        actorId: actor.actorId,
+        active: true,
+        value: 'user@example.com',
+      });
+
+      const issued = await orchestrator.issueOrChallenge(actor, primaryFactor, emailEligible);
+      if (issued.kind !== 'challenge') throw new Error('expected a challenge');
+
+      await orchestrator.completeMfa(issued.challenge.challengeId, { method: 'email', challengeId: 'email-chal-1', code: '123456' });
+
+      expect(emailFactor.verifyEmailChallenge).toHaveBeenCalledWith('email-chal-1', '123456', undefined);
     });
   });
 });
