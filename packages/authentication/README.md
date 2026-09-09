@@ -1141,6 +1141,88 @@ not turn every request into a database write.
 
 ---
 
+### Audit logging
+
+Bind one `AuditSink` and every security-relevant operation in the package reports itself: login
+success and failure, credential changes, and privilege changes.
+
+```typescript
+import { AuditRecorder, AuditSink, type AuthenticationAuditEvent } from '@maroonedsoftware/authentication';
+
+@Injectable()
+class DatabaseAuditSink extends AuditSink {
+  constructor(
+    private readonly rows: AuditRepository,
+    private readonly ctx: ServerKitContext,
+  ) {
+    super();
+  }
+
+  async record(event: AuthenticationAuditEvent): Promise<void> {
+    await this.rows.insert({
+      ...event,
+      // The package cannot reach a request, so the sink supplies this.
+      context: { correlationId: this.ctx.correlationId, ipAddress: this.ctx.ip },
+    });
+  }
+}
+
+registry.register(AuditSink).useClass(DatabaseAuditSink).asSingleton();
+registry.register(AuditRecorder).useClass(AuditRecorder).asSingleton();
+```
+
+Every event carries the same envelope: a dotted `type`, a `category`, an `outcome`, an `occurredAt`,
+and an `actorId` wherever the package knows one. Switch on `type` with a `default` branch, since a
+minor release may add a member.
+
+**Domains and what they cover**
+
+| Domain            | Covers                                                                      |
+| ----------------- | --------------------------------------------------------------------------- |
+| `session.*`       | Creation, update, rotation, refresh, revocation, replay, validation failure |
+| `password.*`      | Verification outcomes, credential changes, lockout cleared                  |
+| `email.*`         | Challenge issue, verification, failure, lockout, factor lifecycle           |
+| `phone.*`         | The SMS counterpart to `email.*`                                            |
+| `authenticator.*` | Registration, enrolment, validation, replay, removal                        |
+| `fido.*`          | Registration, enrolment, assertion outcomes, removal                        |
+| `oidc.*`          | Authorization outcomes, sign-in, account linking, factor lifecycle          |
+| `oauth2.*`        | The non-OIDC counterpart to `oidc.*`                                        |
+| `mfa.*`           | Gate decisions, per-factor challenges, completion outcomes                  |
+| `recovery.*`      | Initiation, channel verification, the credential change, session revocation |
+| `api_key.*`       | Issue, authentication, rejection, rotation, revocation                      |
+
+**Events worth alerting on**
+
+Most events are ordinary traffic. These are not:
+
+| Event                                                  | Why it matters                                                     |
+| ------------------------------------------------------ | ------------------------------------------------------------------ |
+| `session.refresh_reuse_detected`                       | A refresh token was presented twice; the family is already revoked |
+| `password.verify.rate_limited`                         | The lockout signal. Alert on the rate, not on one occurrence       |
+| `authenticator.validation.replayed`                    | A correct code reused. Interception rather than a typo             |
+| `recovery.channel.rejected` (`sub_challenge_mismatch`) | A proof from one account used on another's challenge               |
+| `recovery.initiated` with no `actorId`                 | An identifier that matched nobody. A run of these is enumeration   |
+| `recovery.sessions_not_revoked`                        | A misconfiguration: prior tokens survived a password reset         |
+| `mfa.failed` (`post_verification_mismatch`)            | A defence-in-depth trip, so a pre-check was bypassed               |
+| `oidc.linked.auto` / `oauth2.linked.auto`              | An account was joined on a verified-email match alone              |
+| `fido.verification.failed` (`missing_counter`)         | Replay protection is off for that credential                       |
+
+**Failure handling.** A sink that throws is caught, logged as `audit.sink_failed`, and the operation
+continues, so an audit outage is not a login outage. Alert on that event or the outage is invisible.
+Pass `new AuditOptions(true)` for strict mode, where a sink failure aborts the operation instead.
+
+**No secret ever reaches an event.** No password, hash, one-time code, magic-link token, TOTP secret,
+provisioning URI, QR code, access token, or refresh token. Events are emitted at the decision point
+rather than from a catch block, so `outcome: 'failure'` always means a credential verdict and never
+an infrastructure fault.
+
+`AuthenticationSessionHooks` still fires and is deprecated in favour of the sink, which covers the
+whole package rather than sessions alone and attributes an `actorId` on validation failures that the
+hook cannot. `RecoveryOrchestratorHooks` is **not** deprecated: it is behavioural rather than
+observational, since `onRebindMfaFactor` is where your application mutates the factor.
+
+---
+
 ## API Reference
 
 ### `AuthenticationSession`

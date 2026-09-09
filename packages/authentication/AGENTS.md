@@ -394,6 +394,10 @@ const session = await sessions.createSession(completed.actor.id, claims, complet
 - **A challenge event never carries its code.** The email, phone, and authenticator services all
   return a code or token to their caller for delivery. None of that reaches an event, and the
   registration URI and QR code carry the TOTP secret too.
+- **`oidc.linked.auto` / `oauth2.linked.auto` are the takeover-adjacent path.** The package links a
+  provider identity to an existing account on a verified-email match alone, so anyone who can get an
+  identity provider to assert an address gains that account. Recorded with provider, subject, and
+  email so the join can be reviewed.
 - **The package never fills `AuditEventContext`.** It sits at L2 alongside the HTTP adapters, so it
   cannot reach a request. Fill `correlationId`, `ipAddress`, and the rest in your own request-scoped
   sink.
@@ -450,8 +454,8 @@ src/
                                   support.verification.code.service
   apikey/                         types, api.key.token (codec), api.key.repository,
                                   api.key.service, api.key.authentication.handler
-  audit/                          types, audit.sink, audit.recorder, audit.event,
-                                  session/api.key/password/factor/mfa/recovery .audit.event
+  audit/                          types, audit.sink, audit.recorder, audit.event, and one
+                                  <domain>.audit.event.ts per emitting domain
   index.ts                        Barrel
 ```
 

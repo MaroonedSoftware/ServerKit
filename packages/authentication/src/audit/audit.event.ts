@@ -1,5 +1,6 @@
 import type { ApiKeyAuditEvent } from './api.key.audit.event.js';
 import type { AuthenticatorAuditEvent, EmailAuditEvent, PhoneAuditEvent } from './factor.audit.event.js';
+import type { FederatedAuditEvent, FidoAuditEvent } from './federated.audit.event.js';
 import type { MfaAuditEvent } from './mfa.audit.event.js';
 import type { PasswordAuditEvent } from './password.audit.event.js';
 import type { RecoveryAuditEvent } from './recovery.audit.event.js';
@@ -19,6 +20,8 @@ export type AuthenticationAuditEvent =
   | EmailAuditEvent
   | PhoneAuditEvent
   | AuthenticatorAuditEvent
+  | FidoAuditEvent
+  | FederatedAuditEvent
   | MfaAuditEvent
   | RecoveryAuditEvent;
 

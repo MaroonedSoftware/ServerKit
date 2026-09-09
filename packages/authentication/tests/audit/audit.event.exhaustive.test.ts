@@ -79,6 +79,33 @@ const categoryFor = (type: AuthenticationAuditEvent['type']): AuditEventCategory
     case 'authenticator.factor.deleted':
       return 'privilege';
 
+    case 'fido.challenge.issued':
+    case 'fido.verified':
+    case 'fido.verification.failed':
+    case 'oidc.authorization.begun':
+    case 'oidc.signed_in':
+    case 'oidc.new_user':
+    case 'oidc.authorization.failed':
+    case 'oauth2.authorization.begun':
+    case 'oauth2.signed_in':
+    case 'oauth2.new_user':
+    case 'oauth2.authorization.failed':
+      return 'login';
+    case 'fido.registered':
+    case 'oidc.factor.created':
+    case 'oauth2.factor.created':
+      return 'credential';
+    case 'fido.enrolled':
+    case 'fido.factor.deleted':
+    case 'oidc.linked.explicit':
+    case 'oidc.linked.auto':
+    case 'oidc.link.rejected':
+    case 'oidc.factor.deleted':
+    case 'oauth2.linked.explicit':
+    case 'oauth2.linked.auto':
+    case 'oauth2.factor.deleted':
+      return 'privilege';
+
     case 'recovery.initiated':
     case 'recovery.policy_denied':
     case 'recovery.channel.issued':

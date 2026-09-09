@@ -1,4 +1,6 @@
 import { Injectable } from 'injectkit';
+import { AuditRecorder } from '../../audit/audit.recorder.js';
+import type { FidoFailureReason } from '../../audit/federated.audit.event.js';
 import {
   AssertionResult,
   AttestationResult,
@@ -225,6 +227,8 @@ export class FidoFactorService {
     private readonly options: FidoFactorServiceOptions,
     private readonly fidoFactorRepository: FidoFactorRepository,
     private readonly cache: CacheProvider,
+    /** Records enrolment and assertion outcomes. Defaulted, so audit is opt-in. */
+    private readonly audit: AuditRecorder = new AuditRecorder(),
   ) {
     this.fido2 = new Fido2Lib({
       // rpId: 'example.com',
@@ -476,6 +480,15 @@ export class FidoFactorService {
       await this.cache.delete(this.getRegistrationKey(registrationId));
       await this.cache.delete(this.getRegistrationKey(actorId));
 
+      // `privilege`: a new credential raises the assurance future sessions reach.
+      await this.audit.record({
+        type: 'fido.enrolled',
+        category: 'privilege',
+        outcome: 'success',
+        actorId,
+        data: { factorId: factor.id },
+      });
+
       return factor;
     } catch (ex) {
       throw unauthorizedError('Bearer error="invalid_credentials"')
@@ -557,6 +570,14 @@ export class FidoFactorService {
 
     const challengeId = await this.cacheChallenge(payload, this.options.timeout);
 
+    await this.audit.record({
+      type: 'fido.challenge.issued',
+      category: 'login',
+      outcome: 'success',
+      actorId,
+      data: { factorId: factorId ?? 'any' },
+    });
+
     return {
       challengeId,
       assertion: {
@@ -598,15 +619,18 @@ export class FidoFactorService {
   async verifyFidoAuthorizationChallenge(challengeId: string, credential: PublicKeyCredentialWithAssertion) {
     const payload = await this.lookupChallenge(challengeId);
     if (!payload) {
+      await this.auditVerificationFailed('challenge_not_found');
       throw httpError(404).withDetails({ challengeId: 'not found' });
     }
 
     const factor = await this.fidoFactorRepository.lookupFactor(payload.actorId, credential.id);
     if (!factor || !factor.active) {
+      await this.auditVerificationFailed('no_active_factor', payload.actorId);
       throw unauthorizedError('Bearer error="invalid_factor"');
     }
 
     if (payload.factorId !== 'any' && factor.id !== payload.factorId) {
+      await this.auditVerificationFailed('credential_not_bound', payload.actorId, factor.id);
       throw unauthorizedError('Bearer error="invalid_factor"');
     }
 
@@ -616,6 +640,9 @@ export class FidoFactorService {
     // defeating replay protection. Treat it as a hard failure rather than
     // silently degrading to "no counter check".
     if (factor.counter == null) {
+      // A data-integrity alarm, not a user error: without a counter the library
+      // accepts any value, so replay protection is silently off for this credential.
+      await this.auditVerificationFailed('missing_counter', payload.actorId, factor.id);
       throw unauthorizedError('Bearer error="invalid_factor"').withInternalDetails({
         message: 'FIDO factor is missing its replay counter',
         factorId: factor.id,
@@ -636,8 +663,17 @@ export class FidoFactorService {
       await this.fidoFactorRepository.updateFactorCounter(payload.actorId, factor.id, result.authnrData.get('counter'));
       await this.cache.delete(this.getChallengeKey(challengeId));
       await this.cache.delete(this.getChallengeKey(`${payload.actorId}_${payload.factorId}`));
+      await this.audit.record({
+        type: 'fido.verified',
+        category: 'login',
+        outcome: 'success',
+        actorId: payload.actorId,
+        data: { factorId: factor.id },
+      });
+
       return factor;
     } catch (ex) {
+      await this.auditVerificationFailed('invalid_assertion', payload.actorId, factor.id);
       throw unauthorizedError('Bearer error="invalid_credentials"')
         .withCause(ex as Error)
         .withInternalDetails({ assertionResult, expectedAssertionResult });
@@ -682,5 +718,17 @@ export class FidoFactorService {
   /** Permanently remove a FIDO factor. */
   async deleteFactor(actorId: string, factorId: string) {
     await this.fidoFactorRepository.deleteFactor(actorId, factorId);
+    await this.audit.record({ type: 'fido.factor.deleted', category: 'privilege', outcome: 'success', actorId, data: { factorId } });
+  }
+
+  /** Record a refused assertion. Never carries the assertion blob or the public key. */
+  private async auditVerificationFailed(reason: FidoFailureReason, actorId?: string, factorId?: string) {
+    await this.audit.record({
+      type: 'fido.verification.failed',
+      category: 'login',
+      outcome: 'failure',
+      ...(actorId === undefined ? {} : { actorId }),
+      data: { reason, ...(factorId === undefined ? {} : { factorId }) },
+    });
   }
 }

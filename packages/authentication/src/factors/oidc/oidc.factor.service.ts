@@ -1,5 +1,7 @@
 import crypto from 'node:crypto';
 import { Injectable } from 'injectkit';
+import { AuditRecorder } from '../../audit/audit.recorder.js';
+import type { FederatedFailureReason } from '../../audit/federated.audit.event.js';
 import { DateTime, Duration } from 'luxon';
 import * as openidClient from 'openid-client';
 import { CacheProvider } from '@maroonedsoftware/cache';
@@ -177,6 +179,8 @@ export class OidcFactorService {
     private readonly encryption: EncryptionProvider,
     private readonly logger: Logger,
     private readonly policyService: PolicyService,
+    /** Records federated sign-in and account-linking outcomes. Defaulted, so audit is opt-in. */
+    private readonly audit: AuditRecorder = new AuditRecorder(),
   ) {}
 
   private getStateKey(state: string) {
@@ -244,6 +248,13 @@ export class OidcFactorService {
 
     await this.cache.set(this.getStateKey(state), JSON.stringify(stored), this.options.stateExpiration);
 
+    await this.audit.record({
+      type: 'oidc.authorization.begun',
+      category: 'login',
+      outcome: 'success',
+      data: { provider: args.provider },
+    });
+
     return { url, state, expiresAt };
   }
 
@@ -271,6 +282,7 @@ export class OidcFactorService {
     const { params } = args;
 
     if (params.error) {
+      await this.auditAuthorizationFailed('provider_error');
       throw httpError(400).withDetails({
         error: params.error,
         ...(params.error_description ? { error_description: params.error_description } : {}),
@@ -279,11 +291,13 @@ export class OidcFactorService {
     }
 
     if (!params.state) {
+      await this.auditAuthorizationFailed('state_invalid');
       throw httpError(400).withDetails({ state: 'missing from callback' });
     }
 
     const stored = await this.lookupState(params.state);
     if (!stored) {
+      await this.auditAuthorizationFailed('state_invalid');
       throw httpError(404).withDetails({ state: 'not found or expired' });
     }
     await this.cache.delete(this.getStateKey(params.state));
@@ -294,6 +308,9 @@ export class OidcFactorService {
     if (params.iss !== undefined) {
       const expectedIssuer = oidcConfig.serverMetadata().issuer;
       if (params.iss !== expectedIssuer) {
+        // RFC 9207 mix-up detection: an attacker splicing one provider's response
+        // onto another provider's flow, not a configuration slip.
+        await this.auditAuthorizationFailed('issuer_mismatch', stored.provider);
         throw httpError(400).withDetails({ iss: 'does not match configured issuer' });
       }
     }
@@ -329,6 +346,7 @@ export class OidcFactorService {
 
     const policyResult = await this.policyService.check('auth.factor.oidc.profile.allowed', { profile });
     if (!policyResult.allowed) {
+      await this.auditAuthorizationFailed('policy_denied', stored.provider, subject);
       throw httpError(403)
         .withDetails({ profile: 'not allowed' })
         .withInternalDetails({ reason: policyResult.reason, details: policyResult.details });
@@ -354,6 +372,14 @@ export class OidcFactorService {
       if (profile.picture && profile.picture !== existing.picture) {
         await this.repo.updatePicture(existing.id, profile.picture);
       }
+      await this.audit.record({
+        type: 'oidc.signed_in',
+        category: 'login',
+        outcome: 'success',
+        actorId: existing.actorId,
+        data: { provider: stored.provider, subject, factorId: existing.id },
+      });
+
       return {
         kind: 'signed-in',
         actorId: existing.actorId,
@@ -366,6 +392,14 @@ export class OidcFactorService {
     // 2. Explicit link to a known actor → create the factor on that actor
     if (stored.intent === 'link') {
       const factor = await this.createFactor(stored.actorId!, profile, refreshToken, refreshTokenExpiresAt);
+      await this.audit.record({
+        type: 'oidc.linked.explicit',
+        category: 'privilege',
+        outcome: 'success',
+        actorId: factor.actorId,
+        data: { provider: stored.provider, subject, actorId: factor.actorId },
+      });
+
       return { kind: 'linked', actorId: factor.actorId, factorId: factor.id, profile, redirectAfter: stored.redirectAfter };
     }
 
@@ -374,6 +408,17 @@ export class OidcFactorService {
       const matchedActorId = await this.emailLookup.findActorByEmail(profile.email);
       if (matchedActorId) {
         const factor = await this.createFactor(matchedActorId, profile, refreshToken, refreshTokenExpiresAt);
+        // The takeover-adjacent path: anyone who can get an IdP to assert a
+        // verified address gains this account. Recorded with provider, subject,
+        // and email so the join can be reviewed after the fact.
+        await this.audit.record({
+          type: 'oidc.linked.auto',
+          category: 'privilege',
+          outcome: 'success',
+          actorId: factor.actorId,
+          data: { provider: stored.provider, subject, ...(profile.email === undefined ? {} : { email: profile.email }) },
+        });
+
         return { kind: 'linked', actorId: factor.actorId, factorId: factor.id, profile, redirectAfter: stored.redirectAfter };
       }
     }
@@ -384,6 +429,13 @@ export class OidcFactorService {
       const matchedActorId = await this.emailLookup.findActorByEmail(profile.email);
       if (matchedActorId) {
         emailConflict = { actorId: matchedActorId, reason: 'unverified-email' };
+        await this.audit.record({
+          type: 'oidc.link.rejected',
+          category: 'privilege',
+          outcome: 'failure',
+          actorId: matchedActorId,
+          data: { provider: stored.provider, subject, reason: 'unverified_email' },
+        });
       }
     }
 
@@ -394,6 +446,13 @@ export class OidcFactorService {
       refreshToken,
       refreshTokenExpiresAt: refreshTokenExpiresAt ? refreshTokenExpiresAt.toUnixInteger() : undefined,
       redirectAfter: stored.redirectAfter,
+    });
+
+    await this.audit.record({
+      type: 'oidc.new_user',
+      category: 'login',
+      outcome: 'success',
+      data: { provider: stored.provider, subject },
     });
 
     return { kind: 'new-user', authorizationId, profile, emailConflict, redirectAfter: stored.redirectAfter };
@@ -414,7 +473,16 @@ export class OidcFactorService {
 
     const refreshTokenExpiresAt = pending.refreshTokenExpiresAt !== undefined ? DateTime.fromSeconds(pending.refreshTokenExpiresAt) : undefined;
 
-    return this.createFactor(actorId, pending.profile, pending.refreshToken, refreshTokenExpiresAt);
+    const factor = await this.createFactor(actorId, pending.profile, pending.refreshToken, refreshTokenExpiresAt);
+    await this.audit.record({
+      type: 'oidc.factor.created',
+      category: 'credential',
+      outcome: 'success',
+      actorId,
+      data: { provider: factor.provider, subject: factor.subject, factorId: factor.id },
+    });
+
+    return factor;
   }
 
   /**
@@ -593,7 +661,18 @@ export class OidcFactorService {
   }
 
   /** Permanently remove an OIDC factor. */
+  /** Record a refused authorization. Never carries a token, code, or verifier. */
+  private async auditAuthorizationFailed(reason: FederatedFailureReason, provider = 'unknown', subject?: string) {
+    await this.audit.record({
+      type: 'oidc.authorization.failed',
+      category: 'login',
+      outcome: 'failure',
+      data: { provider, reason, ...(subject === undefined ? {} : { subject }) },
+    });
+  }
+
   async deleteFactor(actorId: string, factorId: string) {
     await this.repo.deleteFactor(actorId, factorId);
+    await this.audit.record({ type: 'oidc.factor.deleted', category: 'privilege', outcome: 'success', actorId, data: { factorId } });
   }
 }

@@ -1,5 +1,7 @@
 import crypto from 'node:crypto';
 import { Injectable } from 'injectkit';
+import { AuditRecorder } from '../../audit/audit.recorder.js';
+import type { FederatedFailureReason } from '../../audit/federated.audit.event.js';
 import { DateTime, Duration } from 'luxon';
 import { CacheProvider } from '@maroonedsoftware/cache';
 import { EncryptionProvider } from '@maroonedsoftware/encryption';
@@ -107,7 +109,19 @@ export class OAuth2FactorService {
     private readonly encryption: EncryptionProvider,
     private readonly logger: Logger,
     private readonly policyService: PolicyService,
+    /** Records federated sign-in and account-linking outcomes. Defaulted, so audit is opt-in. */
+    private readonly audit: AuditRecorder = new AuditRecorder(),
   ) {}
+
+  /** Record a refused authorization. Never carries a token, code, or verifier. */
+  private async auditAuthorizationFailed(reason: FederatedFailureReason, provider = 'unknown', subject?: string) {
+    await this.audit.record({
+      type: 'oauth2.authorization.failed',
+      category: 'login',
+      outcome: 'failure',
+      data: { provider, reason, ...(subject === undefined ? {} : { subject }) },
+    });
+  }
 
   private getStateKey(state: string) {
     return `oauth2_state_${state}`;
@@ -152,6 +166,13 @@ export class OAuth2FactorService {
 
     await this.cache.set(this.getStateKey(state), JSON.stringify(stored), this.options.stateExpiration);
 
+    await this.audit.record({
+      type: 'oauth2.authorization.begun',
+      category: 'login',
+      outcome: 'success',
+      data: { provider: args.provider },
+    });
+
     return { url, state, expiresAt };
   }
 
@@ -172,6 +193,7 @@ export class OAuth2FactorService {
     const { params } = args;
 
     if (params.error) {
+      await this.auditAuthorizationFailed('provider_error');
       throw httpError(400).withDetails({
         error: params.error,
         ...(params.error_description ? { error_description: params.error_description } : {}),
@@ -180,6 +202,7 @@ export class OAuth2FactorService {
     }
 
     if (!params.state) {
+      await this.auditAuthorizationFailed('state_invalid');
       throw httpError(400).withDetails({ state: 'missing from callback' });
     }
     if (!params.code) {
@@ -188,6 +211,7 @@ export class OAuth2FactorService {
 
     const stored = await this.lookupState(params.state);
     if (!stored) {
+      await this.auditAuthorizationFailed('state_invalid');
       throw httpError(404).withDetails({ state: 'not found or expired' });
     }
     await this.cache.delete(this.getStateKey(params.state));
@@ -209,6 +233,7 @@ export class OAuth2FactorService {
 
     const policyResult = await this.policyService.check('auth.factor.oauth2.profile.allowed', { profile });
     if (!policyResult.allowed) {
+      await this.auditAuthorizationFailed('policy_denied', stored.provider, profile.subject);
       throw httpError(403)
         .withDetails({ profile: 'not allowed' })
         .withInternalDetails({ reason: policyResult.reason, details: policyResult.details });
@@ -234,6 +259,14 @@ export class OAuth2FactorService {
       if (profile.picture && profile.picture !== existing.picture) {
         await this.repo.updatePicture?.(existing.id, profile.picture);
       }
+      await this.audit.record({
+        type: 'oauth2.signed_in',
+        category: 'login',
+        outcome: 'success',
+        actorId: existing.actorId,
+        data: { provider: stored.provider, subject: profile.subject, factorId: existing.id },
+      });
+
       return {
         kind: 'signed-in',
         actorId: existing.actorId,
@@ -246,6 +279,14 @@ export class OAuth2FactorService {
     // 2. Explicit link
     if (stored.intent === 'link') {
       const factor = await this.createFactor(stored.actorId!, profile, refreshToken, refreshTokenExpiresAt);
+      await this.audit.record({
+        type: 'oauth2.linked.explicit',
+        category: 'privilege',
+        outcome: 'success',
+        actorId: factor.actorId,
+        data: { provider: stored.provider, subject: profile.subject, actorId: factor.actorId },
+      });
+
       return { kind: 'linked', actorId: factor.actorId, factorId: factor.id, profile, redirectAfter: stored.redirectAfter };
     }
 
@@ -254,6 +295,17 @@ export class OAuth2FactorService {
       const matchedActorId = await this.emailLookup.findActorByEmail(profile.email);
       if (matchedActorId) {
         const factor = await this.createFactor(matchedActorId, profile, refreshToken, refreshTokenExpiresAt);
+        // The takeover-adjacent path, and worse here than for OIDC: a plain
+        // OAuth 2.0 provider's "verified" claim is whatever its userinfo endpoint
+        // says, with no id_token to bind it.
+        await this.audit.record({
+          type: 'oauth2.linked.auto',
+          category: 'privilege',
+          outcome: 'success',
+          actorId: factor.actorId,
+          data: { provider: stored.provider, subject: profile.subject, ...(profile.email === undefined ? {} : { email: profile.email }) },
+        });
+
         return { kind: 'linked', actorId: factor.actorId, factorId: factor.id, profile, redirectAfter: stored.redirectAfter };
       }
     }
@@ -276,6 +328,13 @@ export class OAuth2FactorService {
       redirectAfter: stored.redirectAfter,
     });
 
+    await this.audit.record({
+      type: 'oauth2.new_user',
+      category: 'login',
+      outcome: 'success',
+      data: { provider: stored.provider, subject: profile.subject },
+    });
+
     return { kind: 'new-user', authorizationId, profile, emailConflict, redirectAfter: stored.redirectAfter };
   }
 
@@ -292,7 +351,16 @@ export class OAuth2FactorService {
 
     const refreshTokenExpiresAt = pending.refreshTokenExpiresAt !== undefined ? DateTime.fromSeconds(pending.refreshTokenExpiresAt) : undefined;
 
-    return this.createFactor(actorId, pending.profile, pending.refreshToken, refreshTokenExpiresAt);
+    const factor = await this.createFactor(actorId, pending.profile, pending.refreshToken, refreshTokenExpiresAt);
+    await this.audit.record({
+      type: 'oauth2.factor.created',
+      category: 'credential',
+      outcome: 'success',
+      actorId,
+      data: { provider: factor.provider, subject: factor.subject, factorId: factor.id },
+    });
+
+    return factor;
   }
 
   /**
@@ -406,5 +474,6 @@ export class OAuth2FactorService {
   /** Permanently remove an OAuth 2.0 factor. */
   async deleteFactor(actorId: string, factorId: string) {
     await this.repo.deleteFactor(actorId, factorId);
+    await this.audit.record({ type: 'oauth2.factor.deleted', category: 'privilege', outcome: 'success', actorId, data: { factorId } });
   }
 }
