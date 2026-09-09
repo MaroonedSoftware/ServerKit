@@ -381,6 +381,44 @@ describe('EmailFactorService', () => {
       const payload = JSON.parse(firstCall![1] as string);
       expect(payload.verificationMethod).toBe('magiclink');
     });
+
+    it('lets an OTP and a magic link challenge coexist for the same factor', async () => {
+      const statefulCache = makeStatefulCache();
+      service = new EmailFactorService(makeOptions(), repo, otpProvider, statefulCache, policyService);
+      repo.getFactor = vi.fn().mockResolvedValue(makeEmailFactor());
+
+      const otp = await service.issueEmailChallenge('actor-1', 'factor-1', 'code');
+      const magiclink = await service.issueEmailChallenge('actor-1', 'factor-1', 'magiclink');
+
+      expect(otp.alreadyIssued).toBe(false);
+      expect(magiclink.alreadyIssued).toBe(false);
+      expect(magiclink.challengeId).not.toBe(otp.challengeId);
+      expect(await statefulCache.get('email_factor_challenge_actor-1_factor-1_code')).toBe(otp.challengeId);
+      expect(await statefulCache.get('email_factor_challenge_actor-1_factor-1_magiclink')).toBe(magiclink.challengeId);
+    });
+
+    it('answers alreadyIssued per method rather than per factor', async () => {
+      const statefulCache = makeStatefulCache();
+      service = new EmailFactorService(makeOptions(), repo, otpProvider, statefulCache, policyService);
+      repo.getFactor = vi.fn().mockResolvedValue(makeEmailFactor());
+
+      const otp = await service.issueEmailChallenge('actor-1', 'factor-1', 'code');
+
+      // A pending OTP must not make a magic link request look already-issued.
+      const magiclink = await service.issueEmailChallenge('actor-1', 'factor-1', 'magiclink');
+      expect(magiclink.alreadyIssued).toBe(false);
+
+      // Re-requesting either method now hits that method's own slot.
+      const otpAgain = await service.issueEmailChallenge('actor-1', 'factor-1', 'code');
+      expect(otpAgain.alreadyIssued).toBe(true);
+      expect(otpAgain.challengeId).toBe(otp.challengeId);
+      expect(otpAgain.code).toBe(otp.code);
+
+      const magiclinkAgain = await service.issueEmailChallenge('actor-1', 'factor-1', 'magiclink');
+      expect(magiclinkAgain.alreadyIssued).toBe(true);
+      expect(magiclinkAgain.challengeId).toBe(magiclink.challengeId);
+      expect(magiclinkAgain.code).toBe(magiclink.code);
+    });
   });
 
   describe('verifyEmailChallenge', () => {
@@ -499,6 +537,104 @@ describe('EmailFactorService', () => {
       // Once invalidated, even the correct code no longer verifies — the challenge is gone.
       vi.mocked(otpProvider.validate).mockReturnValue(true);
       await expect(service.verifyEmailChallenge('chal-id-1', '123456')).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it('refuses a code-method challenge when the caller expects a magiclink', async () => {
+      const payload = makeChallengePayload({ verificationMethod: 'code' });
+      const statefulCache = makeStatefulCache({ 'email_factor_challenge_chal-id-1': JSON.stringify(payload) });
+      service = new EmailFactorService(makeOptions(), repo, otpProvider, statefulCache, policyService);
+      repo.getFactor = vi.fn().mockResolvedValue(makeEmailFactor());
+
+      await expect(service.verifyEmailChallenge('chal-id-1', '123456', 'magiclink')).rejects.toMatchObject({
+        statusCode: 404,
+        details: { challengeId: 'not found' },
+      });
+
+      // The mismatch is rejected before the factor lookup and the code check, so it costs
+      // the caller nothing and reveals nothing: no attempt recorded, challenge still pending.
+      expect(repo.getFactor).not.toHaveBeenCalled();
+      expect(otpProvider.validate).not.toHaveBeenCalled();
+      expect(statefulCache.update).not.toHaveBeenCalled();
+      expect(await statefulCache.get('email_factor_challenge_chal-id-1')).not.toBeNull();
+    });
+
+    it('refuses a magiclink-method challenge when the caller expects a code', async () => {
+      const payload = makeChallengePayload({ verificationMethod: 'magiclink', code: 'the-magic-token' });
+      const statefulCache = makeStatefulCache({ 'email_factor_challenge_chal-id-1': JSON.stringify(payload) });
+      service = new EmailFactorService(makeOptions(), repo, otpProvider, statefulCache, policyService);
+      repo.getFactor = vi.fn().mockResolvedValue(makeEmailFactor());
+
+      await expect(service.verifyEmailChallenge('chal-id-1', 'the-magic-token', 'code')).rejects.toMatchObject({
+        statusCode: 404,
+        details: { challengeId: 'not found' },
+      });
+
+      expect(repo.getFactor).not.toHaveBeenCalled();
+      expect(statefulCache.update).not.toHaveBeenCalled();
+      expect(await statefulCache.get('email_factor_challenge_chal-id-1')).not.toBeNull();
+    });
+
+    it('accepts a matching expected method for both code and magiclink challenges', async () => {
+      const factor = makeEmailFactor();
+      repo.getFactor = vi.fn().mockResolvedValue(factor);
+      vi.mocked(otpProvider.validate).mockReturnValue(true);
+
+      cache.get = vi.fn().mockResolvedValue(JSON.stringify(makeChallengePayload({ verificationMethod: 'code' })));
+      expect(await service.verifyEmailChallenge('chal-id-1', '123456', 'code')).toBe(factor);
+
+      cache.get = vi.fn().mockResolvedValue(JSON.stringify(makeChallengePayload({ verificationMethod: 'magiclink', code: 'the-magic-token' })));
+      expect(await service.verifyEmailChallenge('chal-id-1', 'the-magic-token', 'magiclink')).toBe(factor);
+    });
+
+    it('accepts a challenge of either method when no expected method is given', async () => {
+      const factor = makeEmailFactor();
+      repo.getFactor = vi.fn().mockResolvedValue(factor);
+      vi.mocked(otpProvider.validate).mockReturnValue(true);
+
+      cache.get = vi.fn().mockResolvedValue(JSON.stringify(makeChallengePayload({ verificationMethod: 'code' })));
+      expect(await service.verifyEmailChallenge('chal-id-1', '123456')).toBe(factor);
+
+      cache.get = vi.fn().mockResolvedValue(JSON.stringify(makeChallengePayload({ verificationMethod: 'magiclink', code: 'the-magic-token' })));
+      expect(await service.verifyEmailChallenge('chal-id-1', 'the-magic-token')).toBe(factor);
+    });
+
+    it("leaves the other method's slot intact after a successful verification", async () => {
+      const statefulCache = makeStatefulCache();
+      service = new EmailFactorService(makeOptions(), repo, otpProvider, statefulCache, policyService);
+      repo.getFactor = vi.fn().mockResolvedValue(makeEmailFactor());
+      vi.mocked(otpProvider.validate).mockReturnValue(true);
+
+      const otp = await service.issueEmailChallenge('actor-1', 'factor-1', 'code');
+      const magiclink = await service.issueEmailChallenge('actor-1', 'factor-1', 'magiclink');
+
+      await service.verifyEmailChallenge(otp.challengeId, otp.code, 'code');
+
+      expect(await statefulCache.get('email_factor_challenge_actor-1_factor-1_code')).toBeNull();
+      expect(await statefulCache.get('email_factor_challenge_actor-1_factor-1_magiclink')).toBe(magiclink.challengeId);
+
+      // The surviving magic link is still redeemable, and still reported as pending.
+      const reissued = await service.issueEmailChallenge('actor-1', 'factor-1', 'magiclink');
+      expect(reissued.alreadyIssued).toBe(true);
+      expect(reissued.challengeId).toBe(magiclink.challengeId);
+    });
+
+    it('clears only its own slot when a challenge is locked out', async () => {
+      const statefulCache = makeStatefulCache();
+      service = new EmailFactorService(makeOptions(5), repo, otpProvider, statefulCache, policyService);
+      repo.getFactor = vi.fn().mockResolvedValue(makeEmailFactor());
+
+      const otp = await service.issueEmailChallenge('actor-1', 'factor-1', 'code');
+      const magiclink = await service.issueEmailChallenge('actor-1', 'factor-1', 'magiclink');
+
+      vi.mocked(otpProvider.validate).mockReturnValue(false);
+      for (let i = 0; i < 4; i++) {
+        await expect(service.verifyEmailChallenge(otp.challengeId, 'wrong', 'code')).rejects.toMatchObject({ statusCode: 400 });
+      }
+      await expect(service.verifyEmailChallenge(otp.challengeId, 'wrong', 'code')).rejects.toMatchObject({ statusCode: 429 });
+
+      expect(await statefulCache.get('email_factor_challenge_actor-1_factor-1_code')).toBeNull();
+      expect(await statefulCache.get('email_factor_challenge_actor-1_factor-1_magiclink')).toBe(magiclink.challengeId);
+      expect(await statefulCache.get(`email_factor_challenge_${magiclink.challengeId}`)).not.toBeNull();
     });
   });
 
