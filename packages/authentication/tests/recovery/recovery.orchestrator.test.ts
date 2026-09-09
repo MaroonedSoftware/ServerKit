@@ -113,8 +113,8 @@ describe('RecoveryOrchestrator', () => {
 
       expect(result.challengeId).toBeTruthy();
       expect(result.eligibleChannels).toEqual([
-        { channel: 'email', methodId: 'email-1', label: 'user@example.com' },
-        { channel: 'phone', methodId: 'phone-1', label: '+12025550123' },
+        { channel: 'email', methodId: 'email-1', label: 'u***@example.com' },
+        { channel: 'phone', methodId: 'phone-1', label: '\u2022\u2022\u2022\u2022 23' },
       ]);
     });
 

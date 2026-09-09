@@ -7,6 +7,7 @@ import { PhoneFactorService } from '../factors/phone/phone.factor.service.js';
 import { PasswordFactorService } from '../factors/password/password.factor.service.js';
 import { RecoveryFactorService } from '../factors/recovery/recovery.factor.service.js';
 import { TargetActor } from '../mfa/types.js';
+import { maskEmail, maskPhone } from '../helpers.js';
 import { RecoveryChallengeService } from './recovery.challenge.service.js';
 import { RecoverySessionService } from './recovery.session.service.js';
 import {
@@ -132,18 +133,23 @@ export class RecoveryOrchestrator {
 
   /**
    * Compute eligible channels for an actor and reason from the factors on file.
+   *
+   * Labels are masked: `initiateRecovery` is reachable pre-authentication, so a
+   * caller who knows an email address must not be handed that account's other
+   * contact details in full. The unmasked recipient is returned only by
+   * {@link issueChannelChallenge}, which is bound to a selected channel.
    */
   private async eligibleChannelsFor(actor: TargetActor, reason: RecoveryReason): Promise<RecoveryEligibleChannel[]> {
     const channels: RecoveryEligibleChannel[] = [];
 
     const emails = await this.emailFactorService.listFactors(actor.actorId, true);
     for (const email of emails) {
-      channels.push({ channel: 'email', methodId: email.id, label: email.value });
+      channels.push({ channel: 'email', methodId: email.id, label: maskEmail(email.value) });
     }
 
     const phones = await this.phoneFactorService.listFactors(actor.actorId, true);
     for (const phone of phones) {
-      channels.push({ channel: 'phone', methodId: phone.id, label: phone.value });
+      channels.push({ channel: 'phone', methodId: phone.id, label: maskPhone(phone.value) });
     }
 
     if (reason === 'mfa_recovery' || reason === 'full_recovery') {

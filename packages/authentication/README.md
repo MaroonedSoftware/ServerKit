@@ -920,7 +920,16 @@ deliberately does not call into `AuthenticationSessionService` itself.
 
 For an unrecognised identifier, `initiateRecovery` still returns a challenge
 — with an empty `eligibleChannels` list — so the response cannot be used to
-probe for account existence.
+probe for account existence. Channel `label`s are masked (`j*****@example.com`,
+`•••• 23`) for the same reason: `initiateRecovery` is reachable
+pre-authentication, so it must not hand a caller who knows one identifier the
+account's other contact details. The unmasked recipient comes back from
+`issueChannelChallenge`, which is already bound to a selected channel.
+
+`verifyChannel` binds the proof to the parent challenge: an email or phone proof
+must carry the `channelChallengeId` that `issueChannelChallenge` returned, and the
+verified factor must be on the challenge's eligible list. A sub-challenge issued
+against another account is rejected with a 400.
 
 **Recovery codes** are stored as their own factor (one row per code, hashed
 via the bundled `PasswordHashProvider`). Plaintext is returned exactly once at

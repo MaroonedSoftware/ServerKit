@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { DateTime, Duration } from 'luxon';
-import { isFactorRecent, matchesFactorConstraints } from '../src/helpers.js';
+import { isFactorRecent, maskEmail, maskPhone, matchesFactorConstraints } from '../src/helpers.js';
 import type { AuthenticationSessionFactor } from '../src/types.js';
 
 const baseFactor = (overrides: Partial<AuthenticationSessionFactor> = {}): AuthenticationSessionFactor => ({
@@ -60,5 +60,37 @@ describe('isFactorRecent', () => {
     const within = Duration.fromObject({ minutes: 5 });
     const factor = baseFactor({ authenticatedAt: now.minus(within) });
     expect(isFactorRecent(factor, now, within)).toBe(true);
+  });
+});
+
+describe('maskEmail', () => {
+  it('keeps the first character of the local part and the full domain', () => {
+    expect(maskEmail('jordan@example.com')).toBe('j*****@example.com');
+  });
+
+  it('masks a single-character local part entirely', () => {
+    expect(maskEmail('a@example.com')).toBe('*@example.com');
+  });
+
+  it('masks a value with no domain entirely', () => {
+    expect(maskEmail('notanemail')).toBe('**********');
+  });
+
+  it('splits on the last @ so a quoted local part cannot leak the domain', () => {
+    expect(maskEmail('we@ird@example.com')).toBe('w*****@example.com');
+  });
+});
+
+describe('maskPhone', () => {
+  it('keeps only the last two digits', () => {
+    expect(maskPhone('+12025550123')).toBe('•••• 23');
+  });
+
+  it('strips formatting before taking the last two digits', () => {
+    expect(maskPhone('(202) 555-0199')).toBe('•••• 99');
+  });
+
+  it('reveals nothing when there are two or fewer digits', () => {
+    expect(maskPhone('+1')).toBe('•••• ');
   });
 });

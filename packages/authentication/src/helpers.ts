@@ -36,3 +36,38 @@ export const isFactorRecent = (factor: AuthenticationSessionFactor, now: DateTim
   const threshold = now.minus(within);
   return factor.authenticatedAt >= threshold;
 };
+
+/**
+ * Mask an email address for display in a pre-authentication channel picker.
+ * Keeps the first character of the local part and the full domain, so the
+ * holder recognises their own address without the value being usable by
+ * someone probing another account.
+ *
+ * @example
+ * ```ts
+ * maskEmail('jordan@example.com'); // 'j*****@example.com'
+ * ```
+ */
+export const maskEmail = (value: string): string => {
+  const at = value.lastIndexOf('@');
+  if (at <= 0) return '*'.repeat(Math.max(value.length, 1));
+  const local = value.slice(0, at);
+  const domain = value.slice(at);
+  if (local.length === 1) return `*${domain}`;
+  return `${local[0]}${'*'.repeat(local.length - 1)}${domain}`;
+};
+
+/**
+ * Mask a phone number for display in a pre-authentication channel picker.
+ * Keeps only the last two digits.
+ *
+ * @example
+ * ```ts
+ * maskPhone('+12025550123'); // '•••• 23'
+ * ```
+ */
+export const maskPhone = (value: string): string => {
+  const digits = value.replace(/\D/g, '');
+  if (digits.length <= 2) return '•••• ';
+  return `•••• ${digits.slice(-2)}`;
+};
