@@ -822,6 +822,12 @@ const session = await sessionService.createSession(completed.actor.actorId, { ro
 const token = await sessionService.issueTokenForSession(session.sessionToken);
 ```
 
+`completeMfa` rejects a proof aimed at a factor the challenge never offered *before*
+handing it to a factor service, so an ineligible proof cannot spend the single-use
+sub-challenge behind it. Only one completion runs at a time for a given challenge:
+a concurrent second call gets a 409, and the lock is released when a proof fails so a
+mistyped code does not strand the challenge.
+
 ### Step-up policies
 
 Two policies gate sensitive operations on the freshness and shape of factors
@@ -920,7 +926,16 @@ deliberately does not call into `AuthenticationSessionService` itself.
 
 For an unrecognised identifier, `initiateRecovery` still returns a challenge
 — with an empty `eligibleChannels` list — so the response cannot be used to
-probe for account existence.
+probe for account existence. Channel `label`s are masked (`j*****@example.com`,
+`•••• 23`) for the same reason: `initiateRecovery` is reachable
+pre-authentication, so it must not hand a caller who knows one identifier the
+account's other contact details. The unmasked recipient comes back from
+`issueChannelChallenge`, which is already bound to a selected channel.
+
+`verifyChannel` binds the proof to the parent challenge: an email or phone proof
+must carry the `channelChallengeId` that `issueChannelChallenge` returned, and the
+verified factor must be on the challenge's eligible list. A sub-challenge issued
+against another account is rejected with a 400.
 
 **Recovery codes** are stored as their own factor (one row per code, hashed
 via the bundled `PasswordHashProvider`). Plaintext is returned exactly once at
@@ -968,6 +983,9 @@ container.bind(RecoveryOrchestratorHooksProvider).toConstantValue(
 );
 container.bind(RecoveryOrchestrator).toSelf();
 // RecoveryAllowedPolicy is registered automatically via AuthenticationPolicyMappings.
+// AuthenticationSessionService is an optional constructor dependency: bind it (as any app
+// using sessions already does) and completeRecovery revokes the actor's existing sessions
+// after a password reset or full recovery.
 ```
 
 Forgot-password flow:
@@ -1006,9 +1024,9 @@ await recoveryOrchestrator.completeRecovery(verified.recoverySessionToken, {
   newPassword: input.newPassword,
 });
 
-// 5. Invalidate the actor's existing auth sessions so prior tokens don't keep working.
-const sessions = await sessionService.getSessionsForSubject(actorId);
-await Promise.all(sessions.map(s => sessionService.deleteSession(s.sessionToken)));
+// `completeRecovery` has already revoked the actor's existing auth sessions (reason
+// 'recovery'), because the orchestrator was constructed with an AuthenticationSessionService.
+// Without one, do it yourself: await sessionService.revokeAllForSubject(actorId, 'recovery');
 ```
 
 Recovery codes (issued from authenticated settings UI, redeemed during MFA
@@ -1145,6 +1163,7 @@ Abstract base class. Implement `verify(username: string, password: string): Prom
 | `lookupSessionFromJwt(jwt, ignoreExpiration?)`                        | `Promise<{ session, jwtPayload }>`                     | Validate a JWT and retrieve its session                                                   |
 | `getSession(token)`                                                   | `Promise<AuthenticationSession \| undefined>`          | Retrieve a session by token                                                               |
 | `getSessionsForSubject(subject)`                                      | `Promise<AuthenticationSession[]>`                     | Get all active sessions for a subject                                                     |
+| `revokeAllForSubject(subject, reason?)`                               | `Promise<number>`                                      | Revoke every active session for a subject; returns how many were revoked                  |
 | `issueTokenForSession(sessionToken)`                                  | `Promise<AuthenticationToken>`                         | Issue an access token AND a single-use refresh token                                      |
 | `refreshSession(refreshToken)`                                        | `Promise<AuthenticationToken>`                         | Rotate the refresh token's `jti`; revokes the family on replay                            |
 | `rotateSession(token, claimOverrides?, expiration?)`                  | `Promise<{ session, accessToken, refreshToken, ... }>` | Mint a new session for a privilege change (e.g. MFA step-up)                              |
@@ -1207,13 +1226,14 @@ Constructed with `(logger, pemPrivateKey, pemPublicKey?)`. When `pemPublicKey` i
 | `createSecret(numBytes?)`                  | `string`  | Generate a base32-encoded random secret        |
 | `generate(secret, options)`                | `string`  | Generate an HOTP or TOTP value (RFC 4226/6238) |
 | `validate(otp, secret, options, window?)`  | `boolean` | Validate an HOTP or TOTP value                 |
+| `validateWithCounter(otp, secret, options, window?)` | `number \| undefined` | Validate and report which counter or time step matched |
 | `generateURI(secret, options, urlOptions)` | `string`  | Build an `otpauth://` provisioning URI         |
 
 `options` is an `OtpOptions` object with `type: 'hotp' | 'totp'`, plus `algorithm`, `counter` (HOTP), `periodSeconds` (TOTP), and `tokenLength`. `urlOptions` accepts `issuer` and an optional `label`.
 
 ### `OtpProviderMock`
 
-Drop-in replacement for `OtpProvider` for local development and integration tests. `generate` always returns `'000000'`, `validate` always returns `true`, and each call logs a `WARN` via the injected `Logger`. Never register in production.
+Drop-in replacement for `OtpProvider` for local development and integration tests. `generate` always returns `'000000'`, `validate` always returns `true`, `validateWithCounter` always returns the current step, and each call logs a `WARN` via the injected `Logger`. Never register in production.
 
 ### `PasswordStrengthProvider`
 

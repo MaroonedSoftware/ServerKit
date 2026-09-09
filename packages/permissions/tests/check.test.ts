@@ -2,8 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { AuthorizationModel, computed, defineNamespace, direct, exclusion, intersection, tupleToUserset, union } from '../src/dsl.js';
 import { PermissionsTupleRepository } from '../src/tuples.repository.js';
 import type { RelationTuple } from '../src/tuple.js';
-import { __testing, check } from '../src/check.js';
+import { __testing, check, checkDetailed } from '../src/check.js';
 import { CheckMetricsSink, type CheckMetrics, type CheckMetricsTags } from '../src/check.metrics.js';
+import { IsPermissionsError } from '../src/errors.js';
 
 class InMemoryRepo extends PermissionsTupleRepository {
   constructor(private readonly tuples: RelationTuple[] = []) {
@@ -291,6 +292,126 @@ describe('check — guards', () => {
 
   it('exposes the MAX_DEPTH constant via __testing', () => {
     expect(__testing.MAX_DEPTH).toBe(32);
+  });
+});
+
+describe('checkDetailed', () => {
+  const model = new AuthorizationModel([
+    userNs,
+    defineNamespace('folder', {
+      relations: { parent: { subjects: ['folder'] }, viewer: { subjects: ['user'] } },
+      permissions: { view: union(computed('viewer'), tupleToUserset('parent', 'view')) },
+    }),
+  ]);
+
+  it('reports an ordinary grant', async () => {
+    const repo = new InMemoryRepo([
+      { object: { namespace: 'folder', id: 'f1' }, relation: 'viewer', subject: { kind: 'concrete', namespace: 'user', id: 'alice' } },
+    ]);
+
+    const result = await checkDetailed(model, repo, { namespace: 'folder', id: 'f1' }, 'view', {
+      kind: 'concrete',
+      namespace: 'user',
+      id: 'alice',
+    });
+
+    expect(result.allowed).toBe(true);
+    expect(result.maxDepthExceeded).toBe(false);
+  });
+
+  it('distinguishes a genuine denial from a depth-capped answer', async () => {
+    const repo = new InMemoryRepo([
+      { object: { namespace: 'folder', id: 'f1' }, relation: 'viewer', subject: { kind: 'concrete', namespace: 'user', id: 'alice' } },
+    ]);
+
+    const denied = await checkDetailed(model, repo, { namespace: 'folder', id: 'f1' }, 'view', {
+      kind: 'concrete',
+      namespace: 'user',
+      id: 'bob',
+    });
+
+    expect(denied.allowed).toBe(false);
+    expect(denied.maxDepthExceeded).toBe(false);
+  });
+
+  it('flags maxDepthExceeded on a hierarchy deeper than the cap', async () => {
+    // A parent chain longer than MAX_DEPTH: every link is a legitimate model, but
+    // the evaluator gives up partway and cannot answer.
+    const depth = __testing.MAX_DEPTH + 10;
+    const tuples: RelationTuple[] = [];
+    for (let i = 0; i < depth; i++) {
+      tuples.push({
+        object: { namespace: 'folder', id: `f${i}` },
+        relation: 'parent',
+        subject: { kind: 'concrete', namespace: 'folder', id: `f${i + 1}` },
+      });
+    }
+    tuples.push({
+      object: { namespace: 'folder', id: `f${depth}` },
+      relation: 'viewer',
+      subject: { kind: 'concrete', namespace: 'user', id: 'alice' },
+    });
+
+    const result = await checkDetailed(model, new InMemoryRepo(tuples), { namespace: 'folder', id: 'f0' }, 'view', {
+      kind: 'concrete',
+      namespace: 'user',
+      id: 'alice',
+    });
+
+    expect(result.allowed).toBe(false);
+    expect(result.maxDepthExceeded).toBe(true);
+  });
+
+  it('returns the per-call metrics without a sink', async () => {
+    const repo = new InMemoryRepo([
+      { object: { namespace: 'folder', id: 'f1' }, relation: 'viewer', subject: { kind: 'concrete', namespace: 'user', id: 'alice' } },
+    ]);
+
+    const result = await checkDetailed(model, repo, { namespace: 'folder', id: 'f1' }, 'view', {
+      kind: 'concrete',
+      namespace: 'user',
+      id: 'alice',
+    });
+
+    expect(result.metrics.tupleReads).toBeGreaterThan(0);
+  });
+
+  it('agrees with check on the same question', async () => {
+    const repo = new InMemoryRepo([
+      { object: { namespace: 'folder', id: 'f1' }, relation: 'viewer', subject: { kind: 'concrete', namespace: 'user', id: 'alice' } },
+    ]);
+    const subject = { kind: 'concrete', namespace: 'user', id: 'alice' } as const;
+
+    const [plain, detailed] = await Promise.all([
+      check(model, repo, { namespace: 'folder', id: 'f1' }, 'view', subject),
+      checkDetailed(model, repo, { namespace: 'folder', id: 'f1' }, 'view', subject),
+    ]);
+
+    expect(plain).toBe(detailed.allowed);
+  });
+});
+
+describe('check — typed errors', () => {
+  const model = new AuthorizationModel([userNs, defineNamespace('doc', { relations: { viewer: { subjects: ['user'] } }, permissions: {} })]);
+  const subject = { kind: 'concrete', namespace: 'user', id: 'alice' } as const;
+
+  it('throws a typed error for an unknown namespace rather than denying', async () => {
+    await expect(check(model, new InMemoryRepo([]), { namespace: 'nope', id: 'x' }, 'viewer', subject)).rejects.toMatchObject({
+      code: 'unknown_namespace',
+    });
+  });
+
+  it('throws a typed error for a misspelt permission rather than denying', async () => {
+    // A typo must not look like a 403; it is a modelling bug.
+    await expect(check(model, new InMemoryRepo([]), { namespace: 'doc', id: 'd1' }, 'veiwer', subject)).rejects.toMatchObject({
+      code: 'unknown_relation',
+      namespace: 'doc',
+      relation: 'veiwer',
+    });
+  });
+
+  it('is recognised by IsPermissionsError', async () => {
+    await expect(check(model, new InMemoryRepo([]), { namespace: 'doc', id: 'd1' }, 'veiwer', subject)).rejects.toSatisfy(IsPermissionsError);
   });
 });
 

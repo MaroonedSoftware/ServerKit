@@ -12,6 +12,10 @@ import { type ScimListQuery, type ScimSortOrder } from '../repositories/reposito
 import { parseScimFilter } from '../filter/filter.parser.js';
 import { scimError } from '../errors/scim.error.js';
 import { SCIM_MEDIA_TYPE } from '../middleware/scim.content.type.middleware.js';
+import { projectScimResource, type ScimProjection } from '../projection/attribute.projection.js';
+import { userSchema } from '../schemas/user.schema.js';
+import { groupSchema } from '../schemas/group.schema.js';
+import { enterpriseUserSchema } from '../schemas/enterprise.user.schema.js';
 
 /**
  * Options for {@link createScimRouter}. The caller constructs the three
@@ -32,6 +36,15 @@ export interface CreateScimRouterOptions {
    * `serviceProviderService` `filter.maxResults` value, falling back to 200.
    */
   maxResults?: number;
+  /**
+   * Absolute base URL this router is reachable at, e.g.
+   * `https://api.example.com/scim/v2`. When set, `meta.location` and the
+   * `Location` response header are rendered against it, as RFC 7643 §3.1 wants
+   * a resource URI. Leave it unset to keep the previous behaviour of emitting a
+   * root-relative path (`/Users/{id}`), which is wrong for any deployment that
+   * mounts the router under a prefix.
+   */
+  baseUrl?: string;
 }
 
 /**
@@ -58,6 +71,15 @@ export const createScimRouter = (options: CreateScimRouterOptions): Router<unkno
   const guards = options.routeGuards ?? [];
   const json = bodyParserMiddleware([SCIM_MEDIA_TYPE, 'application/json']);
   const maxResults = options.maxResults ?? options.serviceProviderService.getServiceProviderConfig().filter.maxResults ?? 200;
+  const baseUrl = options.baseUrl?.replace(/\/+$/, '');
+
+  /**
+   * Render a resource's `meta.location` against the configured base URL. The
+   * services assign a root-relative path because they do not know where the
+   * router is mounted; without a `baseUrl` that path is left as-is.
+   */
+  const withLocation = <T extends { id: string; meta: { location?: string } }>(resource: T, endpoint: 'Users' | 'Groups'): T =>
+    baseUrl ? { ...resource, meta: { ...resource.meta, location: `${baseUrl}/${endpoint}/${resource.id}` } } : resource;
 
   // Discovery endpoints — RFC 7644 §4 says these MAY be unauthenticated. Apply
   // the route guards anyway so the consumer can decide.
@@ -90,7 +112,7 @@ export const createScimRouter = (options: CreateScimRouterOptions): Router<unkno
   router.get('/Users', ...guards, async ctx => {
     const query = parseListQueryFromUrl(ctx.query, maxResults);
     const result = await options.userService.list(query);
-    ctx.body = listEnvelope(result.resources, query, result.totalResults);
+    ctx.body = listEnvelope(result.resources.map(user => projectUser(withLocation(user, 'Users'), query)), query, result.totalResults);
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
@@ -98,7 +120,7 @@ export const createScimRouter = (options: CreateScimRouterOptions): Router<unkno
     const requestBody = takeRequestBody(ctx);
     const query = parseListQueryFromBody(requestBody, maxResults);
     const result = await options.userService.list(query);
-    ctx.body = listEnvelope(result.resources, query, result.totalResults);
+    ctx.body = listEnvelope(result.resources.map(user => projectUser(withLocation(user, 'Users'), query)), query, result.totalResults);
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
@@ -106,26 +128,27 @@ export const createScimRouter = (options: CreateScimRouterOptions): Router<unkno
     const payload = takeRequestBody(ctx) as Partial<ScimUser>;
     const created = await options.userService.create(payload);
     ctx.status = 201;
-    ctx.body = created;
+    const located = withLocation(created, 'Users');
+    ctx.body = projectUser(located, parseProjectionFromUrl(ctx.query));
     ctx.type = SCIM_MEDIA_TYPE;
-    if (created.meta.location) ctx.set('Location', created.meta.location);
+    if (located.meta.location) ctx.set('Location', located.meta.location);
   });
 
   router.get('/Users/:id', ...guards, async ctx => {
-    ctx.body = await options.userService.get(ctx.params.id!);
+    ctx.body = projectUser(withLocation(await options.userService.get(ctx.params.id!), 'Users'), parseProjectionFromUrl(ctx.query));
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
   router.put('/Users/:id', ...guards, json, async ctx => {
     const payload = takeRequestBody(ctx) as Partial<ScimUser>;
-    ctx.body = await options.userService.replace(ctx.params.id!, payload);
+    ctx.body = projectUser(withLocation(await options.userService.replace(ctx.params.id!, payload), 'Users'), parseProjectionFromUrl(ctx.query));
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
   router.patch('/Users/:id', ...guards, json, async ctx => {
     const requestBody = takeRequestBody(ctx) as Partial<ScimPatchRequest>;
     const ops = validatePatchRequest(requestBody);
-    ctx.body = await options.userService.patch(ctx.params.id!, ops);
+    ctx.body = projectUser(withLocation(await options.userService.patch(ctx.params.id!, ops), 'Users'), parseProjectionFromUrl(ctx.query));
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
@@ -138,7 +161,7 @@ export const createScimRouter = (options: CreateScimRouterOptions): Router<unkno
   router.get('/Groups', ...guards, async ctx => {
     const query = parseListQueryFromUrl(ctx.query, maxResults);
     const result = await options.groupService.list(query);
-    ctx.body = listEnvelope(result.resources, query, result.totalResults);
+    ctx.body = listEnvelope(result.resources.map(group => projectGroup(withLocation(group, 'Groups'), query)), query, result.totalResults);
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
@@ -146,7 +169,7 @@ export const createScimRouter = (options: CreateScimRouterOptions): Router<unkno
     const requestBody = takeRequestBody(ctx);
     const query = parseListQueryFromBody(requestBody, maxResults);
     const result = await options.groupService.list(query);
-    ctx.body = listEnvelope(result.resources, query, result.totalResults);
+    ctx.body = listEnvelope(result.resources.map(group => projectGroup(withLocation(group, 'Groups'), query)), query, result.totalResults);
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
@@ -154,26 +177,27 @@ export const createScimRouter = (options: CreateScimRouterOptions): Router<unkno
     const payload = takeRequestBody(ctx) as Partial<ScimGroup>;
     const created = await options.groupService.create(payload);
     ctx.status = 201;
-    ctx.body = created;
+    const located = withLocation(created, 'Groups');
+    ctx.body = projectGroup(located, parseProjectionFromUrl(ctx.query));
     ctx.type = SCIM_MEDIA_TYPE;
-    if (created.meta.location) ctx.set('Location', created.meta.location);
+    if (located.meta.location) ctx.set('Location', located.meta.location);
   });
 
   router.get('/Groups/:id', ...guards, async ctx => {
-    ctx.body = await options.groupService.get(ctx.params.id!);
+    ctx.body = projectGroup(withLocation(await options.groupService.get(ctx.params.id!), 'Groups'), parseProjectionFromUrl(ctx.query));
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
   router.put('/Groups/:id', ...guards, json, async ctx => {
     const payload = takeRequestBody(ctx) as Partial<ScimGroup>;
-    ctx.body = await options.groupService.replace(ctx.params.id!, payload);
+    ctx.body = projectGroup(withLocation(await options.groupService.replace(ctx.params.id!, payload), 'Groups'), parseProjectionFromUrl(ctx.query));
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
   router.patch('/Groups/:id', ...guards, json, async ctx => {
     const requestBody = takeRequestBody(ctx) as Partial<ScimPatchRequest>;
     const ops = validatePatchRequest(requestBody);
-    ctx.body = await options.groupService.patch(ctx.params.id!, ops);
+    ctx.body = projectGroup(withLocation(await options.groupService.patch(ctx.params.id!, ops), 'Groups'), parseProjectionFromUrl(ctx.query));
     ctx.type = SCIM_MEDIA_TYPE;
   });
 
@@ -184,6 +208,31 @@ export const createScimRouter = (options: CreateScimRouterOptions): Router<unkno
 
   return router;
 };
+
+/** Schemas a `/Users` response is projected against: the core one plus the enterprise extension. */
+const userSchemas = [userSchema, enterpriseUserSchema];
+
+/**
+ * Project a user for the wire. Applies the requested `attributes` /
+ * `excludedAttributes` and always strips attributes the schema declares
+ * `returned: 'never'` — notably `password`, which is `writeOnly` and must never
+ * come back out of a repository that stored what it was given.
+ */
+const projectUser = (user: ScimUser, projection: ScimProjection): ScimUser =>
+  projectScimResource(user as unknown as Record<string, unknown>, userSchemas, projection) as unknown as ScimUser;
+
+/** Project a group for the wire. See {@link projectUser}. */
+const projectGroup = (group: ScimGroup, projection: ScimProjection): ScimGroup =>
+  projectScimResource(group as unknown as Record<string, unknown>, [groupSchema], projection) as unknown as ScimGroup;
+
+/**
+ * Read the `attributes` / `excludedAttributes` projection from a query string.
+ * RFC 7644 §3.9 allows them on single-resource reads and writes as well as lists.
+ */
+const parseProjectionFromUrl = (query: ServerKitContext['query']): ScimProjection => ({
+  attributes: parseCsvParam(pickStringParam(query, 'attributes')),
+  excludedAttributes: parseCsvParam(pickStringParam(query, 'excludedAttributes')),
+});
 
 /**
  * `bodyParserMiddleware` writes the parsed request body to `ctx.parsedBody`
@@ -198,7 +247,7 @@ const parseListQueryFromUrl = (query: ServerKitContext['query'], maxResults: num
   return {
     filter: filterRaw ? parseScimFilter(filterRaw) : undefined,
     startIndex: parsePositiveInt(pickStringParam(query, 'startIndex'), 1),
-    count: clamp(parsePositiveInt(pickStringParam(query, 'count'), maxResults), 0, maxResults),
+    count: clamp(parseCount(pickStringParam(query, 'count'), maxResults), 0, maxResults),
     sortBy: pickStringParam(query, 'sortBy'),
     sortOrder: parseSortOrder(pickStringParam(query, 'sortOrder')),
     attributes: parseCsvParam(pickStringParam(query, 'attributes')),
@@ -227,6 +276,19 @@ const parseListQueryFromBody = (body: unknown, maxResults: number): ScimListQuer
 const parseSortOrder = (raw: string | undefined): ScimSortOrder | undefined => {
   if (raw === 'ascending' || raw === 'descending') return raw;
   return undefined;
+};
+
+/**
+ * Parse the `count` query parameter. RFC 7644 §3.4.2.4 gives a value below 1 its own
+ * meaning — return no resources, but still report `totalResults` — which is the probe
+ * Okta and Entra make when setting up a connection. A non-numeric or absent value
+ * falls back to the configured page size.
+ */
+const parseCount = (raw: string | undefined, fallback: number): number => {
+  if (raw === undefined) return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return n < 1 ? 0 : Math.floor(n);
 };
 
 const parsePositiveInt = (raw: string | undefined, fallback: number): number => {

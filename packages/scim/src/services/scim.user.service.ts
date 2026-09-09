@@ -47,6 +47,9 @@ export class ScimUserService {
    * and `meta.lastModified`, and ensures the resource's `schemas` includes the
    * core User URN (and the EnterpriseUser URN when the extension is present).
    *
+   * An `id` on the payload is ignored: RFC 7643 §3.1 makes it readOnly and
+   * server-assigned.
+   *
    * @throws {ScimError} 400 `invalidValue` when `userName` is missing.
    * @throws {ScimError} 409 `uniqueness` when `userName` already exists.
    */
@@ -59,7 +62,9 @@ export class ScimUserService {
       throw scimError(409, 'uniqueness', 'Conflict').withDetails({ message: `userName "${payload.userName}" already exists` });
     }
     const now = DateTime.utc().toISO();
-    const id = payload.id ?? randomUUID();
+    // RFC 7643 §3.1 makes `id` server-assigned and readOnly. Honouring a client-supplied
+    // one lets a POST collide with an existing record's primary key.
+    const id = randomUUID();
     const user: ScimUser = {
       ...payload,
       id,

@@ -36,7 +36,7 @@ class TestJsonParser extends ServerKitParser {
   }
 }
 
-const buildApp = (options: { authenticated?: boolean; scopes?: string[] } = {}) => {
+const buildApp = (options: { authenticated?: boolean; scopes?: string[]; baseUrl?: string } = {}) => {
   const userRepository = new InMemoryUserRepository();
   const groupRepository = new InMemoryGroupRepository();
 
@@ -61,6 +61,7 @@ const buildApp = (options: { authenticated?: boolean; scopes?: string[] } = {}) 
     groupService,
     serviceProviderService,
     routeGuards: [requireScimScope('scim')],
+    baseUrl: options.baseUrl,
   });
 
   const app = new Koa();
@@ -163,6 +164,153 @@ describe('createScimRouter — integration', () => {
         schemas: [ScimErrorSchema],
         status: '404',
       });
+      // Provisioning clients surface `detail` to the operator, so it has to name the resource.
+      expect(res.body.detail).toContain('missing');
+    });
+
+    it('POST /Users 409 explains which userName collided', async () => {
+      const { app } = buildApp();
+      await request(app.callback()).post('/Users').set('Content-Type', SCIM_MEDIA_TYPE).send({ userName: 'bjensen' });
+      const res = await request(app.callback()).post('/Users').set('Content-Type', SCIM_MEDIA_TYPE).send({ userName: 'bjensen' });
+
+      expect(res.status).toBe(409);
+      expect(res.body.scimType).toBe('uniqueness');
+      expect(res.body.detail).toContain('bjensen');
+    });
+
+    it('GET /Users?count=0 returns no resources but still reports totalResults', async () => {
+      // The connection-setup probe Okta and Entra make: "how many users are there?"
+      const { app } = buildApp();
+      await request(app.callback()).post('/Users').set('Content-Type', SCIM_MEDIA_TYPE).send({ userName: 'alice' });
+      await request(app.callback()).post('/Users').set('Content-Type', SCIM_MEDIA_TYPE).send({ userName: 'bob' });
+
+      const res = await request(app.callback()).get('/Users?count=0');
+
+      expect(res.status).toBe(200);
+      expect(res.body.totalResults).toBe(2);
+      expect(res.body.Resources).toEqual([]);
+      expect(res.body.itemsPerPage).toBe(0);
+    });
+
+    it('GET /Users?count=0 agrees with the same count in a .search body', async () => {
+      const { app } = buildApp();
+      await request(app.callback()).post('/Users').set('Content-Type', SCIM_MEDIA_TYPE).send({ userName: 'alice' });
+
+      const fromUrl = await request(app.callback()).get('/Users?count=0');
+      const fromBody = await request(app.callback()).post('/Users/.search').set('Content-Type', SCIM_MEDIA_TYPE).send({ count: 0 });
+
+      expect(fromUrl.body.Resources).toEqual(fromBody.body.Resources);
+      expect(fromUrl.body.totalResults).toBe(fromBody.body.totalResults);
+    });
+
+    it('GET /Users falls back to the page size for a non-numeric count', async () => {
+      const { app } = buildApp();
+      await request(app.callback()).post('/Users').set('Content-Type', SCIM_MEDIA_TYPE).send({ userName: 'alice' });
+
+      const res = await request(app.callback()).get('/Users?count=notanumber');
+
+      expect(res.status).toBe(200);
+      expect(res.body.Resources).toHaveLength(1);
+    });
+
+    it('never returns password, even though the repository stored it', async () => {
+      const { app } = buildApp();
+      const created = await request(app.callback())
+        .post('/Users')
+        .set('Content-Type', SCIM_MEDIA_TYPE)
+        .send({ userName: 'bjensen', password: 'hunter2' });
+
+      expect(created.body.password).toBeUndefined();
+
+      const fetched = await request(app.callback()).get(`/Users/${created.body.id}`);
+      expect(fetched.body.password).toBeUndefined();
+
+      const listed = await request(app.callback()).get('/Users');
+      expect(listed.body.Resources[0].password).toBeUndefined();
+    });
+
+    it('GET /Users/:id?attributes= returns only the requested attributes plus the core ones', async () => {
+      const { app } = buildApp();
+      const created = await request(app.callback())
+        .post('/Users')
+        .set('Content-Type', SCIM_MEDIA_TYPE)
+        .send({ userName: 'bjensen', displayName: 'Barbara Jensen' });
+
+      const res = await request(app.callback()).get(`/Users/${created.body.id}?attributes=userName`);
+
+      expect(res.body.userName).toBe('bjensen');
+      expect(res.body.displayName).toBeUndefined();
+      expect(res.body.id).toBe(created.body.id);
+      expect(res.body.schemas).toBeDefined();
+    });
+
+    it('GET /Users?excludedAttributes= omits the named attribute from every resource', async () => {
+      const { app } = buildApp();
+      await request(app.callback())
+        .post('/Users')
+        .set('Content-Type', SCIM_MEDIA_TYPE)
+        .send({ userName: 'bjensen', displayName: 'Barbara Jensen' });
+
+      const res = await request(app.callback()).get('/Users?excludedAttributes=displayName');
+
+      expect(res.body.Resources[0].userName).toBe('bjensen');
+      expect(res.body.Resources[0].displayName).toBeUndefined();
+    });
+
+    it('POST /Users/.search honours attributes from the request body', async () => {
+      const { app } = buildApp();
+      await request(app.callback())
+        .post('/Users')
+        .set('Content-Type', SCIM_MEDIA_TYPE)
+        .send({ userName: 'bjensen', displayName: 'Barbara Jensen' });
+
+      const res = await request(app.callback()).post('/Users/.search').set('Content-Type', SCIM_MEDIA_TYPE).send({ attributes: ['userName'] });
+
+      expect(res.body.Resources[0].userName).toBe('bjensen');
+      expect(res.body.Resources[0].displayName).toBeUndefined();
+    });
+
+    it('renders meta.location and the Location header against baseUrl', async () => {
+      const { app } = buildApp({ baseUrl: 'https://api.example.com/scim/v2' });
+      const created = await request(app.callback()).post('/Users').set('Content-Type', SCIM_MEDIA_TYPE).send({ userName: 'bjensen' });
+
+      expect(created.body.meta.location).toBe(`https://api.example.com/scim/v2/Users/${created.body.id}`);
+      expect(created.headers['location']).toBe(`https://api.example.com/scim/v2/Users/${created.body.id}`);
+
+      const fetched = await request(app.callback()).get(`/Users/${created.body.id}`);
+      expect(fetched.body.meta.location).toBe(`https://api.example.com/scim/v2/Users/${created.body.id}`);
+
+      const listed = await request(app.callback()).get('/Users');
+      expect(listed.body.Resources[0].meta.location).toBe(`https://api.example.com/scim/v2/Users/${created.body.id}`);
+    });
+
+    it('strips a trailing slash from baseUrl rather than doubling it', async () => {
+      const { app } = buildApp({ baseUrl: 'https://api.example.com/scim/v2/' });
+      const created = await request(app.callback()).post('/Users').set('Content-Type', SCIM_MEDIA_TYPE).send({ userName: 'bjensen' });
+
+      expect(created.body.meta.location).toBe(`https://api.example.com/scim/v2/Users/${created.body.id}`);
+    });
+
+    it('keeps the root-relative path when no baseUrl is configured', async () => {
+      const { app } = buildApp();
+      const created = await request(app.callback()).post('/Users').set('Content-Type', SCIM_MEDIA_TYPE).send({ userName: 'bjensen' });
+
+      expect(created.body.meta.location).toBe(`/Users/${created.body.id}`);
+    });
+
+    it('renders group locations against baseUrl too', async () => {
+      const { app } = buildApp({ baseUrl: 'https://api.example.com/scim/v2' });
+      const created = await request(app.callback()).post('/Groups').set('Content-Type', SCIM_MEDIA_TYPE).send({ displayName: 'Engineering' });
+
+      expect(created.body.meta.location).toBe(`https://api.example.com/scim/v2/Groups/${created.body.id}`);
+    });
+
+    it('POST /Users 400 names the missing required attribute', async () => {
+      const { app } = buildApp();
+      const res = await request(app.callback()).post('/Users').set('Content-Type', SCIM_MEDIA_TYPE).send({});
+
+      expect(res.status).toBe(400);
+      expect(res.body.detail).toContain('userName');
     });
   });
 

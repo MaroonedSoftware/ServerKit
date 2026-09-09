@@ -9,6 +9,7 @@ import type { EmailFactorService } from '../../src/factors/email/email.factor.se
 import type { PhoneFactorService } from '../../src/factors/phone/phone.factor.service.js';
 import type { PasswordFactorService } from '../../src/factors/password/password.factor.service.js';
 import type { RecoveryFactorService } from '../../src/factors/recovery/recovery.factor.service.js';
+import type { AuthenticationSessionService } from '../../src/authentication.session.service.js';
 
 const makeCache = () => {
   const store = new Map<string, string>();
@@ -39,7 +40,7 @@ const makePolicyService = (resultFor: (name: string) => PolicyResult) =>
 
 const actor = { kind: 'user', actorId: 'user-7' };
 
-const makeOrchestrator = (overrides: { policy?: PolicyResult; hooks?: RecoveryOrchestratorHooks } = {}) => {
+const makeOrchestrator = (overrides: { policy?: PolicyResult; hooks?: RecoveryOrchestratorHooks; withSessionService?: boolean } = {}) => {
   const cache = makeCache();
   const challengeService = new RecoveryChallengeService(new RecoveryChallengeServiceOptions(), cache);
   const sessionService = new RecoverySessionService(new RecoverySessionServiceOptions(), cache);
@@ -86,6 +87,10 @@ const makeOrchestrator = (overrides: { policy?: PolicyResult; hooks?: RecoveryOr
   const policy = overrides.policy ?? ({ allowed: true } as PolicyResult);
   const policyService = makePolicyService(() => policy);
 
+  const authenticationSessionService = {
+    revokeAllForSubject: vi.fn(async () => 2),
+  } as unknown as AuthenticationSessionService;
+
   const orchestrator = new RecoveryOrchestrator(
     challengeService,
     sessionService,
@@ -95,9 +100,20 @@ const makeOrchestrator = (overrides: { policy?: PolicyResult; hooks?: RecoveryOr
     passwordFactor,
     recoveryFactor,
     new RecoveryOrchestratorHooksProvider(overrides.hooks ?? {}),
+    overrides.withSessionService === false ? undefined : authenticationSessionService,
   );
 
-  return { orchestrator, challengeService, sessionService, policyService, emailFactor, phoneFactor, passwordFactor, recoveryFactor };
+  return {
+    orchestrator,
+    challengeService,
+    sessionService,
+    policyService,
+    emailFactor,
+    phoneFactor,
+    passwordFactor,
+    recoveryFactor,
+    authenticationSessionService,
+  };
 };
 
 describe('RecoveryOrchestrator', () => {
@@ -113,8 +129,8 @@ describe('RecoveryOrchestrator', () => {
 
       expect(result.challengeId).toBeTruthy();
       expect(result.eligibleChannels).toEqual([
-        { channel: 'email', methodId: 'email-1', label: 'user@example.com' },
-        { channel: 'phone', methodId: 'phone-1', label: '+12025550123' },
+        { channel: 'email', methodId: 'email-1', label: 'u***@example.com' },
+        { channel: 'phone', methodId: 'phone-1', label: '\u2022\u2022\u2022\u2022 23' },
       ]);
     });
 
@@ -289,6 +305,49 @@ describe('RecoveryOrchestrator', () => {
         orchestrator.verifyChannel(initiated.challengeId, { channel: 'phone', channelChallengeId: 'phone-chal-1', code: '654321' }),
       ).rejects.toMatchObject({ statusCode: 400 });
     });
+
+    it('rejects a channel challenge id this recovery challenge did not issue', async () => {
+      // Cross-account takeover: the attacker initiates recovery against the victim's
+      // identifier, then submits a sub-challenge id minted against their own factor.
+      const { orchestrator, emailFactor } = makeOrchestrator();
+      const initiated = await orchestrator.initiateRecovery({ identifier: { kind: 'email', value: 'user@example.com' }, reason: 'password_reset' });
+      await orchestrator.issueChannelChallenge(initiated.challengeId, { channel: 'email', methodId: 'email-1' });
+
+      await expect(
+        orchestrator.verifyChannel(initiated.challengeId, { channel: 'email', channelChallengeId: 'attacker-chal-9', code: '123456' }),
+      ).rejects.toMatchObject({ statusCode: 400 });
+
+      // The proof was never handed to the factor service, so no session could be minted.
+      expect(emailFactor.verifyEmailChallenge).not.toHaveBeenCalled();
+    });
+
+    it('rejects a proof when no channel challenge has been issued yet', async () => {
+      const { orchestrator, emailFactor } = makeOrchestrator();
+      const initiated = await orchestrator.initiateRecovery({ actorId: actor.actorId, reason: 'password_reset' });
+
+      await expect(
+        orchestrator.verifyChannel(initiated.challengeId, { channel: 'email', channelChallengeId: 'email-chal-1', code: '123456' }),
+      ).rejects.toMatchObject({ statusCode: 400 });
+      expect(emailFactor.verifyEmailChallenge).not.toHaveBeenCalled();
+    });
+
+    it('rejects when the verified factor is not on the challenge eligible list', async () => {
+      const { orchestrator, emailFactor } = makeOrchestrator();
+      const initiated = await orchestrator.initiateRecovery({ actorId: actor.actorId, reason: 'password_reset' });
+      await orchestrator.issueChannelChallenge(initiated.challengeId, { channel: 'email', methodId: 'email-1' });
+
+      // The factor service resolves the sub-challenge to a factor that was never eligible.
+      vi.mocked(emailFactor.verifyEmailChallenge).mockResolvedValueOnce({
+        id: 'email-99',
+        actorId: actor.actorId,
+        active: true,
+        value: 'other@example.com',
+      } as Awaited<ReturnType<EmailFactorService['verifyEmailChallenge']>>);
+
+      await expect(
+        orchestrator.verifyChannel(initiated.challengeId, { channel: 'email', channelChallengeId: 'email-chal-1', code: '123456' }),
+      ).rejects.toMatchObject({ statusCode: 400 });
+    });
   });
 
   describe('completeRecovery', () => {
@@ -326,6 +385,57 @@ describe('RecoveryOrchestrator', () => {
       expect(result.action.kind).toBe('resetPassword');
       expect(setup.passwordFactor.changePassword).toHaveBeenCalledWith(actor.actorId, 'new-secure-password');
       expect(setup.passwordFactor.clearRateLimit).toHaveBeenCalledWith(actor.actorId);
+    });
+
+    it('resetPassword revokes the actor\'s existing authentication sessions', async () => {
+      const { setup, verified } = await verify('password_reset');
+
+      await setup.orchestrator.completeRecovery(verified.recoverySessionToken, {
+        kind: 'resetPassword',
+        newPassword: 'new-secure-password',
+      });
+
+      expect(setup.authenticationSessionService.revokeAllForSubject).toHaveBeenCalledWith(actor.actorId, 'recovery');
+    });
+
+    it('fullRecovery revokes the actor\'s existing authentication sessions', async () => {
+      const { setup, verified } = await verify('full_recovery');
+
+      await setup.orchestrator.completeRecovery(verified.recoverySessionToken, { kind: 'fullRecovery', identityProof: { ticket: 'abc' } });
+
+      expect(setup.authenticationSessionService.revokeAllForSubject).toHaveBeenCalledWith(actor.actorId, 'recovery');
+    });
+
+    it('unlockAccount leaves existing authentication sessions alone', async () => {
+      const setup = makeOrchestrator();
+      (setup.recoveryFactor.countRemainingCodes as ReturnType<typeof vi.fn>).mockResolvedValue(0);
+      const initiated = await setup.orchestrator.initiateRecovery({ actorId: actor.actorId, reason: 'unlock' });
+      await setup.orchestrator.issueChannelChallenge(initiated.challengeId, { channel: 'email', methodId: 'email-1' });
+      const verified = await setup.orchestrator.verifyChannel(initiated.challengeId, {
+        channel: 'email',
+        channelChallengeId: 'email-chal-1',
+        code: '123456',
+      });
+
+      await setup.orchestrator.completeRecovery(verified.recoverySessionToken, { kind: 'unlockAccount' });
+
+      expect(setup.authenticationSessionService.revokeAllForSubject).not.toHaveBeenCalled();
+    });
+
+    it('completes without a session service, leaving revocation to the caller', async () => {
+      const setup = makeOrchestrator({ withSessionService: false });
+      (setup.recoveryFactor.countRemainingCodes as ReturnType<typeof vi.fn>).mockResolvedValue(0);
+      const initiated = await setup.orchestrator.initiateRecovery({ actorId: actor.actorId, reason: 'password_reset' });
+      await setup.orchestrator.issueChannelChallenge(initiated.challengeId, { channel: 'email', methodId: 'email-1' });
+      const verified = await setup.orchestrator.verifyChannel(initiated.challengeId, {
+        channel: 'email',
+        channelChallengeId: 'email-chal-1',
+        code: '123456',
+      });
+
+      await expect(
+        setup.orchestrator.completeRecovery(verified.recoverySessionToken, { kind: 'resetPassword', newPassword: 'new-secure-password' }),
+      ).resolves.toMatchObject({ action: { kind: 'resetPassword' } });
     });
 
     it('unlockAccount calls clearRateLimit and onUnlock hook', async () => {

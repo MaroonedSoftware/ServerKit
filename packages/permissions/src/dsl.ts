@@ -1,3 +1,5 @@
+import { PermissionsError } from './errors.js';
+import { formatSubject, type RelationTuple, type SubjectRef } from './tuple.js';
 /**
  * Userset expression tree. Mirrors the Zanzibar paper's userset rewrite
  * primitives.
@@ -174,12 +176,66 @@ export class AuthorizationModel {
    */
   resolve(namespace: string, name: string): UsersetExpr {
     const ns = this.byName.get(namespace);
-    if (!ns) throw new Error(`unknown namespace: ${namespace}`);
+    if (!ns) throw new PermissionsError('unknown_namespace', `unknown namespace: ${namespace}`, { namespace });
     if (name in ns.permissions) {
       return ns.permissions[name as keyof typeof ns.permissions]!;
     }
     if (name in ns.relations) return direct();
-    throw new Error(`unknown relation/permission: ${namespace}.${name}`);
+    throw new PermissionsError('unknown_relation', `unknown relation/permission: ${namespace}.${name}`, { namespace, relation: name });
+  }
+
+  /**
+   * Whether `subject` is an allowed subject type for `namespace.relation`,
+   * according to the relation's declared `subjects`.
+   *
+   * `RelationDef.subjects` is a write-time contract: {@link check} reads whatever
+   * tuples the store returns and does not re-check them, so a relation
+   * deliberately declared without `user.*` is still world-grantable unless
+   * something validates on the way in. That is what this answers, and what
+   * {@link ModelValidatingTupleRepository} enforces.
+   *
+   * @param namespace - Object namespace the tuple is written against.
+   * @param relation - Relation on that namespace.
+   * @param subject - Subject of the tuple.
+   * @returns `true` when the relation declares a matching subject type.
+   * @throws {PermissionsError} When the namespace or relation is unknown.
+   */
+  isSubjectAllowed(namespace: string, relation: string, subject: SubjectRef): boolean {
+    const ns = this.byName.get(namespace);
+    if (!ns) throw new PermissionsError('unknown_namespace', `unknown namespace: ${namespace}`, { namespace });
+    const def = (ns.relations as Record<string, RelationDef | undefined>)[relation];
+    if (!def) {
+      throw new PermissionsError('unknown_relation', `unknown relation: ${namespace}.${relation}`, { namespace, relation });
+    }
+
+    return def.subjects.some(declared => {
+      const parsed = parseSubjectType(declared);
+      if (subject.kind === 'wildcard') return parsed.wildcard && parsed.namespace === subject.namespace;
+      if (subject.kind === 'userset') return parsed.relation === subject.relation && parsed.namespace === subject.namespace;
+      // A concrete subject matches a bare `<namespace>` declaration. It does not
+      // match `<namespace>.*`, which declares that the wildcard subject itself is
+      // grantable, nor a userset declaration.
+      return !parsed.wildcard && parsed.relation === undefined && parsed.namespace === subject.namespace;
+    });
+  }
+
+  /**
+   * Assert that every tuple names a subject type its relation declares.
+   *
+   * @param tuples - Tuples about to be written.
+   * @throws {PermissionsError} `subject_not_allowed` on the first tuple that fails,
+   *   or `unknown_namespace` / `unknown_relation` when a tuple names something the
+   *   model does not define.
+   */
+  assertTuplesAllowed(tuples: readonly RelationTuple[]): void {
+    for (const tuple of tuples) {
+      if (this.isSubjectAllowed(tuple.object.namespace, tuple.relation, tuple.subject)) continue;
+      throw new PermissionsError(
+        'subject_not_allowed',
+        `${tuple.object.namespace}.${tuple.relation} does not allow subject ${formatSubject(tuple.subject)}`,
+        { namespace: tuple.object.namespace, relation: tuple.relation },
+      );
+    }
   }
 
   private validate(): void {

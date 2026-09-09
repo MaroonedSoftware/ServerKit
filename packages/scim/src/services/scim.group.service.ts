@@ -43,7 +43,8 @@ export class ScimGroupService {
 
   /**
    * Create a new group. Assigns a server-generated `id` and fills `meta`
-   * timestamps.
+   * timestamps. An `id` on the payload is ignored: RFC 7643 §3.1 makes it
+   * readOnly and server-assigned.
    *
    * @throws {ScimError} 400 `invalidValue` when `displayName` is missing.
    * @throws {ScimError} 409 `uniqueness` when `displayName` already exists.
@@ -57,7 +58,9 @@ export class ScimGroupService {
       throw scimError(409, 'uniqueness', 'Conflict').withDetails({ message: `displayName "${payload.displayName}" already exists` });
     }
     const now = DateTime.utc().toISO();
-    const id = payload.id ?? randomUUID();
+    // RFC 7643 §3.1 makes `id` server-assigned and readOnly. Honouring a client-supplied
+    // one lets a POST collide with an existing record's primary key.
+    const id = randomUUID();
     const group: ScimGroup = {
       ...payload,
       id,

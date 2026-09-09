@@ -1,4 +1,4 @@
-import { stringifyTuple, type RelationTuple } from './tuple.js';
+import { formatSubject, stringifyTuple, type ObjectRef, type RelationTuple, type SubjectRef } from './tuple.js';
 import { PermissionsTupleRepository } from './tuples.repository.js';
 
 /**
@@ -49,6 +49,20 @@ export class InMemoryTupleRepository extends PermissionsTupleRepository {
       if (t.object.namespace === namespace && t.object.id === objectId && t.relation === relation && t.subject.kind === 'concrete') {
         out.push({ namespace: t.subject.namespace, id: t.subject.id });
       }
+    }
+    return out;
+  }
+
+  async listSubjects(namespace: string, objectId: string, relation: string): Promise<RelationTuple[]> {
+    return this.listByObjectRelation(namespace, objectId, relation);
+  }
+
+  async listObjects(namespace: string, relation: string, subject: SubjectRef): Promise<ObjectRef[]> {
+    const wanted = formatSubject(subject);
+    const out: ObjectRef[] = [];
+    for (const t of this.tuples.values()) {
+      if (t.object.namespace !== namespace || t.relation !== relation) continue;
+      if (formatSubject(t.subject) === wanted) out.push(t.object);
     }
     return out;
   }

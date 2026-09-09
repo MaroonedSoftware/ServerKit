@@ -7,6 +7,8 @@ import { PhoneFactorService } from '../factors/phone/phone.factor.service.js';
 import { PasswordFactorService } from '../factors/password/password.factor.service.js';
 import { RecoveryFactorService } from '../factors/recovery/recovery.factor.service.js';
 import { TargetActor } from '../mfa/types.js';
+import { AuthenticationSessionService } from '../authentication.session.service.js';
+import { maskEmail, maskPhone } from '../helpers.js';
 import { RecoveryChallengeService } from './recovery.challenge.service.js';
 import { RecoverySessionService } from './recovery.session.service.js';
 import {
@@ -88,10 +90,10 @@ export class RecoveryOrchestratorHooksProvider {
  *    `grantedActions`. The orchestrator dispatches to the relevant factor
  *    service (or hook) and redeems the recovery session.
  *
- * The orchestrator **does not** invalidate pre-existing authentication
- * sessions. For `resetPassword` and `fullRecovery`, the caller should
- * enumerate `AuthenticationSessionService.getSessionsForSubject(actorId)` and
- * delete each, so prior tokens cannot continue to authorise requests.
+ * When an {@link AuthenticationSessionService} is supplied, `resetPassword` and
+ * `fullRecovery` revoke the actor's existing authentication sessions (reason
+ * `'recovery'`) so tokens minted before the recovery stop working. Construct the
+ * orchestrator without one and that step is the caller's responsibility.
  */
 @Injectable()
 export class RecoveryOrchestrator {
@@ -104,6 +106,13 @@ export class RecoveryOrchestrator {
     private readonly passwordFactorService: PasswordFactorService,
     private readonly recoveryFactorService: RecoveryFactorService,
     private readonly hooksProvider: RecoveryOrchestratorHooksProvider = new RecoveryOrchestratorHooksProvider(),
+    /**
+     * Used to revoke the actor's existing authentication sessions after a
+     * `resetPassword` or `fullRecovery`. Optional so the orchestrator can still be
+     * constructed standalone; bind it in DI (as any app using sessions already does)
+     * and the revocation happens by default.
+     */
+    private readonly authenticationSessionService?: AuthenticationSessionService,
   ) {}
 
   /**
@@ -132,18 +141,23 @@ export class RecoveryOrchestrator {
 
   /**
    * Compute eligible channels for an actor and reason from the factors on file.
+   *
+   * Labels are masked: `initiateRecovery` is reachable pre-authentication, so a
+   * caller who knows an email address must not be handed that account's other
+   * contact details in full. The unmasked recipient is returned only by
+   * {@link issueChannelChallenge}, which is bound to a selected channel.
    */
   private async eligibleChannelsFor(actor: TargetActor, reason: RecoveryReason): Promise<RecoveryEligibleChannel[]> {
     const channels: RecoveryEligibleChannel[] = [];
 
     const emails = await this.emailFactorService.listFactors(actor.actorId, true);
     for (const email of emails) {
-      channels.push({ channel: 'email', methodId: email.id, label: email.value });
+      channels.push({ channel: 'email', methodId: email.id, label: maskEmail(email.value) });
     }
 
     const phones = await this.phoneFactorService.listFactors(actor.actorId, true);
     for (const phone of phones) {
-      channels.push({ channel: 'phone', methodId: phone.id, label: phone.value });
+      channels.push({ channel: 'phone', methodId: phone.id, label: maskPhone(phone.value) });
     }
 
     if (reason === 'mfa_recovery' || reason === 'full_recovery') {
@@ -272,9 +286,17 @@ export class RecoveryOrchestrator {
    * recovery challenge is redeemed (single-use) and a recovery session is
    * minted whose `grantedActions` are derived from the original `reason`.
    *
+   * The proof is bound to the parent challenge two ways: for `email` / `phone` the
+   * `channelChallengeId` must be the one {@link issueChannelChallenge} stitched on, and
+   * the factor the proof resolves to must appear in the challenge's `eligibleChannels`.
+   * Both are required so a sub-challenge issued against another account cannot be
+   * redeemed here.
+   *
    * @throws HTTP 404 when the recovery challenge has expired or does not exist, or when an
    *   email proof carries an `issueMethod` the underlying channel challenge was not issued under.
-   * @throws HTTP 400 when the proof's channel doesn't match the selected channel.
+   * @throws HTTP 400 when the proof's channel doesn't match the selected channel, when the
+   *   proof's `channelChallengeId` is not the one this challenge issued, or when the verified
+   *   factor is not on the challenge's eligible list.
    * @throws Whatever the per-factor `verify*` call throws when the proof is invalid.
    */
   async verifyChannel<K extends string = string>(challengeId: string, proof: RecoveryProof): Promise<VerifyChannelResult> {
@@ -289,7 +311,29 @@ export class RecoveryOrchestrator {
       throw httpError(400).withDetails({ channel: 'does not match the selected channel' });
     }
 
+    // The proof must name the very sub-challenge this recovery challenge issued.
+    // Without this gate, a sub-challenge issued against the attacker's own email or
+    // phone factor could be redeemed against a parent challenge bound to a different
+    // actor, minting that actor's recovery session.
+    if (proof.channel !== 'recoveryCode') {
+      if (!challenge.channelChallengeId) {
+        throw httpError(400).withDetails({ channelChallengeId: 'no channel challenge has been issued for this recovery challenge' });
+      }
+      if (proof.channelChallengeId !== challenge.channelChallengeId) {
+        throw httpError(400).withDetails({ channelChallengeId: 'does not match the issued channel challenge' });
+      }
+    }
+
     const verifiedVia: { channel: RecoveryChannel; methodId?: string } = await this.verifyProof(challenge.actor.actorId, proof);
+
+    // Defence in depth, mirroring `MfaOrchestrator.completeMfa`: the factor the proof
+    // resolved to has to be one this challenge listed as eligible for its own actor.
+    const matchesEligible = challenge.eligibleChannels.some(
+      c => c.channel === verifiedVia.channel && (c.channel === 'recoveryCode' || c.methodId === verifiedVia.methodId),
+    );
+    if (!matchesEligible) {
+      throw httpError(400).withDetails({ channel: 'not eligible for this challenge' });
+    }
 
     await this.challengeService.redeem(challengeId);
 
@@ -331,10 +375,9 @@ export class RecoveryOrchestrator {
    * recovery session. The session is single-use and is redeemed regardless of
    * action success.
    *
-   * **Does not** invalidate authentication sessions. The caller should call
-   * `AuthenticationSessionService.getSessionsForSubject(actorId)` and delete
-   * each pre-existing session after a successful `resetPassword` or
-   * `fullRecovery`.
+   * A successful `resetPassword` or `fullRecovery` revokes the actor's existing
+   * authentication sessions when an {@link AuthenticationSessionService} was
+   * supplied to the constructor; without one, the caller must do it.
    *
    * @throws HTTP 404 when the recovery session has expired or does not exist.
    * @throws HTTP 403 when the requested action is not in the session's `grantedActions`.
@@ -354,6 +397,7 @@ export class RecoveryOrchestrator {
       case 'resetPassword': {
         await this.passwordFactorService.changePassword(actorId, action.newPassword);
         await this.passwordFactorService.clearRateLimit(actorId);
+        await this.revokeExistingSessions(actorId);
         break;
       }
       case 'unlockAccount': {
@@ -369,6 +413,7 @@ export class RecoveryOrchestrator {
       }
       case 'fullRecovery': {
         await this.hooksProvider.hooks.onFullRecovery?.({ actorId, identityProof: action.identityProof });
+        await this.revokeExistingSessions(actorId);
         break;
       }
     }
@@ -380,5 +425,14 @@ export class RecoveryOrchestrator {
       action,
       performedAt: DateTime.utc(),
     };
+  }
+
+  /**
+   * Revoke the actor's existing authentication sessions so tokens minted before
+   * the recovery stop working. No-ops when no {@link AuthenticationSessionService}
+   * was supplied, in which case the caller has to do this itself.
+   */
+  private async revokeExistingSessions(actorId: string) {
+    await this.authenticationSessionService?.revokeAllForSubject(actorId, 'recovery');
   }
 }

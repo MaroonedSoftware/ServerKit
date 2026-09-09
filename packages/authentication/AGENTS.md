@@ -85,7 +85,8 @@ by area; type aliases for provider-specific payload shapes are grouped rather th
 | `AuthenticationSessionServiceOptions`                          | class  | `(issuer, audience, expiresIn: Duration, refreshExpiresIn = 30 days, hooks = {})` | A class so it is an InjectKit token.                   |
 | `AuthenticationSessionService`                                 | class  | `@Injectable()`                                                                   | Backed by a `CacheProvider`.                           |
 | `#createSession` / `#updateSession` / `#createOrUpdateSession` | method | —                                                                                 | —                                                      |
-| `#getSession` / `#getSessionsForSubject`                       | method | —                                                                                 | The second is how you revoke every session for a user. |
+| `#getSession` / `#getSessionsForSubject`                       | method | —                                                                                 | Read paths; `#revokeAllForSubject` does the revoking. |
+| `#revokeAllForSubject`                                        | method | `(subject: string, reason?: SessionRevocationReason) => Promise<number>`          | Revokes every session for a subject; returns the count. |
 | `#lookupSessionFromJwt`                                        | method | `(jwt: string, ignoreJwtExpiration?: boolean)`                                    | —                                                      |
 | `#deleteSession`                                               | method | `(sessionToken, reason: SessionRevocationReason = 'logout')`                      | —                                                      |
 | `#issueTokenForSession`                                        | method | `(sessionToken) => Promise<AuthenticationToken>`                                  | —                                                      |
@@ -102,7 +103,7 @@ class) and an abstract `<Name>FactorRepository` you implement.
 | Password        | `PasswordFactorService`      | `PasswordFactorRepository`      | Types: `PasswordFactor`, `PasswordValue`.                                                                                         |
 | Email           | `EmailFactorService`         | `EmailFactorRepository`         | OTP and magic link, one pending challenge slot each. Type: `EmailFactor`.                                                         |
 | Phone           | `PhoneFactorService`         | `PhoneFactorRepository`         | OTP. Type: `PhoneFactor`.                                                                                                         |
-| Authenticator   | `AuthenticatorFactorService` | `AuthenticatorFactorRepository` | TOTP/HOTP. Types: `AuthenticatorFactor`, `AuthenticatorFactorOptions`.                                                            |
+| Authenticator   | `AuthenticatorFactorService` | `AuthenticatorFactorRepository` | TOTP/HOTP. Types: `AuthenticatorFactor`, `AuthenticatorFactorOptions`. The repository must implement `updateFactorCounter`.       |
 | FIDO / WebAuthn | `FidoFactorService`          | `FidoFactorRepository`          | Types: `FidoFactor`, `PublicKeyCredential*`, `AuthenticatorTransport`, `RegisterFidoFactorOptions`, `AuthorizeFidoFactorOptions`. |
 | OIDC            | `OidcFactorService`          | `OidcFactorRepository`          | Plus `OidcActorEmailLookup`, `OidcProfile`, `OidcAuthorizationResult`, `OidcAuthenticatedExchange`.                               |
 | OAuth2          | `OAuth2FactorService`        | `OAuth2FactorRepository`        | Plus `OAuth2ActorEmailLookup`, `OAuth2Profile`, `OAuth2Tokens`.                                                                   |
@@ -122,7 +123,7 @@ class) and an abstract `<Name>FactorRepository` you implement.
 | `Argon2idPasswordHashProvider`                            | class          | Uses `ARGON2ID_DEFAULTS` from `@maroonedsoftware/encryption`. Result type `PasswordHashResult`.                                   |
 | `PasswordStrengthProvider`                                | class          | zxcvbn-ts (English dictionary + adjacency graphs) **plus a live HaveIBeenPwned check**. Score 0–4; `ensureStrength` requires ≥ 3. |
 | `JwtProvider`                                             | class          | —                                                                                                                                 |
-| `OtpProvider`                                             | class          | Types: `OtpType`, `OtpOptions`, `TotpOptions`, `HotpOptions`, `OtpUrlOptions`, `OtpValidationOptions`, `defaultOtpOptions`.       |
+| `OtpProvider`                                             | class          | `validate` returns a boolean; `validateWithCounter` returns the matching step. Types: `OtpType`, `OtpOptions`, `TotpOptions`, `HotpOptions`, `OtpUrlOptions`, `OtpValidationOptions`, `defaultOtpOptions`. |
 | `OtpProviderMock`                                         | class          | `extends OtpProvider`. Tests only.                                                                                                |
 | `PkceProvider`                                            | class          | —                                                                                                                                 |
 | `OidcProviderRegistry` / `OidcProviderRegistryConfig`     | class          | Types: `OidcProviderConfig`.                                                                                                      |
@@ -163,7 +164,7 @@ default off the route path — a `@maroonedsoftware/mcp` tool passing it to `req
 | Export                                                               | Kind              | Shape                                                                                                                                                                                                                                                                                                                            | Notes                                 |
 | -------------------------------------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
 | `MfaOrchestrator`                                                    | class             | `issueOrChallenge`, `issueFactorChallenge`, `completeMfa`                                                                                                                                                                                                                                                                        | Consults `auth.session.mfa.required`. |
-| `MfaChallengeService` / `…Options`                                   | class             | Stashes and redeems challenges                                                                                                                                                                                                                                                                                                   | Challenges are single-use.            |
+| `MfaChallengeService` / `…Options`                                   | class             | Stashes and redeems challenges; `lockForCompletion` / `releaseCompletionLock` bound one in-flight completion                                                                                                                                                                                                                      | Challenges are single-use.            |
 | MFA types                                                            | —                 | `MfaChallengePayload`, `MfaEligibleFactor`, `IssueOrChallengeResult`, `CompleteMfaResult`, `FactorChallengeStartRequest`, `FactorChallengeStartResponse`, `FactorChallengeProof`, `TargetActor`                                                                                                                                  | —                                     |
 | `RecoveryOrchestrator`                                               | class             | `initiateRecovery`, `issueChannelChallenge`, `verifyChannel`, `completeRecovery`                                                                                                                                                                                                                                                 | Consults `auth.recovery.allowed`.     |
 | `RecoveryChallengeService` / `RecoverySessionService` (+ `…Options`) | class             | —                                                                                                                                                                                                                                                                                                                                | —                                     |
@@ -184,6 +185,9 @@ default off the route path — a `@maroonedsoftware/mcp` tool passing it to `req
 | -------------------------- | -------- | ----------------------------------------------------------------------------------- | ------------------------------------------- |
 | `matchesFactorConstraints` | function | Matches a session factor against a `StepUpRequirement`-style constraint set         | Used by the recency and assurance policies. |
 | `isFactorRecent`           | function | `(factor: AuthenticationSessionFactor, now: DateTime, within: Duration) => boolean` | —                                           |
+| `maskEmail`                | function | `(value: string) => string` — `jordan@example.com` → `j*****@example.com`         | Used for pre-auth channel labels.           |
+| `maskPhone`                | function | `(value: string) => string` — `+12025550123` → `•••• 23`                       | Used for pre-auth channel labels.           |
+| `timingSafeCompare`        | function | `(a: string, b: string) => boolean` — constant-time secret comparison             | Compares byte lengths, so multibyte input cannot throw. |
 
 ## Canonical usage
 
@@ -277,9 +281,22 @@ const session = await sessions.createSession(completed.actor.id, claims, complet
   the code is checked, so a magic link callback cannot be used to guess at an OTP.
 - The orchestrators do **not** mint sessions. Call `createSession` / `issueTokenForSession` yourself
   from the returned data.
-- **`RecoveryOrchestrator` does not invalidate existing sessions.** After `resetPassword` or
-  `fullRecovery`, enumerate `getSessionsForSubject(actorId)` and delete each one, or prior tokens
-  keep working.
+- **Authenticator codes are single-use, and the repository has to help.** `validateFactor` advances
+  an HOTP factor's stored `counter` past the matching step via
+  `AuthenticatorFactorRepository.updateFactorCounter`, and marks a consumed TOTP step in cache under
+  `authenticator_factor_consumed_{actorId}_{factorId}_{step}`. A repository that no-ops
+  `updateFactorCounter` leaves HOTP codes valid forever.
+- **`completeMfa` checks eligibility twice, on purpose.** The method (and, for an authenticator
+  proof, the `methodId`) is checked before the proof reaches a factor service, so an ineligible
+  proof cannot spend the single-use sub-challenge behind it; the full `methodId` check runs again
+  after verification, because challenge-based proofs only resolve to a factor at that point. One
+  completion runs at a time: a concurrent second call gets a 409, and the lock is released when a
+  proof fails so a typo does not strand the challenge.
+- **`RecoveryOrchestrator` revokes sessions only when it was given the session service.**
+  `resetPassword` and `fullRecovery` call `revokeAllForSubject(actorId, 'recovery')` when an
+  `AuthenticationSessionService` was passed to the constructor (bind it in DI and this is the
+  default). Construct the orchestrator without one and prior tokens keep working until the caller
+  revokes them.
 - Register `AuthenticationSessionHooks` for audit and alerting rather than wrapping the service.
   Wire `onRefreshReuseDetected` to a real alert — it is a token-theft signal.
 - Spread `AuthenticationPolicyMappings` into your `PolicyRegistryMap` rather than listing eleven
@@ -309,7 +326,12 @@ const session = await sessions.createSession(completed.actor.id, claims, complet
   repository that did not implement it fails at runtime, not at compile time.
 - **Recovery deliberately cannot be used to probe for account existence.** An unknown identifier
   still returns a challenge, with an empty `eligibleChannels` list. Do not "fix" that by returning
-  a 404.
+  a 404. For the same reason `eligibleChannels[].label` is masked via `maskEmail` / `maskPhone`;
+  the unmasked recipient is only returned by `issueChannelChallenge`.
+- **`verifyChannel` binds the proof to the parent challenge.** Email and phone proofs must carry
+  the `channelChallengeId` stitched on by `issueChannelChallenge`, and the verified factor must be
+  on the challenge's eligible list. Without both, a sub-challenge issued against the caller's own
+  factor could be redeemed against another actor's recovery challenge.
 - **`invalidAuthenticationSession` has `DateTime.invalid(...)` fields.** Any arithmetic on them
   yields invalid `DateTime`s rather than throwing, so a missed identity check propagates silently.
 - **The scheme handler splits on the first space only**, so schemes with space-separated parameters
@@ -331,7 +353,7 @@ src/
   authentication.scheme.handler.ts  AuthenticationHandlerMap, AuthenticationSchemeHandler
   chained.authentication.handler.ts ChainedAuthenticationHandler, AuthenticationHandlerChain
   authentication.session.service.ts Sessions, rotation, refresh + theft detection
-  helpers.ts                      matchesFactorConstraints, isFactorRecent
+  helpers.ts                      matchesFactorConstraints, isFactorRecent, maskEmail, maskPhone, timingSafeCompare
   jwt/                            JwtAuthenticationHandler, JwtAuthenticationIssuer(+Map)
   basic/                          BasicAuthenticationHandler, BasicAuthenticationIssuer
   factors/

@@ -14,6 +14,9 @@ export * from './filter/index.js';
 // PATCH
 export * from './patch/index.js';
 
+// Projection
+export * from './projection/index.js';
+
 // Errors
 export * from './errors/scim.error.js';
 

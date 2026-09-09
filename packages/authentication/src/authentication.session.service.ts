@@ -460,6 +460,29 @@ export class AuthenticationSessionService {
     return sessions.filter(x => x !== undefined) as AuthenticationSession[];
   }
 
+  /**
+   * Revoke every active session for a subject.
+   *
+   * Use after any event that invalidates prior authentication — a password reset,
+   * a full account recovery, an admin-forced logout — so tokens minted before the
+   * event stop working. Each revocation fires `onSessionRevoked` with `reason`.
+   *
+   * @param subject - The subject identifier whose sessions should be revoked.
+   * @param reason  - The reason surfaced to `onSessionRevoked`. Defaults to `'logout'`.
+   * @returns The number of sessions that were revoked.
+   */
+  async revokeAllForSubject(subject: string, reason: SessionRevocationReason = 'logout'): Promise<number> {
+    const tokens = await this.getSubjectSessions(subject);
+    let revoked = 0;
+    for (const token of tokens) {
+      const session = await this.getSession(token);
+      if (!session) continue;
+      await this.deleteSession(token, reason);
+      revoked += 1;
+    }
+    return revoked;
+  }
+
   private async getSubjectSessions(subject: string) {
     const response = await this.cache.get(this.getSubjectKey(subject));
 

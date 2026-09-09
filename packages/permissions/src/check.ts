@@ -24,7 +24,8 @@ const memoKey = (object: ObjectRef, relation: string, subject: SubjectRef): stri
  *
  * Each call gets a fresh per-request memo and cycle guard. Recursion is
  * capped at a fixed `MAX_DEPTH` (32) — exceeding it returns `false` and
- * sets {@link CheckMetrics.hitMaxDepth}.
+ * sets {@link CheckMetrics.hitMaxDepth}. That `false` is indistinguishable from
+ * a genuine denial here; use {@link checkDetailed} when the difference matters.
  *
  * @param model - Validated authorization model.
  * @param repo - Storage backend for relation tuples.
@@ -34,8 +35,9 @@ const memoKey = (object: ObjectRef, relation: string, subject: SubjectRef): stri
  * @param subject - Subject whose access is being checked.
  * @param sink - Optional telemetry sink; defaults to {@link noopMetricsSink}.
  * @returns `true` if access is granted, `false` otherwise.
- * @throws {Error} If `object.namespace` or `relationOrPermission` is not
- *   declared on the model.
+ * @throws {PermissionsError} If `object.namespace` or `relationOrPermission` is
+ *   not declared on the model. This is a modelling bug, not a denial — do not
+ *   catch it and return a 403.
  */
 export const check = async (
   model: AuthorizationModel,
@@ -45,6 +47,52 @@ export const check = async (
   subject: SubjectRef,
   sink: CheckMetricsSink = noopMetricsSink,
 ): Promise<boolean> => {
+  const { allowed } = await checkDetailed(model, repo, object, relationOrPermission, subject, sink);
+  return allowed;
+};
+
+/**
+ * The outcome of a Check, with enough context to tell a real denial from one
+ * the evaluator could not decide.
+ */
+export interface CheckResult {
+  /** Whether access is granted. */
+  allowed: boolean;
+  /**
+   * True when the evaluator hit its depth cap and gave up. `allowed` is `false`
+   * in that case, but it means "could not determine", not "denied" — a deep
+   * enough object hierarchy produces this, and treating it as an ordinary denial
+   * hides a modelling problem behind a 403.
+   */
+  maxDepthExceeded: boolean;
+  /** Counters for this Check, the same record handed to the metrics sink. */
+  metrics: CheckMetrics;
+}
+
+/**
+ * Run a Check and return the full {@link CheckResult}.
+ *
+ * Same evaluation as {@link check}; use this when a caller needs to distinguish
+ * a denial from a depth-capped inconclusive answer, or wants the per-call
+ * counters without wiring a {@link CheckMetricsSink}.
+ *
+ * @param model - Validated authorization model.
+ * @param repo - Storage backend for relation tuples.
+ * @param object - Object the access question is about.
+ * @param relationOrPermission - Relation or permission name on `object.namespace`.
+ * @param subject - Subject whose access is being checked.
+ * @param sink - Optional telemetry sink; defaults to {@link noopMetricsSink}.
+ * @throws {PermissionsError} If `object.namespace` or `relationOrPermission` is
+ *   not declared on the model.
+ */
+export const checkDetailed = async (
+  model: AuthorizationModel,
+  repo: PermissionsTupleRepository,
+  object: ObjectRef,
+  relationOrPermission: string,
+  subject: SubjectRef,
+  sink: CheckMetricsSink = noopMetricsSink,
+): Promise<CheckResult> => {
   const ctx: CheckCtx = {
     model,
     repo,
@@ -60,7 +108,7 @@ export const check = async (
     permission: relationOrPermission,
     allowed,
   });
-  return allowed;
+  return { allowed, maxDepthExceeded: ctx.metrics.hitMaxDepth, metrics: ctx.metrics };
 };
 
 const checkInner = async (ctx: CheckCtx, object: ObjectRef, relOrPerm: string, subject: SubjectRef, depth: number): Promise<boolean> => {

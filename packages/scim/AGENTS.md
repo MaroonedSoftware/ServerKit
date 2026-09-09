@@ -83,7 +83,7 @@ contract is inseparable from HTTP.
 | Export            | Kind       | Shape                                                       | Notes                                        |
 | ----------------- | ---------- | ----------------------------------------------------------- | -------------------------------------------- |
 | `ScimError`       | class      | `extends HttpError`                                         | So `errorMiddleware` already understands it. |
-| `scimError`       | function   | `(status, scimType?, detail?) => ScimError`                 | The factory to use.                          |
+| `scimError`       | function   | `(status, scimType?, statusText?) => ScimError`             | The factory to use. The third argument is the HTTP status text; put the operator-facing reason on `.withDetails({ message })`, which `toScimBody` renders as `detail`. |
 | `IsScimError`     | type guard | —                                                           | —                                            |
 | `ScimErrorType`   | type       | `'invalidFilter'`, `'insufficientScope'`, `'mutability'`, … | RFC 7644 §3.12 `scimType` values.            |
 | `ScimErrorSchema` | constant   | The error envelope URN                                      | —                                            |
@@ -95,6 +95,8 @@ contract is inseparable from HTTP.
 | `ScimUserRepository`                                                  | abstract class | Implement over your datastore.                                                                                                                      |
 | `ScimGroupRepository`                                                 | abstract class | Implement over your datastore.                                                                                                                      |
 | `ScimListQuery`                                                       | interface      | `{ filter?: ScimFilterNode; startIndex; count; sortBy?; sortOrder?; attributes?; excludedAttributes? }` — **the parsed AST**, never the raw string. |
+| `projectScimResource`                                                 | function       | `(resource, schemas: ScimSchema[], projection?) => resource` — applies `attributes` / `excludedAttributes` and strips `returned: 'never'`. |
+| `ScimProjection`                                                      | interface      | `{ attributes?: string[]; excludedAttributes?: string[] }` |
 | `ScimListResult<TResource>`                                           | interface      | `{ resources; totalResults }` — `totalResults` is the **filter-matching total**, not the page size.                                                 |
 | `ScimSortOrder`                                                       | type           | `'ascending' \| 'descending'`                                                                                                                       |
 | `ScimUserService` / `ScimGroupService` / `ScimServiceProviderService` | class          | Sit between the router and the repositories.                                                                                                        |
@@ -108,7 +110,7 @@ contract is inseparable from HTTP.
 | `SCIM_MEDIA_TYPE`           | constant  | `'application/scim+json'`                                                          | —                                                                                     |
 | `requireScimScope`          | function  | `(scope: string) => ServerKitRouterMiddleware`                                     | Reads `ctx.authenticationSession.claims.scimScopes`. `*` grants everything.           |
 | `createScimRouter`          | function  | `(options: CreateScimRouterOptions) => Router<unknown, ServerKitContext>`          | Mounts every endpoint below.                                                          |
-| `CreateScimRouterOptions`   | interface | `{ userService, groupService, serviceProviderService, routeGuards?, maxResults? }` | `maxResults` defaults to the service-provider config's `filter.maxResults`, then 200. |
+| `CreateScimRouterOptions`   | interface | `{ userService, groupService, serviceProviderService, routeGuards?, maxResults?, baseUrl? }` | `maxResults` defaults to the service-provider config's `filter.maxResults`, then 200. Set `baseUrl` whenever the router is mounted under a prefix. |
 
 Endpoints mounted: `GET|POST /Users`, `GET|PUT|PATCH|DELETE /Users/:id`, `POST /Users/.search`, the
 same six plus `.search` for `/Groups`, and `GET /Schemas`, `/Schemas/:id`, `/ResourceTypes`,
@@ -145,6 +147,7 @@ const router = createScimRouter({
   groupService: new ScimGroupService(groupRepository, logger),
   serviceProviderService: new ScimServiceProviderService(config),
   routeGuards: [requireScimScope('scim:write')],
+  baseUrl: 'https://api.example.com/scim/v2',
 });
 
 // SCIM mountpoint — note scimErrorMiddleware, not errorMiddleware
@@ -166,12 +169,18 @@ app.use(router.routes()).use(router.allowedMethods());
   Provisioning clients paginate on it, and a wrong value makes Okta or Entra loop or truncate.
 - Populate `claims.scimScopes` (a string array) when minting the bearer session, or every request
   gets a 403.
+- Honour `count: 0` by returning an empty `Resources` array with the real `totalResults`, per RFC
+  7644 §3.4.2.4. The router already parses it that way from both the query string and a `.search`
+  body; a repository that treats `0` as "unset" breaks the count probe Okta and Entra make on
+  connection setup.
 - Honour `startIndex` as **1-based**, per RFC 7644 §3.4.2.4. Off-by-one here silently skips or
   repeats the first record.
 - Apply PATCH with `applyScimPatch` rather than hand-rolling op semantics — value-path filters
   (`emails[type eq "work"].value`) are easy to get subtly wrong.
-- Throw `scimError(status, scimType, detail)` with the right RFC 7644 §3.12 `scimType`. Clients
-  branch on it.
+- Throw `scimError(status, scimType, statusText).withDetails({ message })` with the right RFC 7644
+  §3.12 `scimType`. Clients branch on `scimType`, and `toScimBody` renders `details.message` as the
+  envelope's `detail` (falling back to the status text), which is what an operator reads in Okta or
+  Entra when provisioning fails.
 - Serve `/Schemas`, `/ResourceTypes`, and `/ServiceProviderConfig`. Provisioning clients call them
   during setup and fail the connection without them.
 
@@ -201,6 +210,15 @@ app.use(router.routes()).use(router.allowedMethods());
   `scimContentTypeMiddleware` is what actually enforces the media type if you want strictness.
 - **`schemas` on a resource is a required array of URNs**, not decoration. Omitting the enterprise
   URN on a user with enterprise attributes makes clients ignore them.
+- **`meta.location` needs `baseUrl` to be right.** The services assign a root-relative
+  `/Users/{id}`, because they cannot know where the router is mounted. `createScimRouter` rewrites
+  it (and the `Location` header) against `options.baseUrl`; without that option a deployment under
+  `/scim/v2` emits URIs that provisioning clients then follow to a 404.
+- **Responses are projected by the router, not the repository.** `createScimRouter` runs every user
+  and group response through `projectScimResource`, which applies `attributes` /
+  `excludedAttributes` and strips attributes the schema declares `returned: 'never'`. A repository
+  that stores and returns `password` verbatim is therefore safe on the wire — but do not rely on
+  that if you serve resources through your own routes, and prefer not to store it at all.
 
 ## Working inside this package
 
@@ -227,7 +245,7 @@ Invariants a change must not break:
 - Repositories receive the **parsed AST**, never the raw filter string. That is what keeps backend
   translation the only concern a consumer has.
 - `totalResults` is the filter-matching total. Provisioning clients' pagination depends on it.
-- `startIndex` is 1-based throughout.
+- `startIndex` is 1-based throughout, and `count: 0` means "none, but tell me the total".
 - The SCIM error envelope (`ScimErrorSchema`, `scimType`, `detail`) is a wire contract with Okta,
   Entra ID, and every other provisioning client. It is not ServerKit's error shape.
 - The filter grammar and the PATCH value-path semantics follow RFC 7644. Divergence shows up as an

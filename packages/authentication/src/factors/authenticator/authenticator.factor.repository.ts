@@ -22,8 +22,21 @@ export type AuthenticatorFactor = Factor & AuthenticatorFactorOptions;
 /**
  * Repository interface for persisting authenticator (TOTP/HOTP) factors.
  */
-// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging, @typescript-eslint/no-empty-object-type, @typescript-eslint/no-empty-interface
-export interface AuthenticatorFactorRepository extends FactorRepository<AuthenticatorFactor, AuthenticatorFactorOptions, string> {}
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
+export interface AuthenticatorFactorRepository extends FactorRepository<AuthenticatorFactor, AuthenticatorFactorOptions, string> {
+  /**
+   * Persist a new counter value for an HOTP factor after a successful validation.
+   *
+   * Called by {@link AuthenticatorFactorService.validateFactor} with the step
+   * **after** the one that matched, so a code cannot be presented twice. TOTP
+   * factors derive their counter from the clock and never reach this method.
+   *
+   * @param actorId  - The actor that owns the factor.
+   * @param factorId - The factor record id.
+   * @param counter  - The new counter value to store.
+   */
+  updateFactorCounter(actorId: string, factorId: string, counter: number): Promise<void>;
+}
 
 @Injectable()
 // eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging

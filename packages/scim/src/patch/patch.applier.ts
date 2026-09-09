@@ -226,14 +226,23 @@ const mergeObject = (target: Record<string, unknown>, source: Record<string, unk
   for (const [key, val] of Object.entries(source)) {
     const existing = out[key];
     if (Array.isArray(existing) && Array.isArray(val)) {
-      out[key] = [...existing, ...val];
+      defineOwn(out, key, [...existing, ...val]);
     } else if (isPlainObject(existing) && isPlainObject(val)) {
-      out[key] = mergeObject(existing, val, kind);
+      defineOwn(out, key, mergeObject(existing, val, kind));
     } else {
-      out[key] = val;
+      defineOwn(out, key, val);
     }
   }
   return out;
+};
+
+/**
+ * Assign a key without going through a setter. PATCH values come straight off
+ * the request body, and plain assignment to `__proto__` invokes the inherited
+ * setter and reparents the object instead of storing an attribute.
+ */
+const defineOwn = (target: Record<string, unknown>, key: string, value: unknown): void => {
+  Object.defineProperty(target, key, { value, writable: true, enumerable: true, configurable: true });
 };
 
 const evaluateFilter = (item: Record<string, unknown>, filter: ScimFilterNode): boolean => {

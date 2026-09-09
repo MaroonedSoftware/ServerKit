@@ -13,6 +13,8 @@ export class MfaChallengeServiceOptions {
   constructor(
     /** How long an issued challenge remains valid before it must be redeemed. */
     public readonly ttl: Duration = Duration.fromDurationLike({ minutes: 5 }),
+    /** How long the in-flight completion lock is held. Bounds one `completeMfa` call, not the challenge. */
+    public readonly completionLockTtl: Duration = Duration.fromDurationLike({ seconds: 30 }),
   ) {}
 }
 
@@ -154,15 +156,46 @@ export class MfaChallengeService {
 
   /**
    * Look up a challenge and delete it in the same call. Returns `null` when the
-   * challenge has expired or does not exist. Use this when completing MFA so
-   * the challenge id cannot be replayed.
+   * challenge has expired, does not exist, or was already redeemed by a
+   * concurrent caller. Use this when completing MFA so the challenge id cannot
+   * be replayed.
+   *
+   * The delete is the claim: only the caller whose `delete` actually removed the
+   * entry gets the payload back, so two racing completions cannot both succeed.
    */
   async redeem(challengeId: string): Promise<MfaChallengePayload | null> {
     const data = await this.cache.get(this.getKey(challengeId));
     if (!data) {
       return null;
     }
-    await this.cache.delete(this.getKey(challengeId));
+    const deleted = await this.cache.delete(this.getKey(challengeId));
+    if (!deleted) {
+      return null;
+    }
     return this.deserialize(data);
+  }
+
+  /**
+   * Take the in-flight completion lock for a challenge. Bounds a completion
+   * attempt so a second one cannot run against the same challenge while the
+   * first is still verifying its proof against a factor service.
+   *
+   * @returns `true` when the lock was taken, `false` when another completion holds it.
+   */
+  async lockForCompletion(challengeId: string): Promise<boolean> {
+    return this.cache.add(this.getCompletionLockKey(challengeId), '1', { ttl: this.options.completionLockTtl });
+  }
+
+  /**
+   * Release the in-flight completion lock so the actor can retry. Called after a
+   * proof fails to verify; a successful completion redeems the challenge instead,
+   * and leaves the lock to expire.
+   */
+  async releaseCompletionLock(challengeId: string): Promise<void> {
+    await this.cache.delete(this.getCompletionLockKey(challengeId));
+  }
+
+  private getCompletionLockKey(challengeId: string) {
+    return `mfa_challenge_completing_${challengeId}`;
   }
 }

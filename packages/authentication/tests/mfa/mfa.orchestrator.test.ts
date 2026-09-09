@@ -20,6 +20,11 @@ const makeCache = () => {
     update: vi.fn(async (key: string, value: string) => {
       store.set(key, value);
     }),
+    add: vi.fn(async (key: string, value: string) => {
+      if (store.has(key)) return false;
+      store.set(key, value);
+      return true;
+    }),
     delete: vi.fn(async (key: string) => {
       const had = store.has(key);
       store.delete(key);
@@ -85,7 +90,7 @@ const makeOrchestrator = (overrides: { policy: PolicyResult }) => {
 
   const orchestrator = new MfaOrchestrator(challengeService, policyService, phoneFactor, fidoFactor, authenticatorFactor, emailFactor);
 
-  return { orchestrator, challengeService, phoneFactor, emailFactor, policyService };
+  return { orchestrator, challengeService, phoneFactor, emailFactor, authenticatorFactor, policyService };
 };
 
 describe('MfaOrchestrator', () => {
@@ -364,6 +369,86 @@ describe('MfaOrchestrator', () => {
       await orchestrator.completeMfa(issued.challenge.challengeId, { method: 'email', challengeId: 'email-chal-1', code: '123456' });
 
       expect(emailFactor.verifyEmailChallenge).toHaveBeenCalledWith('email-chal-1', '123456', undefined);
+    });
+
+    it('rejects a proof for a method the challenge never offered without consuming it', async () => {
+      const { orchestrator, challengeService, phoneFactor } = makeOrchestrator({ policy: { allowed: true } });
+      const challenge = await challengeService.issue({
+        actor,
+        primaryFactor,
+        eligibleFactors: [{ method: 'email', methodId: 'email-1', kind: 'possession' }],
+      });
+
+      await expect(
+        orchestrator.completeMfa(challenge.challengeId, { method: 'phone', challengeId: 'phone-chal-1', code: '123456' }),
+      ).rejects.toMatchObject({ statusCode: 400 });
+
+      // The sub-challenge behind the proof is single-use, so it must not have been spent.
+      expect(phoneFactor.verifyPhoneChallenge).not.toHaveBeenCalled();
+      expect(await challengeService.peek(challenge.challengeId)).not.toBeNull();
+    });
+
+    it('rejects an authenticator proof for a methodId that is not eligible without consuming it', async () => {
+      const { orchestrator, challengeService, authenticatorFactor } = makeOrchestrator({ policy: { allowed: true } });
+      const challenge = await challengeService.issue({
+        actor,
+        primaryFactor,
+        eligibleFactors: [{ method: 'authenticator', methodId: 'auth-1', kind: 'possession' }],
+      });
+
+      await expect(
+        orchestrator.completeMfa(challenge.challengeId, { method: 'authenticator', methodId: 'auth-9', code: '123456' }),
+      ).rejects.toMatchObject({ statusCode: 400 });
+
+      expect(authenticatorFactor.validateFactor).not.toHaveBeenCalled();
+    });
+
+    it('rejects a second completion that starts while the first is still verifying', async () => {
+      const { orchestrator, challengeService, phoneFactor } = makeOrchestrator({ policy: { allowed: true } });
+      const challenge = await challengeService.issue({
+        actor,
+        primaryFactor,
+        eligibleFactors: [{ method: 'phone', methodId: 'phone-1', kind: 'possession' }],
+      });
+
+      // Hold the first completion inside verifyProof so both calls are genuinely in flight.
+      let releaseVerify: () => void = () => {};
+      const verifying = new Promise<void>(resolve => {
+        releaseVerify = resolve;
+      });
+      vi.mocked(phoneFactor.verifyPhoneChallenge).mockImplementationOnce(async () => {
+        await verifying;
+        return { id: 'phone-1', actorId: actor.actorId, active: true, value: '+12025550123' } as Awaited<
+          ReturnType<PhoneFactorService['verifyPhoneChallenge']>
+        >;
+      });
+
+      const first = orchestrator.completeMfa(challenge.challengeId, { method: 'phone', challengeId: 'phone-chal-1', code: '123456' });
+      const second = orchestrator.completeMfa(challenge.challengeId, { method: 'phone', challengeId: 'phone-chal-1', code: '123456' });
+
+      await expect(second).rejects.toMatchObject({ statusCode: 409 });
+      releaseVerify();
+      await expect(first).resolves.toBeDefined();
+    });
+
+    it('releases the completion lock when the proof fails so the actor can retry', async () => {
+      const { orchestrator, challengeService, phoneFactor } = makeOrchestrator({ policy: { allowed: true } });
+      const challenge = await challengeService.issue({
+        actor,
+        primaryFactor,
+        eligibleFactors: [{ method: 'phone', methodId: 'phone-1', kind: 'possession' }],
+      });
+
+      vi.mocked(phoneFactor.verifyPhoneChallenge).mockRejectedValueOnce(new Error('bad code'));
+
+      await expect(
+        orchestrator.completeMfa(challenge.challengeId, { method: 'phone', challengeId: 'phone-chal-1', code: 'wrong' }),
+      ).rejects.toThrow('bad code');
+
+      // A typo must not lock the actor out of their own challenge.
+      await expect(
+        orchestrator.completeMfa(challenge.challengeId, { method: 'phone', challengeId: 'phone-chal-1', code: '123456' }),
+      ).resolves.toBeDefined();
     });
   });
 });

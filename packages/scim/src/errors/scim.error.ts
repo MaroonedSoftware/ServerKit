@@ -41,13 +41,23 @@ export class ScimError extends HttpError {
     this.scimType = scimType;
   }
 
-  /** Build the SCIM error JSON body for this error. */
+  /**
+   * Build the SCIM error JSON body for this error.
+   *
+   * `detail` prefers a string `message` from {@link ServerkitError.details}, falling
+   * back to the error's own message. The package raises errors as
+   * `scimError(409, 'uniqueness', 'Conflict').withDetails({ message: '...' })`, where
+   * the constructor's third argument is only the HTTP status text; without this
+   * preference every provisioning client would see `"detail": "Conflict"` and never
+   * the reason.
+   */
   toScimBody(): { schemas: [typeof ScimErrorSchema]; status: string; scimType?: ScimErrorType; detail?: string } {
+    const detailFromDetails = this.details?.message;
     return {
       schemas: [ScimErrorSchema],
       status: String(this.statusCode),
       ...(this.scimType ? { scimType: this.scimType } : {}),
-      detail: this.message,
+      detail: typeof detailFromDetails === 'string' ? detailFromDetails : this.message,
     };
   }
 }
