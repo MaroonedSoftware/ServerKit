@@ -79,10 +79,7 @@ describe('InMemoryTupleRepository', () => {
     });
 
     it('matches a wildcard subject exactly, not as a catch-all', async () => {
-      const repo = new InMemoryTupleRepository([
-        parseTuple('document:public.viewer@user.*'),
-        parseTuple('document:readme.viewer@user:alice'),
-      ]);
+      const repo = new InMemoryTupleRepository([parseTuple('document:public.viewer@user.*'), parseTuple('document:readme.viewer@user:alice')]);
 
       expect(await repo.listObjects('document', 'viewer', { kind: 'wildcard', namespace: 'user' })).toEqual([
         { namespace: 'document', id: 'public' },
@@ -101,10 +98,7 @@ describe('InMemoryTupleRepository', () => {
     });
 
     it('scopes results to the requested namespace', async () => {
-      const repo = new InMemoryTupleRepository([
-        parseTuple('document:readme.viewer@user:alice'),
-        parseTuple('folder:root.viewer@user:alice'),
-      ]);
+      const repo = new InMemoryTupleRepository([parseTuple('document:readme.viewer@user:alice'), parseTuple('folder:root.viewer@user:alice')]);
 
       expect(await repo.listObjects('folder', 'viewer', { kind: 'concrete', namespace: 'user', id: 'alice' })).toEqual([
         { namespace: 'folder', id: 'root' },

@@ -708,7 +708,14 @@ describe('zodErrorDetails', () => {
     const scalar = z.string().safeParse(42);
     expect(zodErrorDetails(scalar.error!)).toEqual({ _root: 'Expected string' });
 
-    const multiple = z.object({ name: z.string().min(5).regex(/^[a-z]+$/) }).safeParse({ name: 'A1' });
+    const multiple = z
+      .object({
+        name: z
+          .string()
+          .min(5)
+          .regex(/^[a-z]+$/),
+      })
+      .safeParse({ name: 'A1' });
     expect(zodErrorDetails(multiple.error!).name).toBeInstanceOf(Array);
   });
 });

@@ -80,21 +80,21 @@ plus `@hapi/bourne`, `inflation`, `injectkit`, `luxon`, `qs`, `rate-limiter-flex
 
 ### Guards
 
-| Export                       | Kind                       | Shape                                                                                          | Notes                                                                        |
-| ---------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `RateLimiter`                | interface + abstract class | `extends RateLimiterAbstract`                                                                  | DI token for a `rate-limiter-flexible` limiter.                              |
-| `consumeRateLimit`           | function                   | `(rateLimiter: RateLimiter, key: string) => Promise<void>`                                     | Throws 429 with `retry-after` / `x-ratelimit-*` headers.                     |
-| `CorsOrigin`                 | type                       | `string \| (string \| RegExp)[]`                                                               | Koa adapter only; see the note below the table.                              |
-| `normalizeCorsOrigins`       | function                   | `(origin?: CorsOrigin) => (string \| RegExp)[]`                                                | `undefined` → `['*']`; a string is one origin. Koa only.                     |
-| `createOriginMatcher`        | function                   | `(matchers) => (requestOrigin: string) => string`                                              | Reflects the origin on match, `''` otherwise. Koa only.                      |
-| `createAnonymousPathMatcher` | function                   | `(paths?: (string \| RegExp)[]) => (path: string) => boolean`                                  | Strings exact, RegExps tested.                                               |
-| `stripRawAuthorizationHeader` | function                  | `(rawHeaders: string[]) => void`                                                              | Removes every `Authorization` pair from a Node `rawHeaders` array, in place. |
-| `REQUIRE_SIGNATURE_POLICY`   | constant                   | `'request.signature.valid'`                                                                    | —                                                                            |
-| `SignatureOptions`           | type                       | `{ header, secret, algorithm, digest }`                                                        | Stored in `AppConfig`, resolved by key.                                      |
-| `SignaturePolicyContext<T>`  | interface                  | `{ rawBody: BinaryLike; getHeader: (name) => string; options: T }`                             | The policy context for a signature scheme.                                   |
-| `DefaultSignaturePolicy`     | class                      | `extends Policy<SignaturePolicyContext>`                                                       | HMAC over `rawBody`, `timingSafeEqual`. Denies `'invalid_signature'`.        |
-| `SignatureRequest`           | interface                  | `{ rawBody; getHeader }`                                                                       | —                                                                            |
-| `assertRequestSignature<T>`  | function                   | `(container, request: SignatureRequest, optionsKey: string, policy?: string) => Promise<void>` | Resolves `AppConfig` and `PolicyService` from `container`; asserts with 401. |
+| Export                        | Kind                       | Shape                                                                                          | Notes                                                                        |
+| ----------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `RateLimiter`                 | interface + abstract class | `extends RateLimiterAbstract`                                                                  | DI token for a `rate-limiter-flexible` limiter.                              |
+| `consumeRateLimit`            | function                   | `(rateLimiter: RateLimiter, key: string) => Promise<void>`                                     | Throws 429 with `retry-after` / `x-ratelimit-*` headers.                     |
+| `CorsOrigin`                  | type                       | `string \| (string \| RegExp)[]`                                                               | Koa adapter only; see the note below the table.                              |
+| `normalizeCorsOrigins`        | function                   | `(origin?: CorsOrigin) => (string \| RegExp)[]`                                                | `undefined` → `['*']`; a string is one origin. Koa only.                     |
+| `createOriginMatcher`         | function                   | `(matchers) => (requestOrigin: string) => string`                                              | Reflects the origin on match, `''` otherwise. Koa only.                      |
+| `createAnonymousPathMatcher`  | function                   | `(paths?: (string \| RegExp)[]) => (path: string) => boolean`                                  | Strings exact, RegExps tested.                                               |
+| `stripRawAuthorizationHeader` | function                   | `(rawHeaders: string[]) => void`                                                               | Removes every `Authorization` pair from a Node `rawHeaders` array, in place. |
+| `REQUIRE_SIGNATURE_POLICY`    | constant                   | `'request.signature.valid'`                                                                    | —                                                                            |
+| `SignatureOptions`            | type                       | `{ header, secret, algorithm, digest }`                                                        | Stored in `AppConfig`, resolved by key.                                      |
+| `SignaturePolicyContext<T>`   | interface                  | `{ rawBody: BinaryLike; getHeader: (name) => string; options: T }`                             | The policy context for a signature scheme.                                   |
+| `DefaultSignaturePolicy`      | class                      | `extends Policy<SignaturePolicyContext>`                                                       | HMAC over `rawBody`, `timingSafeEqual`. Denies `'invalid_signature'`.        |
+| `SignatureRequest`            | interface                  | `{ rawBody; getHeader }`                                                                       | —                                                                            |
+| `assertRequestSignature<T>`   | function                   | `(container, request: SignatureRequest, optionsKey: string, policy?: string) => Promise<void>` | Resolves `AppConfig` and `PolicyService` from `container`; asserts with 401. |
 
 ### SSE
 

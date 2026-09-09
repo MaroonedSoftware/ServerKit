@@ -104,6 +104,7 @@ export class AuthenticationSessionService {
       factors: session.factors.map(({ method, methodId, kind }) => ({ method, methodId, kind })),
       claims: session.claims,
       expiresAt: session.expiresAt.toISO() ?? '',
+      ...(session.device === undefined ? {} : { device: session.device }),
     };
   }
 

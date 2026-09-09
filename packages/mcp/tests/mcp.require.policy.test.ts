@@ -69,9 +69,9 @@ describe('requireMcpPolicy', () => {
         throw denial;
       });
 
-      await expect(requireMcpPolicy({ authenticationSession: makeAuthenticatedSession() }, makePolicyService(assert), { policy: 'payments.write' })).rejects.toBe(
-        denial,
-      );
+      await expect(
+        requireMcpPolicy({ authenticationSession: makeAuthenticatedSession() }, makePolicyService(assert), { policy: 'payments.write' }),
+      ).rejects.toBe(denial);
     });
   });
 });

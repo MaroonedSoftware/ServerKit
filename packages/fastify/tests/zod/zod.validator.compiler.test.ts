@@ -9,12 +9,7 @@ import { errorPlugin } from '../../src/plugins/error.plugin.js';
 import { serverKitContextPlugin } from '../../src/plugins/serverkit.context.plugin.js';
 import { createTestApp, type TestAppOptions } from '../test.app.js';
 
-const plugins: TestAppOptions['plugins'] = container => [
-  errorPlugin(container),
-  serverKitContextPlugin(container),
-  bodyParserPlugin(),
-  zodPlugin(),
-];
+const plugins: TestAppOptions['plugins'] = container => [errorPlugin(container), serverKitContextPlugin(container), bodyParserPlugin(), zodPlugin()];
 
 const CreateUser = z.object({ email: z.email(), age: z.number().min(0) });
 

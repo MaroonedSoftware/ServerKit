@@ -248,8 +248,7 @@ describe('ServerKitServerBuilder (fastify)', () => {
       await builder.setup(config, logger, []);
       builder.setupPlugins(minimalPlugins);
       builder.setupRoutes([
-        async app =>
-          void app.get('/who', async request => ({ requestId: request.requestId, hasContainer: request.container !== undefined })),
+        async app => void app.get('/who', async request => ({ requestId: request.requestId, hasContainer: request.container !== undefined })),
       ]);
 
       const response = await builder.app.inject({ method: 'GET', url: '/who', headers: { 'x-request-id': 'r2' } });

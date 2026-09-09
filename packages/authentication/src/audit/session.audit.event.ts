@@ -1,4 +1,4 @@
-import type { AuthenticationFactorKind, AuthenticationFactorMethod, SessionRevocationReason } from '../types.js';
+import type { AuthenticationFactorKind, AuthenticationFactorMethod, SessionDevice, SessionRevocationReason } from '../types.js';
 import type { AuditEvent } from './types.js';
 
 /**
@@ -19,14 +19,13 @@ export interface AuditSessionFactor {
 /**
  * The session detail carried on lifecycle events.
  *
- * `claims` is passed through whole, deliberately. An application that stamps
- * request detail onto a session at login — `loginIp` and `loginUserAgent` is the
- * pattern both ServerKit consumers use — needs it back on a later revoke or
- * refresh, which happens on a different request where the live context describes
- * the wrong caller.
+ * `claims` is passed through whole, so **whatever you put in `claims` reaches
+ * your sink**. Do not store a secret there.
  *
- * That means **whatever you put in `claims` reaches your sink**. Do not store a
- * secret there.
+ * The passthrough originally existed so an application could recover request
+ * detail it had stamped onto the session at login. `device` covers that case
+ * directly now, so reach for it rather than a claim; the passthrough stays for
+ * everything else an application legitimately puts on a session.
  */
 export interface AuditSessionData {
   /** The session's opaque token. */
@@ -39,6 +38,15 @@ export interface AuditSessionData {
   claims: Record<string, unknown>;
   /** When the session expires, ISO 8601. */
   expiresAt: string;
+  /**
+   * Where the session was established from, when the session carries it.
+   *
+   * The request that *began* the session, which is the useful thing on a revoke
+   * or a refresh: those arrive on a different request, where the live context
+   * describes a different caller. Absent when the session was created without
+   * one.
+   */
+  device?: SessionDevice;
 }
 
 /**

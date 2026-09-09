@@ -45,7 +45,8 @@ describe('rateLimiterPlugin (fastify)', () => {
 
     // Same proxy socket, two different real clients. Without trustProxy the key is the proxy's
     // address, so the second client is rate limited for the first one's request.
-    const proxied = (forwardedFor: string) => app.inject({ method: 'GET', url: '/', remoteAddress: '10.0.0.1', headers: { 'x-forwarded-for': forwardedFor } });
+    const proxied = (forwardedFor: string) =>
+      app.inject({ method: 'GET', url: '/', remoteAddress: '10.0.0.1', headers: { 'x-forwarded-for': forwardedFor } });
 
     expect((await proxied('203.0.113.7')).statusCode).toBe(200);
     expect((await proxied('198.51.100.4')).statusCode).toBe(429);
@@ -59,7 +60,8 @@ describe('rateLimiterPlugin (fastify)', () => {
     });
     app.get('/', async () => 'ok');
 
-    const proxied = (forwardedFor: string) => app.inject({ method: 'GET', url: '/', remoteAddress: '10.0.0.1', headers: { 'x-forwarded-for': forwardedFor } });
+    const proxied = (forwardedFor: string) =>
+      app.inject({ method: 'GET', url: '/', remoteAddress: '10.0.0.1', headers: { 'x-forwarded-for': forwardedFor } });
 
     expect((await proxied('203.0.113.7')).statusCode).toBe(200);
     expect((await proxied('198.51.100.4')).statusCode).toBe(200);

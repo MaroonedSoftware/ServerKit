@@ -115,9 +115,7 @@ describe('serverFeedRoutes (fastify)', () => {
       const feed = new ServerFeed();
       const builder = new ServerKitServerBuilder({ host: '127.0.0.1' });
       await builder.setup({} as never, createLogger(), [feedModule(feed)]);
-      builder
-        .setupPlugins(withSession(session))
-        .setupRoutes([serverFeedRoutes({ policy: false, heartbeatMs: 0, signal: builder.lifecycleSignal })]);
+      builder.setupPlugins(withSession(session)).setupRoutes([serverFeedRoutes({ policy: false, heartbeatMs: 0, signal: builder.lifecycleSignal })]);
 
       // A backlog event makes the replay write immediately, which flushes the response headers;
       // without it a client sees no response until the first live event or heartbeat.

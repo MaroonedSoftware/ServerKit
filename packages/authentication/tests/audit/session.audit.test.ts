@@ -262,3 +262,42 @@ describe('the sink is the only lifecycle seam', () => {
     expect(logger.error).toHaveBeenCalledWith('audit.sink_failed', expect.objectContaining({ type: 'session.created' }));
   });
 });
+
+describe('device metadata on session events', () => {
+  const device = { ipAddress: '203.0.113.7', userAgent: 'curl/8', label: 'Laptop' };
+
+  it('reaches a creation event', async () => {
+    await build().createSession('user-1', {}, factor, undefined, device);
+
+    expect(captured.events[0]).toMatchObject({ type: 'session.created', data: { device } });
+  });
+
+  it('reaches a revocation, which arrives on a different request', async () => {
+    // The whole point: a revoke happens where the live context describes a
+    // different caller, so the origin has to come off the session.
+    const service = build();
+    const session = await service.createSession('user-1', {}, factor, undefined, device);
+    captured.events.length = 0;
+
+    await service.deleteSession(session.sessionToken, 'logout');
+
+    expect(captured.events[0]).toMatchObject({ type: 'session.revoked', data: { device } });
+  });
+
+  it('reaches a rotation, carrying the original origin', async () => {
+    const service = build();
+    const session = await service.createSession('user-1', {}, factor, undefined, device);
+    captured.events.length = 0;
+
+    await service.rotateSession(session.sessionToken);
+
+    expect(captured.events.find(e => e.type === 'session.rotated')).toMatchObject({ data: { device } });
+  });
+
+  it('omits the block entirely when the session has none', async () => {
+    await build().createSession('user-1', {}, factor);
+
+    // Absent, not an object of empty strings.
+    expect(captured.events[0]!.data).not.toHaveProperty('device');
+  });
+});
