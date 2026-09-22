@@ -1,5 +1,12 @@
 # @maroonedsoftware/scim
 
+## 0.3.4
+
+### Patch Changes
+
+- Updated dependencies [831cb32]
+  - @maroonedsoftware/koa@4.1.0
+
 ## 0.3.3
 
 ### Patch Changes
