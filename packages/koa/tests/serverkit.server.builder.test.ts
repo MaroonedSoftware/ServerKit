@@ -10,11 +10,12 @@ import { BinaryParser, openSseStream, ServerKitBodyParser, ServerKitParserMappin
 import { RateLimiter } from '../src/middleware/server/rate.limiter.middleware.js';
 import { Logger } from '@maroonedsoftware/logger';
 import { AppConfig } from '@maroonedsoftware/appconfig';
-import { ServerkitError } from '@maroonedsoftware/errors';
+import { httpError, ServerkitError } from '@maroonedsoftware/errors';
 import type { ServerKitModule } from '@maroonedsoftware/servercore';
 import type { ServerKitMiddleware } from '../src/serverkit.middleware.js';
 import { ServerKitContext } from '../src/serverkit.context.js';
 import { serverKitContextMiddleware } from '../src/middleware/server/serverkit.context.middleware.js';
+import { errorMiddleware } from '../src/middleware/server/error.middleware.js';
 
 /** Reaches into the builder's private fields for white-box assertions. */
 interface Internals {
@@ -365,6 +366,83 @@ describe('ServerKitServerBuilder', () => {
       internals(builder).server.emit('error', error);
 
       expect(logger.error).toHaveBeenCalledWith(error);
+    });
+
+    describe('request errors', () => {
+      /** Boots a server whose only route throws `thrown` on `/boom` and falls through elsewhere. */
+      const startThrowing = async (thrown: unknown): Promise<string> => {
+        const builder = new ServerKitServerBuilder();
+        await builder.setup(config, logger, []);
+        builder.setupMiddleware(container => [
+          errorMiddleware(),
+          serverKitContextMiddleware(container),
+          async (ctx, next) => {
+            if (ctx.path === '/boom') throw thrown;
+            await next();
+          },
+        ]);
+        server = await builder.start(0);
+        return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      };
+
+      const requestMeta = (status: number) => ({
+        method: 'GET',
+        path: '/boom',
+        status,
+        requestId: 'req-1',
+        correlationId: 'corr-1',
+      });
+      const headers = { 'x-request-id': 'req-1', 'x-correlation-id': 'corr-1' };
+
+      it('logs a 5xx with the request method, path, status and ids, at error', async () => {
+        const error = new Error('kaboom');
+        const base = await startThrowing(error);
+
+        await fetch(`${base}/boom?token=secret`, { headers });
+
+        expect(logger.error).toHaveBeenCalledWith(error, requestMeta(500));
+        expect(logger.warn).not.toHaveBeenCalled();
+      });
+
+      it('logs a 4xx HttpError at warn, since it is the caller at fault', async () => {
+        const error = httpError(429);
+        const base = await startThrowing(error);
+
+        await fetch(`${base}/boom`, { headers });
+
+        expect(logger.warn).toHaveBeenCalledWith(error, requestMeta(429));
+        expect(logger.error).not.toHaveBeenCalled();
+      });
+
+      it('keeps a 5xx HttpError at error', async () => {
+        const error = httpError(503);
+        const base = await startThrowing(error);
+
+        await fetch(`${base}/boom`, { headers });
+
+        expect(logger.error).toHaveBeenCalledWith(error, requestMeta(503));
+      });
+
+      it('never logs the query string', async () => {
+        const base = await startThrowing(httpError(401));
+
+        await fetch(`${base}/boom?token=secret`, { headers });
+        await fetch(`${base}/missing?token=secret`, { headers });
+
+        const logged = JSON.stringify([(logger.warn as ReturnType<typeof vi.fn>).mock.calls, (logger.error as ReturnType<typeof vi.fn>).mock.calls]);
+        expect(logged).not.toContain('secret');
+      });
+
+      it('logs a synthesised 404 at warn with the request fields', async () => {
+        const base = await startThrowing(new Error('unused'));
+
+        await fetch(`${base}/missing?token=secret`, { headers });
+
+        expect(logger.warn).toHaveBeenCalledWith(
+          { statusCode: 404, message: 'Not Found', details: { url: `${base}/missing` } },
+          { ...requestMeta(404), path: '/missing' },
+        );
+      });
     });
 
     it('runs every ready hook after every start hook and after the ready log', async () => {

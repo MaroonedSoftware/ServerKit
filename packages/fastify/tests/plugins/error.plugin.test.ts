@@ -18,7 +18,8 @@ describe('errorPlugin (fastify)', () => {
     expect(response.statusCode).toBe(403);
     expect(response.json()).toEqual({ statusCode: 403, message: 'Forbidden', details: { reason: 'nope' } });
     expect(response.headers['www-authenticate']).toBe('Bearer error="mfa_required"');
-    expect(logger.error).toHaveBeenCalledWith(error);
+    expect(logger.warn).toHaveBeenCalledWith(error, expect.objectContaining({ status: 403 }));
+    expect(logger.error).not.toHaveBeenCalled();
   });
 
   it('renders a bare ServerkitError as a 500 with its details', async () => {
@@ -44,7 +45,7 @@ describe('errorPlugin (fastify)', () => {
 
     expect(response.statusCode).toBe(500);
     expect(response.json()).toEqual({ statusCode: 500, message: 'Internal Server Error' });
-    expect(logger.error).toHaveBeenCalledWith(error);
+    expect(logger.error).toHaveBeenCalledWith(error, expect.objectContaining({ status: 500 }));
   });
 
   it('synthesises the 404 body for an unmatched route and warns', async () => {
@@ -54,7 +55,61 @@ describe('errorPlugin (fastify)', () => {
 
     expect(response.statusCode).toBe(404);
     expect(response.json()).toEqual({ statusCode: 404, message: 'Not Found', details: { url: 'http://localhost:80/missing?x=1' } });
-    expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 404 }));
+    expect(logger.warn).toHaveBeenCalledWith(
+      { statusCode: 404, message: 'Not Found', details: { url: 'http://localhost:80/missing' } },
+      expect.objectContaining({ method: 'GET', path: '/missing', status: 404 }),
+    );
+  });
+
+  it('logs the request method, path, status, and ids with the error', async () => {
+    const { app, logger } = await createTestApp();
+    const error = new Error('kaboom');
+    app.get('/boom', async () => {
+      throw error;
+    });
+
+    await app.inject({ method: 'GET', url: '/boom?token=secret', headers: { 'x-request-id': 'req-1', 'x-correlation-id': 'corr-1' } });
+
+    expect(logger.error).toHaveBeenCalledWith(error, {
+      method: 'GET',
+      path: '/boom',
+      status: 500,
+      requestId: 'req-1',
+      correlationId: 'corr-1',
+    });
+  });
+
+  it('logs a 4xx at warn and a 5xx HttpError at error', async () => {
+    const { app, logger } = await createTestApp();
+    const tooMany = httpError(429);
+    const unavailable = httpError(503);
+    app.get('/limited', async () => {
+      throw tooMany;
+    });
+    app.get('/down', async () => {
+      throw unavailable;
+    });
+
+    await app.inject({ method: 'GET', url: '/limited' });
+    await app.inject({ method: 'GET', url: '/down' });
+
+    expect(logger.warn).toHaveBeenCalledWith(tooMany, expect.objectContaining({ status: 429, path: '/limited' }));
+    expect(logger.error).toHaveBeenCalledWith(unavailable, expect.objectContaining({ status: 503, path: '/down' }));
+    expect(logger.error).not.toHaveBeenCalledWith(tooMany, expect.anything());
+  });
+
+  it('never logs the query string', async () => {
+    const { app, logger } = await createTestApp();
+    app.get('/boom', async () => {
+      throw httpError(401);
+    });
+
+    await app.inject({ method: 'GET', url: '/boom?token=secret' });
+    await app.inject({ method: 'GET', url: '/missing?token=secret' });
+
+    expect(JSON.stringify([logger.warn, logger.error].map(fn => (fn as unknown as { mock: { calls: unknown[] } }).mock.calls))).not.toContain(
+      'secret',
+    );
   });
 
   it('maps a Fastify-raised 4xx (malformed JSON in a Fastify parser) to an HttpError with the reason as a detail', async () => {
@@ -87,7 +142,7 @@ describe('errorPlugin (fastify)', () => {
     const response = await app.inject({ method: 'GET', url: '/' });
 
     expect(response.statusCode).toBe(418);
-    expect(logger.error).toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ status: 418, requestId: expect.any(String) }));
   });
 });
 

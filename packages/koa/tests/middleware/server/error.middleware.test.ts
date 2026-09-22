@@ -70,6 +70,23 @@ describe('errorMiddleware', () => {
       expect(mockApp.emit).toHaveBeenCalledWith('warn', mockCtx.body, mockCtx);
     });
 
+    it('should echo the query string to the client but drop it from the emitted warn', async () => {
+      const middleware = errorMiddleware();
+      mockURL = new URL('https://example.com/test?token=secret');
+      mockCtx.URL = mockURL;
+      mockCtx.status = 404;
+      mockCtx.body = undefined;
+
+      await middleware(mockCtx, mockNext);
+
+      expect(mockCtx.body).toEqual({ statusCode: 404, message: 'Not Found', details: { url: 'https://example.com/test?token=secret' } });
+      expect(mockApp.emit).toHaveBeenCalledWith(
+        'warn',
+        { statusCode: 404, message: 'Not Found', details: { url: 'https://example.com/test' } },
+        mockCtx,
+      );
+    });
+
     it('should not modify 404 response when body exists', async () => {
       const middleware = errorMiddleware();
       const existingBody = { error: 'Custom 404 message' };

@@ -1,14 +1,29 @@
-import type { FastifyError } from 'fastify';
+import type { FastifyError, FastifyRequest } from 'fastify';
 import { Container } from 'injectkit';
 import { Logger } from '@maroonedsoftware/logger';
 import { httpError, HttpStatusMap, IsServerkitError, type HttpStatusCodes } from '@maroonedsoftware/errors';
 import { notFoundBody, renderError } from '@maroonedsoftware/servercore';
 import { serverKitPlugin, type ServerKitPlugin } from '../serverkit.plugin.js';
+import { requestPath } from '../request/request.accessors.js';
 
 /** Narrows to an error Fastify itself raised (validation, body limit, unsupported media type, ...). */
 const isFastifyError = (error: unknown): error is FastifyError => {
   return error instanceof Error && typeof (error as { code?: unknown }).code === 'string' && (error as FastifyError).code.startsWith('FST_');
 };
+
+/**
+ * The request fields logged alongside an error or a synthesised 404. `path` has the query string
+ * stripped, because it can carry credentials (tokens, signed-URL signatures) that must not reach
+ * the logs. `requestId` is Fastify's own `request.id`, set before any hook runs, so it is present
+ * even when the failure came before the context hook; `correlationId` is not.
+ */
+const requestLogMeta = (request: FastifyRequest, status: number): Record<string, unknown> => ({
+  method: request.method,
+  path: requestPath(request),
+  status,
+  requestId: request.id,
+  correlationId: request.correlationId,
+});
 
 const isKnownStatus = (status: number): status is HttpStatusCodes => status in HttpStatusMap;
 
@@ -35,7 +50,9 @@ export const normalizeFastifyError = (error: unknown): unknown => {
 
 /**
  * Central error handling: renders thrown errors with ServerKit's status/body/headers rules and
- * synthesises the 404 body for unmatched routes, logging each through the request logger.
+ * synthesises the 404 body for unmatched routes, logging each through the request logger with
+ * the request's method, path (never the query string), status, and request and correlation IDs.
+ * A 4xx logs at `warn`, since it is the caller's fault; a 5xx logs at `error`.
  *
  * Installs Fastify's `setErrorHandler` and `setNotFoundHandler`. The status/body/headers split is
  * `renderError` from `@maroonedsoftware/servercore`, shared with every other adapter; a 4xx error
@@ -57,7 +74,14 @@ export const errorPlugin = (container: Container): ServerKitPlugin => {
 
     app.setErrorHandler(async (error: unknown, request, reply) => {
       const rendered = renderError(normalizeFastifyError(error));
-      loggerFor(request.logger).error(error);
+      // A 4xx is the caller's fault, not the server's, so it logs at warn.
+      const logger = loggerFor(request.logger);
+      const meta = requestLogMeta(request, rendered.status);
+      if (rendered.status < 500) {
+        logger.warn(error, meta);
+      } else {
+        logger.error(error, meta);
+      }
       return reply
         .headers(rendered.headers ?? {})
         .status(rendered.status)
@@ -65,8 +89,10 @@ export const errorPlugin = (container: Container): ServerKitPlugin => {
     });
 
     app.setNotFoundHandler(async (request, reply) => {
-      const body = notFoundBody(`${request.protocol}://${request.host}${request.url ?? ''}`);
-      loggerFor(request.logger).warn(body);
+      const origin = `${request.protocol}://${request.host}`;
+      const body = notFoundBody(`${origin}${request.url ?? ''}`);
+      // The logged copy drops the query string, which can carry credentials; the client still gets the full URL.
+      loggerFor(request.logger).warn(notFoundBody(`${origin}${requestPath(request)}`), requestLogMeta(request, 404));
       return reply.status(404).send(body);
     });
   });

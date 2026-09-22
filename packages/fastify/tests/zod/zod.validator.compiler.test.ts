@@ -94,6 +94,9 @@ describe('zodValidatorCompiler', () => {
 
     await app.inject({ method: 'POST', url: '/users', headers: { 'content-type': 'application/json' }, payload: '{}' });
 
-    expect(logger.error).toHaveBeenCalledWith(expect.objectContaining({ code: 'FST_ERR_VALIDATION', validationContext: 'body' }));
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 'FST_ERR_VALIDATION', validationContext: 'body' }),
+      expect.objectContaining({ method: 'POST', path: '/users', status: 400 }),
+    );
   });
 });
