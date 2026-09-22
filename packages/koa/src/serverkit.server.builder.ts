@@ -1,7 +1,7 @@
 import { Container, Registry } from 'injectkit';
 import Koa from 'koa';
 import type { Server } from 'node:http';
-import { ServerkitError } from '@maroonedsoftware/errors';
+import { IsHttpError, ServerkitError } from '@maroonedsoftware/errors';
 import { ServerKitServerBuilderBase } from '@maroonedsoftware/servercore';
 import { ServerKitContext } from './serverkit.context.js';
 import { ServerKitMiddleware } from './serverkit.middleware.js';
@@ -31,6 +31,20 @@ export { DEFAULT_SHUTDOWN_GRACE_MS, type ServerKitStartOptions } from '@marooned
  * Construction sets Luxon's default zone to UTC and installs a noop container placeholder;
  * lifecycle methods that need the real container throw until {@link setup} has run.
  */
+/**
+ * The request fields logged alongside an error or warning Koa emits for a request. `path` is
+ * `ctx.path`, never `ctx.url`, because the query string can carry credentials (tokens, signed-URL
+ * signatures) that must not reach the logs. `requestId` and `correlationId` are absent when the
+ * failure happened before `serverKitContextMiddleware` ran.
+ */
+const requestLogMeta = (ctx: ServerKitContext): Record<string, unknown> => ({
+  method: ctx.method,
+  path: ctx.path,
+  status: ctx.status,
+  requestId: ctx.requestId,
+  correlationId: ctx.correlationId,
+});
+
 export class ServerKitServerBuilder extends ServerKitServerBuilderBase {
   private readonly server: Koa;
 
@@ -87,11 +101,12 @@ export class ServerKitServerBuilder extends ServerKitServerBuilderBase {
 
   /**
    * Binds the Koa application, routing its `error`/`warn` events to the lifecycle logger.
-   * Resolves with the Node HTTP server once it is listening.
+   * Koa emits both as `(error, ctx)`, and the context is forwarded so the log line carries the
+   * request it came from. Resolves with the Node HTTP server once it is listening.
    */
   protected listen(port: number, signal: AbortSignal): Promise<Server> {
-    this.server.on('error', err => this.onErrorListener(err));
-    this.server.on('warn', err => this.onWarnListener(err));
+    this.server.on('error', (err: unknown, ctx?: ServerKitContext) => this.onErrorListener(err, ctx));
+    this.server.on('warn', (err: unknown, ctx?: ServerKitContext) => this.onWarnListener(err, ctx));
 
     return new Promise((resolve, reject) => {
       const onBindError = (err: Error): void => reject(err);
@@ -101,5 +116,32 @@ export class ServerKitServerBuilder extends ServerKitServerBuilderBase {
       });
       serverInstance.once('error', onBindError);
     });
+  }
+
+  /**
+   * Logs an error Koa emitted, with the request's method, path, status, and request and
+   * correlation IDs when a context came with it. A 4xx `HttpError` is the caller's fault, not the
+   * server's, so it logs at `warn`; everything else logs at `error`. Without a context (a `ready`
+   * hook failure, a server-level error) it falls back to the base behaviour.
+   */
+  protected override onErrorListener(err: unknown, ctx?: ServerKitContext): void {
+    if (!ctx) {
+      super.onErrorListener(err);
+      return;
+    }
+    if (IsHttpError(err) && err.statusCode < 500) {
+      this.logger.warn(err, requestLogMeta(ctx));
+    } else {
+      this.logger.error(err, requestLogMeta(ctx));
+    }
+  }
+
+  /** Logs a warning Koa emitted (e.g. a synthesised 404), with the request fields when a context came with it. */
+  protected override onWarnListener(err: unknown, ctx?: ServerKitContext): void {
+    if (!ctx) {
+      super.onWarnListener(err);
+      return;
+    }
+    this.logger.warn(err, requestLogMeta(ctx));
   }
 }

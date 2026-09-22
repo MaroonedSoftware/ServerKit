@@ -16,10 +16,12 @@ export const errorMiddleware = (): ServerKitMiddleware => {
     try {
       await next();
       if (ctx.status === 404 && !ctx.body) {
-        const body = notFoundBody(ctx.URL.toString());
         ctx.status = 404;
-        ctx.body = body;
-        ctx.app.emit('warn', body, ctx);
+        ctx.body = notFoundBody(ctx.URL.toString());
+        // The emitted copy is logged, so it drops the query string, which can carry credentials.
+        const logged = new URL(ctx.URL);
+        logged.search = '';
+        ctx.app.emit('warn', notFoundBody(logged.toString()), ctx);
       }
     } catch (error) {
       const rendered = renderError(error);
