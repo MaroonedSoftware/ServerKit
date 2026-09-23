@@ -198,6 +198,23 @@ default off the route path — a `@maroonedsoftware/mcp` tool passing it to `req
 | `formatApiKeyToken`, `parseApiKeyToken`, `hashApiKeyToken`, `apiKeyHint` | functions      | `{prefix}_{type}_{body}{crc32}`. Parse is checksum-verified and does no I/O.            |
 | `encodeBase62`, `crc32`                                                  | functions      | Pure codec pieces. `encodeBase62` pads to a constant width — see Gotchas.               |
 
+### OAuth authorization server (`src/oauth/`)
+
+The core of an OAuth 2.1 authorization server for MCP clients (claude.ai connectors, Claude Code).
+The package owns validation, codes, clients, and tokens; the consumer owns every route, the consent
+UI, and the RFC error rendering. Everything here is pure or cache-backed, never HTTP.
+
+| Export                                                                               | Kind      | Notes                                                                                                                 |
+| ------------------------------------------------------------------------------------ | --------- | --------------------------------------------------------------------------------------------------------------------- |
+| `OAuthClient`, `OAuthClientKind`, `OAuthTokenEndpointAuthMethod`                     | types     | `kind` is `preregistered`, `dynamic`, or `metadata_document`. `secretHash` is SHA-256 hex, never the secret.          |
+| `AuthorizationRequest`, `TokenRequest`, `TokenResponse`, `OAuthErrorCode`            | types     | Request and response shapes. The two wire shapes use RFC names (`grant_type`, `access_token`).                        |
+| `OAuthError` / `IsOAuthError`, `OAuthErrorBody`                                      | class     | `extends HttpError` (400, or 401), `details = { error, error_description }`. `toBody()` is the RFC 6749 §5.2 body.    |
+| `redirectUriMatches`, `validateRegisteredRedirectUri`, `isLoopbackRedirectUri`       | functions | Exact match; loopback (`localhost`, `127.0.0.1`, `[::1]` over http) ignores the port. Anything else must be `https:`. |
+| `describeRedirect`                                                                   | function  | `(redirectUri, registered) => { host, loopbackOnly }` for the consent screen.                                         |
+| `verifyPkceS256`, `isPkceS256Challenge`                                              | functions | RFC 7636 alphabet and length, constant-time compare. `S256` only.                                                     |
+| `buildAuthorizationServerMetadata`, `authorizationServerMetadataUrl`, `wellKnownUrl` | functions | RFC 8414 document. `registration_endpoint` only when given; CIMD advertised only when the input says so.              |
+| `buildProtectedResourceMetadata`, `protectedResourceMetadataUrl`                     | functions | RFC 9728 document, and the URL for a `WWW-Authenticate` challenge's `resource_metadata`.                              |
+
 ### Audit (`src/audit/`)
 
 | Export                                                      | Kind           | Notes                                                                                       |
@@ -492,6 +509,9 @@ src/
                                   support.verification.code.service
   apikey/                         types, api.key.token (codec), api.key.repository,
                                   api.key.service, api.key.authentication.handler
+  oauth/                          OAuth 2.1 authorization server: oauth.types, oauth.error,
+                                  redirect.uri, pkce.s256, authorization.server.metadata,
+                                  protected.resource.metadata
   audit/                          types, audit.sink, audit.recorder, audit.event, and one
                                   <domain>.audit.event.ts per emitting domain
   index.ts                        Barrel
