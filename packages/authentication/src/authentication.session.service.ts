@@ -44,6 +44,21 @@ interface RefreshTokenPayload {
 }
 
 /**
+ * Whether a token's `aud` names an audience the caller accepts.
+ *
+ * Either side may be a list; they match when they share at least one value, by
+ * exact string equality. That is jsonwebtoken's own rule, so a token accepted
+ * here is exactly one `jwt.verify` would have accepted with the same audience.
+ * A token with no `aud` matches nothing.
+ */
+const audienceMatches = (actual: string | string[] | undefined, expected: string | string[]): boolean => {
+  if (actual === undefined) return false;
+  const actualList = Array.isArray(actual) ? actual : [actual];
+  const expectedList = Array.isArray(expected) ? expected : [expected];
+  return actualList.some(value => expectedList.includes(value));
+};
+
+/**
  * Configuration options for {@link AuthenticationSessionService}.
  */
 @Injectable()
@@ -105,7 +120,30 @@ export class AuthenticationSessionService {
       claims: session.claims,
       expiresAt: session.expiresAt.toISO() ?? '',
       ...(session.device === undefined ? {} : { device: session.device }),
+      ...(session.audience === undefined ? {} : { audience: session.audience }),
     };
+  }
+
+  /**
+   * Check a verified token's `aud` against what the caller accepts, recording and
+   * refusing a mismatch. Runs before any cache read.
+   *
+   * With neither an `expectedAudience` nor a configured service audience there is
+   * nothing to compare against and the check is skipped, which is how a service
+   * built without an audience has always behaved.
+   */
+  private async assertAudience(
+    payload: { aud?: string | string[]; sub?: string; sessionToken?: string },
+    expectedAudience: string | string[] | undefined,
+  ) {
+    const expected = expectedAudience ?? this.options.audience;
+    if (expected === undefined || (Array.isArray(expected) && expected.length === 0)) return;
+    if (audienceMatches(payload.aud, expected)) return;
+
+    await this.auditValidationFailed('audience_mismatch', payload.sessionToken, payload.sub);
+    throw unauthorizedError('Bearer error="invalid_token"').withInternalDetails({
+      message: `token audience ${JSON.stringify(payload.aud)} is not accepted here`,
+    });
   }
 
   /** Record a failed validation, attributing an actor whenever one is known. */
@@ -152,6 +190,7 @@ export class AuthenticationSessionService {
       claims: session.claims,
       familyId: session.familyId,
       device: session.device,
+      audience: session.audience,
     });
   }
 
@@ -176,6 +215,9 @@ export class AuthenticationSessionService {
       // optional rather than defaulted: an empty block would be a claim about
       // the session that nobody made.
       device: session.device,
+      // Absent on anything cached before this field existed. Those sessions were
+      // all minted with the service default, which is what absent means.
+      audience: session.audience,
     };
   }
 
@@ -241,7 +283,13 @@ export class AuthenticationSessionService {
       familyId: session.familyId,
       sessionToken: session.sessionToken,
     };
-    const { token } = this.jwtProvider.create(payload, session.subject, this.options.issuer, this.options.audience, this.options.refreshExpiresIn);
+    const { token } = this.jwtProvider.create(
+      payload,
+      session.subject,
+      this.options.issuer,
+      session.audience ?? this.options.audience,
+      this.options.refreshExpiresIn,
+    );
     return { token, jti, familyId: session.familyId };
   }
 
@@ -255,6 +303,9 @@ export class AuthenticationSessionService {
    * @param expiration - Session lifetime; defaults to {@link AuthenticationSessionServiceOptions.expiresIn}.
    * @param device     - Where the request came from, for a session list and for audit events.
    *   Normalised on the way in; omit it and the session simply carries none.
+   * @param audience   - The `aud` every token from this session carries, when it is not the
+   *   service default. A token minted for it is refused by any validation that does not
+   *   pass it as `expectedAudience`. Fixed for the life of the session.
    * @returns The newly created {@link AuthenticationSession}.
    */
   async createSession(
@@ -263,6 +314,7 @@ export class AuthenticationSessionService {
     factors: AuthenticationSessionFactor | AuthenticationSessionFactor[],
     expiration?: Duration,
     device?: SessionDevice,
+    audience?: string | string[],
   ) {
     const sessionToken = crypto.randomUUID();
     const familyId = crypto.randomUUID();
@@ -280,6 +332,7 @@ export class AuthenticationSessionService {
       claims,
       familyId,
       ...(normalisedDevice === undefined ? {} : { device: normalisedDevice }),
+      ...(audience === undefined ? {} : { audience }),
     };
 
     await this.cache.set(this.getSessionKey(sessionToken), this.serializeSession(session), expiration);
@@ -423,19 +476,40 @@ export class AuthenticationSessionService {
    * Decodes and verifies the JWT, then looks up the embedded `sessionToken` in
    * cache and cross-checks that the session subject matches the JWT subject.
    *
+   * The token's `aud` must match `expectedAudience` when given, and the service's
+   * configured audience otherwise. That is what keeps a token issued for one
+   * resource (a session created with its own `audience`) off every route that
+   * does not ask for it: an ordinary route passes nothing and refuses it. The
+   * audience is checked before the session is read, so a mismatch costs no cache
+   * round trip. A refresh token is never accepted here.
+   *
    * @param jwt                 - The signed JWT string to validate.
    * @param ignoreJwtExpiration - When `true`, an expired JWT is still decoded
    *   (useful for refresh flows where the session itself controls expiry).
+   * @param expectedAudience    - The audience this route accepts. Defaults to
+   *   {@link AuthenticationSessionServiceOptions.audience}.
    * @returns An object containing the {@link AuthenticationSession} and the decoded JWT payload.
-   * @throws 401 when the JWT is invalid, the session is not found, or the subjects don't match.
+   * @throws 401 when the JWT is invalid, is a refresh token, was issued for another
+   *   audience, the session is not found, or the subjects don't match.
    */
-  async lookupSessionFromJwt(jwt: string, ignoreJwtExpiration?: boolean) {
-    const jwtPayload = this.jwtProvider.decode(jwt, this.options.issuer, ignoreJwtExpiration, false, this.options.audience);
+  async lookupSessionFromJwt(jwt: string, ignoreJwtExpiration?: boolean, expectedAudience?: string | string[]) {
+    // Decoded without an audience so a wrong one is told apart from a bad
+    // signature; assertAudience enforces it immediately below.
+    const jwtPayload = this.jwtProvider.decode(jwt, this.options.issuer, ignoreJwtExpiration, false);
     if (!jwtPayload) {
       // The one failure with no actor to attribute: the token never decoded.
       await this.auditValidationFailed('jwt_decode_failed');
       throw unauthorizedError('Bearer error="invalid_token"');
     }
+
+    if (jwtPayload.kind === 'refresh') {
+      await this.auditValidationFailed('refresh_token_presented', jwtPayload.sessionToken, jwtPayload.sub);
+      throw unauthorizedError('Bearer error="invalid_token"').withInternalDetails({
+        message: 'a refresh token was presented as an access token',
+      });
+    }
+
+    await this.assertAudience(jwtPayload, expectedAudience);
 
     const session = await this.getSession(jwtPayload.sessionToken ?? '');
 
@@ -651,6 +725,8 @@ export class AuthenticationSessionService {
       // live request, but the session's origin is where it *began* — the same
       // reason the claims carry forward rather than being rebuilt.
       ...(rotatedDevice === undefined ? {} : { device: rotatedDevice }),
+      // A rotation must not widen where the session's tokens are accepted.
+      ...(oldSession.audience === undefined ? {} : { audience: oldSession.audience }),
     };
 
     await this.cache.set(this.getSessionKey(newSessionToken), this.serializeSession(newSession), expiration);
@@ -680,18 +756,38 @@ export class AuthenticationSessionService {
    * the refresh token's `jti`. If the presented `jti` has already been
    * consumed, every session in the token's family is revoked (theft signal).
    *
-   * @param refreshToken - The compact JWT string presented by the client.
+   * The token's `aud` must match `expectedAudience` when given, and the service's
+   * configured audience otherwise, checked before the `jti` is claimed so a token
+   * presented at the wrong endpoint is refused without being spent.
+   *
+   * `guard` binds a refresh to more than possession of the token: the OAuth token
+   * endpoint uses it to require that the presenting client is the one the session
+   * was granted to. It runs after the `jti` is claimed and the session loaded, and
+   * before new tokens are minted. Whatever it throws propagates unchanged, and the
+   * `jti` stays consumed, so a stolen token presented by the wrong client burns
+   * it and the legitimate client's next presentation trips family revocation.
+   *
+   * @param refreshToken     - The compact JWT string presented by the client.
+   * @param expectedAudience - The audience this endpoint accepts. Defaults to
+   *   {@link AuthenticationSessionServiceOptions.audience}.
+   * @param guard            - Optional check against the loaded session; throw to refuse.
    * @returns A fresh access/refresh token pair bound to the same session.
-   * @throws 401 when the refresh token is invalid, replayed, or no longer
-   *   resolves to a live session.
+   * @throws 401 when the refresh token is invalid, issued for another audience,
+   *   replayed, or no longer resolves to a live session.
    */
-  async refreshSession(refreshToken: string): Promise<AuthenticationToken> {
-    const decoded = this.jwtProvider.decode(refreshToken, this.options.issuer, undefined, false, this.options.audience) as
-      (RefreshTokenPayload & { exp?: number }) | undefined;
+  async refreshSession(
+    refreshToken: string,
+    expectedAudience?: string | string[],
+    guard?: (session: AuthenticationSession) => void | Promise<void>,
+  ): Promise<AuthenticationToken> {
+    const decoded = this.jwtProvider.decode(refreshToken, this.options.issuer, undefined, false) as
+      (RefreshTokenPayload & { exp?: number; aud?: string | string[]; sub?: string }) | undefined;
     if (!decoded || decoded.kind !== 'refresh' || !decoded.jti || !decoded.familyId || !decoded.sessionToken) {
       await this.auditValidationFailed('refresh_token_invalid');
       throw unauthorizedError('Bearer error="invalid_token"');
     }
+
+    await this.assertAudience(decoded, expectedAudience);
 
     const { jti, familyId, sessionToken } = decoded;
 
@@ -727,6 +823,10 @@ export class AuthenticationSessionService {
       throw unauthorizedError('Bearer error="invalid_token"');
     }
 
+    if (guard) {
+      await guard(session);
+    }
+
     const tokens = await this.issueTokensForLoadedSession(session);
 
     await this.audit.record({
@@ -751,7 +851,7 @@ export class AuthenticationSessionService {
       },
       subject,
       this.options.issuer,
-      this.options.audience,
+      session.audience ?? this.options.audience,
       this.options.expiresIn,
     );
 

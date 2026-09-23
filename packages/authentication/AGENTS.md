@@ -51,16 +51,16 @@ by area; type aliases for provider-specific payload shapes are grouped rather th
 
 ### Session model (`src/types.ts`)
 
-| Export                         | Kind      | Shape                                                                                        | Notes                                                                                             |
-| ------------------------------ | --------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `AuthenticationSession`        | interface | `{ sessionToken, subject, issuedAt, expiresAt, lastAccessedAt, factors, claims, familyId? }` | All timestamps are Luxon `DateTime`.                                                              |
-| `AuthenticationSessionFactor`  | interface | `{ issuedAt, authenticatedAt, method, methodId, kind }`                                      | `authenticatedAt` is what recency policies read.                                                  |
-| `SessionDevice`                | interface | `{ ipAddress?, userAgent?, label? }`                                                         | Optional `device` on the session. Where it **began**, not where last used.                        |
-| `AuthenticationFactorKind`     | type      | `'knowledge' \| 'possession' \| 'biometric'`                                                 | Classic MFA taxonomy.                                                                             |
-| `AuthenticationFactorMethod`   | type      | `'phone' \| 'password' \| 'authenticator' \| 'email' \| 'fido' \| 'oidc' \| 'apikey'`        | **Note: no `'oauth2'`.** See Gotchas. `'apikey'` is a machine credential, not an enrolled factor. |
-| `invalidAuthenticationSession` | constant  | Sentinel with empty strings and `DateTime.invalid('invalid')` fields                         | Compare by **identity**; that is what `requirePolicy` does.                                       |
-| `SessionRevocationReason`      | type      | `'logout' \| 'rotate' \| 'theft' \| 'expiry'`                                                | —                                                                                                 |
-| `AuthenticationToken`          | type      | `{ accessToken, tokenType, expiresIn, … }`                                                   | OAuth 2.0-shaped response.                                                                        |
+| Export                         | Kind      | Shape                                                                                                            | Notes                                                                                             |
+| ------------------------------ | --------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `AuthenticationSession`        | interface | `{ sessionToken, subject, issuedAt, expiresAt, lastAccessedAt, factors, claims, familyId?, device?, audience? }` | All timestamps are Luxon `DateTime`. `audience` is fixed at creation and carried across rotation. |
+| `AuthenticationSessionFactor`  | interface | `{ issuedAt, authenticatedAt, method, methodId, kind }`                                                          | `authenticatedAt` is what recency policies read.                                                  |
+| `SessionDevice`                | interface | `{ ipAddress?, userAgent?, label? }`                                                                             | Optional `device` on the session. Where it **began**, not where last used.                        |
+| `AuthenticationFactorKind`     | type      | `'knowledge' \| 'possession' \| 'biometric'`                                                                     | Classic MFA taxonomy.                                                                             |
+| `AuthenticationFactorMethod`   | type      | `'phone' \| 'password' \| 'authenticator' \| 'email' \| 'fido' \| 'oidc' \| 'apikey'`                            | **Note: no `'oauth2'`.** See Gotchas. `'apikey'` is a machine credential, not an enrolled factor. |
+| `invalidAuthenticationSession` | constant  | Sentinel with empty strings and `DateTime.invalid('invalid')` fields                                             | Compare by **identity**; that is what `requirePolicy` does.                                       |
+| `SessionRevocationReason`      | type      | `'logout' \| 'rotate' \| 'theft' \| 'expiry'`                                                                    | —                                                                                                 |
+| `AuthenticationToken`          | type      | `{ accessToken, tokenType, expiresIn, … }`                                                                       | OAuth 2.0-shaped response.                                                                        |
 
 ### Scheme dispatch
 
@@ -81,18 +81,18 @@ by area; type aliases for provider-specific payload shapes are grouped rather th
 
 ### Sessions
 
-| Export                                                         | Kind   | Shape                                                                    | Notes                                                   |
-| -------------------------------------------------------------- | ------ | ------------------------------------------------------------------------ | ------------------------------------------------------- |
-| `AuthenticationSessionServiceOptions`                          | class  | `(issuer, audience, expiresIn: Duration, refreshExpiresIn = 30 days)`    | A class so it is an InjectKit token.                    |
-| `AuthenticationSessionService`                                 | class  | `@Injectable()`                                                          | Backed by a `CacheProvider`.                            |
-| `#createSession` / `#updateSession` / `#createOrUpdateSession` | method | —                                                                        | —                                                       |
-| `#getSession` / `#getSessionsForSubject`                       | method | —                                                                        | Read paths; `#revokeAllForSubject` does the revoking.   |
-| `#revokeAllForSubject`                                         | method | `(subject: string, reason?: SessionRevocationReason) => Promise<number>` | Revokes every session for a subject; returns the count. |
-| `#lookupSessionFromJwt`                                        | method | `(jwt: string, ignoreJwtExpiration?: boolean)`                           | —                                                       |
-| `#deleteSession`                                               | method | `(sessionToken, reason: SessionRevocationReason = 'logout')`             | —                                                       |
-| `#issueTokenForSession`                                        | method | `(sessionToken) => Promise<AuthenticationToken>`                         | —                                                       |
-| `#rotateSession`                                               | method | `(sessionToken, claimOverrides?, expiration?)`                           | For privilege changes. Carries `familyId` forward.      |
-| `#refreshSession`                                              | method | `(refreshToken) => Promise<AuthenticationToken>`                         | Rotation with replay detection.                         |
+| Export                                                         | Kind   | Shape                                                                       | Notes                                                                                      |
+| -------------------------------------------------------------- | ------ | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `AuthenticationSessionServiceOptions`                          | class  | `(issuer, audience, expiresIn: Duration, refreshExpiresIn = 30 days)`       | A class so it is an InjectKit token.                                                       |
+| `AuthenticationSessionService`                                 | class  | `@Injectable()`                                                             | Backed by a `CacheProvider`.                                                               |
+| `#createSession` / `#updateSession` / `#createOrUpdateSession` | method | `createSession(subject, claims, factors, expiration?, device?, audience?)`  | `audience` binds every token from the session to one resource.                             |
+| `#getSession` / `#getSessionsForSubject`                       | method | —                                                                           | Read paths; `#revokeAllForSubject` does the revoking.                                      |
+| `#revokeAllForSubject`                                         | method | `(subject: string, reason?: SessionRevocationReason) => Promise<number>`    | Revokes every session for a subject; returns the count.                                    |
+| `#lookupSessionFromJwt`                                        | method | `(jwt, ignoreJwtExpiration?, expectedAudience?)`                            | `aud` must match `expectedAudience`, else the configured audience. Refuses refresh tokens. |
+| `#deleteSession`                                               | method | `(sessionToken, reason: SessionRevocationReason = 'logout')`                | —                                                                                          |
+| `#issueTokenForSession`                                        | method | `(sessionToken) => Promise<AuthenticationToken>`                            | —                                                                                          |
+| `#rotateSession`                                               | method | `(sessionToken, claimOverrides?, expiration?)`                              | For privilege changes. Carries `familyId` forward.                                         |
+| `#refreshSession`                                              | method | `(refreshToken, expectedAudience?, guard?) => Promise<AuthenticationToken>` | Rotation with replay detection. `guard` runs after the `jti` is claimed.                   |
 
 ### Factors
 
@@ -343,6 +343,14 @@ const session = await sessions.createSession(completed.actor.id, claims, complet
 - Use Luxon `Duration` for every lifetime.
 - Rotate rather than mutate: `rotateSession` on a privilege change, so `familyId` and theft
   detection stay intact.
+- **`expectedAudience` is what keeps a resource token off other routes.** A session created with its
+  own `audience` mints every token for it, and `lookupSessionFromJwt` / `refreshSession` accept it
+  only when the caller passes that audience. Pass it on the resource's route and nowhere else;
+  passing nothing means the configured service audience, so ordinary routes refuse resource tokens
+  with no extra code.
+- Bind a refresh to more than possession with `refreshSession`'s `guard`, not by looking the session
+  up first: `lookupSessionFromJwt` refuses refresh tokens, and the guard runs after the `jti` is
+  claimed, so a refusal spends the token.
 
 ## Gotchas
 
@@ -414,6 +422,9 @@ const session = await sessions.createSession(completed.actor.id, claims, complet
 - **A blank `userAgent` means absent, and that is load-bearing.** Both adapters set it to `''` when
   the header is missing — Koa's `ctx.get`, and the Fastify plugin explicitly — so
   `normaliseSessionDevice` drops it. Skip that and every session records an empty string.
+- **An audience mismatch is refused before the cache is read.** It records `session.validation_failed`
+  with `audience_mismatch`, attributed to the token's `sub`. The token was signed by this service, so
+  a recurring one means a client is sending one resource's token to another.
 - **`serializeSession` is an allowlist, not a spread.** A field added to `AuthenticationSession` and
   forgotten there is returned by `createSession` and gone by the next `getSession` — a bug that only
   appears on the second request. Add to both it and `deserializeSession`.

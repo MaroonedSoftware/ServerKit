@@ -243,7 +243,26 @@ const stepUp = await sessionService.rotateSession(session.sessionToken, { acr: '
 await sessionService.deleteSession(session.sessionToken);
 ```
 
-`lookupSessionFromJwt` (access tokens) and `refreshSession` (refresh tokens) both verify the token against the `audience` configured on `AuthenticationSessionServiceOptions` — the same value used to sign the `aud` claim. A token minted for a different audience (even with the same issuer and signing key) is rejected with a 401. Leaving `audience` unset skips the check, so existing deployments are unaffected.
+`lookupSessionFromJwt` (access tokens) and `refreshSession` (refresh tokens) both verify the token's `aud` against the audience the caller expects: the `expectedAudience` argument when given, and the `audience` configured on `AuthenticationSessionServiceOptions` otherwise. A token minted for a different audience (even with the same issuer and signing key) is rejected with a 401 and a `session.validation_failed` event with reason `audience_mismatch`, before the session is read. Leaving `audience` unset and passing no `expectedAudience` skips the check. `lookupSessionFromJwt` never accepts a refresh token as an access token (reason `refresh_token_presented`).
+
+#### Sessions for one resource
+
+A session can carry its own `audience`, fixed at creation and carried across rotation. Every token it issues is minted for that audience, and only a validation that asks for it accepts them. That is how a token issued to an OAuth client for one resource, such as an MCP server, is kept off every other route without per-route work.
+
+```typescript
+// The grant's session: its tokens carry aud = the resource.
+const session = await sessionService.createSession(user.id, claims, factors, undefined, undefined, 'https://api.example.com/mcp');
+
+// On the MCP route, ask for the resource. Everywhere else, pass nothing: the resource token is refused.
+const { session: mcpSession } = await sessionService.lookupSessionFromJwt(bearer, false, 'https://api.example.com/mcp');
+
+// A refresh endpoint passes the audiences it serves, and can bind the refresh to more than possession.
+const tokens = await sessionService.refreshSession(refreshToken, ['https://api.example.com/mcp'], session => {
+  if (session.claims.clientId !== presentedClientId) throw new Error('refresh token was issued to another client');
+});
+```
+
+The `guard` runs after the refresh token's `jti` is claimed and the session loaded, and before new tokens are minted. What it throws propagates unchanged and the `jti` stays spent, so a stolen refresh token presented by the wrong client burns it and the legitimate client's next presentation trips family revocation.
 
 #### Refresh-token rotation and theft detection
 
@@ -1388,34 +1407,36 @@ Abstract base class. Implement `verify(username: string, password: string): Prom
 
 ### `AuthenticationSessionService`
 
-| Method                                                                | Returns                                                | Description                                                                               |
-| --------------------------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| `createSession(subject, claims, factors, expiration?)`                | `Promise<AuthenticationSession>`                       | Create and cache a new session                                                            |
-| `updateSession(token, subject, expiration?, claims?, factor?)`        | `Promise<AuthenticationSession>`                       | Merge claims/factors and reset `expiresAt` to `now + expiration` (absolute, not additive) |
-| `createOrUpdateSession(token?, subject, claims, factor, expiration?)` | `Promise<AuthenticationSession>`                       | Create or update depending on whether the token resolves                                  |
-| `lookupSessionFromJwt(jwt, ignoreExpiration?)`                        | `Promise<{ session, jwtPayload }>`                     | Validate a JWT and retrieve its session                                                   |
-| `getSession(token)`                                                   | `Promise<AuthenticationSession \| undefined>`          | Retrieve a session by token                                                               |
-| `getSessionsForSubject(subject)`                                      | `Promise<AuthenticationSession[]>`                     | Get all active sessions for a subject                                                     |
-| `revokeAllForSubject(subject, reason?)`                               | `Promise<number>`                                      | Revoke every active session for a subject; returns how many were revoked                  |
-| `issueTokenForSession(sessionToken)`                                  | `Promise<AuthenticationToken>`                         | Issue an access token AND a single-use refresh token                                      |
-| `refreshSession(refreshToken)`                                        | `Promise<AuthenticationToken>`                         | Rotate the refresh token's `jti`; revokes the family on replay                            |
-| `rotateSession(token, claimOverrides?, expiration?)`                  | `Promise<{ session, accessToken, refreshToken, ... }>` | Mint a new session for a privilege change (e.g. MFA step-up)                              |
-| `deleteSession(token, reason?)`                                       | `Promise<void>`                                        | Revoke a session and clean up its refresh-token family entry                              |
+| Method                                                                     | Returns                                                | Description                                                                               |
+| -------------------------------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| `createSession(subject, claims, factors, expiration?, device?, audience?)` | `Promise<AuthenticationSession>`                       | Create and cache a new session; `audience` binds its tokens to one resource               |
+| `updateSession(token, subject, expiration?, claims?, factor?)`             | `Promise<AuthenticationSession>`                       | Merge claims/factors and reset `expiresAt` to `now + expiration` (absolute, not additive) |
+| `createOrUpdateSession(token?, subject, claims, factor, expiration?)`      | `Promise<AuthenticationSession>`                       | Create or update depending on whether the token resolves                                  |
+| `lookupSessionFromJwt(jwt, ignoreExpiration?, expectedAudience?)`          | `Promise<{ session, jwtPayload }>`                     | Validate an access JWT for the expected audience and retrieve its session                 |
+| `getSession(token)`                                                        | `Promise<AuthenticationSession \| undefined>`          | Retrieve a session by token                                                               |
+| `getSessionsForSubject(subject)`                                           | `Promise<AuthenticationSession[]>`                     | Get all active sessions for a subject                                                     |
+| `revokeAllForSubject(subject, reason?)`                                    | `Promise<number>`                                      | Revoke every active session for a subject; returns how many were revoked                  |
+| `issueTokenForSession(sessionToken)`                                       | `Promise<AuthenticationToken>`                         | Issue an access token AND a single-use refresh token                                      |
+| `refreshSession(refreshToken, expectedAudience?, guard?)`                  | `Promise<AuthenticationToken>`                         | Rotate the refresh token's `jti`; revokes the family on replay; `guard` can refuse        |
+| `rotateSession(token, claimOverrides?, expiration?)`                       | `Promise<{ session, accessToken, refreshToken, ... }>` | Mint a new session for a privilege change (e.g. MFA step-up)                              |
+| `deleteSession(token, reason?)`                                            | `Promise<void>`                                        | Revoke a session and clean up its refresh-token family entry                              |
 
 ### `AuthenticationSession`
 
 Server-side session record stored in cache. Time fields are Luxon `DateTime` instances in your code; the service serializes them to Unix integers at the cache boundary.
 
-| Field            | Type                            | Description                                                                   |
-| ---------------- | ------------------------------- | ----------------------------------------------------------------------------- |
-| `sessionToken`   | `string`                        | Opaque session token, also embedded in issued JWTs as `sessionToken`.         |
-| `subject`        | `string`                        | Subject identifier (typically a user id).                                     |
-| `issuedAt`       | `DateTime`                      | When the session was originally created.                                      |
-| `expiresAt`      | `DateTime`                      | When the session expires.                                                     |
-| `lastAccessedAt` | `DateTime`                      | When the session was most recently accessed.                                  |
-| `factors`        | `AuthenticationSessionFactor[]` | Factors satisfied during this session.                                        |
-| `claims`         | `Record<string, unknown>`       | Arbitrary claims to embed in tokens issued from this session.                 |
-| `familyId`       | `string \| undefined`           | Refresh-token family this session belongs to. Carried across `rotateSession`. |
+| Field            | Type                              | Description                                                                              |
+| ---------------- | --------------------------------- | ---------------------------------------------------------------------------------------- |
+| `sessionToken`   | `string`                          | Opaque session token, also embedded in issued JWTs as `sessionToken`.                    |
+| `subject`        | `string`                          | Subject identifier (typically a user id).                                                |
+| `issuedAt`       | `DateTime`                        | When the session was originally created.                                                 |
+| `expiresAt`      | `DateTime`                        | When the session expires.                                                                |
+| `lastAccessedAt` | `DateTime`                        | When the session was most recently accessed.                                             |
+| `factors`        | `AuthenticationSessionFactor[]`   | Factors satisfied during this session.                                                   |
+| `claims`         | `Record<string, unknown>`         | Arbitrary claims to embed in tokens issued from this session.                            |
+| `familyId`       | `string \| undefined`             | Refresh-token family this session belongs to. Carried across `rotateSession`.            |
+| `device`         | `SessionDevice \| undefined`      | Where the session began, when the application supplied it.                               |
+| `audience`       | `string \| string[] \| undefined` | The `aud` its tokens carry when not the service default. Carried across `rotateSession`. |
 
 ### `AuthenticationSessionFactor`
 

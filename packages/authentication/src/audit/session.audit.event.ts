@@ -47,6 +47,8 @@ export interface AuditSessionData {
    * one.
    */
   device?: SessionDevice;
+  /** The session's own audience, when it has one other than the service default. */
+  audience?: string | string[];
 }
 
 /**
@@ -98,5 +100,15 @@ export type SessionAuditEvent =
    */
   | AuditEvent<'session.validation_failed', { sessionToken?: string; reason: SessionValidationFailureReason }>;
 
-/** Why {@link SessionAuditEvent} `'session.validation_failed'` was recorded. */
-export type SessionValidationFailureReason = 'jwt_decode_failed' | 'session_not_found' | 'subject_mismatch' | 'refresh_token_invalid';
+/**
+ * Why {@link SessionAuditEvent} `'session.validation_failed'` was recorded.
+ *
+ * - `audience_mismatch` — a genuine token presented where its audience is not
+ *   accepted, such as an MCP resource token on an ordinary route. Signed by this
+ *   service, so worth a look when it recurs: a client is sending one resource's
+ *   token to another.
+ * - `refresh_token_presented` — a refresh token presented as an access token.
+ *   A client bug at best; a refresh token should never leave the token endpoint.
+ */
+export type SessionValidationFailureReason =
+  'jwt_decode_failed' | 'session_not_found' | 'subject_mismatch' | 'refresh_token_invalid' | 'audience_mismatch' | 'refresh_token_presented';

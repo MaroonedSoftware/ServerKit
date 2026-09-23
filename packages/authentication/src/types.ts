@@ -122,6 +122,17 @@ export interface AuthenticationSession {
    * user's session list.
    */
   device?: SessionDevice;
+  /**
+   * The `aud` every token issued from this session carries, when it is not the
+   * service default ({@link AuthenticationSessionServiceOptions.audience}).
+   *
+   * Set it for a session that serves one resource, such as an OAuth grant for an
+   * MCP server: its tokens are then refused by every validation that does not ask
+   * for that audience. Fixed at creation and carried across rotation. Absent on
+   * every session cached before this field existed, which were all minted with
+   * the default.
+   */
+  audience?: string | string[];
 }
 
 /**
