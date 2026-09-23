@@ -32,6 +32,7 @@ pnpm add @maroonedsoftware/authentication
 - **MFA orchestration** — `MfaOrchestrator` runs the primary → challenge → secondary handoff on top of the per-factor services, with a swappable `'auth.session.mfa.required'` policy; per-method `issueFactorChallenge` responses include the code and recipient so the caller controls delivery
 - **Step-up policies** — `DefaultRecentFactorPolicy` and `DefaultAssuranceLevelPolicy` gate sensitive operations on a recent re-auth or a NIST 800-63B-style AAL1/AAL2 check, with embedded `StepUpRequirement` hints so clients can drive the right re-auth flow
 - **Account recovery** — `RecoveryOrchestrator` runs the forgot-password / MFA-recovery / unlock / full-recovery flow as a pure state machine on top of the per-factor services, gated by `'auth.recovery.allowed'`; recovery codes ship as a single-use, Argon2id-hashed backup factor via `RecoveryFactorService`; recovery sessions are opaque and structurally cannot authorise app endpoints
+- **OAuth 2.1 authorization server**: the core of an authorization server for MCP clients such as claude.ai connectors and Claude Code: PKCE `S256` codes, rotating refresh tokens, Dynamic Client Registration, Client ID Metadata Documents, and RFC 8414 / RFC 9728 metadata, with tokens bound to one resource. The app owns the routes and the consent page
 - **DI-friendly** — all classes are decorated with `@Injectable()` and designed for an injectkit container
 
 ## Usage
@@ -243,7 +244,26 @@ const stepUp = await sessionService.rotateSession(session.sessionToken, { acr: '
 await sessionService.deleteSession(session.sessionToken);
 ```
 
-`lookupSessionFromJwt` (access tokens) and `refreshSession` (refresh tokens) both verify the token against the `audience` configured on `AuthenticationSessionServiceOptions` — the same value used to sign the `aud` claim. A token minted for a different audience (even with the same issuer and signing key) is rejected with a 401. Leaving `audience` unset skips the check, so existing deployments are unaffected.
+`lookupSessionFromJwt` (access tokens) and `refreshSession` (refresh tokens) both verify the token's `aud` against the audience the caller expects: the `expectedAudience` argument when given, and the `audience` configured on `AuthenticationSessionServiceOptions` otherwise. A token minted for a different audience (even with the same issuer and signing key) is rejected with a 401 and a `session.validation_failed` event with reason `audience_mismatch`, before the session is read. Leaving `audience` unset and passing no `expectedAudience` skips the check. `lookupSessionFromJwt` never accepts a refresh token as an access token (reason `refresh_token_presented`).
+
+#### Sessions for one resource
+
+A session can carry its own `audience`, fixed at creation and carried across rotation. Every token it issues is minted for that audience, and only a validation that asks for it accepts them. That is how a token issued to an OAuth client for one resource, such as an MCP server, is kept off every other route without per-route work.
+
+```typescript
+// The grant's session: its tokens carry aud = the resource.
+const session = await sessionService.createSession(user.id, claims, factors, undefined, undefined, 'https://api.example.com/mcp');
+
+// On the MCP route, ask for the resource. Everywhere else, pass nothing: the resource token is refused.
+const { session: mcpSession } = await sessionService.lookupSessionFromJwt(bearer, false, 'https://api.example.com/mcp');
+
+// A refresh endpoint passes the audiences it serves, and can bind the refresh to more than possession.
+const tokens = await sessionService.refreshSession(refreshToken, ['https://api.example.com/mcp'], session => {
+  if (session.claims.clientId !== presentedClientId) throw new Error('refresh token was issued to another client');
+});
+```
+
+The `guard` runs after the refresh token's `jti` is claimed and the session loaded, and before new tokens are minted. What it throws propagates unchanged and the `jti` stays spent, so a stolen refresh token presented by the wrong client burns it and the legitimate client's next presentation trips family revocation.
 
 #### Refresh-token rotation and theft detection
 
@@ -661,14 +681,23 @@ Missing or expired registrations and challenges throw HTTP 404 with `{ registrat
 
 `OidcFactorService` orchestrates SSO sign-in, account linking, and refresh-token rotation against any OpenID Connect provider — Google, Microsoft, LinkedIn, Apple, etc. The id_token is validated end-to-end (signature against the provider's JWKS, `iss` / `aud` / `exp`, `nonce`, and PKCE) by `openid-client`.
 
-Register one or more providers via `OidcProviderRegistry`. Discovery (`.well-known/openid-configuration`) is lazy and cached per provider per process. Public clients (mobile, SPA) are supported by omitting `clientSecret` — PKCE is mandatory in that mode.
+Providers come from an `OidcProviderSource`, which `OidcProviderRegistry` consults on every lookup. `OidcProviderRegistryConfig` is the static source: a list built once at bootstrap. Implement your own source to read providers from a database or settings store, and they appear, change, and disappear without a restart. Discovery (`.well-known/openid-configuration`) is lazy and cached per provider, keyed by a fingerprint of the issuer, client id, client secret, and `allowInsecureIssuer`, so a rotated secret rediscovers on the next lookup. Public clients (mobile, SPA) are supported by omitting `clientSecret`, and PKCE is mandatory in that mode.
+
+A provider's `name` is stored on every factor created through it. Renaming a provider orphans those factors, so treat the name as a permanent slug.
 
 ```typescript
-import { OidcFactorService, OidcProviderRegistry, OidcProviderRegistryConfig, OidcActorEmailLookup } from '@maroonedsoftware/authentication';
-
-// Wire providers via DI (sourced from AppConfig — keep clientSecret out of code)
-registry.registerValue(
+import {
+  OidcFactorService,
+  OidcProviderRegistry,
   OidcProviderRegistryConfig,
+  OidcProviderSource,
+  OidcActorEmailLookup,
+} from '@maroonedsoftware/authentication';
+
+// Wire providers via DI, sourced from AppConfig. Keep clientSecret out of code.
+// The static list is registered under the OidcProviderSource token.
+registry.registerValue(
+  OidcProviderSource,
   new OidcProviderRegistryConfig([
     {
       name: 'google',
@@ -711,11 +740,14 @@ const { url } = await oidc.beginAuthorization({
 ctx.redirect(url.toString());
 
 // Step 2 — handle the callback
-const result = await oidc.completeAuthorization({ callbackUrl: new URL(ctx.href) });
+const result = await oidc.completeAuthorization({ params: Object.fromEntries(new URL(ctx.href).searchParams) });
 switch (result.kind) {
   case 'signed-in':
   case 'linked':
-    // Issue a session for result.actorId
+    // A link keeps the caller's current session; a sign-in issues one for result.actorId
+    if (result.intent === 'sign-in') {
+      // Issue a session for result.actorId
+    }
     break;
   case 'new-user':
     if (result.emailConflict) {
@@ -729,7 +761,7 @@ switch (result.kind) {
 }
 ```
 
-**Account linking.** Pass `intent: 'link'` and an existing `actorId` on `beginAuthorization` to attach an additional provider to a signed-in user.
+**Account linking.** Pass `intent: 'link'` and an existing `actorId` on `beginAuthorization` to attach an additional provider to a signed-in user. Every result carries the `intent` the flow began with. When the provider identity already belongs to a different account, `completeAuthorization` throws a 409 and records `oidc.link.rejected` with reason `subject_taken`, rather than signing the caller in as that other account. An identity already on the linking account answers `signed-in` with `intent: 'link'`.
 
 **Auto-link by verified email.** When sign-in finds no `(provider, subject)` mapping but the IdP returns a verified email matching an existing actor (via `OidcActorEmailLookup`), the service auto-creates the factor on that actor and returns `kind: 'linked'`. Unverified-email matches do **not** auto-link — they return `kind: 'new-user'` with `emailConflict` set so the UI can require sign-in to the existing account before linking.
 
@@ -1269,6 +1301,124 @@ This replaces `AuthenticationSessionHooks`, which has been removed. `RecoveryOrc
 **not** affected: it is behavioural rather than observational, since `onRebindMfaFactor` is where
 your application mutates the factor and a throw there must abort the recovery.
 
+### OAuth 2.1 authorization server (for MCP clients)
+
+A remote MCP server protected by OAuth needs an authorization server that its clients (claude.ai custom connectors, Claude Code) can discover, register with, and get tokens from. `OAuthAuthorizationServer` is that server's logic. It implements the authorization code grant with PKCE `S256`, refresh tokens with rotation and theft detection, Dynamic Client Registration (RFC 7591), Client ID Metadata Documents, pre-registered clients with an optional secret, resource indicators (RFC 8707), and `iss` on every authorization response (RFC 9207).
+
+**Your app owns the HTTP.** Every method answers a structured result or throws an `OAuthError` carrying its RFC code. The RFC endpoints need RFC 6749 error bodies, which the default error renderer does not produce, so render `error.toBody()` with `error.statusCode` and `error.headers` yourself. You also own the consent page, the session claims you consent with, and revoking a grant.
+
+**A grant is a session.** Exchanging a code mints an ordinary `AuthenticationSessionService` session for the consenting user, carrying their claims and factors plus `claims.oauth` (`{ clientId, clientName?, resource, scope, grantId? }`). Its audience is the resource, so its tokens are refused by every `lookupSessionFromJwt` call that does not ask for that resource. Scopes are advertised and echoed; nothing authorizes on them.
+
+```typescript
+import {
+  AuthorizationCodeService,
+  AuthorizationCodeServiceOptions,
+  AuthorizationRequestStore,
+  AuthorizationRequestStoreOptions,
+  ClientIdMetadataDocumentResolver,
+  ClientIdMetadataDocumentResolverOptions,
+  DynamicClientRegistrationService,
+  IsOAuthError,
+  OAuthAuthorizationServer,
+  OAuthAuthorizationServerOptions,
+  OAuthClientOptions,
+  OAuthClientRepository,
+  OAuthClientResolver,
+  OAuthGrantRepository,
+  OAuthTokenEndpoint,
+  protectedResourceMetadataUrl,
+} from '@maroonedsoftware/authentication';
+
+const origin = 'https://station.example.com';
+const resource = `${origin}/api/mcp`;
+
+registry.register(OAuthClientRepository).useClass(MyOAuthClientRepository).asSingleton();
+registry.register(OAuthGrantRepository).useClass(MyOAuthGrantRepository).asSingleton(); // optional
+registry.register(OAuthClientOptions).useValue(new OAuthClientOptions());
+registry.register(ClientIdMetadataDocumentResolverOptions).useValue(new ClientIdMetadataDocumentResolverOptions());
+registry.register(ClientIdMetadataDocumentResolver).useClass(ClientIdMetadataDocumentResolver).asSingleton(); // optional
+registry.register(OAuthClientResolver).useClass(OAuthClientResolver).asSingleton();
+registry.register(DynamicClientRegistrationService).useClass(DynamicClientRegistrationService).asSingleton(); // optional
+registry.register(AuthorizationRequestStoreOptions).useValue(new AuthorizationRequestStoreOptions());
+registry.register(AuthorizationRequestStore).useClass(AuthorizationRequestStore).asSingleton();
+registry.register(AuthorizationCodeServiceOptions).useValue(new AuthorizationCodeServiceOptions());
+registry.register(AuthorizationCodeService).useClass(AuthorizationCodeService).asSingleton();
+registry.register(OAuthAuthorizationServerOptions).useValue(
+  new OAuthAuthorizationServerOptions(
+    origin, // issuer
+    `${origin}/oauth/authorize`, // your consent page
+    `${origin}/api/oauth/token`,
+    [resource],
+    ['mcp'],
+    `${origin}/api/oauth/register`, // omit to turn Dynamic Client Registration off
+  ),
+);
+// Both reach the session service, which is scoped.
+registry.register(OAuthTokenEndpoint).useClass(OAuthTokenEndpoint).asScoped();
+registry.register(OAuthAuthorizationServer).useClass(OAuthAuthorizationServer).asScoped();
+```
+
+The routes, sketched for Koa:
+
+```typescript
+const renderOAuthError = (ctx, error) => {
+  if (!IsOAuthError(error)) throw error;
+  ctx.status = error.statusCode;
+  ctx.set(error.headers ?? {});
+  ctx.body = error.toBody();
+};
+
+router.get('/.well-known/oauth-authorization-server', ctx => {
+  ctx.body = ctx.container.get(OAuthAuthorizationServer).metadata();
+});
+router.get('/.well-known/oauth-protected-resource/api/mcp', ctx => {
+  ctx.body = ctx.container.get(OAuthAuthorizationServer).resourceMetadata(resource);
+});
+
+router.post('/api/oauth/register', async ctx => {
+  try {
+    const { response } = await ctx.container.get(OAuthAuthorizationServer).register(ctx.parsedBody);
+    ctx.status = 201;
+    ctx.body = response;
+  } catch (error) {
+    renderOAuthError(ctx, error);
+  }
+});
+
+router.post('/api/oauth/token', async ctx => {
+  ctx.set('Cache-Control', 'no-store');
+  try {
+    ctx.body = await ctx.container.get(OAuthAuthorizationServer).token(ctx.parsedBody, { authorization: ctx.get('authorization') || undefined });
+  } catch (error) {
+    renderOAuthError(ctx, error);
+  }
+});
+
+// The consent page's API, behind your normal authentication.
+router.get('/api/oauth/authorize/context', requirePolicy(), async ctx => {
+  const { subject } = ctx.authenticationSession;
+  ctx.body = await ctx.container.get(OAuthAuthorizationServer).describeAuthorizationRequest(ctx.query, subject);
+  // 'context' → show consent; 'redirect' → window.location = redirectUrl; 'refuse' → show the error, never redirect
+});
+router.post('/api/oauth/authorize/approve', requirePolicy(), async ctx => {
+  const { subject, claims, factors } = ctx.authenticationSession;
+  ctx.body = await ctx.container.get(OAuthAuthorizationServer).approve(ctx.parsedBody.requestId, { subject, claims, factors });
+});
+router.post('/api/oauth/authorize/deny', requirePolicy(), async ctx => {
+  ctx.body = await ctx.container.get(OAuthAuthorizationServer).deny(ctx.parsedBody.requestId, ctx.authenticationSession.subject);
+});
+```
+
+On the MCP route, validate bearer tokens for the resource with `lookupSessionFromJwt(token, false, resource)` and answer a 401 with `WWW-Authenticate: Bearer resource_metadata="${protectedResourceMetadataUrl(resource)}"`. Every other route passes no audience, so it refuses MCP tokens with no extra code.
+
+**Clients.** A `client_id` that is an https URL is a Client ID Metadata Document: the resolver fetches it without following redirects, caps its size, checks that its `client_id` equals the URL exactly, and caches it for its `max-age` (clamped to 60 seconds..24 hours). It refuses IP-literal and `localhost` hosts, and `allowHost` lets you restrict the rest; DNS rebinding is not defended. Dynamic clients expire 90 days after their last use; schedule `OAuthClientRepository.deleteExpired`, since Claude registers a new client per connection. Pre-registered confidential clients store `hashOAuthClientSecret(secret)`; `createOAuthClientSecret()` makes a show-once secret.
+
+**Redirect URIs** match exactly, except that a loopback URI (`http://localhost`, `http://127.0.0.1`, `http://[::1]`) matches on any port, as native apps require. Anything else must be https. The consent context reports the redirect host and whether every registered redirect is loopback, so the page can warn.
+
+**Refresh** rotates the session's refresh token, bound to the client it was issued to and, with a grant repository, to a grant that is not revoked. A refresh token presented by the wrong client is spent by the attempt, so the legitimate client's next refresh trips family revocation. A replayed code or refresh token is always `invalid_grant`.
+
+**Audit.** `oauth.client.registered`, `oauth.authorization.approved`, `oauth.authorization.denied`, `oauth.token.issued`, `oauth.token.refreshed`, and `oauth.token.rejected` (with the RFC error code as `reason`).
+
 ---
 
 ## API Reference
@@ -1376,34 +1526,36 @@ Abstract base class. Implement `verify(username: string, password: string): Prom
 
 ### `AuthenticationSessionService`
 
-| Method                                                                | Returns                                                | Description                                                                               |
-| --------------------------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| `createSession(subject, claims, factors, expiration?)`                | `Promise<AuthenticationSession>`                       | Create and cache a new session                                                            |
-| `updateSession(token, subject, expiration?, claims?, factor?)`        | `Promise<AuthenticationSession>`                       | Merge claims/factors and reset `expiresAt` to `now + expiration` (absolute, not additive) |
-| `createOrUpdateSession(token?, subject, claims, factor, expiration?)` | `Promise<AuthenticationSession>`                       | Create or update depending on whether the token resolves                                  |
-| `lookupSessionFromJwt(jwt, ignoreExpiration?)`                        | `Promise<{ session, jwtPayload }>`                     | Validate a JWT and retrieve its session                                                   |
-| `getSession(token)`                                                   | `Promise<AuthenticationSession \| undefined>`          | Retrieve a session by token                                                               |
-| `getSessionsForSubject(subject)`                                      | `Promise<AuthenticationSession[]>`                     | Get all active sessions for a subject                                                     |
-| `revokeAllForSubject(subject, reason?)`                               | `Promise<number>`                                      | Revoke every active session for a subject; returns how many were revoked                  |
-| `issueTokenForSession(sessionToken)`                                  | `Promise<AuthenticationToken>`                         | Issue an access token AND a single-use refresh token                                      |
-| `refreshSession(refreshToken)`                                        | `Promise<AuthenticationToken>`                         | Rotate the refresh token's `jti`; revokes the family on replay                            |
-| `rotateSession(token, claimOverrides?, expiration?)`                  | `Promise<{ session, accessToken, refreshToken, ... }>` | Mint a new session for a privilege change (e.g. MFA step-up)                              |
-| `deleteSession(token, reason?)`                                       | `Promise<void>`                                        | Revoke a session and clean up its refresh-token family entry                              |
+| Method                                                                     | Returns                                                | Description                                                                               |
+| -------------------------------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| `createSession(subject, claims, factors, expiration?, device?, audience?)` | `Promise<AuthenticationSession>`                       | Create and cache a new session; `audience` binds its tokens to one resource               |
+| `updateSession(token, subject, expiration?, claims?, factor?)`             | `Promise<AuthenticationSession>`                       | Merge claims/factors and reset `expiresAt` to `now + expiration` (absolute, not additive) |
+| `createOrUpdateSession(token?, subject, claims, factor, expiration?)`      | `Promise<AuthenticationSession>`                       | Create or update depending on whether the token resolves                                  |
+| `lookupSessionFromJwt(jwt, ignoreExpiration?, expectedAudience?)`          | `Promise<{ session, jwtPayload }>`                     | Validate an access JWT for the expected audience and retrieve its session                 |
+| `getSession(token)`                                                        | `Promise<AuthenticationSession \| undefined>`          | Retrieve a session by token                                                               |
+| `getSessionsForSubject(subject)`                                           | `Promise<AuthenticationSession[]>`                     | Get all active sessions for a subject                                                     |
+| `revokeAllForSubject(subject, reason?)`                                    | `Promise<number>`                                      | Revoke every active session for a subject; returns how many were revoked                  |
+| `issueTokenForSession(sessionToken)`                                       | `Promise<AuthenticationToken>`                         | Issue an access token AND a single-use refresh token                                      |
+| `refreshSession(refreshToken, expectedAudience?, guard?)`                  | `Promise<AuthenticationToken>`                         | Rotate the refresh token's `jti`; revokes the family on replay; `guard` can refuse        |
+| `rotateSession(token, claimOverrides?, expiration?)`                       | `Promise<{ session, accessToken, refreshToken, ... }>` | Mint a new session for a privilege change (e.g. MFA step-up)                              |
+| `deleteSession(token, reason?)`                                            | `Promise<void>`                                        | Revoke a session and clean up its refresh-token family entry                              |
 
 ### `AuthenticationSession`
 
 Server-side session record stored in cache. Time fields are Luxon `DateTime` instances in your code; the service serializes them to Unix integers at the cache boundary.
 
-| Field            | Type                            | Description                                                                   |
-| ---------------- | ------------------------------- | ----------------------------------------------------------------------------- |
-| `sessionToken`   | `string`                        | Opaque session token, also embedded in issued JWTs as `sessionToken`.         |
-| `subject`        | `string`                        | Subject identifier (typically a user id).                                     |
-| `issuedAt`       | `DateTime`                      | When the session was originally created.                                      |
-| `expiresAt`      | `DateTime`                      | When the session expires.                                                     |
-| `lastAccessedAt` | `DateTime`                      | When the session was most recently accessed.                                  |
-| `factors`        | `AuthenticationSessionFactor[]` | Factors satisfied during this session.                                        |
-| `claims`         | `Record<string, unknown>`       | Arbitrary claims to embed in tokens issued from this session.                 |
-| `familyId`       | `string \| undefined`           | Refresh-token family this session belongs to. Carried across `rotateSession`. |
+| Field            | Type                              | Description                                                                              |
+| ---------------- | --------------------------------- | ---------------------------------------------------------------------------------------- |
+| `sessionToken`   | `string`                          | Opaque session token, also embedded in issued JWTs as `sessionToken`.                    |
+| `subject`        | `string`                          | Subject identifier (typically a user id).                                                |
+| `issuedAt`       | `DateTime`                        | When the session was originally created.                                                 |
+| `expiresAt`      | `DateTime`                        | When the session expires.                                                                |
+| `lastAccessedAt` | `DateTime`                        | When the session was most recently accessed.                                             |
+| `factors`        | `AuthenticationSessionFactor[]`   | Factors satisfied during this session.                                                   |
+| `claims`         | `Record<string, unknown>`         | Arbitrary claims to embed in tokens issued from this session.                            |
+| `familyId`       | `string \| undefined`             | Refresh-token family this session belongs to. Carried across `rotateSession`.            |
+| `device`         | `SessionDevice \| undefined`      | Where the session began, when the application supplied it.                               |
+| `audience`       | `string \| string[] \| undefined` | The `aud` its tokens carry when not the service default. Carried across `rotateSession`. |
 
 ### `AuthenticationSessionFactor`
 
@@ -1721,14 +1873,18 @@ Abstract base class. Extends `FactorRepository<FidoFactor, FidoFactorOptions, st
 
 ### `OidcProviderRegistry`
 
-Holds the configured OIDC providers and lazily resolves an `openid-client` `Configuration` per provider on first use. Constructed from an injected `OidcProviderRegistryConfig`.
+Resolves providers from an injected `OidcProviderSource` on every lookup, and lazily resolves an `openid-client` `Configuration` per provider. The discovery cache is fingerprinted by issuer, client id, client secret, and `allowInsecureIssuer`: a changed fingerprint rediscovers, and a provider the source no longer lists loses its cached entry.
 
 | Method                   | Returns                                | Description                                                                              |
 | ------------------------ | -------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `getConfig(name)`        | `OidcProviderConfig`                   | Look up the static config; throws HTTP 404 for unknown providers                         |
-| `isPublicClient(name)`   | `boolean`                              | `true` when the provider has no `clientSecret`                                           |
+| `getConfig(name)`        | `Promise<OidcProviderConfig>`          | Look up the provider as the source lists it now; throws HTTP 404 for unknown providers   |
+| `isPublicClient(name)`   | `Promise<boolean>`                     | `true` when the provider has no `clientSecret`                                           |
 | `getConfiguration(name)` | `Promise<openid-client.Configuration>` | Lazy-resolve and cache the discovery-backed Configuration; deduplicates concurrent calls |
-| `listProviders()`        | `string[]`                             | Names of all registered providers                                                        |
+| `listProviders()`        | `Promise<string[]>`                    | Names of every provider the source lists now                                             |
+
+### `OidcProviderSource`
+
+Abstract class and DI token. Implement `list(): Promise<readonly OidcProviderConfig[]> | readonly OidcProviderConfig[]` to supply providers at runtime. It is called on every registry lookup, so cache anything expensive inside it. `OidcProviderRegistryConfig` is the static implementation: `new OidcProviderRegistryConfig(providers)`.
 
 `OidcProviderConfig`: `{ name; issuer: URL; clientId; clientSecret?; scopes: string[]; redirectUri: URL; authorizeParams?: Record<string, string>; persistRefreshToken?: boolean }`. Omit `clientSecret` for public (mobile/SPA) clients — the registry uses `openid-client.None()` and PKCE becomes mandatory.
 
@@ -1737,14 +1893,14 @@ Holds the configured OIDC providers and lazily resolves an `openid-client` `Conf
 | Method                                                               | Returns                                                                   | Description                                                                                                                     |
 | -------------------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | `beginAuthorization({ provider, intent, actorId?, redirectAfter? })` | `Promise<{ url: URL; state; expiresAt: DateTime }>`                       | Build the IdP authorize URL and cache the round-trip state record (state, nonce, PKCE verifier)                                 |
-| `completeAuthorization({ callbackUrl })`                             | `Promise<OidcAuthorizationResult>`                                        | Exchange the auth code, validate the id_token, fetch userinfo, and resolve to a factor                                          |
+| `completeAuthorization({ params })`                                  | `Promise<OidcAuthorizationResult>`                                        | Exchange the auth code, validate the id_token, fetch userinfo, and resolve to a factor; 409 when a link's identity is taken     |
 | `createFactorFromAuthorization(actorId, authorizationId)`            | `Promise<OidcFactor>`                                                     | Complete the `new-user` branch by attaching the cached profile to a freshly created actor                                       |
 | `refreshAccessToken(actorId, factorId)`                              | `Promise<{ accessToken; expiresAt: DateTime \| null; scope?; idToken? }>` | Rotate the access token using the persisted refresh token; re-encrypts a rotated refresh token automatically                    |
 | `hasPendingAuthorization(authorizationId)`                           | `Promise<boolean>`                                                        | Check whether a `new-user` pending authorization is still cached and unconsumed                                                 |
 | `stashAuthenticatedExchange({ actorId, factorId, isNewUser? })`      | `Promise<string>`                                                         | Stash a completed authorization under a one-time `exchangeId` so a follow-up route (e.g. an MFA gate) can pick the flow back up |
 | `redeemAuthenticatedExchange(exchangeId)`                            | `Promise<OidcAuthenticatedExchange \| null>`                              | Single-use redeem of a stash from `stashAuthenticatedExchange`. Returns `null` if expired or already consumed                   |
 
-`OidcAuthorizationResult` is a discriminated union with `kind` ∈ `'signed-in' | 'linked' | 'new-user'`. The `'new-user'` branch carries `authorizationId` and an optional `emailConflict: { actorId; reason: 'unverified-email' }` when the IdP-claimed email matches an existing actor but is unverified.
+`OidcAuthorizationResult` is a discriminated union with `kind` ∈ `'signed-in' | 'linked' | 'new-user'`, and every variant carries `intent: 'sign-in' | 'link'`. The `'new-user'` branch carries `authorizationId` and an optional `emailConflict: { actorId; reason: 'unverified-email' }` when the IdP-claimed email matches an existing actor but is unverified.
 
 `OidcAuthenticatedExchange`: `{ actorId; factorId; isNewUser? }`. Carries the bare facts needed to mint a session after the gate clears — `isNewUser` is true when the actor was created during this exchange (typically forwarded from a `new-user` completion).
 
@@ -1827,6 +1983,54 @@ Abstract base class with the same surface as `OidcFactorRepository`. Extends `Fa
 `OAuth2Factor`: `Factor & OAuth2FactorValue` — same shape as `OidcFactor`.
 
 `OAuth2FactorValue` / `OAuth2FactorLookup`: same shape as the OIDC equivalents.
+
+### `OAuthAuthorizationServer`
+
+| Method                                         | Returns                                  | Description                                                                                      |
+| ---------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `metadata()`                                   | `AuthorizationServerMetadata`            | RFC 8414 document. `registration_endpoint` only when registration is on                          |
+| `resourceMetadata(resource)`                   | `ProtectedResourceMetadata \| undefined` | RFC 9728 document for a served resource                                                          |
+| `describeAuthorizationRequest(query, subject)` | `Promise<AuthorizationContextResult>`    | Validate and stash for consent; `context`, `redirect` (with `iss`), or `refuse` (never redirect) |
+| `approve(requestId, consent)`                  | `Promise<{ redirectUrl }>`               | Issue a code for the stashed request; 404 when unknown, decided, or another subject's            |
+| `deny(requestId, subject)`                     | `Promise<{ redirectUrl }>`               | Redirect with `access_denied`                                                                    |
+| `register(body)`                               | `Promise<{ client, response }>`          | Dynamic Client Registration; 404 when off                                                        |
+| `token(body, headers?)`                        | `Promise<TokenResponse>`                 | `authorization_code` and `refresh_token` grants; every refusal is an `OAuthError`                |
+
+`OAuthAuthorizationServerOptions`: `(issuer, authorizationEndpoint, tokenEndpoint, resources, scopesSupported, registrationEndpoint?, sessionExpiration?)`.
+
+### `OAuthTokenEndpoint`
+
+`exchange(body, headers?)` behind `OAuthAuthorizationServer.token`. A code exchange authenticates the client, redeems the code, upserts the grant (when a grant repository is bound), and mints a session whose audience is the resource and whose `claims.oauth` is an `OAuthSessionClaim`. A refresh passes the served resources as the expected audience and a guard requiring the same client and a live grant. Any 4xx from the session service becomes `invalid_grant`.
+
+### `OAuthClientResolver`
+
+| Method                      | Returns                | Description                                                                                                 |
+| --------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `resolve(clientId)`         | `Promise<OAuthClient>` | Metadata document for an https id (when bound), else the repository; `invalid_client` if unknown or expired |
+| `authenticate(credentials)` | `Promise<OAuthClient>` | `none`, `client_secret_post`, or `client_secret_basic`; 401 `invalid_client` on failure                     |
+| `recordUse(client, at?)`    | `Promise<void>`        | Touch the client; extends a dynamic client's expiry                                                         |
+
+### `OAuthClientRepository` / `OAuthGrantRepository`
+
+Abstract classes you implement. Clients: `findByClientId`, `create`, `touchLastUsed(clientId, at, extendTo?)`, `deleteExpired(before)`. Grants (optional): `upsert({ clientId, subject, resource, scope })` (one per client, subject, and resource; clears `revokedAt`), `find(id)`, `recordUse(id, at)`.
+
+### `AuthorizationCodeService` / `AuthorizationRequestStore`
+
+`issue(request, consent)` answers a 60-second code; `redeem(code, { clientId, redirectUri, codeVerifier, resource? })` answers it once and throws `invalid_grant` on any mismatch. `stash(request, subject)` holds a validated request for 10 minutes; `take(id, subject)` answers it once, to that subject only.
+
+### OAuth helpers
+
+| Export                                                                    | Description                                                            |
+| ------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `OAuthError` / `IsOAuthError`                                             | `HttpError` with `code`, `description`, and `toBody()` (RFC 6749 §5.2) |
+| `parseAuthorizationRequest(query, client, policy)`                        | `valid`, `redirect`, or `refuse`                                       |
+| `redirectUriMatches`, `validateRegisteredRedirectUri`, `describeRedirect` | Redirect URI rules                                                     |
+| `verifyPkceS256`, `isPkceS256Challenge`                                   | PKCE `S256`                                                            |
+| `buildAuthorizationRedirect(redirectUri, params)`                         | Adds `code` or `error`, `state`, and `iss`                             |
+| `buildAuthorizationServerMetadata`, `buildProtectedResourceMetadata`      | The two metadata documents                                             |
+| `authorizationServerMetadataUrl`, `protectedResourceMetadataUrl`          | Their well-known URLs                                                  |
+| `getOAuthSessionClaim(session)`                                           | `claims.oauth`, or `undefined` for a session not minted for a client   |
+| `createOAuthClientSecret`, `hashOAuthClientSecret`                        | Show-once secret and its stored digest                                 |
 
 ## License
 

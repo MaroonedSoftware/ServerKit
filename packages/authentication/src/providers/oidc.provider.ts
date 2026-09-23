@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { Injectable } from 'injectkit';
 import * as openidClient from 'openid-client';
 import { httpError } from '@maroonedsoftware/errors';
@@ -11,7 +12,13 @@ import { Logger } from '@maroonedsoftware/logger';
  * and PKCE becomes mandatory at the service layer.
  */
 export type OidcProviderConfig = {
-  /** Stable identifier used to look up this provider (e.g. `"google"`). Lowercase by convention. */
+  /**
+   * Stable identifier used to look up this provider (e.g. `"google"`). Lowercase by convention.
+   *
+   * It is the consumer's slug, and it is stored on every factor created through the
+   * provider. Renaming a provider orphans those factors: they no longer resolve to a
+   * registered provider, so their owners can no longer sign in through them.
+   */
   name: string;
   /** Base URL of the OIDC issuer used for `.well-known/openid-configuration` discovery. */
   issuer: URL;
@@ -49,74 +56,142 @@ export type OidcProviderConfig = {
   allowInsecureIssuer?: boolean;
 };
 
-/** Injection token holding the user-supplied list of OIDC providers. */
+/**
+ * Where {@link OidcProviderRegistry} reads its providers from, and the DI token for it.
+ *
+ * The registry calls {@link OidcProviderSource.list} on **every** lookup, so a source
+ * backed by a database or a settings store makes providers appear, change, and
+ * disappear without a restart. Keep `list()` cheap: cache the expensive part (a query,
+ * a secret decryption) inside the source if it matters. The registry's own discovery
+ * cache is keyed by a fingerprint of each provider's issuer and credentials, so a
+ * rotated client secret triggers a fresh discovery on the next lookup.
+ *
+ * {@link OidcProviderRegistryConfig} is the static implementation and the default.
+ *
+ * @example
+ * ```ts
+ * registry.register(OidcProviderSource).useClass(SettingsOidcProviderSource).asSingleton();
+ * ```
+ */
 @Injectable()
-export class OidcProviderRegistryConfig {
-  constructor(public readonly providers: OidcProviderConfig[] = []) {}
+export abstract class OidcProviderSource {
+  /** Every provider currently configured. Names must be unique; the first entry wins on a duplicate. */
+  abstract list(): Promise<readonly OidcProviderConfig[]> | readonly OidcProviderConfig[];
 }
 
 /**
- * Lazily resolves and caches one {@link openidClient.Configuration} per registered provider.
+ * A fixed provider list, built once at bootstrap. The default {@link OidcProviderSource}.
  *
- * Discovery (`.well-known/openid-configuration` + JWKS) hits the network exactly
- * once per provider per process; subsequent calls return the cached `Configuration`.
+ * Register it under the {@link OidcProviderSource} token:
+ * `registry.register(OidcProviderSource).useValue(new OidcProviderRegistryConfig([...]))`.
+ */
+@Injectable()
+export class OidcProviderRegistryConfig extends OidcProviderSource {
+  constructor(public readonly providers: OidcProviderConfig[] = []) {
+    super();
+  }
+
+  list(): readonly OidcProviderConfig[] {
+    return this.providers;
+  }
+}
+
+/** A discovery in flight or done, and the credentials it was made with. */
+type ResolvedConfiguration = {
+  fingerprint: string;
+  configuration: Promise<openidClient.Configuration>;
+};
+
+/**
+ * Resolves providers from an {@link OidcProviderSource} and caches one discovered
+ * {@link openidClient.Configuration} per provider.
  *
- * Thread-safety: in-flight discoveries are deduped via a promise cache so concurrent
- * lookups for the same provider share a single network request.
+ * Every lookup consults the source, so the registry is async throughout. Discovery
+ * (`.well-known/openid-configuration` + JWKS) is cached per provider name together
+ * with a fingerprint of the issuer, client id, client secret, and `allowInsecureIssuer`.
+ * A lookup whose fingerprint differs from the cached one discards the entry and
+ * rediscovers; a provider no longer listed loses its entry and answers 404.
  *
- * Dependencies: an {@link OidcProviderRegistryConfig} (the static provider list)
- * and a {@link Logger} (used to warn when a provider sets `allowInsecureIssuer`).
+ * Concurrent lookups for the same provider and fingerprint share a single discovery.
+ * A rejected discovery is evicted so the next lookup retries it.
+ *
+ * Dependencies: an {@link OidcProviderSource} and a {@link Logger} (used to warn when a
+ * provider sets `allowInsecureIssuer`).
  */
 @Injectable()
 export class OidcProviderRegistry {
-  private readonly configs: Map<string, OidcProviderConfig>;
-  private readonly resolved = new Map<string, Promise<openidClient.Configuration>>();
+  private readonly resolved = new Map<string, ResolvedConfiguration>();
 
   constructor(
-    registry: OidcProviderRegistryConfig,
+    private readonly source: OidcProviderSource,
     private readonly logger: Logger,
-  ) {
-    this.configs = new Map(registry.providers.map(p => [p.name, p]));
+  ) {}
+
+  /**
+   * The configuration of one provider, as the source lists it now.
+   *
+   * @throws HTTP 404 when the source does not list `name`.
+   */
+  async getConfig(name: string): Promise<OidcProviderConfig> {
+    return await this.resolveConfig(name);
+  }
+
+  /** `true` when the provider is a public client (no `clientSecret`). */
+  async isPublicClient(name: string): Promise<boolean> {
+    return (await this.resolveConfig(name)).clientSecret === undefined;
   }
 
   /**
-   * Look up the static config for a provider.
-   * @throws HTTP 404 when no provider is registered under `name`.
+   * The discovered `openid-client` configuration for a provider. Discovery runs once
+   * per provider and credential set; a changed issuer, client id, or client secret
+   * rediscovers.
+   *
+   * @throws HTTP 404 when the source does not list `name`.
    */
-  getConfig(name: string): OidcProviderConfig {
-    const config = this.configs.get(name);
+  async getConfiguration(name: string): Promise<openidClient.Configuration> {
+    const config = await this.resolveConfig(name);
+    const fingerprint = this.fingerprint(config);
+
+    const cached = this.resolved.get(name);
+    if (cached && cached.fingerprint === fingerprint) {
+      return cached.configuration;
+    }
+
+    // A different fingerprint orphans the old discovery: callers already holding it
+    // finish their one request against the old configuration.
+    const configuration = this.discover(config).catch(error => {
+      // Evict by identity, so a late failure of an orphaned discovery cannot drop the
+      // entry that replaced it. Dropping the rejected promise lets the next lookup retry.
+      if (this.resolved.get(name)?.configuration === configuration) {
+        this.resolved.delete(name);
+      }
+      throw error;
+    });
+    this.resolved.set(name, { fingerprint, configuration });
+    return configuration;
+  }
+
+  /** The names of every provider the source lists now. */
+  async listProviders(): Promise<string[]> {
+    const providers = await this.source.list();
+    return [...new Set(providers.map(provider => provider.name))];
+  }
+
+  private async resolveConfig(name: string): Promise<OidcProviderConfig> {
+    const providers = await this.source.list();
+    const config = providers.find(provider => provider.name === name);
     if (!config) {
+      this.resolved.delete(name);
       throw httpError(404).withDetails({ provider: 'unknown provider' });
     }
     return config;
   }
 
-  /** `true` when `clientSecret` was omitted from the static config. */
-  isPublicClient(name: string): boolean {
-    return this.getConfig(name).clientSecret === undefined;
-  }
-
-  /**
-   * Resolve (and cache) the openid-client `Configuration` for a provider. Performs
-   * OIDC discovery on first call.
-   */
-  async getConfiguration(name: string): Promise<openidClient.Configuration> {
-    const cached = this.resolved.get(name);
-    if (cached) return cached;
-
-    const config = this.getConfig(name);
-    const promise = this.discover(config).catch(error => {
-      // Drop the rejected promise so a transient failure doesn't poison the cache.
-      this.resolved.delete(name);
-      throw error;
-    });
-    this.resolved.set(name, promise);
-    return promise;
-  }
-
-  /** Names of all providers registered at construction time. */
-  listProviders(): string[] {
-    return [...this.configs.keys()];
+  private fingerprint(config: OidcProviderConfig): string {
+    return crypto
+      .createHash('sha256')
+      .update(JSON.stringify([config.issuer.href, config.clientId, config.clientSecret ?? '', String(config.allowInsecureIssuer ?? false)]))
+      .digest('hex');
   }
 
   private async discover(config: OidcProviderConfig): Promise<openidClient.Configuration> {

@@ -118,6 +118,16 @@ const categoryFor = (type: AuthenticationAuditEvent['type']): AuditEventCategory
     case 'recovery.completed':
       return 'credential';
 
+    case 'oauth.client.registered':
+      return 'credential';
+    case 'oauth.authorization.approved':
+    case 'oauth.authorization.denied':
+      return 'privilege';
+    case 'oauth.token.issued':
+    case 'oauth.token.refreshed':
+    case 'oauth.token.rejected':
+      return 'login';
+
     default: {
       const unhandled: never = type;
       throw new Error(`unhandled audit event type: ${String(unhandled)}`);

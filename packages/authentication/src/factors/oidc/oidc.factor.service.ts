@@ -42,10 +42,17 @@ export type OidcProfile = {
  *   `emailConflict` is set when an actor with the same email exists but the email
  *   is unverified at the IdP — the UI should require the user to sign in to that
  *   account before linking the new provider.
+ *
+ * Every variant carries the `intent` the flow began with, so a callback can tell a
+ * link completing (keep the caller's current session) from a sign-in (mint one).
+ * A `link` whose `(provider, subject)` already belongs to the linking actor answers
+ * `signed-in` with `intent: 'link'`; one that belongs to another actor is refused
+ * with a 409 and never reaches a result.
  */
 export type OidcAuthorizationResult =
   | {
       kind: 'signed-in';
+      intent: 'sign-in' | 'link';
       actorId: string;
       factorId: string;
       profile: OidcProfile;
@@ -53,6 +60,7 @@ export type OidcAuthorizationResult =
     }
   | {
       kind: 'linked';
+      intent: 'sign-in' | 'link';
       actorId: string;
       factorId: string;
       profile: OidcProfile;
@@ -60,6 +68,7 @@ export type OidcAuthorizationResult =
     }
   | {
       kind: 'new-user';
+      intent: 'sign-in' | 'link';
       authorizationId: string;
       profile: OidcProfile;
       emailConflict?: { actorId: string; reason: 'unverified-email' };
@@ -211,7 +220,7 @@ export class OidcFactorService {
       throw httpError(400).withDetails({ actorId: 'required when intent is link' });
     }
 
-    const config = this.registry.getConfig(args.provider);
+    const config = await this.registry.getConfig(args.provider);
     const oidcConfig = await this.registry.getConfiguration(args.provider);
 
     const state = openidClient.randomState();
@@ -277,6 +286,7 @@ export class OidcFactorService {
    *   `id_token` claims are missing, or the supplied `iss` does not match.
    * @throws HTTP 403 when the registered `'auth.factor.oidc.profile.allowed'` policy denies the profile.
    * @throws HTTP 404 when the state record has expired or does not exist.
+   * @throws HTTP 409 when a `link` intent's `(provider, subject)` already belongs to another actor.
    */
   async completeAuthorization(args: { params: AuthorizationCallbackParams }): Promise<OidcAuthorizationResult> {
     const { params } = args;
@@ -303,7 +313,7 @@ export class OidcFactorService {
     await this.cache.delete(this.getStateKey(params.state));
 
     const oidcConfig = await this.registry.getConfiguration(stored.provider);
-    const providerConfig = this.registry.getConfig(stored.provider);
+    const providerConfig = await this.registry.getConfig(stored.provider);
 
     if (params.iss !== undefined) {
       const expectedIssuer = oidcConfig.serverMetadata().issuer;
@@ -352,12 +362,26 @@ export class OidcFactorService {
         .withInternalDetails({ reason: policyResult.reason, details: policyResult.details });
     }
 
-    const refreshToken = providerConfig.persistRefreshToken && !this.registry.isPublicClient(stored.provider) ? tokens.refresh_token : undefined;
+    const refreshToken =
+      providerConfig.persistRefreshToken && !(await this.registry.isPublicClient(stored.provider)) ? tokens.refresh_token : undefined;
     const refreshTokenExpiresAt = this.computeRefreshTokenExpiry(tokens);
 
     // 1. Existing factor for (provider, subject) → signed-in
     const existing = await this.repo.findFactor({ provider: stored.provider, subject });
     if (existing) {
+      // A link whose identity already belongs to someone else must not sign the
+      // caller in as that someone: refuse before touching the stranger's factor.
+      if (stored.intent === 'link' && existing.actorId !== stored.actorId) {
+        await this.audit.record({
+          type: 'oidc.link.rejected',
+          category: 'privilege',
+          outcome: 'failure',
+          ...(stored.actorId === undefined ? {} : { actorId: stored.actorId }),
+          data: { provider: stored.provider, subject, reason: 'subject_taken' },
+        });
+        throw httpError(409).withDetails({ provider: 'already linked to another account' });
+      }
+
       if (refreshToken) {
         const { encryptedValue, encryptedDek } = this.encryption.encryptWithNewDek(refreshToken);
         await this.repo.updateRefreshToken(existing.id, {
@@ -382,6 +406,7 @@ export class OidcFactorService {
 
       return {
         kind: 'signed-in',
+        intent: stored.intent,
         actorId: existing.actorId,
         factorId: existing.id,
         profile,
@@ -391,7 +416,12 @@ export class OidcFactorService {
 
     // 2. Explicit link to a known actor → create the factor on that actor
     if (stored.intent === 'link') {
-      const factor = await this.createFactor(stored.actorId!, profile, refreshToken, refreshTokenExpiresAt);
+      if (!stored.actorId) {
+        // beginAuthorization refuses a link without an actor, so this is a corrupt state record.
+        await this.auditAuthorizationFailed('state_invalid', stored.provider, subject);
+        throw httpError(400).withDetails({ state: 'link intent without an actor' });
+      }
+      const factor = await this.createFactor(stored.actorId, profile, refreshToken, refreshTokenExpiresAt);
       await this.audit.record({
         type: 'oidc.linked.explicit',
         category: 'privilege',
@@ -400,7 +430,7 @@ export class OidcFactorService {
         data: { provider: stored.provider, subject, actorId: factor.actorId },
       });
 
-      return { kind: 'linked', actorId: factor.actorId, factorId: factor.id, profile, redirectAfter: stored.redirectAfter };
+      return { kind: 'linked', intent: stored.intent, actorId: factor.actorId, factorId: factor.id, profile, redirectAfter: stored.redirectAfter };
     }
 
     // 3. Sign-in with a new (provider, subject). Try to auto-link by verified email.
@@ -419,7 +449,7 @@ export class OidcFactorService {
           data: { provider: stored.provider, subject, ...(profile.email === undefined ? {} : { email: profile.email }) },
         });
 
-        return { kind: 'linked', actorId: factor.actorId, factorId: factor.id, profile, redirectAfter: stored.redirectAfter };
+        return { kind: 'linked', intent: stored.intent, actorId: factor.actorId, factorId: factor.id, profile, redirectAfter: stored.redirectAfter };
       }
     }
 
@@ -455,7 +485,7 @@ export class OidcFactorService {
       data: { provider: stored.provider, subject },
     });
 
-    return { kind: 'new-user', authorizationId, profile, emailConflict, redirectAfter: stored.redirectAfter };
+    return { kind: 'new-user', intent: stored.intent, authorizationId, profile, emailConflict, redirectAfter: stored.redirectAfter };
   }
 
   /**

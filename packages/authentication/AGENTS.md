@@ -51,16 +51,16 @@ by area; type aliases for provider-specific payload shapes are grouped rather th
 
 ### Session model (`src/types.ts`)
 
-| Export                         | Kind      | Shape                                                                                        | Notes                                                                                             |
-| ------------------------------ | --------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `AuthenticationSession`        | interface | `{ sessionToken, subject, issuedAt, expiresAt, lastAccessedAt, factors, claims, familyId? }` | All timestamps are Luxon `DateTime`.                                                              |
-| `AuthenticationSessionFactor`  | interface | `{ issuedAt, authenticatedAt, method, methodId, kind }`                                      | `authenticatedAt` is what recency policies read.                                                  |
-| `SessionDevice`                | interface | `{ ipAddress?, userAgent?, label? }`                                                         | Optional `device` on the session. Where it **began**, not where last used.                        |
-| `AuthenticationFactorKind`     | type      | `'knowledge' \| 'possession' \| 'biometric'`                                                 | Classic MFA taxonomy.                                                                             |
-| `AuthenticationFactorMethod`   | type      | `'phone' \| 'password' \| 'authenticator' \| 'email' \| 'fido' \| 'oidc' \| 'apikey'`        | **Note: no `'oauth2'`.** See Gotchas. `'apikey'` is a machine credential, not an enrolled factor. |
-| `invalidAuthenticationSession` | constant  | Sentinel with empty strings and `DateTime.invalid('invalid')` fields                         | Compare by **identity**; that is what `requirePolicy` does.                                       |
-| `SessionRevocationReason`      | type      | `'logout' \| 'rotate' \| 'theft' \| 'expiry'`                                                | —                                                                                                 |
-| `AuthenticationToken`          | type      | `{ accessToken, tokenType, expiresIn, … }`                                                   | OAuth 2.0-shaped response.                                                                        |
+| Export                         | Kind      | Shape                                                                                                            | Notes                                                                                             |
+| ------------------------------ | --------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `AuthenticationSession`        | interface | `{ sessionToken, subject, issuedAt, expiresAt, lastAccessedAt, factors, claims, familyId?, device?, audience? }` | All timestamps are Luxon `DateTime`. `audience` is fixed at creation and carried across rotation. |
+| `AuthenticationSessionFactor`  | interface | `{ issuedAt, authenticatedAt, method, methodId, kind }`                                                          | `authenticatedAt` is what recency policies read.                                                  |
+| `SessionDevice`                | interface | `{ ipAddress?, userAgent?, label? }`                                                                             | Optional `device` on the session. Where it **began**, not where last used.                        |
+| `AuthenticationFactorKind`     | type      | `'knowledge' \| 'possession' \| 'biometric'`                                                                     | Classic MFA taxonomy.                                                                             |
+| `AuthenticationFactorMethod`   | type      | `'phone' \| 'password' \| 'authenticator' \| 'email' \| 'fido' \| 'oidc' \| 'apikey'`                            | **Note: no `'oauth2'`.** See Gotchas. `'apikey'` is a machine credential, not an enrolled factor. |
+| `invalidAuthenticationSession` | constant  | Sentinel with empty strings and `DateTime.invalid('invalid')` fields                                             | Compare by **identity**; that is what `requirePolicy` does.                                       |
+| `SessionRevocationReason`      | type      | `'logout' \| 'rotate' \| 'theft' \| 'expiry'`                                                                    | —                                                                                                 |
+| `AuthenticationToken`          | type      | `{ accessToken, tokenType, expiresIn, … }`                                                                       | OAuth 2.0-shaped response.                                                                        |
 
 ### Scheme dispatch
 
@@ -81,18 +81,18 @@ by area; type aliases for provider-specific payload shapes are grouped rather th
 
 ### Sessions
 
-| Export                                                         | Kind   | Shape                                                                    | Notes                                                   |
-| -------------------------------------------------------------- | ------ | ------------------------------------------------------------------------ | ------------------------------------------------------- |
-| `AuthenticationSessionServiceOptions`                          | class  | `(issuer, audience, expiresIn: Duration, refreshExpiresIn = 30 days)`    | A class so it is an InjectKit token.                    |
-| `AuthenticationSessionService`                                 | class  | `@Injectable()`                                                          | Backed by a `CacheProvider`.                            |
-| `#createSession` / `#updateSession` / `#createOrUpdateSession` | method | —                                                                        | —                                                       |
-| `#getSession` / `#getSessionsForSubject`                       | method | —                                                                        | Read paths; `#revokeAllForSubject` does the revoking.   |
-| `#revokeAllForSubject`                                         | method | `(subject: string, reason?: SessionRevocationReason) => Promise<number>` | Revokes every session for a subject; returns the count. |
-| `#lookupSessionFromJwt`                                        | method | `(jwt: string, ignoreJwtExpiration?: boolean)`                           | —                                                       |
-| `#deleteSession`                                               | method | `(sessionToken, reason: SessionRevocationReason = 'logout')`             | —                                                       |
-| `#issueTokenForSession`                                        | method | `(sessionToken) => Promise<AuthenticationToken>`                         | —                                                       |
-| `#rotateSession`                                               | method | `(sessionToken, claimOverrides?, expiration?)`                           | For privilege changes. Carries `familyId` forward.      |
-| `#refreshSession`                                              | method | `(refreshToken) => Promise<AuthenticationToken>`                         | Rotation with replay detection.                         |
+| Export                                                         | Kind   | Shape                                                                       | Notes                                                                                      |
+| -------------------------------------------------------------- | ------ | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `AuthenticationSessionServiceOptions`                          | class  | `(issuer, audience, expiresIn: Duration, refreshExpiresIn = 30 days)`       | A class so it is an InjectKit token.                                                       |
+| `AuthenticationSessionService`                                 | class  | `@Injectable()`                                                             | Backed by a `CacheProvider`.                                                               |
+| `#createSession` / `#updateSession` / `#createOrUpdateSession` | method | `createSession(subject, claims, factors, expiration?, device?, audience?)`  | `audience` binds every token from the session to one resource.                             |
+| `#getSession` / `#getSessionsForSubject`                       | method | —                                                                           | Read paths; `#revokeAllForSubject` does the revoking.                                      |
+| `#revokeAllForSubject`                                         | method | `(subject: string, reason?: SessionRevocationReason) => Promise<number>`    | Revokes every session for a subject; returns the count.                                    |
+| `#lookupSessionFromJwt`                                        | method | `(jwt, ignoreJwtExpiration?, expectedAudience?)`                            | `aud` must match `expectedAudience`, else the configured audience. Refuses refresh tokens. |
+| `#deleteSession`                                               | method | `(sessionToken, reason: SessionRevocationReason = 'logout')`                | —                                                                                          |
+| `#issueTokenForSession`                                        | method | `(sessionToken) => Promise<AuthenticationToken>`                            | —                                                                                          |
+| `#rotateSession`                                               | method | `(sessionToken, claimOverrides?, expiration?)`                              | For privilege changes. Carries `familyId` forward.                                         |
+| `#refreshSession`                                              | method | `(refreshToken, expectedAudience?, guard?) => Promise<AuthenticationToken>` | Rotation with replay detection. `guard` runs after the `jti` is claimed.                   |
 
 ### Factors
 
@@ -118,18 +118,19 @@ class) and an abstract `<Name>FactorRepository` you implement.
 
 ### Providers
 
-| Export                                                    | Kind           | Notes                                                                                                                                                                                                      |
-| --------------------------------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PasswordHashProvider`                                    | abstract class | The DI token.                                                                                                                                                                                              |
-| `Argon2idPasswordHashProvider`                            | class          | Uses `ARGON2ID_DEFAULTS` from `@maroonedsoftware/encryption`. Result type `PasswordHashResult`.                                                                                                            |
-| `PasswordStrengthProvider`                                | class          | zxcvbn-ts (English dictionary + adjacency graphs) **plus a live HaveIBeenPwned check**. Score 0–4; `ensureStrength` requires ≥ 3.                                                                          |
-| `JwtProvider`                                             | class          | —                                                                                                                                                                                                          |
-| `OtpProvider`                                             | class          | `validate` returns a boolean; `validateWithCounter` returns the matching step. Types: `OtpType`, `OtpOptions`, `TotpOptions`, `HotpOptions`, `OtpUrlOptions`, `OtpValidationOptions`, `defaultOtpOptions`. |
-| `OtpProviderMock`                                         | class          | `extends OtpProvider`. Tests only.                                                                                                                                                                         |
-| `PkceProvider`                                            | class          | —                                                                                                                                                                                                          |
-| `OidcProviderRegistry` / `OidcProviderRegistryConfig`     | class          | Types: `OidcProviderConfig`.                                                                                                                                                                               |
-| `OAuth2ProviderRegistry` / `OAuth2ProviderRegistryConfig` | class          | Types: `OAuth2ProviderConfig`, `OAuth2ProviderClient`.                                                                                                                                                     |
-| `HtmlRedirectProvider`                                    | class          | —                                                                                                                                                                                                          |
+| Export                                                    | Kind                   | Notes                                                                                                                                                                                                      |
+| --------------------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PasswordHashProvider`                                    | abstract class         | The DI token.                                                                                                                                                                                              |
+| `Argon2idPasswordHashProvider`                            | class                  | Uses `ARGON2ID_DEFAULTS` from `@maroonedsoftware/encryption`. Result type `PasswordHashResult`.                                                                                                            |
+| `PasswordStrengthProvider`                                | class                  | zxcvbn-ts (English dictionary + adjacency graphs) **plus a live HaveIBeenPwned check**. Score 0–4; `ensureStrength` requires ≥ 3.                                                                          |
+| `JwtProvider`                                             | class                  | —                                                                                                                                                                                                          |
+| `OtpProvider`                                             | class                  | `validate` returns a boolean; `validateWithCounter` returns the matching step. Types: `OtpType`, `OtpOptions`, `TotpOptions`, `HotpOptions`, `OtpUrlOptions`, `OtpValidationOptions`, `defaultOtpOptions`. |
+| `OtpProviderMock`                                         | class                  | `extends OtpProvider`. Tests only.                                                                                                                                                                         |
+| `PkceProvider`                                            | class                  | —                                                                                                                                                                                                          |
+| `OidcProviderRegistry`                                    | class                  | Async throughout: `getConfig`, `isPublicClient`, `listProviders`, `getConfiguration`. Consults the source on every lookup.                                                                                 |
+| `OidcProviderSource` / `OidcProviderRegistryConfig`       | abstract class / class | The DI token and its static implementation. Types: `OidcProviderConfig`.                                                                                                                                   |
+| `OAuth2ProviderRegistry` / `OAuth2ProviderRegistryConfig` | class                  | Types: `OAuth2ProviderConfig`, `OAuth2ProviderClient`.                                                                                                                                                     |
+| `HtmlRedirectProvider`                                    | class                  | —                                                                                                                                                                                                          |
 
 ### Policies
 
@@ -197,19 +198,51 @@ default off the route path — a `@maroonedsoftware/mcp` tool passing it to `req
 | `formatApiKeyToken`, `parseApiKeyToken`, `hashApiKeyToken`, `apiKeyHint` | functions      | `{prefix}_{type}_{body}{crc32}`. Parse is checksum-verified and does no I/O.            |
 | `encodeBase62`, `crc32`                                                  | functions      | Pure codec pieces. `encodeBase62` pads to a constant width — see Gotchas.               |
 
+### OAuth authorization server (`src/oauth/`)
+
+The core of an OAuth 2.1 authorization server for MCP clients (claude.ai connectors, Claude Code).
+The package owns validation, codes, clients, and tokens; the consumer owns every route, the consent
+UI, and the RFC error rendering. Everything here is pure or cache-backed, never HTTP.
+
+| Export                                                                                                                        | Kind           | Notes                                                                                                                                                                  |
+| ----------------------------------------------------------------------------------------------------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OAuthClient`, `OAuthClientKind`, `OAuthTokenEndpointAuthMethod`                                                              | types          | `kind` is `preregistered`, `dynamic`, or `metadata_document`. `secretHash` is SHA-256 hex, never the secret.                                                           |
+| `AuthorizationRequest`, `TokenRequest`, `TokenResponse`, `OAuthErrorCode`                                                     | types          | Request and response shapes. The two wire shapes use RFC names (`grant_type`, `access_token`).                                                                         |
+| `OAuthError` / `IsOAuthError`, `OAuthErrorBody`                                                                               | class          | `extends HttpError` (400, or 401), `details = { error, error_description }`. `toBody()` is the RFC 6749 §5.2 body.                                                     |
+| `redirectUriMatches`, `validateRegisteredRedirectUri`, `isLoopbackRedirectUri`                                                | functions      | Exact match; loopback (`localhost`, `127.0.0.1`, `[::1]` over http) ignores the port. Anything else must be `https:`.                                                  |
+| `describeRedirect`                                                                                                            | function       | `(redirectUri, registered) => { host, loopbackOnly }` for the consent screen.                                                                                          |
+| `verifyPkceS256`, `isPkceS256Challenge`                                                                                       | functions      | RFC 7636 alphabet and length, constant-time compare. `S256` only.                                                                                                      |
+| `buildAuthorizationServerMetadata`, `authorizationServerMetadataUrl`, `wellKnownUrl`                                          | functions      | RFC 8414 document. `registration_endpoint` only when given; CIMD advertised only when the input says so.                                                               |
+| `buildProtectedResourceMetadata`, `protectedResourceMetadataUrl`                                                              | functions      | RFC 9728 document, and the URL for a `WWW-Authenticate` challenge's `resource_metadata`.                                                                               |
+| `OAuthClientRepository`                                                                                                       | abstract class | Consumer-implemented. Stores `preregistered` and `dynamic` clients. `deleteExpired` is never called for you.                                                           |
+| `OAuthClientOptions`                                                                                                          | class          | `(dynamicClientLifetime = 90 days, dynamicClientIdPrefix = 'dyn', maxRedirectUris = 10)`. Shared by registration and resolution.                                       |
+| `DynamicClientRegistrationService`, `DynamicClientRegistrationResponse`                                                       | class          | RFC 7591 for public clients only. `register(body)` answers `{ client, response }`; the route answers 201.                                                              |
+| `ClientIdMetadataDocumentResolver` (+ `…Options`), `isClientIdMetadataDocumentUrl`                                            | class          | Fetches an https `client_id`'s JSON document, no redirects, size-capped, cached for its `max-age` clamped.                                                             |
+| `OAuthClientResolver`, `OAuthClientCredentials`, `parseBasicClientCredentials`                                                | class          | `resolve(id)`, `authenticate(credentials)` (401 `invalid_client`), `recordUse(client)` extends a dynamic client.                                                       |
+| `createOAuthClientSecret`, `hashOAuthClientSecret`                                                                            | functions      | Show-once secret for a pre-registered client, and its SHA-256 hex digest.                                                                                              |
+| `parseAuthorizationRequest`, `AuthorizationRequestQuery`, `AuthorizationRequestPolicy`, `AuthorizationRequestParseResult`     | function       | `valid`, `redirect` (bounce the error to the client), or `refuse` (never redirect). `redirect_uri` and PKCE `S256` required.                                           |
+| `AuthorizationRequestStore` (+ `…Options`)                                                                                    | class          | `stash(request, subject)` for 10 minutes; `take(id, subject)` once. Another subject's take answers `undefined` and leaves it.                                          |
+| `AuthorizationCodeService` (+ `…Options`), `AuthorizationConsent`, `IssuedAuthorizationCode`, `AuthorizationCodeVerification` | class          | 60-second single-use codes bound to client, exact `redirect_uri`, PKCE, and resource. Every failure is `invalid_grant`.                                                |
+| `buildAuthorizationRedirect`, `AuthorizationRedirectParams`                                                                   | function       | Adds `code`/`error`, `state`, and RFC 9207 `iss` to the redirect URI, keeping its own query.                                                                           |
+| `OAuthGrantRepository`, `OAuthGrant`, `OAuthGrantInput`                                                                       | abstract class | Optional, consumer-implemented. One grant per (client, subject, resource); a revoked one refuses refresh. Revoking is yours.                                           |
+| `OAuthSessionClaim`, `getOAuthSessionClaim`                                                                                   | function       | `session.claims.oauth` on every session the token endpoint mints: `{ clientId, clientName?, resource, scope, grantId? }`.                                              |
+| `OAuthAuthorizationServerOptions`                                                                                             | class          | `(issuer, authorizationEndpoint, tokenEndpoint, resources, scopesSupported, registrationEndpoint?, sessionExpiration?)`. DCR is on when `registrationEndpoint` is set. |
+| `OAuthTokenEndpoint`, `OAuthTokenRequestHeaders`                                                                              | class          | `exchange(body, headers)`: `authorization_code` mints a resource-bound session; `refresh_token` rotates it, guarded by client and grant.                               |
+| `OAuthAuthorizationServer`, `AuthorizationContextResult`                                                                      | class          | The facade: `metadata`, `resourceMetadata`, `describeAuthorizationRequest`, `approve`, `deny`, `register`, `token`. Register **scoped**.                               |
+
 ### Audit (`src/audit/`)
 
-| Export                                                      | Kind           | Notes                                                                                       |
-| ----------------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------- |
-| `AuditSink`                                                 | abstract class | The consumer's seam. `record(event)`. Unbound, nothing is recorded.                         |
-| `AuditRecorder` (+ `AuditOptions`)                          | class          | Stamps `occurredAt` and applies the failure policy. Services inject **this**, not the sink. |
-| `NoopAuditSink`, `LoggingAuditSink`, `CompositeAuditSink`   | classes        | Composite offers the event to every member, then rethrows what failed.                      |
-| `AuditEvent`, `AuthenticationAuditEvent`, `AuditEventInput` | types          | `AuditEvent<TType, TData>` is how a domain declares its events.                             |
-| `SessionAuditEvent`, `ApiKeyAuditEvent`                     | types          | The domains emitting today; `AuthenticationAuditEvent` unions them.                         |
-| `AuditSessionData`, `AuditApiKeyData`, `AuditSessionFactor` | interfaces     | Event payloads. `AuditSessionData.claims` passes through whole — see Gotchas.               |
-| `AuditEventBase`, `AuditEventContext`                       | interfaces     | `context` is filled by the app's sink, never by this package. See Gotchas.                  |
-| `AuditEventCategory`, `AuditOutcome`                        | types          | `'failure'` always means a credential verdict, never an infrastructure fault.               |
-| `AUDIT_SINK_FAILED_EVENT`                                   | constant       | Logged when a sink throws outside strict mode. **Alert on it.**                             |
+| Export                                                                                                                                                                                                                            | Kind           | Notes                                                                                       |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------- |
+| `AuditSink`                                                                                                                                                                                                                       | abstract class | The consumer's seam. `record(event)`. Unbound, nothing is recorded.                         |
+| `AuditRecorder` (+ `AuditOptions`)                                                                                                                                                                                                | class          | Stamps `occurredAt` and applies the failure policy. Services inject **this**, not the sink. |
+| `NoopAuditSink`, `LoggingAuditSink`, `CompositeAuditSink`                                                                                                                                                                         | classes        | Composite offers the event to every member, then rethrows what failed.                      |
+| `AuditEvent`, `AuthenticationAuditEvent`, `AuditEventInput`                                                                                                                                                                       | types          | `AuditEvent<TType, TData>` is how a domain declares its events.                             |
+| `SessionAuditEvent`, `ApiKeyAuditEvent`, `PasswordAuditEvent`, `EmailAuditEvent`, `PhoneAuditEvent`, `AuthenticatorAuditEvent`, `FidoAuditEvent`, `FederatedAuditEvent`, `MfaAuditEvent`, `RecoveryAuditEvent`, `OAuthAuditEvent` | types          | One union per emitting domain; `AuthenticationAuditEvent` unions them all.                  |
+| `AuditSessionData`, `AuditApiKeyData`, `AuditSessionFactor`                                                                                                                                                                       | interfaces     | Event payloads. `AuditSessionData.claims` passes through whole — see Gotchas.               |
+| `AuditEventBase`, `AuditEventContext`                                                                                                                                                                                             | interfaces     | `context` is filled by the app's sink, never by this package. See Gotchas.                  |
+| `AuditEventCategory`, `AuditOutcome`                                                                                                                                                                                              | types          | `'failure'` always means a credential verdict, never an infrastructure fault.               |
+| `AUDIT_SINK_FAILED_EVENT`                                                                                                                                                                                                         | constant       | Logged when a sink throws outside strict mode. **Alert on it.**                             |
 
 ### Helpers (`src/helpers.ts`)
 
@@ -291,6 +324,44 @@ const completed = await mfa.completeMfa(result.mfaChallengeId, { method: 'phone'
 const session = await sessions.createSession(completed.actor.id, claims, completed.primaryFactor, completed.secondaryFactor);
 ```
 
+### OAuth authorization server wiring
+
+The package owns no HTTP. Register the pieces, then write the routes against the facade. Every
+refusal is an `OAuthError`: render `toBody()` with its `statusCode` and headers on the RFC routes.
+
+```typescript
+registry.register(OAuthClientRepository).useClass(MyOAuthClientRepository).asSingleton();
+registry.register(OAuthGrantRepository).useClass(MyOAuthGrantRepository).asSingleton(); // optional
+registry.register(OAuthClientOptions).useValue(new OAuthClientOptions());
+registry.register(ClientIdMetadataDocumentResolverOptions).useValue(new ClientIdMetadataDocumentResolverOptions());
+registry.register(ClientIdMetadataDocumentResolver).useClass(ClientIdMetadataDocumentResolver).asSingleton(); // optional
+registry.register(OAuthClientResolver).useClass(OAuthClientResolver).asSingleton();
+registry.register(DynamicClientRegistrationService).useClass(DynamicClientRegistrationService).asSingleton(); // optional
+registry.register(AuthorizationRequestStoreOptions).useValue(new AuthorizationRequestStoreOptions());
+registry.register(AuthorizationRequestStore).useClass(AuthorizationRequestStore).asSingleton();
+registry.register(AuthorizationCodeServiceOptions).useValue(new AuthorizationCodeServiceOptions());
+registry.register(AuthorizationCodeService).useClass(AuthorizationCodeService).asSingleton();
+registry
+  .register(OAuthAuthorizationServerOptions)
+  .useValue(
+    new OAuthAuthorizationServerOptions(
+      origin,
+      `${origin}/oauth/authorize`,
+      `${origin}/api/oauth/token`,
+      [`${origin}/api/mcp`],
+      ['mcp'],
+      `${origin}/api/oauth/register`,
+    ),
+  );
+// Both reach the scoped AuthenticationSessionService.
+registry.register(OAuthTokenEndpoint).useClass(OAuthTokenEndpoint).asScoped();
+registry.register(OAuthAuthorizationServer).useClass(OAuthAuthorizationServer).asScoped();
+```
+
+On the resource's route, validate bearer tokens with `lookupSessionFromJwt(token, false, resource)`;
+everywhere else pass nothing, and resource tokens are refused. Answer a 401 there with
+`WWW-Authenticate: Bearer resource_metadata="${protectedResourceMetadataUrl(resource)}"`.
+
 ## Rules for generated code
 
 - **Register `AuthenticationHandlerMap` keys in lowercase.** The scheme handler lowercases the
@@ -342,6 +413,27 @@ const session = await sessions.createSession(completed.actor.id, claims, complet
 - Use Luxon `Duration` for every lifetime.
 - Rotate rather than mutate: `rotateSession` on a privilege change, so `familyId` and theft
   detection stay intact.
+- **Never redirect on a `refuse`.** `parseAuthorizationRequest` answers `refuse` when the client or its
+  `redirect_uri` cannot be trusted; show that error to the user. Only a `redirect` result goes back to
+  the client, always through `buildAuthorizationRedirect` so it carries `iss`.
+- **Authorization codes are single use, and a failed redemption spends one.** The code is claimed with
+  `cache.add` before it is read. Do not add a retry around `redeem`.
+- **`expectedAudience` is what keeps a resource token off other routes.** A session created with its
+  own `audience` mints every token for it, and `lookupSessionFromJwt` / `refreshSession` accept it
+  only when the caller passes that audience. Pass it on the resource's route and nowhere else;
+  passing nothing means the configured service audience, so ordinary routes refuse resource tokens
+  with no extra code.
+- **The OAuth routes are the consumer's; keep them thin.** Pass the parsed body and the
+  `Authorization` header to `OAuthAuthorizationServer.token`, answer `Cache-Control: no-store`, and
+  render an `OAuthError` as `toBody()` with its status and headers. Never let the default error
+  renderer answer an RFC endpoint: its body shape is not RFC 6749's.
+- Build consent from `describeAuthorizationRequest` and decide it with `approve` / `deny` by
+  `requestId`, never by re-reading the query: the user consents to what the server validated.
+  Pass the consenting session's `claims` and `factors` as the consent; the client's session is
+  minted from exactly those.
+- Bind a refresh to more than possession with `refreshSession`'s `guard`, not by looking the session
+  up first: `lookupSessionFromJwt` refuses refresh tokens, and the guard runs after the `jti` is
+  claimed, so a refusal spends the token.
 
 ## Gotchas
 
@@ -395,6 +487,17 @@ const session = await sessions.createSession(completed.actor.id, claims, complet
 - **A challenge event never carries its code.** The email, phone, and authenticator services all
   return a code or token to their caller for delivery. None of that reaches an event, and the
   registration URI and QR code carry the TOTP secret too.
+- **OIDC registry lookups are async, and the source is consulted on every one.** A settings-backed
+  `OidcProviderSource` makes providers appear and change without a restart, but it also runs on every
+  begin and callback, so cache the expensive part (a query, a secret decryption) inside the source.
+  Discovery is cached per provider name under a fingerprint of issuer, client id, client secret, and
+  `allowInsecureIssuer`: a rotated secret rediscovers, an unchanged row does not.
+- **A provider's `name` is stored on its factors.** Renaming one in the source orphans every factor
+  created through it. Treat it as a permanent slug.
+- **A `link` whose identity belongs to another account is a 409, not a result.** `completeAuthorization`
+  records `oidc.link.rejected` with `subject_taken` and throws, so a callback cannot mint a session for
+  the other account. Every `OidcAuthorizationResult` carries `intent`; branch on it to keep the
+  caller's session on a link.
 - **`oidc.linked.auto` / `oauth2.linked.auto` are the takeover-adjacent path.** The package links a
   provider identity to an existing account on a verified-email match alone, so anyone who can get an
   identity provider to assert an address gains that account. Recorded with provider, subject, and
@@ -402,6 +505,22 @@ const session = await sessions.createSession(completed.actor.id, claims, complet
 - **A blank `userAgent` means absent, and that is load-bearing.** Both adapters set it to `''` when
   the header is missing — Koa's `ctx.get`, and the Fastify plugin explicitly — so
   `normaliseSessionDevice` drops it. Skip that and every session records an empty string.
+- **An audience mismatch is refused before the cache is read.** It records `session.validation_failed`
+  with `audience_mismatch`, attributed to the token's `sub`. The token was signed by this service, so
+  a recurring one means a client is sending one resource's token to another.
+- **Client ID Metadata Documents do not defend against DNS rebinding.** The resolver checks the
+  client id's hostname (no IP literal, no `localhost`), not the address it resolves to, so a public
+  name pointed at a private address is fetched. `ClientIdMetadataDocumentResolverOptions.allowHost` is
+  the operator's control; restrict it wherever the server can reach something sensitive.
+- **A replayed authorization code does not revoke the tokens issued from it.** RFC 6749 says it
+  SHOULD; the code service never sees the session it produced. The replay is refused and recorded as
+  `oauth.token.rejected`.
+- **Scopes are advertised and echoed, never enforced.** A session minted for a client carries the
+  consenting user's full claims and factors. Authorize on `claims.oauth.resource` and the user's own
+  permissions, not on `scope`.
+- **Dynamic clients pile up unless you delete them.** Claude registers a new client per connection.
+  Each expires `dynamicClientLifetime` after its last use, and `OAuthClientResolver` refuses an
+  expired one, but nothing in the package removes the rows: schedule `OAuthClientRepository.deleteExpired`.
 - **`serializeSession` is an allowlist, not a spread.** A field added to `AuthenticationSession` and
   forgotten there is returned by `createSession` and gone by the next `getSession` — a bug that only
   appears on the second request. Add to both it and `deserializeSession`.
@@ -469,6 +588,17 @@ src/
                                   support.verification.code.service
   apikey/                         types, api.key.token (codec), api.key.repository,
                                   api.key.service, api.key.authentication.handler
+  oauth/                          OAuth 2.1 authorization server: oauth.types, oauth.error,
+                                  redirect.uri, pkce.s256, authorization.server.metadata,
+                                  protected.resource.metadata, oauth.client.options,
+                                  oauth.client.repository, oauth.client.secret,
+                                  dynamic.client.registration.service,
+                                  client.id.metadata.document.resolver, oauth.client.resolver,
+                                  authorization.request, authorization.request.store,
+                                  authorization.code.service, authorization.redirect,
+                                  oauth.grant.repository, oauth.session.claim,
+                                  oauth.authorization.server.options, oauth.token.endpoint,
+                                  oauth.authorization.server
   audit/                          types, audit.sink, audit.recorder, audit.event, and one
                                   <domain>.audit.event.ts per emitting domain
   index.ts                        Barrel

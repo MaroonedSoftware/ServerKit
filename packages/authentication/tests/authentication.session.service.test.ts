@@ -45,9 +45,11 @@ const makeFactor = (overrides: Partial<AuthenticationSessionFactor> = {}): Authe
   ...overrides,
 });
 
+const AUD = 'https://api.example.com';
+
 const makeOptions = () => ({
   issuer: 'https://auth.example.com',
-  audience: 'https://api.example.com',
+  audience: AUD,
   expiresIn: Duration.fromObject({ hours: 1 }),
   refreshExpiresIn: Duration.fromObject({ days: 30 }),
 });
@@ -202,21 +204,21 @@ describe('AuthenticationSessionService', () => {
     });
 
     it('throws 401 when no session exists for the JWT sessionToken', async () => {
-      jwtProvider.decode = vi.fn().mockReturnValue({ sessionToken: 'missing-token', subject: 'user-1' });
+      jwtProvider.decode = vi.fn().mockReturnValue({ sessionToken: 'missing-token', subject: 'user-1', aud: AUD });
       cache.get = vi.fn().mockResolvedValue(null);
       await expect(service.lookupSessionFromJwt('valid.jwt')).rejects.toMatchObject({ statusCode: 401 });
     });
 
     it('throws 401 when the session subject does not match the JWT subject', async () => {
       const session = makeStoredSession({ subject: 'user-1' });
-      jwtProvider.decode = vi.fn().mockReturnValue({ sessionToken: 'session-token', sub: 'user-2' });
+      jwtProvider.decode = vi.fn().mockReturnValue({ sessionToken: 'session-token', sub: 'user-2', aud: AUD });
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(session));
       await expect(service.lookupSessionFromJwt('valid.jwt')).rejects.toMatchObject({ statusCode: 401 });
     });
 
     it('returns the session and decoded JWT payload on success', async () => {
       const session = makeStoredSession({ subject: 'user-1' });
-      const payload = { sessionToken: 'session-token', sub: 'user-1' };
+      const payload = { sessionToken: 'session-token', sub: 'user-1', aud: AUD };
       jwtProvider.decode = vi.fn().mockReturnValue(payload);
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(session));
       const result = await service.lookupSessionFromJwt('valid.jwt');
@@ -224,15 +226,90 @@ describe('AuthenticationSessionService', () => {
       expect(result.jwtPayload).toBe(payload);
     });
 
-    it('asserts the configured audience when verifying the access token', async () => {
+    it('verifies signature and issuer in decode, and the audience itself', async () => {
       const session = makeStoredSession({ subject: 'user-1' });
-      jwtProvider.decode = vi.fn().mockReturnValue({ sessionToken: 'session-token', sub: 'user-1' });
+      jwtProvider.decode = vi.fn().mockReturnValue({ sessionToken: 'session-token', sub: 'user-1', aud: AUD });
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(session));
 
       await service.lookupSessionFromJwt('valid.jwt');
 
-      // audience is the trailing decode() argument; issuer is arg 2.
-      expect(jwtProvider.decode).toHaveBeenCalledWith('valid.jwt', 'https://auth.example.com', undefined, false, 'https://api.example.com');
+      // No audience argument: the service compares it, so a wrong one is told apart from a bad signature.
+      expect(jwtProvider.decode).toHaveBeenCalledWith('valid.jwt', 'https://auth.example.com', undefined, false);
+    });
+
+    it('refuses a token for another audience before reading the cache', async () => {
+      const { events, recorder } = makeCapturingRecorder();
+      const svc = new AuthenticationSessionService(makeOptions(), cache, jwtProvider, recorder);
+      jwtProvider.decode = vi.fn().mockReturnValue({ sessionToken: 'session-token', sub: 'user-1', aud: 'https://mcp.example.com' });
+
+      await expect(svc.lookupSessionFromJwt('valid.jwt')).rejects.toMatchObject({ statusCode: 401 });
+
+      expect(cache.get).not.toHaveBeenCalled();
+      expect(events).toMatchObject([
+        { type: 'session.validation_failed', actorId: 'user-1', data: { sessionToken: 'session-token', reason: 'audience_mismatch' } },
+      ]);
+    });
+
+    it('refuses a token for another audience than the one the caller expects', async () => {
+      jwtProvider.decode = vi.fn().mockReturnValue({ sessionToken: 'session-token', sub: 'user-1', aud: AUD });
+
+      await expect(service.lookupSessionFromJwt('valid.jwt', undefined, 'https://mcp.example.com')).rejects.toMatchObject({ statusCode: 401 });
+      expect(cache.get).not.toHaveBeenCalled();
+    });
+
+    it('accepts a token whose audience the caller expects', async () => {
+      const session = makeStoredSession({ subject: 'user-1' });
+      jwtProvider.decode = vi.fn().mockReturnValue({ sessionToken: 'session-token', sub: 'user-1', aud: 'https://mcp.example.com' });
+      cache.get = vi.fn().mockResolvedValue(JSON.stringify(session));
+
+      const result = await service.lookupSessionFromJwt('valid.jwt', undefined, 'https://mcp.example.com');
+
+      expect(result.session.sessionToken).toBe('session-token');
+    });
+
+    it.each([
+      ['a token audience list', ['https://other.example.com', AUD], undefined],
+      ['an expected audience list', 'https://mcp.example.com', ['https://mcp.example.com', AUD]],
+    ])('matches when %s shares a value', async (_label, aud, expected) => {
+      const session = makeStoredSession({ subject: 'user-1' });
+      jwtProvider.decode = vi.fn().mockReturnValue({ sessionToken: 'session-token', sub: 'user-1', aud });
+      cache.get = vi.fn().mockResolvedValue(JSON.stringify(session));
+
+      await expect(service.lookupSessionFromJwt('valid.jwt', undefined, expected)).resolves.toBeDefined();
+    });
+
+    it('refuses a token with no audience at all', async () => {
+      jwtProvider.decode = vi.fn().mockReturnValue({ sessionToken: 'session-token', sub: 'user-1' });
+
+      await expect(service.lookupSessionFromJwt('valid.jwt')).rejects.toMatchObject({ statusCode: 401 });
+      expect(cache.get).not.toHaveBeenCalled();
+    });
+
+    it('skips the audience check on a service configured without one', async () => {
+      const svc = new AuthenticationSessionService({ ...makeOptions(), audience: undefined as unknown as string }, cache, jwtProvider);
+      const session = makeStoredSession({ subject: 'user-1' });
+      jwtProvider.decode = vi.fn().mockReturnValue({ sessionToken: 'session-token', sub: 'user-1' });
+      cache.get = vi.fn().mockResolvedValue(JSON.stringify(session));
+
+      await expect(svc.lookupSessionFromJwt('valid.jwt')).resolves.toBeDefined();
+    });
+
+    it('refuses a refresh token presented as an access token', async () => {
+      const { events, recorder } = makeCapturingRecorder();
+      const svc = new AuthenticationSessionService(makeOptions(), cache, jwtProvider, recorder);
+      jwtProvider.decode = vi.fn().mockReturnValue({
+        kind: 'refresh',
+        jti: 'jti-1',
+        familyId: 'family-1',
+        sessionToken: 'session-token',
+        sub: 'user-1',
+        aud: AUD,
+      });
+
+      await expect(svc.lookupSessionFromJwt('refresh.jwt')).rejects.toMatchObject({ statusCode: 401 });
+
+      expect(cache.get).not.toHaveBeenCalled();
+      expect(events).toMatchObject([{ type: 'session.validation_failed', actorId: 'user-1', data: { reason: 'refresh_token_presented' } }]);
     });
   });
 
@@ -670,6 +747,7 @@ describe('AuthenticationSessionService', () => {
       };
       (harness.jwtProvider.decode as ReturnType<typeof vi.fn>).mockReturnValue({
         ...firstRefreshPayload,
+        aud: AUD,
         exp: Math.floor(Date.now() / 1000) + 3600,
       });
 
@@ -706,6 +784,7 @@ describe('AuthenticationSessionService', () => {
       // First refresh succeeds — marks the original jti consumed.
       (harness.jwtProvider.decode as ReturnType<typeof vi.fn>).mockReturnValue({
         ...refreshPayload,
+        aud: AUD,
         exp: Math.floor(Date.now() / 1000) + 3600,
       });
       await svc.refreshSession(tokens.refreshToken!);
@@ -728,33 +807,82 @@ describe('AuthenticationSessionService', () => {
       expect(events.find(e => e.type === 'session.family_revoked')).toMatchObject({ data: { familyId: session.familyId } });
     });
 
-    it('asserts the configured audience when verifying the refresh token', async () => {
-      const harness = makeLiveHarness();
-      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);
-
+    /** Issue a first token pair and stub decode to hand back its refresh payload with the given audience. */
+    const primeRefresh = async (svc: AuthenticationSessionService, harness: ReturnType<typeof makeLiveHarness>, aud: string | string[] = AUD) => {
       const session = await svc.createSession('user-1', {}, makeFactor());
       const tokens = await svc.issueTokenForSession(session.sessionToken);
-      const refreshPayload = (harness.jwtProvider.create as ReturnType<typeof vi.fn>).mock.calls[1]![0] as {
-        kind: string;
-        jti: string;
-        familyId: string;
-        sessionToken: string;
-      };
+      const refreshPayload = (harness.jwtProvider.create as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0] as { jti: string };
       (harness.jwtProvider.decode as ReturnType<typeof vi.fn>).mockReturnValue({
         ...refreshPayload,
+        sub: 'user-1',
+        aud,
         exp: Math.floor(Date.now() / 1000) + 3600,
       });
+      return { session, tokens, jti: refreshPayload.jti };
+    };
+
+    it('verifies signature and issuer in decode, and the audience itself', async () => {
+      const harness = makeLiveHarness();
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);
+      const { tokens } = await primeRefresh(svc, harness);
 
       await svc.refreshSession(tokens.refreshToken!);
 
-      // audience is the trailing decode() argument; the refresh path keeps the default (falsy) ignoreExpiration.
-      expect(harness.jwtProvider.decode).toHaveBeenCalledWith(
-        tokens.refreshToken,
-        'https://auth.example.com',
-        undefined,
-        false,
-        'https://api.example.com',
-      );
+      // The refresh path keeps the default (falsy) ignoreExpiration and passes no audience.
+      expect(harness.jwtProvider.decode).toHaveBeenCalledWith(tokens.refreshToken, 'https://auth.example.com', undefined, false);
+    });
+
+    it('refuses a refresh token for another audience without spending it', async () => {
+      const harness = makeLiveHarness();
+      const { events, recorder } = makeCapturingRecorder();
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider, recorder);
+      const { tokens, jti } = await primeRefresh(svc, harness, 'https://mcp.example.com');
+      events.length = 0;
+
+      await expect(svc.refreshSession(tokens.refreshToken!)).rejects.toMatchObject({ statusCode: 401 });
+
+      expect(harness.store.has(`auth_refresh_consumed_${jti}`)).toBe(false);
+      expect(events).toMatchObject([{ type: 'session.validation_failed', data: { reason: 'audience_mismatch' } }]);
+    });
+
+    it('accepts a refresh token whose audience the caller expects', async () => {
+      const harness = makeLiveHarness();
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);
+      const { tokens } = await primeRefresh(svc, harness, 'https://mcp.example.com');
+
+      await expect(svc.refreshSession(tokens.refreshToken!, ['https://mcp.example.com'])).resolves.toMatchObject({ tokenType: 'Bearer' });
+    });
+
+    it('runs the guard after the jti is claimed and hands it the session', async () => {
+      const harness = makeLiveHarness();
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);
+      const { session, tokens, jti } = await primeRefresh(svc, harness);
+      const guard = vi.fn(() => {
+        expect(harness.store.has(`auth_refresh_consumed_${jti}`)).toBe(true);
+      });
+
+      await svc.refreshSession(tokens.refreshToken!, undefined, guard);
+
+      expect(guard).toHaveBeenCalledWith(expect.objectContaining({ sessionToken: session.sessionToken, subject: 'user-1' }));
+    });
+
+    it('propagates what the guard throws, mints nothing, and leaves the jti spent', async () => {
+      const harness = makeLiveHarness();
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);
+      const { tokens, jti } = await primeRefresh(svc, harness);
+      const mintedBefore = (harness.jwtProvider.create as ReturnType<typeof vi.fn>).mock.calls.length;
+      const refusal = new Error('wrong client');
+
+      await expect(
+        svc.refreshSession(tokens.refreshToken!, undefined, async () => {
+          throw refusal;
+        }),
+      ).rejects.toBe(refusal);
+
+      expect(harness.jwtProvider.create).toHaveBeenCalledTimes(mintedBefore);
+      expect(harness.store.has(`auth_refresh_consumed_${jti}`)).toBe(true);
+      // The legitimate holder's next presentation is now a replay.
+      await expect(svc.refreshSession(tokens.refreshToken!)).rejects.toMatchObject({ statusCode: 401 });
     });
 
     it('rejects a refresh token with a missing/wrong kind claim', async () => {
@@ -835,6 +963,7 @@ describe('AuthenticationSessionService', () => {
       (harness.jwtProvider.decode as ReturnType<typeof vi.fn>).mockReturnValue({
         sessionToken: 'ghost-token',
         sub: 'user-1',
+        aud: AUD,
       });
 
       await expect(svc.lookupSessionFromJwt('bad.jwt')).rejects.toMatchObject({ statusCode: 401 });

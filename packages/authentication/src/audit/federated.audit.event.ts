@@ -29,6 +29,18 @@ export type FidoAuditEvent =
   | AuditEvent<'fido.factor.deleted', { factorId: string }>;
 
 /** The identity provider and subject an event concerns. */
+/**
+ * Why an OIDC link was declined.
+ *
+ * - `unverified_email`: the identity's email matches an existing account, but the
+ *   provider did not assert it as verified, so it was not auto-linked.
+ * - `subject_taken`: an explicit link was attempted for a `(provider, subject)`
+ *   that already belongs to a different account. Repeated occurrences for one
+ *   subject are worth a look: someone is trying to attach an identity they control
+ *   to more than one account, or to take one over.
+ */
+export type FederatedLinkRejectedReason = 'unverified_email' | 'subject_taken';
+
 export interface AuditFederatedIdentity {
   /** Provider key as configured in the provider registry. */
   provider: string;
@@ -69,8 +81,8 @@ export type FederatedAuditEvent =
   | AuditEvent<'oidc.linked.explicit', AuditFederatedIdentity & { actorId: string }>
   /** The package linked a provider identity to an existing account on a verified email match. */
   | AuditEvent<'oidc.linked.auto', AuditFederatedIdentity & { email?: string }>
-  /** A link was declined because the provider did not assert the email as verified. */
-  | AuditEvent<'oidc.link.rejected', AuditFederatedIdentity & { reason: 'unverified_email' }>
+  /** A link was declined: an unverified email match, or an identity already on another account. */
+  | AuditEvent<'oidc.link.rejected', AuditFederatedIdentity & { reason: FederatedLinkRejectedReason }>
   | AuditEvent<'oidc.new_user', AuditFederatedIdentity>
   | AuditEvent<'oidc.authorization.failed', AuditFederatedIdentity & { reason: FederatedFailureReason }>
   | AuditEvent<'oidc.factor.created', AuditFederatedIdentity & { factorId: string }>
