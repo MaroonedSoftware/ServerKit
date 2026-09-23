@@ -204,16 +204,22 @@ The core of an OAuth 2.1 authorization server for MCP clients (claude.ai connect
 The package owns validation, codes, clients, and tokens; the consumer owns every route, the consent
 UI, and the RFC error rendering. Everything here is pure or cache-backed, never HTTP.
 
-| Export                                                                               | Kind      | Notes                                                                                                                 |
-| ------------------------------------------------------------------------------------ | --------- | --------------------------------------------------------------------------------------------------------------------- |
-| `OAuthClient`, `OAuthClientKind`, `OAuthTokenEndpointAuthMethod`                     | types     | `kind` is `preregistered`, `dynamic`, or `metadata_document`. `secretHash` is SHA-256 hex, never the secret.          |
-| `AuthorizationRequest`, `TokenRequest`, `TokenResponse`, `OAuthErrorCode`            | types     | Request and response shapes. The two wire shapes use RFC names (`grant_type`, `access_token`).                        |
-| `OAuthError` / `IsOAuthError`, `OAuthErrorBody`                                      | class     | `extends HttpError` (400, or 401), `details = { error, error_description }`. `toBody()` is the RFC 6749 §5.2 body.    |
-| `redirectUriMatches`, `validateRegisteredRedirectUri`, `isLoopbackRedirectUri`       | functions | Exact match; loopback (`localhost`, `127.0.0.1`, `[::1]` over http) ignores the port. Anything else must be `https:`. |
-| `describeRedirect`                                                                   | function  | `(redirectUri, registered) => { host, loopbackOnly }` for the consent screen.                                         |
-| `verifyPkceS256`, `isPkceS256Challenge`                                              | functions | RFC 7636 alphabet and length, constant-time compare. `S256` only.                                                     |
-| `buildAuthorizationServerMetadata`, `authorizationServerMetadataUrl`, `wellKnownUrl` | functions | RFC 8414 document. `registration_endpoint` only when given; CIMD advertised only when the input says so.              |
-| `buildProtectedResourceMetadata`, `protectedResourceMetadataUrl`                     | functions | RFC 9728 document, and the URL for a `WWW-Authenticate` challenge's `resource_metadata`.                              |
+| Export                                                                               | Kind           | Notes                                                                                                                            |
+| ------------------------------------------------------------------------------------ | -------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `OAuthClient`, `OAuthClientKind`, `OAuthTokenEndpointAuthMethod`                     | types          | `kind` is `preregistered`, `dynamic`, or `metadata_document`. `secretHash` is SHA-256 hex, never the secret.                     |
+| `AuthorizationRequest`, `TokenRequest`, `TokenResponse`, `OAuthErrorCode`            | types          | Request and response shapes. The two wire shapes use RFC names (`grant_type`, `access_token`).                                   |
+| `OAuthError` / `IsOAuthError`, `OAuthErrorBody`                                      | class          | `extends HttpError` (400, or 401), `details = { error, error_description }`. `toBody()` is the RFC 6749 §5.2 body.               |
+| `redirectUriMatches`, `validateRegisteredRedirectUri`, `isLoopbackRedirectUri`       | functions      | Exact match; loopback (`localhost`, `127.0.0.1`, `[::1]` over http) ignores the port. Anything else must be `https:`.            |
+| `describeRedirect`                                                                   | function       | `(redirectUri, registered) => { host, loopbackOnly }` for the consent screen.                                                    |
+| `verifyPkceS256`, `isPkceS256Challenge`                                              | functions      | RFC 7636 alphabet and length, constant-time compare. `S256` only.                                                                |
+| `buildAuthorizationServerMetadata`, `authorizationServerMetadataUrl`, `wellKnownUrl` | functions      | RFC 8414 document. `registration_endpoint` only when given; CIMD advertised only when the input says so.                         |
+| `buildProtectedResourceMetadata`, `protectedResourceMetadataUrl`                     | functions      | RFC 9728 document, and the URL for a `WWW-Authenticate` challenge's `resource_metadata`.                                         |
+| `OAuthClientRepository`                                                              | abstract class | Consumer-implemented. Stores `preregistered` and `dynamic` clients. `deleteExpired` is never called for you.                     |
+| `OAuthClientOptions`                                                                 | class          | `(dynamicClientLifetime = 90 days, dynamicClientIdPrefix = 'dyn', maxRedirectUris = 10)`. Shared by registration and resolution. |
+| `DynamicClientRegistrationService`, `DynamicClientRegistrationResponse`              | class          | RFC 7591 for public clients only. `register(body)` answers `{ client, response }`; the route answers 201.                        |
+| `ClientIdMetadataDocumentResolver` (+ `…Options`), `isClientIdMetadataDocumentUrl`   | class          | Fetches an https `client_id`'s JSON document, no redirects, size-capped, cached for its `max-age` clamped.                       |
+| `OAuthClientResolver`, `OAuthClientCredentials`, `parseBasicClientCredentials`       | class          | `resolve(id)`, `authenticate(credentials)` (401 `invalid_client`), `recordUse(client)` extends a dynamic client.                 |
+| `createOAuthClientSecret`, `hashOAuthClientSecret`                                   | functions      | Show-once secret for a pre-registered client, and its SHA-256 hex digest.                                                        |
 
 ### Audit (`src/audit/`)
 
@@ -442,6 +448,13 @@ const session = await sessions.createSession(completed.actor.id, claims, complet
 - **An audience mismatch is refused before the cache is read.** It records `session.validation_failed`
   with `audience_mismatch`, attributed to the token's `sub`. The token was signed by this service, so
   a recurring one means a client is sending one resource's token to another.
+- **Client ID Metadata Documents do not defend against DNS rebinding.** The resolver checks the
+  client id's hostname (no IP literal, no `localhost`), not the address it resolves to, so a public
+  name pointed at a private address is fetched. `ClientIdMetadataDocumentResolverOptions.allowHost` is
+  the operator's control; restrict it wherever the server can reach something sensitive.
+- **Dynamic clients pile up unless you delete them.** Claude registers a new client per connection.
+  Each expires `dynamicClientLifetime` after its last use, and `OAuthClientResolver` refuses an
+  expired one, but nothing in the package removes the rows: schedule `OAuthClientRepository.deleteExpired`.
 - **`serializeSession` is an allowlist, not a spread.** A field added to `AuthenticationSession` and
   forgotten there is returned by `createSession` and gone by the next `getSession` — a bug that only
   appears on the second request. Add to both it and `deserializeSession`.
@@ -511,7 +524,10 @@ src/
                                   api.key.service, api.key.authentication.handler
   oauth/                          OAuth 2.1 authorization server: oauth.types, oauth.error,
                                   redirect.uri, pkce.s256, authorization.server.metadata,
-                                  protected.resource.metadata
+                                  protected.resource.metadata, oauth.client.options,
+                                  oauth.client.repository, oauth.client.secret,
+                                  dynamic.client.registration.service,
+                                  client.id.metadata.document.resolver, oauth.client.resolver
   audit/                          types, audit.sink, audit.recorder, audit.event, and one
                                   <domain>.audit.event.ts per emitting domain
   index.ts                        Barrel

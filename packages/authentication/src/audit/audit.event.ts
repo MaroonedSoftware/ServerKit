@@ -4,6 +4,7 @@ import type { FederatedAuditEvent, FidoAuditEvent } from './federated.audit.even
 import type { MfaAuditEvent } from './mfa.audit.event.js';
 import type { PasswordAuditEvent } from './password.audit.event.js';
 import type { RecoveryAuditEvent } from './recovery.audit.event.js';
+import type { OAuthAuditEvent } from './oauth.audit.event.js';
 import type { SessionAuditEvent } from './session.audit.event.js';
 
 /**
@@ -23,7 +24,8 @@ export type AuthenticationAuditEvent =
   | FidoAuditEvent
   | FederatedAuditEvent
   | MfaAuditEvent
-  | RecoveryAuditEvent;
+  | RecoveryAuditEvent
+  | OAuthAuditEvent;
 
 /** `Omit` that distributes across a union instead of collapsing it to its common keys. */
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
