@@ -661,14 +661,23 @@ Missing or expired registrations and challenges throw HTTP 404 with `{ registrat
 
 `OidcFactorService` orchestrates SSO sign-in, account linking, and refresh-token rotation against any OpenID Connect provider — Google, Microsoft, LinkedIn, Apple, etc. The id_token is validated end-to-end (signature against the provider's JWKS, `iss` / `aud` / `exp`, `nonce`, and PKCE) by `openid-client`.
 
-Register one or more providers via `OidcProviderRegistry`. Discovery (`.well-known/openid-configuration`) is lazy and cached per provider per process. Public clients (mobile, SPA) are supported by omitting `clientSecret` — PKCE is mandatory in that mode.
+Providers come from an `OidcProviderSource`, which `OidcProviderRegistry` consults on every lookup. `OidcProviderRegistryConfig` is the static source: a list built once at bootstrap. Implement your own source to read providers from a database or settings store, and they appear, change, and disappear without a restart. Discovery (`.well-known/openid-configuration`) is lazy and cached per provider, keyed by a fingerprint of the issuer, client id, client secret, and `allowInsecureIssuer`, so a rotated secret rediscovers on the next lookup. Public clients (mobile, SPA) are supported by omitting `clientSecret`, and PKCE is mandatory in that mode.
+
+A provider's `name` is stored on every factor created through it. Renaming a provider orphans those factors, so treat the name as a permanent slug.
 
 ```typescript
-import { OidcFactorService, OidcProviderRegistry, OidcProviderRegistryConfig, OidcActorEmailLookup } from '@maroonedsoftware/authentication';
-
-// Wire providers via DI (sourced from AppConfig — keep clientSecret out of code)
-registry.registerValue(
+import {
+  OidcFactorService,
+  OidcProviderRegistry,
   OidcProviderRegistryConfig,
+  OidcProviderSource,
+  OidcActorEmailLookup,
+} from '@maroonedsoftware/authentication';
+
+// Wire providers via DI (sourced from AppConfig — keep clientSecret out of code).
+// The static list is registered under the OidcProviderSource token.
+registry.registerValue(
+  OidcProviderSource,
   new OidcProviderRegistryConfig([
     {
       name: 'google',
@@ -711,11 +720,14 @@ const { url } = await oidc.beginAuthorization({
 ctx.redirect(url.toString());
 
 // Step 2 — handle the callback
-const result = await oidc.completeAuthorization({ callbackUrl: new URL(ctx.href) });
+const result = await oidc.completeAuthorization({ params: Object.fromEntries(new URL(ctx.href).searchParams) });
 switch (result.kind) {
   case 'signed-in':
   case 'linked':
-    // Issue a session for result.actorId
+    // A link keeps the caller's current session; a sign-in issues one for result.actorId
+    if (result.intent === 'sign-in') {
+      // Issue a session for result.actorId
+    }
     break;
   case 'new-user':
     if (result.emailConflict) {
@@ -729,7 +741,7 @@ switch (result.kind) {
 }
 ```
 
-**Account linking.** Pass `intent: 'link'` and an existing `actorId` on `beginAuthorization` to attach an additional provider to a signed-in user.
+**Account linking.** Pass `intent: 'link'` and an existing `actorId` on `beginAuthorization` to attach an additional provider to a signed-in user. Every result carries the `intent` the flow began with. When the provider identity already belongs to a different account, `completeAuthorization` throws a 409 and records `oidc.link.rejected` with reason `subject_taken`, rather than signing the caller in as that other account. An identity already on the linking account answers `signed-in` with `intent: 'link'`.
 
 **Auto-link by verified email.** When sign-in finds no `(provider, subject)` mapping but the IdP returns a verified email matching an existing actor (via `OidcActorEmailLookup`), the service auto-creates the factor on that actor and returns `kind: 'linked'`. Unverified-email matches do **not** auto-link — they return `kind: 'new-user'` with `emailConflict` set so the UI can require sign-in to the existing account before linking.
 
@@ -1721,14 +1733,18 @@ Abstract base class. Extends `FactorRepository<FidoFactor, FidoFactorOptions, st
 
 ### `OidcProviderRegistry`
 
-Holds the configured OIDC providers and lazily resolves an `openid-client` `Configuration` per provider on first use. Constructed from an injected `OidcProviderRegistryConfig`.
+Resolves providers from an injected `OidcProviderSource` on every lookup, and lazily resolves an `openid-client` `Configuration` per provider. The discovery cache is fingerprinted by issuer, client id, client secret, and `allowInsecureIssuer`: a changed fingerprint rediscovers, and a provider the source no longer lists loses its cached entry.
 
 | Method                   | Returns                                | Description                                                                              |
 | ------------------------ | -------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `getConfig(name)`        | `OidcProviderConfig`                   | Look up the static config; throws HTTP 404 for unknown providers                         |
-| `isPublicClient(name)`   | `boolean`                              | `true` when the provider has no `clientSecret`                                           |
+| `getConfig(name)`        | `Promise<OidcProviderConfig>`          | Look up the provider as the source lists it now; throws HTTP 404 for unknown providers   |
+| `isPublicClient(name)`   | `Promise<boolean>`                     | `true` when the provider has no `clientSecret`                                           |
 | `getConfiguration(name)` | `Promise<openid-client.Configuration>` | Lazy-resolve and cache the discovery-backed Configuration; deduplicates concurrent calls |
-| `listProviders()`        | `string[]`                             | Names of all registered providers                                                        |
+| `listProviders()`        | `Promise<string[]>`                    | Names of every provider the source lists now                                             |
+
+### `OidcProviderSource`
+
+Abstract class and DI token. Implement `list(): Promise<readonly OidcProviderConfig[]> | readonly OidcProviderConfig[]` to supply providers at runtime. It is called on every registry lookup, so cache anything expensive inside it. `OidcProviderRegistryConfig` is the static implementation: `new OidcProviderRegistryConfig(providers)`.
 
 `OidcProviderConfig`: `{ name; issuer: URL; clientId; clientSecret?; scopes: string[]; redirectUri: URL; authorizeParams?: Record<string, string>; persistRefreshToken?: boolean }`. Omit `clientSecret` for public (mobile/SPA) clients — the registry uses `openid-client.None()` and PKCE becomes mandatory.
 
@@ -1737,14 +1753,14 @@ Holds the configured OIDC providers and lazily resolves an `openid-client` `Conf
 | Method                                                               | Returns                                                                   | Description                                                                                                                     |
 | -------------------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | `beginAuthorization({ provider, intent, actorId?, redirectAfter? })` | `Promise<{ url: URL; state; expiresAt: DateTime }>`                       | Build the IdP authorize URL and cache the round-trip state record (state, nonce, PKCE verifier)                                 |
-| `completeAuthorization({ callbackUrl })`                             | `Promise<OidcAuthorizationResult>`                                        | Exchange the auth code, validate the id_token, fetch userinfo, and resolve to a factor                                          |
+| `completeAuthorization({ params })`                                  | `Promise<OidcAuthorizationResult>`                                        | Exchange the auth code, validate the id_token, fetch userinfo, and resolve to a factor; 409 when a link's identity is taken     |
 | `createFactorFromAuthorization(actorId, authorizationId)`            | `Promise<OidcFactor>`                                                     | Complete the `new-user` branch by attaching the cached profile to a freshly created actor                                       |
 | `refreshAccessToken(actorId, factorId)`                              | `Promise<{ accessToken; expiresAt: DateTime \| null; scope?; idToken? }>` | Rotate the access token using the persisted refresh token; re-encrypts a rotated refresh token automatically                    |
 | `hasPendingAuthorization(authorizationId)`                           | `Promise<boolean>`                                                        | Check whether a `new-user` pending authorization is still cached and unconsumed                                                 |
 | `stashAuthenticatedExchange({ actorId, factorId, isNewUser? })`      | `Promise<string>`                                                         | Stash a completed authorization under a one-time `exchangeId` so a follow-up route (e.g. an MFA gate) can pick the flow back up |
 | `redeemAuthenticatedExchange(exchangeId)`                            | `Promise<OidcAuthenticatedExchange \| null>`                              | Single-use redeem of a stash from `stashAuthenticatedExchange`. Returns `null` if expired or already consumed                   |
 
-`OidcAuthorizationResult` is a discriminated union with `kind` ∈ `'signed-in' | 'linked' | 'new-user'`. The `'new-user'` branch carries `authorizationId` and an optional `emailConflict: { actorId; reason: 'unverified-email' }` when the IdP-claimed email matches an existing actor but is unverified.
+`OidcAuthorizationResult` is a discriminated union with `kind` ∈ `'signed-in' | 'linked' | 'new-user'`, and every variant carries `intent: 'sign-in' | 'link'`. The `'new-user'` branch carries `authorizationId` and an optional `emailConflict: { actorId; reason: 'unverified-email' }` when the IdP-claimed email matches an existing actor but is unverified.
 
 `OidcAuthenticatedExchange`: `{ actorId; factorId; isNewUser? }`. Carries the bare facts needed to mint a session after the gate clears — `isNewUser` is true when the actor was created during this exchange (typically forwarded from a `new-user` completion).
 

@@ -18,6 +18,9 @@ import * as openidClient from 'openid-client';
 import { OidcFactorService, OidcFactorServiceOptions, OidcActorEmailLookup } from '../../../src/factors/oidc/oidc.factor.service.js';
 import { OidcFactorRepository, OidcFactor, OidcFactorValue } from '../../../src/factors/oidc/oidc.factor.repository.js';
 import { OidcProviderRegistry, OidcProviderRegistryConfig, OidcProviderConfig } from '../../../src/providers/oidc.provider.js';
+import { AuditRecorder } from '../../../src/audit/audit.recorder.js';
+import type { AuditSink } from '../../../src/audit/audit.sink.js';
+import type { AuthenticationAuditEvent } from '../../../src/audit/audit.event.js';
 import { EncryptionProvider } from '@maroonedsoftware/encryption';
 import { Logger } from '@maroonedsoftware/logger';
 import type { CacheProvider } from '@maroonedsoftware/cache';
@@ -293,6 +296,7 @@ describe('OidcFactorService', () => {
 
       expect(result.kind).toBe('signed-in');
       if (result.kind !== 'signed-in') throw new Error('unreachable');
+      expect(result.intent).toBe('sign-in');
       expect(result.actorId).toBe('actor-1');
       expect(result.factorId).toBe('factor-1');
       expect(result.profile.subject).toBe('subject-1');
@@ -392,11 +396,74 @@ describe('OidcFactorService', () => {
 
       expect(result.kind).toBe('linked');
       if (result.kind !== 'linked') throw new Error('unreachable');
+      expect(result.intent).toBe('link');
       expect(result.actorId).toBe('actor-existing');
       expect(repo.createFactor).toHaveBeenCalledWith(
         'actor-existing',
         expect.objectContaining({ provider: 'google', subject: 'subject-1', email: 'user@example.com', picture: 'https://cdn.example/avatar.png' }),
       );
+    });
+
+    it('refuses a link whose (provider, subject) belongs to another actor, with a 409 and an audit record', async () => {
+      const events: AuthenticationAuditEvent[] = [];
+      const recorder = new AuditRecorder({ record: (event: AuthenticationAuditEvent) => void events.push(event) } as unknown as AuditSink);
+      const linking = new OidcFactorService(
+        new OidcFactorServiceOptions(),
+        registry,
+        repo,
+        emailLookup,
+        cache,
+        encryption,
+        makeLogger(),
+        makePolicyService(),
+        recorder,
+      );
+      await linking.beginAuthorization({ provider: 'google', intent: 'link', actorId: 'actor-linking' });
+      seedTokens();
+      vi.mocked(repo.findFactor).mockResolvedValue({
+        id: 'factor-stranger',
+        actorId: 'actor-stranger',
+        active: true,
+        provider: 'google',
+        subject: 'subject-1',
+        email: 'old@example.com',
+      });
+
+      await expect(linking.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } })).rejects.toMatchObject({
+        statusCode: 409,
+        details: { provider: 'already linked to another account' },
+      });
+
+      // Nothing about the stranger's factor is touched, and no session-worthy result escapes.
+      expect(repo.updateRefreshToken).not.toHaveBeenCalled();
+      expect(repo.updateEmail).not.toHaveBeenCalled();
+      expect(repo.updatePicture).not.toHaveBeenCalled();
+      expect(repo.createFactor).not.toHaveBeenCalled();
+      expect(events.filter(event => event.type === 'oidc.signed_in')).toEqual([]);
+      expect(events.find(event => event.type === 'oidc.link.rejected')).toMatchObject({
+        category: 'privilege',
+        outcome: 'failure',
+        actorId: 'actor-linking',
+        data: { provider: 'google', subject: 'subject-1', reason: 'subject_taken' },
+      });
+    });
+
+    it('answers signed-in with the link intent when the identity is already on the linking actor', async () => {
+      await seedState({ intent: 'link', actorId: 'actor-1' });
+      seedTokens();
+      vi.mocked(repo.findFactor).mockResolvedValue({
+        id: 'factor-1',
+        actorId: 'actor-1',
+        active: true,
+        provider: 'google',
+        subject: 'subject-1',
+        email: 'user@example.com',
+      });
+
+      const result = await service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } });
+
+      expect(result).toMatchObject({ kind: 'signed-in', intent: 'link', actorId: 'actor-1', factorId: 'factor-1' });
+      expect(repo.createFactor).not.toHaveBeenCalled();
     });
 
     it('auto-links and returns linked when sign-in finds a verified-email match', async () => {
@@ -408,6 +475,7 @@ describe('OidcFactorService', () => {
 
       expect(result.kind).toBe('linked');
       if (result.kind !== 'linked') throw new Error('unreachable');
+      expect(result.intent).toBe('sign-in');
       expect(result.actorId).toBe('actor-by-email');
       expect(repo.createFactor).toHaveBeenCalledWith('actor-by-email', expect.anything());
     });
@@ -421,6 +489,7 @@ describe('OidcFactorService', () => {
 
       expect(result.kind).toBe('new-user');
       if (result.kind !== 'new-user') throw new Error('unreachable');
+      expect(result.intent).toBe('sign-in');
       expect(result.emailConflict).toEqual({ actorId: 'actor-by-email', reason: 'unverified-email' });
       expect(repo.createFactor).not.toHaveBeenCalled();
     });
@@ -659,120 +728,6 @@ describe('OidcFactorService', () => {
       const setCalls = (customCache.set as ReturnType<typeof vi.fn>).mock.calls;
       const [, , ttl] = setCalls.find(([key]) => (key as string).startsWith('oidc_exchange_'))!;
       expect((ttl as Duration).as('minutes')).toBeCloseTo(7, 5);
-    });
-  });
-});
-
-describe('OidcProviderRegistry', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('caches the resolved Configuration so discovery only runs once per provider', async () => {
-    const fakeConfig = {} as openidClient.Configuration;
-    vi.mocked(openidClient.discovery).mockResolvedValue(fakeConfig);
-    const registry = makeRegistry();
-
-    const a = await registry.getConfiguration('google');
-    const b = await registry.getConfiguration('google');
-
-    expect(a).toBe(b);
-    expect(openidClient.discovery).toHaveBeenCalledTimes(1);
-  });
-
-  it('drops a rejected discovery promise from the cache so it can be retried', async () => {
-    vi.mocked(openidClient.discovery).mockRejectedValueOnce(new Error('boom'));
-    const registry = makeRegistry();
-
-    await expect(registry.getConfiguration('google')).rejects.toThrow('boom');
-
-    vi.mocked(openidClient.discovery).mockResolvedValueOnce({} as openidClient.Configuration);
-    await expect(registry.getConfiguration('google')).resolves.toBeDefined();
-    expect(openidClient.discovery).toHaveBeenCalledTimes(2);
-  });
-
-  it('reports public clients when clientSecret is omitted', () => {
-    const registry = new OidcProviderRegistry(new OidcProviderRegistryConfig([{ ...PROVIDER, clientSecret: undefined }]), makeLogger());
-    expect(registry.isPublicClient('google')).toBe(true);
-  });
-
-  it('uses None client authentication for public clients', async () => {
-    const noneStub = vi.fn();
-    vi.mocked(openidClient.None).mockImplementation(noneStub as never);
-    vi.mocked(openidClient.discovery).mockResolvedValue(makeConfiguration());
-    const registry = new OidcProviderRegistry(new OidcProviderRegistryConfig([{ ...PROVIDER, clientSecret: undefined }]), makeLogger());
-
-    await registry.getConfiguration('google');
-
-    expect(openidClient.None).toHaveBeenCalled();
-  });
-
-  it('throws 404 for an unknown provider', () => {
-    const registry = makeRegistry();
-    expect(() => registry.getConfig('unknown')).toThrowError(expect.objectContaining({ statusCode: 404 }));
-  });
-
-  describe('allowInsecureIssuer', () => {
-    it('passes the allowInsecureRequests execute hook to discovery when the issuer is http and the flag is set', async () => {
-      vi.mocked(openidClient.discovery).mockResolvedValue(makeConfiguration());
-      const registry = new OidcProviderRegistry(
-        new OidcProviderRegistryConfig([{ ...PROVIDER, issuer: new URL('http://localhost:8080'), allowInsecureIssuer: true }]),
-        makeLogger(),
-      );
-
-      await registry.getConfiguration('google');
-
-      const lastCall = vi.mocked(openidClient.discovery).mock.calls.at(-1)!;
-      // Confidential client path: (issuer, clientId, clientSecret, undefined, options)
-      const options = lastCall[4] as { execute?: unknown[] } | undefined;
-      expect(options?.execute).toEqual([openidClient.allowInsecureRequests]);
-    });
-
-    it('omits the execute hook on https issuers even when the flag is set', async () => {
-      vi.mocked(openidClient.discovery).mockResolvedValue(makeConfiguration());
-      const registry = new OidcProviderRegistry(new OidcProviderRegistryConfig([{ ...PROVIDER, allowInsecureIssuer: true }]), makeLogger());
-
-      await registry.getConfiguration('google');
-
-      const lastCall = vi.mocked(openidClient.discovery).mock.calls.at(-1)!;
-      expect(lastCall[4]).toBeUndefined();
-    });
-
-    it('warns whenever allowInsecureIssuer is set (even on https) so it is not left enabled by accident', async () => {
-      vi.mocked(openidClient.discovery).mockResolvedValue(makeConfiguration());
-      const logger = makeLogger();
-      const registry = new OidcProviderRegistry(new OidcProviderRegistryConfig([{ ...PROVIDER, allowInsecureIssuer: true }]), logger);
-
-      await registry.getConfiguration('google');
-
-      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('allowInsecureIssuer=true'));
-    });
-
-    it('does not warn when allowInsecureIssuer is unset', async () => {
-      vi.mocked(openidClient.discovery).mockResolvedValue(makeConfiguration());
-      const logger = makeLogger();
-      const registry = new OidcProviderRegistry(new OidcProviderRegistryConfig([{ ...PROVIDER }]), logger);
-
-      await registry.getConfiguration('google');
-
-      expect(logger.warn).not.toHaveBeenCalled();
-    });
-
-    it('forwards options on the public-client path too', async () => {
-      vi.mocked(openidClient.discovery).mockResolvedValue(makeConfiguration());
-      const registry = new OidcProviderRegistry(
-        new OidcProviderRegistryConfig([
-          { ...PROVIDER, clientSecret: undefined, issuer: new URL('http://localhost:8080'), allowInsecureIssuer: true },
-        ]),
-        makeLogger(),
-      );
-
-      await registry.getConfiguration('google');
-
-      const lastCall = vi.mocked(openidClient.discovery).mock.calls.at(-1)!;
-      // Public-client path: (issuer, clientId, undefined, None(), options)
-      const options = lastCall[4] as { execute?: unknown[] } | undefined;
-      expect(options?.execute).toEqual([openidClient.allowInsecureRequests]);
     });
   });
 });

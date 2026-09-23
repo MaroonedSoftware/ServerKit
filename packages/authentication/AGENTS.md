@@ -118,18 +118,19 @@ class) and an abstract `<Name>FactorRepository` you implement.
 
 ### Providers
 
-| Export                                                    | Kind           | Notes                                                                                                                                                                                                      |
-| --------------------------------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PasswordHashProvider`                                    | abstract class | The DI token.                                                                                                                                                                                              |
-| `Argon2idPasswordHashProvider`                            | class          | Uses `ARGON2ID_DEFAULTS` from `@maroonedsoftware/encryption`. Result type `PasswordHashResult`.                                                                                                            |
-| `PasswordStrengthProvider`                                | class          | zxcvbn-ts (English dictionary + adjacency graphs) **plus a live HaveIBeenPwned check**. Score 0–4; `ensureStrength` requires ≥ 3.                                                                          |
-| `JwtProvider`                                             | class          | —                                                                                                                                                                                                          |
-| `OtpProvider`                                             | class          | `validate` returns a boolean; `validateWithCounter` returns the matching step. Types: `OtpType`, `OtpOptions`, `TotpOptions`, `HotpOptions`, `OtpUrlOptions`, `OtpValidationOptions`, `defaultOtpOptions`. |
-| `OtpProviderMock`                                         | class          | `extends OtpProvider`. Tests only.                                                                                                                                                                         |
-| `PkceProvider`                                            | class          | —                                                                                                                                                                                                          |
-| `OidcProviderRegistry` / `OidcProviderRegistryConfig`     | class          | Types: `OidcProviderConfig`.                                                                                                                                                                               |
-| `OAuth2ProviderRegistry` / `OAuth2ProviderRegistryConfig` | class          | Types: `OAuth2ProviderConfig`, `OAuth2ProviderClient`.                                                                                                                                                     |
-| `HtmlRedirectProvider`                                    | class          | —                                                                                                                                                                                                          |
+| Export                                                    | Kind                   | Notes                                                                                                                                                                                                      |
+| --------------------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PasswordHashProvider`                                    | abstract class         | The DI token.                                                                                                                                                                                              |
+| `Argon2idPasswordHashProvider`                            | class                  | Uses `ARGON2ID_DEFAULTS` from `@maroonedsoftware/encryption`. Result type `PasswordHashResult`.                                                                                                            |
+| `PasswordStrengthProvider`                                | class                  | zxcvbn-ts (English dictionary + adjacency graphs) **plus a live HaveIBeenPwned check**. Score 0–4; `ensureStrength` requires ≥ 3.                                                                          |
+| `JwtProvider`                                             | class                  | —                                                                                                                                                                                                          |
+| `OtpProvider`                                             | class                  | `validate` returns a boolean; `validateWithCounter` returns the matching step. Types: `OtpType`, `OtpOptions`, `TotpOptions`, `HotpOptions`, `OtpUrlOptions`, `OtpValidationOptions`, `defaultOtpOptions`. |
+| `OtpProviderMock`                                         | class                  | `extends OtpProvider`. Tests only.                                                                                                                                                                         |
+| `PkceProvider`                                            | class                  | —                                                                                                                                                                                                          |
+| `OidcProviderRegistry`                                    | class                  | Async throughout: `getConfig`, `isPublicClient`, `listProviders`, `getConfiguration`. Consults the source on every lookup.                                                                                 |
+| `OidcProviderSource` / `OidcProviderRegistryConfig`       | abstract class / class | The DI token and its static implementation. Types: `OidcProviderConfig`.                                                                                                                                   |
+| `OAuth2ProviderRegistry` / `OAuth2ProviderRegistryConfig` | class                  | Types: `OAuth2ProviderConfig`, `OAuth2ProviderClient`.                                                                                                                                                     |
+| `HtmlRedirectProvider`                                    | class                  | —                                                                                                                                                                                                          |
 
 ### Policies
 
@@ -395,6 +396,17 @@ const session = await sessions.createSession(completed.actor.id, claims, complet
 - **A challenge event never carries its code.** The email, phone, and authenticator services all
   return a code or token to their caller for delivery. None of that reaches an event, and the
   registration URI and QR code carry the TOTP secret too.
+- **OIDC registry lookups are async, and the source is consulted on every one.** A settings-backed
+  `OidcProviderSource` makes providers appear and change without a restart, but it also runs on every
+  begin and callback, so cache the expensive part (a query, a secret decryption) inside the source.
+  Discovery is cached per provider name under a fingerprint of issuer, client id, client secret, and
+  `allowInsecureIssuer`: a rotated secret rediscovers, an unchanged row does not.
+- **A provider's `name` is stored on its factors.** Renaming one in the source orphans every factor
+  created through it. Treat it as a permanent slug.
+- **A `link` whose identity belongs to another account is a 409, not a result.** `completeAuthorization`
+  records `oidc.link.rejected` with `subject_taken` and throws, so a callback cannot mint a session for
+  the other account. Every `OidcAuthorizationResult` carries `intent`; branch on it to keep the
+  caller's session on a link.
 - **`oidc.linked.auto` / `oauth2.linked.auto` are the takeover-adjacent path.** The package links a
   provider identity to an existing account on a verified-email match alone, so anyone who can get an
   identity provider to assert an address gains that account. Recorded with provider, subject, and
