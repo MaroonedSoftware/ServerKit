@@ -32,9 +32,9 @@ export type FidoAuditEvent =
 /**
  * Why an OIDC link was declined.
  *
- * - `unverified_email` — the identity's email matches an existing account, but the
+ * - `unverified_email`: the identity's email matches an existing account, but the
  *   provider did not assert it as verified, so it was not auto-linked.
- * - `subject_taken` — an explicit link was attempted for a `(provider, subject)`
+ * - `subject_taken`: an explicit link was attempted for a `(provider, subject)`
  *   that already belongs to a different account. Repeated occurrences for one
  *   subject are worth a look: someone is trying to attach an identity they control
  *   to more than one account, or to take one over.

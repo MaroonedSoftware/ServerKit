@@ -120,6 +120,13 @@ const categoryFor = (type: AuthenticationAuditEvent['type']): AuditEventCategory
 
     case 'oauth.client.registered':
       return 'credential';
+    case 'oauth.authorization.approved':
+    case 'oauth.authorization.denied':
+      return 'privilege';
+    case 'oauth.token.issued':
+    case 'oauth.token.refreshed':
+    case 'oauth.token.rejected':
+      return 'login';
 
     default: {
       const unhandled: never = type;

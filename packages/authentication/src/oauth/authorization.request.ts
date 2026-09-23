@@ -16,11 +16,11 @@ export interface AuthorizationRequestPolicy {
 /**
  * The outcome of checking an authorization request.
  *
- * - `valid` — proceed to consent with `request`.
- * - `redirect` — the client and `redirect_uri` are trustworthy but something else
+ * - `valid`: proceed to consent with `request`.
+ * - `redirect`: the client and `redirect_uri` are trustworthy but something else
  *   is wrong: send the error back to `redirectUri` (RFC 6749 §4.1.2.1), with
  *   `state` and the issuer.
- * - `refuse` — the client or `redirect_uri` is not trustworthy: show the error to
+ * - `refuse`: the client or `redirect_uri` is not trustworthy. Show the error to
  *   the user and **never** redirect, or the server becomes an open redirector.
  */
 export type AuthorizationRequestParseResult =

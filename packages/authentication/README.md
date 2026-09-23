@@ -32,6 +32,7 @@ pnpm add @maroonedsoftware/authentication
 - **MFA orchestration** — `MfaOrchestrator` runs the primary → challenge → secondary handoff on top of the per-factor services, with a swappable `'auth.session.mfa.required'` policy; per-method `issueFactorChallenge` responses include the code and recipient so the caller controls delivery
 - **Step-up policies** — `DefaultRecentFactorPolicy` and `DefaultAssuranceLevelPolicy` gate sensitive operations on a recent re-auth or a NIST 800-63B-style AAL1/AAL2 check, with embedded `StepUpRequirement` hints so clients can drive the right re-auth flow
 - **Account recovery** — `RecoveryOrchestrator` runs the forgot-password / MFA-recovery / unlock / full-recovery flow as a pure state machine on top of the per-factor services, gated by `'auth.recovery.allowed'`; recovery codes ship as a single-use, Argon2id-hashed backup factor via `RecoveryFactorService`; recovery sessions are opaque and structurally cannot authorise app endpoints
+- **OAuth 2.1 authorization server**: the core of an authorization server for MCP clients such as claude.ai connectors and Claude Code: PKCE `S256` codes, rotating refresh tokens, Dynamic Client Registration, Client ID Metadata Documents, and RFC 8414 / RFC 9728 metadata, with tokens bound to one resource. The app owns the routes and the consent page
 - **DI-friendly** — all classes are decorated with `@Injectable()` and designed for an injectkit container
 
 ## Usage
@@ -693,7 +694,7 @@ import {
   OidcActorEmailLookup,
 } from '@maroonedsoftware/authentication';
 
-// Wire providers via DI (sourced from AppConfig — keep clientSecret out of code).
+// Wire providers via DI, sourced from AppConfig. Keep clientSecret out of code.
 // The static list is registered under the OidcProviderSource token.
 registry.registerValue(
   OidcProviderSource,
@@ -1300,6 +1301,124 @@ This replaces `AuthenticationSessionHooks`, which has been removed. `RecoveryOrc
 **not** affected: it is behavioural rather than observational, since `onRebindMfaFactor` is where
 your application mutates the factor and a throw there must abort the recovery.
 
+### OAuth 2.1 authorization server (for MCP clients)
+
+A remote MCP server protected by OAuth needs an authorization server that its clients (claude.ai custom connectors, Claude Code) can discover, register with, and get tokens from. `OAuthAuthorizationServer` is that server's logic. It implements the authorization code grant with PKCE `S256`, refresh tokens with rotation and theft detection, Dynamic Client Registration (RFC 7591), Client ID Metadata Documents, pre-registered clients with an optional secret, resource indicators (RFC 8707), and `iss` on every authorization response (RFC 9207).
+
+**Your app owns the HTTP.** Every method answers a structured result or throws an `OAuthError` carrying its RFC code. The RFC endpoints need RFC 6749 error bodies, which the default error renderer does not produce, so render `error.toBody()` with `error.statusCode` and `error.headers` yourself. You also own the consent page, the session claims you consent with, and revoking a grant.
+
+**A grant is a session.** Exchanging a code mints an ordinary `AuthenticationSessionService` session for the consenting user, carrying their claims and factors plus `claims.oauth` (`{ clientId, clientName?, resource, scope, grantId? }`). Its audience is the resource, so its tokens are refused by every `lookupSessionFromJwt` call that does not ask for that resource. Scopes are advertised and echoed; nothing authorizes on them.
+
+```typescript
+import {
+  AuthorizationCodeService,
+  AuthorizationCodeServiceOptions,
+  AuthorizationRequestStore,
+  AuthorizationRequestStoreOptions,
+  ClientIdMetadataDocumentResolver,
+  ClientIdMetadataDocumentResolverOptions,
+  DynamicClientRegistrationService,
+  IsOAuthError,
+  OAuthAuthorizationServer,
+  OAuthAuthorizationServerOptions,
+  OAuthClientOptions,
+  OAuthClientRepository,
+  OAuthClientResolver,
+  OAuthGrantRepository,
+  OAuthTokenEndpoint,
+  protectedResourceMetadataUrl,
+} from '@maroonedsoftware/authentication';
+
+const origin = 'https://station.example.com';
+const resource = `${origin}/api/mcp`;
+
+registry.register(OAuthClientRepository).useClass(MyOAuthClientRepository).asSingleton();
+registry.register(OAuthGrantRepository).useClass(MyOAuthGrantRepository).asSingleton(); // optional
+registry.register(OAuthClientOptions).useValue(new OAuthClientOptions());
+registry.register(ClientIdMetadataDocumentResolverOptions).useValue(new ClientIdMetadataDocumentResolverOptions());
+registry.register(ClientIdMetadataDocumentResolver).useClass(ClientIdMetadataDocumentResolver).asSingleton(); // optional
+registry.register(OAuthClientResolver).useClass(OAuthClientResolver).asSingleton();
+registry.register(DynamicClientRegistrationService).useClass(DynamicClientRegistrationService).asSingleton(); // optional
+registry.register(AuthorizationRequestStoreOptions).useValue(new AuthorizationRequestStoreOptions());
+registry.register(AuthorizationRequestStore).useClass(AuthorizationRequestStore).asSingleton();
+registry.register(AuthorizationCodeServiceOptions).useValue(new AuthorizationCodeServiceOptions());
+registry.register(AuthorizationCodeService).useClass(AuthorizationCodeService).asSingleton();
+registry.register(OAuthAuthorizationServerOptions).useValue(
+  new OAuthAuthorizationServerOptions(
+    origin, // issuer
+    `${origin}/oauth/authorize`, // your consent page
+    `${origin}/api/oauth/token`,
+    [resource],
+    ['mcp'],
+    `${origin}/api/oauth/register`, // omit to turn Dynamic Client Registration off
+  ),
+);
+// Both reach the session service, which is scoped.
+registry.register(OAuthTokenEndpoint).useClass(OAuthTokenEndpoint).asScoped();
+registry.register(OAuthAuthorizationServer).useClass(OAuthAuthorizationServer).asScoped();
+```
+
+The routes, sketched for Koa:
+
+```typescript
+const renderOAuthError = (ctx, error) => {
+  if (!IsOAuthError(error)) throw error;
+  ctx.status = error.statusCode;
+  ctx.set(error.headers ?? {});
+  ctx.body = error.toBody();
+};
+
+router.get('/.well-known/oauth-authorization-server', ctx => {
+  ctx.body = ctx.container.get(OAuthAuthorizationServer).metadata();
+});
+router.get('/.well-known/oauth-protected-resource/api/mcp', ctx => {
+  ctx.body = ctx.container.get(OAuthAuthorizationServer).resourceMetadata(resource);
+});
+
+router.post('/api/oauth/register', async ctx => {
+  try {
+    const { response } = await ctx.container.get(OAuthAuthorizationServer).register(ctx.parsedBody);
+    ctx.status = 201;
+    ctx.body = response;
+  } catch (error) {
+    renderOAuthError(ctx, error);
+  }
+});
+
+router.post('/api/oauth/token', async ctx => {
+  ctx.set('Cache-Control', 'no-store');
+  try {
+    ctx.body = await ctx.container.get(OAuthAuthorizationServer).token(ctx.parsedBody, { authorization: ctx.get('authorization') || undefined });
+  } catch (error) {
+    renderOAuthError(ctx, error);
+  }
+});
+
+// The consent page's API, behind your normal authentication.
+router.get('/api/oauth/authorize/context', requirePolicy(), async ctx => {
+  const { subject } = ctx.authenticationSession;
+  ctx.body = await ctx.container.get(OAuthAuthorizationServer).describeAuthorizationRequest(ctx.query, subject);
+  // 'context' → show consent; 'redirect' → window.location = redirectUrl; 'refuse' → show the error, never redirect
+});
+router.post('/api/oauth/authorize/approve', requirePolicy(), async ctx => {
+  const { subject, claims, factors } = ctx.authenticationSession;
+  ctx.body = await ctx.container.get(OAuthAuthorizationServer).approve(ctx.parsedBody.requestId, { subject, claims, factors });
+});
+router.post('/api/oauth/authorize/deny', requirePolicy(), async ctx => {
+  ctx.body = await ctx.container.get(OAuthAuthorizationServer).deny(ctx.parsedBody.requestId, ctx.authenticationSession.subject);
+});
+```
+
+On the MCP route, validate bearer tokens for the resource with `lookupSessionFromJwt(token, false, resource)` and answer a 401 with `WWW-Authenticate: Bearer resource_metadata="${protectedResourceMetadataUrl(resource)}"`. Every other route passes no audience, so it refuses MCP tokens with no extra code.
+
+**Clients.** A `client_id` that is an https URL is a Client ID Metadata Document: the resolver fetches it without following redirects, caps its size, checks that its `client_id` equals the URL exactly, and caches it for its `max-age` (clamped to 60 seconds..24 hours). It refuses IP-literal and `localhost` hosts, and `allowHost` lets you restrict the rest; DNS rebinding is not defended. Dynamic clients expire 90 days after their last use; schedule `OAuthClientRepository.deleteExpired`, since Claude registers a new client per connection. Pre-registered confidential clients store `hashOAuthClientSecret(secret)`; `createOAuthClientSecret()` makes a show-once secret.
+
+**Redirect URIs** match exactly, except that a loopback URI (`http://localhost`, `http://127.0.0.1`, `http://[::1]`) matches on any port, as native apps require. Anything else must be https. The consent context reports the redirect host and whether every registered redirect is loopback, so the page can warn.
+
+**Refresh** rotates the session's refresh token, bound to the client it was issued to and, with a grant repository, to a grant that is not revoked. A refresh token presented by the wrong client is spent by the attempt, so the legitimate client's next refresh trips family revocation. A replayed code or refresh token is always `invalid_grant`.
+
+**Audit.** `oauth.client.registered`, `oauth.authorization.approved`, `oauth.authorization.denied`, `oauth.token.issued`, `oauth.token.refreshed`, and `oauth.token.rejected` (with the RFC error code as `reason`).
+
 ---
 
 ## API Reference
@@ -1864,6 +1983,54 @@ Abstract base class with the same surface as `OidcFactorRepository`. Extends `Fa
 `OAuth2Factor`: `Factor & OAuth2FactorValue` — same shape as `OidcFactor`.
 
 `OAuth2FactorValue` / `OAuth2FactorLookup`: same shape as the OIDC equivalents.
+
+### `OAuthAuthorizationServer`
+
+| Method                                         | Returns                                  | Description                                                                                      |
+| ---------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `metadata()`                                   | `AuthorizationServerMetadata`            | RFC 8414 document. `registration_endpoint` only when registration is on                          |
+| `resourceMetadata(resource)`                   | `ProtectedResourceMetadata \| undefined` | RFC 9728 document for a served resource                                                          |
+| `describeAuthorizationRequest(query, subject)` | `Promise<AuthorizationContextResult>`    | Validate and stash for consent; `context`, `redirect` (with `iss`), or `refuse` (never redirect) |
+| `approve(requestId, consent)`                  | `Promise<{ redirectUrl }>`               | Issue a code for the stashed request; 404 when unknown, decided, or another subject's            |
+| `deny(requestId, subject)`                     | `Promise<{ redirectUrl }>`               | Redirect with `access_denied`                                                                    |
+| `register(body)`                               | `Promise<{ client, response }>`          | Dynamic Client Registration; 404 when off                                                        |
+| `token(body, headers?)`                        | `Promise<TokenResponse>`                 | `authorization_code` and `refresh_token` grants; every refusal is an `OAuthError`                |
+
+`OAuthAuthorizationServerOptions`: `(issuer, authorizationEndpoint, tokenEndpoint, resources, scopesSupported, registrationEndpoint?, sessionExpiration?)`.
+
+### `OAuthTokenEndpoint`
+
+`exchange(body, headers?)` behind `OAuthAuthorizationServer.token`. A code exchange authenticates the client, redeems the code, upserts the grant (when a grant repository is bound), and mints a session whose audience is the resource and whose `claims.oauth` is an `OAuthSessionClaim`. A refresh passes the served resources as the expected audience and a guard requiring the same client and a live grant. Any 4xx from the session service becomes `invalid_grant`.
+
+### `OAuthClientResolver`
+
+| Method                      | Returns                | Description                                                                                                 |
+| --------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `resolve(clientId)`         | `Promise<OAuthClient>` | Metadata document for an https id (when bound), else the repository; `invalid_client` if unknown or expired |
+| `authenticate(credentials)` | `Promise<OAuthClient>` | `none`, `client_secret_post`, or `client_secret_basic`; 401 `invalid_client` on failure                     |
+| `recordUse(client, at?)`    | `Promise<void>`        | Touch the client; extends a dynamic client's expiry                                                         |
+
+### `OAuthClientRepository` / `OAuthGrantRepository`
+
+Abstract classes you implement. Clients: `findByClientId`, `create`, `touchLastUsed(clientId, at, extendTo?)`, `deleteExpired(before)`. Grants (optional): `upsert({ clientId, subject, resource, scope })` (one per client, subject, and resource; clears `revokedAt`), `find(id)`, `recordUse(id, at)`.
+
+### `AuthorizationCodeService` / `AuthorizationRequestStore`
+
+`issue(request, consent)` answers a 60-second code; `redeem(code, { clientId, redirectUri, codeVerifier, resource? })` answers it once and throws `invalid_grant` on any mismatch. `stash(request, subject)` holds a validated request for 10 minutes; `take(id, subject)` answers it once, to that subject only.
+
+### OAuth helpers
+
+| Export                                                                    | Description                                                            |
+| ------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `OAuthError` / `IsOAuthError`                                             | `HttpError` with `code`, `description`, and `toBody()` (RFC 6749 §5.2) |
+| `parseAuthorizationRequest(query, client, policy)`                        | `valid`, `redirect`, or `refuse`                                       |
+| `redirectUriMatches`, `validateRegisteredRedirectUri`, `describeRedirect` | Redirect URI rules                                                     |
+| `verifyPkceS256`, `isPkceS256Challenge`                                   | PKCE `S256`                                                            |
+| `buildAuthorizationRedirect(redirectUri, params)`                         | Adds `code` or `error`, `state`, and `iss`                             |
+| `buildAuthorizationServerMetadata`, `buildProtectedResourceMetadata`      | The two metadata documents                                             |
+| `authorizationServerMetadataUrl`, `protectedResourceMetadataUrl`          | Their well-known URLs                                                  |
+| `getOAuthSessionClaim(session)`                                           | `claims.oauth`, or `undefined` for a session not minted for a client   |
+| `createOAuthClientSecret`, `hashOAuthClientSecret`                        | Show-once secret and its stored digest                                 |
 
 ## License
 

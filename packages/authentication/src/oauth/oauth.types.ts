@@ -3,11 +3,11 @@ import type { DateTime } from 'luxon';
 /**
  * How an OAuth client came to be known to the authorization server.
  *
- * - `preregistered` — created by an operator, optionally with a secret.
- * - `dynamic` — registered by the client itself through Dynamic Client
+ * - `preregistered`: created by an operator, optionally with a secret.
+ * - `dynamic`: registered by the client itself through Dynamic Client
  *   Registration ([RFC 7591](https://datatracker.ietf.org/doc/html/rfc7591)).
  *   Public, and expires after a period of disuse.
- * - `metadata_document` — identified by an https URL whose JSON document
+ * - `metadata_document`: identified by an https URL whose JSON document
  *   describes it (a Client ID Metadata Document). Never stored.
  */
 export type OAuthClientKind = 'preregistered' | 'dynamic' | 'metadata_document';
