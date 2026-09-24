@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createFastifyLogger } from '../../src/logger/fastify.logger.js';
 import { createLogger } from '../test.app.js';
 
@@ -66,6 +66,37 @@ describe('createFastifyLogger', () => {
     createFastifyLogger(logger, { service: 'api' }).child({ reqId: 'r1' }).child({ reqId: 'r2' }).info({ extra: true }, 'nested');
 
     expect(logger.info).toHaveBeenCalledWith('nested', { service: 'api', reqId: 'r2', extra: true });
+  });
+
+  it('keeps an Error logged alone on a child logger, with the bindings after it', () => {
+    const logger = createLogger();
+    const err = new Error('database unreachable');
+
+    createFastifyLogger(logger).child({ reqId: 'r1' }).error(err);
+
+    expect(logger.error).toHaveBeenCalledWith(err, { reqId: 'r1' });
+    const [logged] = vi.mocked(logger.error).mock.calls[0] ?? [];
+    expect((logged as Error).message).toBe('database unreachable');
+  });
+
+  it('keeps an Error logged with a message on a child logger, behind the message', () => {
+    const logger = createLogger();
+    const err = new Error('database unreachable');
+
+    createFastifyLogger(logger).child({ reqId: 'r1' }).error(err, 'request failed');
+
+    expect(logger.error).toHaveBeenCalledWith('request failed', err, { reqId: 'r1' });
+    const [, logged] = vi.mocked(logger.error).mock.calls[0] ?? [];
+    expect((logged as Error).message).toBe('database unreachable');
+  });
+
+  it('passes an Error through alone when there are no bindings', () => {
+    const logger = createLogger();
+    const err = new Error('boom');
+
+    createFastifyLogger(logger).error(err);
+
+    expect(logger.error).toHaveBeenCalledWith(err);
   });
 
   it('leaves the arguments untouched when there are no bindings', () => {
