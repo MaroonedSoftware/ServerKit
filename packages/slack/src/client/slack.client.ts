@@ -90,6 +90,8 @@ export class SlackClient {
       logger: adaptLogger(this.logger),
       ...(this.config.fetch ? { fetch: this.config.fetch } : {}),
       ...(this.config.apiBaseUrl ? { slackApiUrl: this.config.apiBaseUrl } : {}),
+      ...(this.config.retries !== undefined ? { retryConfig: { retries: this.config.retries } } : {}),
+      ...(this.config.rejectRateLimitedCalls !== undefined ? { rejectRateLimitedCalls: this.config.rejectRateLimitedCalls } : {}),
     };
   }
 

@@ -54,6 +54,23 @@ describe('SlackClient', () => {
     expect(opts).toMatchObject({ fetch: own, slackApiUrl: 'https://slack.example/api/' });
   });
 
+  it('leaves the SDK’s retry policy alone unless asked', () => {
+    new SlackClient(cfg, makeLogger());
+    const [, opts] = webClientCtor.mock.calls[0]!;
+    expect(opts).not.toHaveProperty('retryConfig');
+    expect(opts).not.toHaveProperty('rejectRateLimitedCalls');
+  });
+
+  it('hands WebClient the caller’s retries and rate-limit rule, to both clients', async () => {
+    connectionsOpen.mockResolvedValueOnce({ ok: true, url: 'wss://wss-primary.slack.com/link' });
+    const client = new SlackClient({ ...cfg, appToken: 'xapp-test', retries: 0, rejectRateLimitedCalls: true } as SlackConfig, makeLogger());
+    await client.openSocketModeUrl();
+    expect(webClientCtor).toHaveBeenCalledTimes(2);
+    for (const [, opts] of webClientCtor.mock.calls) {
+      expect(opts).toMatchObject({ retryConfig: { retries: 0 }, rejectRateLimitedCalls: true });
+    }
+  });
+
   it('postMessage delegates to chat.postMessage', async () => {
     const logger = makeLogger();
     const client = new SlackClient(cfg, logger);
