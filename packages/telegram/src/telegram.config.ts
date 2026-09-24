@@ -35,7 +35,21 @@ export interface TelegramConfig {
    * {@link import('./client/telegram.client.js').TELEGRAM_DEFAULT_REQUEST_TIMEOUT_MS} (10s).
    */
   requestTimeoutMs?: number;
+  /**
+   * The `fetch` every Bot API call goes through. Defaults to the global `fetch`.
+   *
+   * Set it when the caller owns the transport: a host that routes outbound HTTP through its own
+   * allowlist, rate limits or proxy, or a test. The client passes an `AbortSignal` carrying its
+   * timeout; an implementation that enforces its own deadline as well may ignore it.
+   */
+  fetch?: TelegramFetch;
 }
+
+/** The subset of `fetch` the client needs: a POST with a JSON body, answered with a `Response`. */
+export type TelegramFetch = (
+  url: string,
+  init: { method: 'POST'; headers: Record<string, string>; body: string; signal: AbortSignal },
+) => Promise<Response>;
 
 @Injectable()
 export abstract class TelegramConfig implements TelegramConfig {}
