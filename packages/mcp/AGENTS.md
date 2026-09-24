@@ -105,12 +105,14 @@ All three context types extend one base, so a new request-scoped value is declar
 
 ### Handlers
 
-| Export                  | Kind      | Shape                                                                                                                    | Notes                                                   |
-| ----------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------- |
-| `McpToolHandler`        | interface | `{ readonly definition: Tool; handle(args: Record<string, unknown>, context: McpToolContext): Promise<CallToolResult> }` | `definition` must be a stable value.                    |
-| `McpToolHandlerMap`     | class     | `@Injectable() extends Map<string, McpToolHandler>`                                                                      | Keyed by `definition.name`.                             |
-| `McpResourceHandler`    | interface | `{ readonly definition: Resource; read(uri: string, context: McpResourceContext): Promise<ReadResourceResult> }`         | —                                                       |
-| `McpResourceHandlerMap` | class     | `@Injectable() extends Map<string, McpResourceHandler>`                                                                  | Keyed by `definition.uri`. **Exact-URI matching only.** |
+| Export                  | Kind      | Shape                                                                                                                    | Notes                                                                                         |
+| ----------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| `McpToolHandler`        | interface | `{ readonly definition: Tool; handle(args: Record<string, unknown>, context: McpToolContext): Promise<CallToolResult> }` | `definition` must be a stable value.                                                          |
+| `McpToolHandlerMap`     | class     | `@Injectable() extends Map<string, McpToolHandler>`                                                                      | Keyed by `definition.name`.                                                                   |
+| `ExplainedToolHandler`  | class     | `new ExplainedToolHandler(inner: McpToolHandler)`, implements `McpToolHandler`                                           | Turns a thrown `HttpError` into `{ isError: true, content: [text] }`. Rethrows anything else. |
+| `explainToolErrors`     | function  | `(tools: McpToolHandlerMap) => McpToolHandlerMap`                                                                        | Returns a new map with every handler wrapped; the input is untouched.                         |
+| `McpResourceHandler`    | interface | `{ readonly definition: Resource; read(uri: string, context: McpResourceContext): Promise<ReadResourceResult> }`         | —                                                                                             |
+| `McpResourceHandlerMap` | class     | `@Injectable() extends Map<string, McpResourceHandler>`                                                                  | Keyed by `definition.uri`. **Exact-URI matching only.**                                       |
 
 ### Server, transport, dispatch
 
@@ -290,6 +292,12 @@ app.post('/mcp', { config: { body: ['application/json'] }, preHandler: [requireP
 
 ## Gotchas
 
+- **`explainToolErrors` only translates `HttpError`.** A 400/422 lists the fields from `details`
+  (the `zodErrorDetails` shape, `body.`/`query.` prefixes dropped), a 401/403 says the caller is not
+  allowed (naming an `insufficient_scope` scope), a 404/409 relays the message, and every other
+  status gets a generic failure logged at `error` on `context.logger`. A plain `Error`, `McpError`, or
+  any other `ServerkitError` is rethrown and still surfaces as a JSON-RPC error, so throw `httpError`
+  for a failure the model should see. Put nothing secret in a 404/409 message: it reaches the model.
 - **The authentication stack deletes the `Authorization` header.** `authenticationPlugin` (fastify)
   and `authenticationMiddleware` (koa) read it, hand it to `AuthenticationSchemeHandler`, and delete
   it from both header views before any route runs — on every route, whitelisted or not. Anything
