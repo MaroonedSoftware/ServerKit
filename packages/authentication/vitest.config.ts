@@ -13,8 +13,10 @@ export default defineProject({
       tsconfig: './tsconfig.tests.json',
     },
     environment: 'node',
-    // Reuse the worker between test files; these suites don't depend on per-file isolation.
-    isolate: false,
+    // Isolate each test file. oidc.provider and oidc.factor.service tests both vi.mock
+    // openid-client with their own factory; with a shared module cache, src binds to
+    // whichever mock loaded first and the other file's spies see no calls.
+    isolate: true,
   },
   plugins: [swc.vite()],
 });
