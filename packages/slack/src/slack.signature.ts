@@ -10,15 +10,20 @@ export const SLACK_SIGNATURE_DEFAULT_MAX_AGE_SECONDS = 300;
  * fails. Useful for callers that want to log structured reasons without
  * pattern-matching on error messages.
  */
-export type SlackSignatureFailureReason = 'missing_timestamp' | 'invalid_timestamp' | 'stale_timestamp' | 'missing_signature' | 'invalid_signature';
+export type SlackSignatureFailureReason =
+  'missing_signing_secret' | 'missing_timestamp' | 'invalid_timestamp' | 'stale_timestamp' | 'missing_signature' | 'invalid_signature';
 
 /**
  * Inputs to {@link verifySlackSignature}. All values are taken verbatim from
  * the request — the helper does no header lookups or body reads of its own.
  */
 export type VerifySlackSignatureInput = {
-  /** App signing secret (`SlackConfig.signingSecret`). */
-  signingSecret: string;
+  /**
+   * App signing secret (`SlackConfig.signingSecret`). Optional in the config because a Socket
+   * Mode app never verifies a request; verification without one fails with
+   * `missing_signing_secret` rather than checking against an empty key.
+   */
+  signingSecret: string | undefined;
   /** Raw, unparsed request body — exactly as Slack sent it. */
   rawBody: string;
   /** Value of the `X-Slack-Request-Timestamp` header. */
@@ -77,6 +82,12 @@ export const verifySlackSignature = (input: VerifySlackSignatureInput): void => 
     maxAgeSeconds = SLACK_SIGNATURE_DEFAULT_MAX_AGE_SECONDS,
     now = Math.floor(DateTime.now().toSeconds()),
   } = input;
+
+  if (!signingSecret) {
+    throw new SlackError('Slack signature verification needs SlackConfig.signingSecret, which is not set').withInternalDetails({
+      reason: 'missing_signing_secret' satisfies SlackSignatureFailureReason,
+    });
+  }
 
   if (!timestamp) {
     throw new SlackError('Slack request missing X-Slack-Request-Timestamp header').withInternalDetails({

@@ -65,6 +65,21 @@ describe('verifySlackSignature', () => {
     );
   });
 
+  it('rejects when no signing secret is configured, before looking at the request', () => {
+    const rawBody = '{"hello":"world"}';
+    expectFailure(
+      () =>
+        verifySlackSignature({
+          signingSecret: undefined,
+          rawBody,
+          timestamp: FRESH_TS,
+          signature: sign(rawBody, FRESH_TS, ''),
+          now: NOW,
+        }),
+      'missing_signing_secret',
+    );
+  });
+
   it('rejects a missing timestamp', () => {
     expectFailure(
       () =>

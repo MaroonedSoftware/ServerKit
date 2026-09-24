@@ -41,11 +41,12 @@ Runtime dependencies: `@maroonedsoftware/errors`, `@maroonedsoftware/logger`,
 
 ### `.` — config and errors
 
-| Export         | Kind                       | Shape                                                                                          | Notes                                                  |
-| -------------- | -------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `SlackConfig`  | interface + abstract class | `{ botToken, signingSecret, incomingWebhookUrl?, signatureMaxAgeSeconds?, requestTimeoutMs? }` | Declaration-merged so one symbol is type and DI token. |
-| `SlackError`   | class                      | `extends ServerkitError`                                                                       | —                                                      |
-| `IsSlackError` | type guard                 | `(error: unknown) => error is SlackError`                                                      | —                                                      |
+| Export         | Kind                       | Shape                                                                                                                           | Notes                                                  |
+| -------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `SlackConfig`  | interface + abstract class | `{ botToken, signingSecret?, appToken?, incomingWebhookUrl?, signatureMaxAgeSeconds?, requestTimeoutMs?, apiBaseUrl?, fetch? }` | Declaration-merged so one symbol is type and DI token. |
+| `SlackFetch`   | type                       | `@slack/web-api`'s `FetchFunction`                                                                                              | The global `fetch` satisfies it.                       |
+| `SlackError`   | class                      | `extends ServerkitError`                                                                                                        | —                                                      |
+| `IsSlackError` | type guard                 | `(error: unknown) => error is SlackError`                                                                                       | —                                                      |
 
 ### `.` — signature verification
 
@@ -83,12 +84,12 @@ guard.
 
 ### `.` — client
 
-| Export                             | Kind     | Shape                                                           | Notes                                  |
-| ---------------------------------- | -------- | --------------------------------------------------------------- | -------------------------------------- |
-| `SlackClient`                      | class    | `postMessage`, `postWebhook`, …                                 | Over `@slack/web-api`.                 |
-| `adaptLogger`                      | function | Bridges `@maroonedsoftware/logger` to `@slack/web-api`'s logger | —                                      |
-| `redactSlackUrl`                   | function | Strips the token from a webhook URL before logging              | Use it before logging any webhook URL. |
-| `SLACK_DEFAULT_REQUEST_TIMEOUT_MS` | constant | —                                                               | —                                      |
+| Export                             | Kind     | Shape                                                           | Notes                                                                   |
+| ---------------------------------- | -------- | --------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `SlackClient`                      | class    | `postMessage`, `postWebhook`, `openSocketModeUrl`, …            | Over `@slack/web-api`. Every call goes through `config.fetch` when set. |
+| `adaptLogger`                      | function | Bridges `@maroonedsoftware/logger` to `@slack/web-api`'s logger | —                                                                       |
+| `redactSlackUrl`                   | function | Strips the token from a webhook URL before logging              | Use it before logging any webhook URL.                                  |
+| `SLACK_DEFAULT_REQUEST_TIMEOUT_MS` | constant | —                                                               | —                                                                       |
 
 ### `./comms`
 
@@ -165,6 +166,11 @@ await dispatchSlackCommand(router, client, payload);
 - **Bot messages are filtered out** of the comms path (`bot_id`, `subtype: 'bot_message'`) to avoid
   loops. The native event handlers see them.
 - **`verifySlackSignature` throws; `SlackSignaturePolicy` denies.** Same logic, two shapes.
+- **`signingSecret` is optional** because a Socket Mode app never verifies a request. Without it,
+  verification fails closed with reason `missing_signing_secret`; it never checks against an empty key.
+- **`openSocketModeUrl` uses `appToken`, not `botToken`.** Each URL it returns is single-use.
+- **A transport failure in `postWebhook` has no `cause`.** The cause would quote the secret URL;
+  the redacted reason is in `internalDetails.reason`.
 - **The signature has a max-age replay window.** Clock skew on your host produces spurious
   verification failures.
 - **`@slack/web-api` is a hard dependency**, unlike `comms` and `cache`. Installing this package

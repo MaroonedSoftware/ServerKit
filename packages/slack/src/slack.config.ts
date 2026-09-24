@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-declaration-merging */
 import { Injectable } from 'injectkit';
+import type { FetchFunction } from '@slack/web-api';
 
 /**
  * Configuration for the Slack package. Declared as an abstract `@Injectable()`
@@ -19,8 +20,18 @@ import { Injectable } from 'injectkit';
 export interface SlackConfig {
   /** Bot user OAuth token (`xoxb-...`). Required for Web API calls. */
   botToken: string;
-  /** App-level signing secret used to verify request signatures. */
-  signingSecret: string;
+  /**
+   * App-level signing secret used to verify request signatures. Needed only when Slack calls you
+   * over HTTP; a Socket Mode app can leave it unset, and signature verification then fails closed
+   * with `missing_signing_secret`.
+   */
+  signingSecret?: string;
+  /**
+   * App-level token (`xapp-...`) with the `connections:write` scope. Needed only for Socket Mode,
+   * where {@link import('./client/slack.client.js').SlackClient.openSocketModeUrl} trades it for a
+   * WebSocket URL.
+   */
+  appToken?: string;
   /** Optional incoming webhook URL used as the default target for `SlackClient.postWebhook`. */
   incomingWebhookUrl?: string;
   /**
@@ -34,7 +45,27 @@ export interface SlackConfig {
    * {@link import('./client/slack.client.js').SLACK_DEFAULT_REQUEST_TIMEOUT_MS} (10s).
    */
   requestTimeoutMs?: number;
+  /**
+   * Base URL for Web API calls, forwarded to `@slack/web-api` as `slackApiUrl`. Defaults to the
+   * SDK's own (`https://slack.com/api/`).
+   */
+  apiBaseUrl?: string;
+  /**
+   * The `fetch` every outbound call goes through: the Web API client, `postWebhook`, and
+   * `openSocketModeUrl`. Defaults to the global `fetch`.
+   *
+   * Set it when the caller owns the transport: a host that routes outbound HTTP through its own
+   * allowlist, rate limits or proxy, or a test. The client passes an `AbortSignal` carrying its
+   * timeout; an implementation that enforces its own deadline as well may ignore it.
+   */
+  fetch?: SlackFetch;
 }
+
+/**
+ * The `fetch` shape the client needs. It is `@slack/web-api`'s own `FetchFunction`, so one
+ * function serves both the Web API client and the webhook POSTs; the global `fetch` satisfies it.
+ */
+export type SlackFetch = FetchFunction;
 
 @Injectable()
 export abstract class SlackConfig implements SlackConfig {}
