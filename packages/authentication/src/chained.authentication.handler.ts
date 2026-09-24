@@ -1,4 +1,5 @@
 import { Injectable } from 'injectkit';
+import { Logger } from '@maroonedsoftware/logger';
 import type { AuthenticationHandler, AuthorizationScheme } from './authentication.handler.js';
 import { invalidAuthenticationSession, type AuthenticationSession } from './types.js';
 
@@ -42,13 +43,20 @@ export class AuthenticationHandlerChain extends Array<AuthenticationHandler> {}
  * chain. That is deliberate: a credential that is genuinely invalid should not be
  * confirmed as such to the caller by a handler further down refusing to look at it.
  *
+ * Because a decline is the ordinary case for every handler but one, members should not
+ * log it. The chain is the only place that knows no handler accepted the credential,
+ * so it logs that once, at `debug`, and never the credential itself.
+ *
  * A handler that **throws** stops the chain and propagates. Handlers throw for
  * misconfiguration rather than for a bad credential, and an operator error must not
  * be silently swallowed by the next handler in line returning the sentinel.
  */
 @Injectable()
 export class ChainedAuthenticationHandler implements AuthenticationHandler {
-  constructor(private readonly handlers: AuthenticationHandlerChain) {}
+  constructor(
+    private readonly handlers: AuthenticationHandlerChain,
+    private readonly logger: Logger,
+  ) {}
 
   /**
    * Try each handler in registration order and return the first session that is not
@@ -70,6 +78,7 @@ export class ChainedAuthenticationHandler implements AuthenticationHandler {
       }
     }
 
+    this.logger.debug('No authentication handler in the chain accepted the credential', { scheme, handlers: this.handlers.length });
     return invalidAuthenticationSession;
   }
 }
