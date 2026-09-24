@@ -1,5 +1,28 @@
 # @maroonedsoftware/discord
 
+## 2.1.0
+
+### Minor Changes
+
+- 6bd48d8: A `fetch` of the caller's own, a configurable base URL, token redaction on transport errors, and `retry_after`.
+
+  - `DiscordConfig.fetch` routes every REST call through the caller's own transport: an allowlisting host, a proxy, or a test. It defaults to the global `fetch`.
+  - `DiscordConfig.apiBaseUrl` replaces the hardcoded REST base. It defaults to `DISCORD_API_BASE`.
+  - `DiscordConfig.publicKey` is optional, since a Gateway-only bot never verifies a request. Verification without one fails closed with the new reason `missing_public_key`.
+  - `request` takes a per-call `timeoutMs`.
+  - A rate-limited call carries Discord's wait as `internalDetails.retryAfter` (seconds), from the body's `retry_after` or the `Retry-After` header.
+  - A call that never reached Discord now throws a `DiscordError` rather than the transport's own error. The bot token and any interaction token are redacted from its `reason`, and no `cause` is attached. An error body is redacted the same way.
+  - New helpers: `getGatewayBot()`, `getCurrentUser()`, `getChannelMessages(channelId, { after, limit })`, and `deferInteraction(interaction, 'message' | 'update')`.
+
+- 1b71fe0: The Gateway over a socket the caller supplies, at `@maroonedsoftware/discord/gateway`.
+
+  - `GatewayClient` receives real-time events over the Discord Gateway. It never opens a connection itself: `gatewayUrl` (normally from `DiscordClient.getGatewayBot`) names the endpoint, and `connect` opens whatever satisfies the exported `SocketLike` contract. That contract has the same shape as `@maroonedsoftware/slack/socketmode`'s.
+  - It heartbeats (with the first beat jittered), identifies, and resumes on `resume_gateway_url` after a zombie connection, a Reconnect (op 7), a resumable Invalid Session (op 9), or a non-fatal close. A non-resumable Invalid Session identifies afresh after 1–5 seconds.
+  - Close codes 4004 and 4010–4014 are fatal: the client stops and reports through `onError`, and 4014 names the disallowed-intents cause.
+  - Every dispatch goes to `onDispatch(event, data)`. `READY` fills in `isReady` and `user`.
+  - `Intents` exports the `GUILDS`, `GUILD_MESSAGES`, `DIRECT_MESSAGES`, and `MESSAGE_CONTENT` bits.
+  - One shard, JSON only, no compression. The README no longer calls the Gateway out of scope.
+
 ## 2.0.11
 
 ### Patch Changes
