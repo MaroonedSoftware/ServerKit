@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import type { Container } from 'injectkit';
 import type { CallToolResult, JSONRPCMessage, ReadResourceResult, Resource, Tool } from '@modelcontextprotocol/sdk/types.js';
 import { McpDispatcher } from '../src/mcp.dispatcher.js';
 import { McpServerFactory } from '../src/mcp.server.factory.js';
@@ -122,6 +123,13 @@ describe('McpDispatcher (stateless)', () => {
     const authenticationSession = makeAuthenticatedSession();
     await dispatcher.dispatch(rpc(6, 'tools/call', { name: 'echo', arguments: { message: 'hi' } }), makeContext({ authenticationSession }));
     expect(echo.seen[0]?.context.authenticationSession).toBe(authenticationSession);
+  });
+
+  it('carries the request-scoped container through AsyncLocalStorage to the handler', async () => {
+    const { dispatcher, echo } = buildDispatcher();
+    const container = { get: () => undefined } as unknown as Container;
+    await dispatcher.dispatch(rpc(9, 'tools/call', { name: 'echo', arguments: { message: 'hi' } }), makeContext({ container }));
+    expect(echo.seen[0]?.context.container).toBe(container);
   });
 
   it('surfaces a handler session check as a JSON-RPC error when no session is present', async () => {

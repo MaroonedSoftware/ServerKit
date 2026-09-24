@@ -37,6 +37,7 @@ import type { McpAuthInfo } from './mcp.auth.js';
  *     requestId: ctx.requestId,
  *     logger: ctx.logger,
  *     authenticationSession: ctx.authenticationSession,
+ *     container: ctx.container,
  *     auth,
  *   });
  *   // … dispatch

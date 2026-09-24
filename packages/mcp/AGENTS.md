@@ -93,15 +93,15 @@ second identity model (`context.auth`) alongside `context.authenticationSession`
 
 All three context types extend one base, so a new request-scoped value is declared once.
 
-| Export                         | Kind      | Shape                                                                                                      | Notes                                                           |
-| ------------------------------ | --------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| `McpContextBase`               | interface | `{ requestId: string; logger: Logger; auth?: McpAuthInfo; authenticationSession?: AuthenticationSession }` | The shared half of all three contexts. Add new fields **here**. |
-| `McpRequestContext`            | interface | `McpContextBase & { forTool(name, signal?), forResource(uri, signal?) }`                                   | Transport-neutral — no koa or injectkit types.                  |
-| `McpToolContext`               | interface | `McpContextBase & { toolName, signal? }`                                                                   | What a tool handler receives.                                   |
-| `McpResourceContext`           | interface | `McpContextBase & { uri, signal? }`                                                                        | What a resource handler receives.                               |
-| `createMcpRequestContext`      | function  | `(input: CreateMcpRequestContextInput) => McpRequestContext`                                               | Build it from `ctx` in your route.                              |
-| `CreateMcpRequestContextInput` | type      | Alias for `McpContextBase`                                                                                 | The factory takes exactly the shared fields.                    |
-| `mcpContext`                   | constant  | `AsyncLocalStorage<McpRequestContext>`                                                                     | Set by the dispatcher. **Handlers never read it directly.**     |
+| Export                         | Kind      | Shape                                                                                                                             | Notes                                                                                                                  |
+| ------------------------------ | --------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `McpContextBase`               | interface | `{ requestId: string; logger: Logger; auth?: McpAuthInfo; authenticationSession?: AuthenticationSession; container?: Container }` | The shared half of all three contexts. Add new fields **here**. `container` is the request-scoped injectkit container. |
+| `McpRequestContext`            | interface | `McpContextBase & { forTool(name, signal?), forResource(uri, signal?) }`                                                          | Transport-neutral: no koa or fastify types. The injectkit `Container` is DI, not transport.                            |
+| `McpToolContext`               | interface | `McpContextBase & { toolName, signal? }`                                                                                          | What a tool handler receives.                                                                                          |
+| `McpResourceContext`           | interface | `McpContextBase & { uri, signal? }`                                                                                               | What a resource handler receives.                                                                                      |
+| `createMcpRequestContext`      | function  | `(input: CreateMcpRequestContextInput) => McpRequestContext`                                                                      | Build it from `ctx` in your route.                                                                                     |
+| `CreateMcpRequestContextInput` | type      | Alias for `McpContextBase`                                                                                                        | The factory takes exactly the shared fields.                                                                           |
+| `mcpContext`                   | constant  | `AsyncLocalStorage<McpRequestContext>`                                                                                            | Set by the dispatcher. **Handlers never read it directly.**                                                            |
 
 ### Handlers
 
@@ -194,7 +194,12 @@ the scaffold session cannot satisfy.
 ```typescript
 router.post('/mcp', bodyParserMiddleware(['application/json']), requirePolicy({ policy: false }), async ctx => {
   const dispatcher = ctx.container.get(McpDispatcher);
-  const context = createMcpRequestContext({ requestId: ctx.requestId, logger: ctx.logger, authenticationSession: ctx.authenticationSession });
+  const context = createMcpRequestContext({
+    requestId: ctx.requestId,
+    logger: ctx.logger,
+    authenticationSession: ctx.authenticationSession,
+    container: ctx.container,
+  });
 
   if (dispatcher.sessionMode === 'stateful') {
     ctx.respond = false; // hand the raw response stream to the SDK transport
@@ -218,6 +223,7 @@ app.post('/mcp', { config: { body: ['application/json'] }, preHandler: [requireP
     requestId: request.requestId,
     logger: request.logger,
     authenticationSession: request.authenticationSession,
+    container: request.container,
   });
 
   if (dispatcher.sessionMode === 'stateful') {
@@ -245,9 +251,12 @@ app.post('/mcp', { config: { body: ['application/json'] }, preHandler: [requireP
   bootstrap, so a definition computed per access is silently ignored after the first read.
 - Register handlers in the maps at bootstrap under `definition.name` / `definition.uri`. The maps
   are frozen from the factory's point of view once it is constructed.
-- Build the `McpRequestContext` per request from `ctx.requestId`, `ctx.logger`, and
-  `ctx.authenticationSession`. Never reuse one across requests. On Fastify the same three values
-  come from `request.requestId`, `request.logger`, and `request.authenticationSession`.
+- Build the `McpRequestContext` per request from `ctx.requestId`, `ctx.logger`,
+  `ctx.authenticationSession`, and `ctx.container`. Never reuse one across requests. On Fastify the
+  same values come from `request.requestId`, `request.logger`, `request.authenticationSession`, and
+  `request.container`.
+- Resolve request-scoped services inside a tool from `context.container`, not from constructor
+  injection: handlers are singletons built from the root container.
 - Use `context.logger` and `context.requestId` inside handlers, not an injected `Logger`.
 - Forward `context.signal` to any async work so client cancellation and the request timeout can
   actually stop it. The signal is the SDK's per-request abort signal combined with

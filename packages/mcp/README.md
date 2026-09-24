@@ -28,7 +28,7 @@ pnpm add @maroonedsoftware/mcp @modelcontextprotocol/sdk
 | `McpResourceHandler` / `McpResourceHandlerMap`  | Resource handler interface (`read(uri, context)`) + its `Map<uri, handler>` DI token.                                                                                                               |
 | `McpSessionRegistry`                            | Stateful-mode registry: one SDK `Server` + `StreamableHTTPServerTransport` per `Mcp-Session-Id`, reused across the session.                                                                         |
 | `KoaMcpTransport`                               | Minimal single-exchange `Transport` for stateless mode (one JSON-RPC message in, one response out).                                                                                                 |
-| `McpRequestContext` / `createMcpRequestContext` | Request-scoped context threaded to handlers (request id, logger, auth info, authentication session), plus the factory that builds one from your `ctx`.                                              |
+| `McpRequestContext` / `createMcpRequestContext` | Request-scoped context threaded to handlers (request id, logger, auth info, authentication session, request-scoped container), plus the factory that builds one from your `ctx`.                    |
 | `verifyMcpBearer(input)`                        | Pure bearer-token verifier. Returns `McpAuthInfo` or throws `McpError`. **Scaffold-grade** — swap for OAuth resource-server JWT validation.                                                         |
 | `isBlankBearerToken(bearerToken)`               | Distinguishes an unset shared token from one configured as a blank string. Both fail closed; only the second is a misconfiguration.                                                                 |
 | `assertMcpAuth(container, getHeader)`           | Gates a request on `MCP_AUTH_POLICY` and returns the identity it resolved, for `context.auth`. Throws 401 on denial.                                                                                |
@@ -109,7 +109,7 @@ Resources follow the same shape with `McpResourceHandler` (`read(uri, context)`)
 
 ## Serving MCP
 
-You own the route. Add `bodyParserMiddleware(['application/json'])` first (ServerKit puts the parsed payload on `ctx.parsedBody`, never on koa's `ctx.request.body`), gate it with `requirePolicy({ policy: false })`, build an `McpRequestContext` from `ctx`, and dispatch. The mode is chosen from `McpConfig.sessionMode`. On Fastify the same three context values come from `request.requestId`, `request.logger`, and `request.authenticationSession`, accepted content types go in the route's `config.body`, and the guard goes in `preHandler`.
+You own the route. Add `bodyParserMiddleware(['application/json'])` first (ServerKit puts the parsed payload on `ctx.parsedBody`, never on koa's `ctx.request.body`), gate it with `requirePolicy({ policy: false })`, build an `McpRequestContext` from `ctx`, and dispatch. The mode is chosen from `McpConfig.sessionMode`. On Fastify the same context values come from `request.requestId`, `request.logger`, `request.authenticationSession`, and `request.container`, accepted content types go in the route's `config.body`, and the guard goes in `preHandler`.
 
 Authentication has already happened by the time the route runs: the authentication stack resolved the `Authorization` header into `ctx.authenticationSession`. `{ policy: false }` rejects an unauthenticated caller with 401 without applying the MFA policy, which a shared-token session cannot satisfy. See [Authentication](#authentication).
 
@@ -120,7 +120,12 @@ import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 
 router.post('/mcp', bodyParserMiddleware(['application/json']), requirePolicy({ policy: false }), async ctx => {
   const dispatcher = ctx.container.get(McpDispatcher);
-  const context = createMcpRequestContext({ requestId: ctx.requestId, logger: ctx.logger, authenticationSession: ctx.authenticationSession });
+  const context = createMcpRequestContext({
+    requestId: ctx.requestId,
+    logger: ctx.logger,
+    authenticationSession: ctx.authenticationSession,
+    container: ctx.container,
+  });
 
   if (dispatcher.sessionMode === 'stateful') {
     ctx.respond = false; // hand the raw response stream to the SDK transport (SSE)
