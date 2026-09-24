@@ -92,6 +92,11 @@ describe('SlackSignaturePolicy', () => {
     await expectDenied(result, 'invalid_signature');
   });
 
+  it('denies, failing closed, when no signing secret is configured', async () => {
+    const result = await evaluate('x', FRESH_TS, sign('x', FRESH_TS, ''), {});
+    await expectDenied(result, 'missing_signing_secret');
+  });
+
   it('denies a missing timestamp header', async () => {
     const result = await evaluate('x', undefined, 'v0=irrelevant');
     await expectDenied(result, 'missing_timestamp');

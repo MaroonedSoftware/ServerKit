@@ -82,6 +82,11 @@ describe('DiscordSignaturePolicy', () => {
     await expectDenied(result, 'missing_timestamp');
   });
 
+  it('denies, failing closed, when no public key is configured', async () => {
+    const result = await evaluate('x', FRESH_TS, signRequest(privateKey, FRESH_TS, 'x'), {});
+    await expectDenied(result, 'missing_public_key');
+  });
+
   it('denies a missing signature header', async () => {
     const result = await evaluate('x', FRESH_TS, undefined);
     await expectDenied(result, 'missing_signature');

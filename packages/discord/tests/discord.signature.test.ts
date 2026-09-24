@@ -75,6 +75,19 @@ describe('verifyDiscordSignature', () => {
     );
   });
 
+  it('rejects when no public key is configured, before looking at the request', () => {
+    expectFailure(
+      () =>
+        verifyDiscordSignature({
+          publicKey: undefined,
+          rawBody: 'x',
+          timestamp: FRESH_TS,
+          signature: signRequest(privateKey, FRESH_TS, 'x'),
+        }),
+      'missing_public_key',
+    );
+  });
+
   it('rejects a missing timestamp', () => {
     expectFailure(
       () =>

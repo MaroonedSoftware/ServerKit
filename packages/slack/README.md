@@ -15,19 +15,19 @@ pnpm add @maroonedsoftware/slack
 
 ## Exports
 
-| Symbol                               | Purpose                                                                                                                                                                                                             |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SlackConfig`                        | Abstract `@Injectable()` token; carries `botToken`, `signingSecret`, optional `incomingWebhookUrl`, optional `signatureMaxAgeSeconds`. Consumer registers a concrete value.                                         |
-| `SlackClient`                        | Wraps `@slack/web-api`'s `WebClient`; routes its diagnostics through ServerKit's `Logger`. Methods: `postMessage`, `updateMessage`, `deleteMessage`, `openView`, `postWebhook`. Underlying SDK reachable at `.web`. |
-| `SlackDispatcher`                    | Three-method service: `dispatchEvent`, `dispatchCommand`, `dispatchInteraction`.                                                                                                                                    |
-| `SlackEventHandlerMap`               | `Map<eventType, SlackEventHandler>` — register one handler per Slack event type (`app_mention`, `message`, …).                                                                                                      |
-| `SlackCommandHandlerMap`             | `Map<commandKeyword, SlackCommandHandler>` — register one handler per slash command (`/deploy`, …).                                                                                                                 |
-| `SlackInteractionHandlerMap`         | `Map<routingKey, SlackInteractionHandler>` — keys are `${type}:${identifier}`; see [interaction routing](#interaction-routing).                                                                                     |
-| `SlackError`                         | `ServerkitError` subclass for non-HTTP domain failures (signature mismatch, webhook POST failed, …).                                                                                                                |
-| `verifySlackSignature(input)`        | Pure helper that validates Slack's v0 HMAC scheme + replay window. No request/context coupling.                                                                                                                     |
-| `SlackSignaturePolicy`               | `@maroonedsoftware/policies` form of `verifySlackSignature` (registered under `SLACK_SIGNATURE_POLICY`). Delegates to the helper but answers as a `PolicyResult`, so it slots into ServerKit's policy pipeline.     |
-| `interactionRouteKey(payload)`       | Helper that produces the `SlackInteractionHandlerMap` key for a given payload.                                                                                                                                      |
-| `slackEventIdempotencyKey(envelope)` | Pure helper that derives a stable de-dup key (`slack:event:{team_id}:{event_id}`) for an `event_callback` envelope.                                                                                                 |
+| Symbol                               | Purpose                                                                                                                                                                                                                                  |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SlackConfig`                        | Abstract `@Injectable()` token; carries `botToken`, optional `signingSecret`, `appToken`, `incomingWebhookUrl`, `signatureMaxAgeSeconds`, `requestTimeoutMs`, `apiBaseUrl`, `fetch`. Consumer registers a concrete value.                |
+| `SlackClient`                        | Wraps `@slack/web-api`'s `WebClient`; routes its diagnostics through ServerKit's `Logger`. Methods: `postMessage`, `updateMessage`, `deleteMessage`, `openView`, `postWebhook`, `openSocketModeUrl`. Underlying SDK reachable at `.web`. |
+| `SlackDispatcher`                    | Three-method service: `dispatchEvent`, `dispatchCommand`, `dispatchInteraction`.                                                                                                                                                         |
+| `SlackEventHandlerMap`               | `Map<eventType, SlackEventHandler>` — register one handler per Slack event type (`app_mention`, `message`, …).                                                                                                                           |
+| `SlackCommandHandlerMap`             | `Map<commandKeyword, SlackCommandHandler>` — register one handler per slash command (`/deploy`, …).                                                                                                                                      |
+| `SlackInteractionHandlerMap`         | `Map<routingKey, SlackInteractionHandler>` — keys are `${type}:${identifier}`; see [interaction routing](#interaction-routing).                                                                                                          |
+| `SlackError`                         | `ServerkitError` subclass for non-HTTP domain failures (signature mismatch, webhook POST failed, …).                                                                                                                                     |
+| `verifySlackSignature(input)`        | Pure helper that validates Slack's v0 HMAC scheme + replay window. No request/context coupling.                                                                                                                                          |
+| `SlackSignaturePolicy`               | `@maroonedsoftware/policies` form of `verifySlackSignature` (registered under `SLACK_SIGNATURE_POLICY`). Delegates to the helper but answers as a `PolicyResult`, so it slots into ServerKit's policy pipeline.                          |
+| `interactionRouteKey(payload)`       | Helper that produces the `SlackInteractionHandlerMap` key for a given payload.                                                                                                                                                           |
+| `slackEventIdempotencyKey(envelope)` | Pure helper that derives a stable de-dup key (`slack:event:{team_id}:{event_id}`) for an `event_callback` envelope.                                                                                                                      |
 
 ## Configuration
 
@@ -51,16 +51,22 @@ registry.register(SlackConfig).useValue(slackConfig);
     "signingSecret": "...",
     "incomingWebhookUrl": "https://hooks.slack.com/services/...", // optional
     "signatureMaxAgeSeconds": 300, // optional
+    "appToken": "xapp-...", // optional, Socket Mode only
+    "apiBaseUrl": "https://slack.com/api/", // optional
   },
 }
 ```
 
-| Field                    | Required | Used by                                                                 |
-| ------------------------ | -------- | ----------------------------------------------------------------------- |
-| `botToken`               | yes      | `SlackClient` constructor — passed to `WebClient`.                      |
-| `signingSecret`          | yes      | Your signature verifier (Slack signs requests with this secret).        |
-| `incomingWebhookUrl`     | no       | `SlackClient.postWebhook` default URL when no per-call URL is supplied. |
-| `signatureMaxAgeSeconds` | no       | Replay-protection window for your signature verifier (default `300`).   |
+| Field                    | Required | Used by                                                                                                                                            |
+| ------------------------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `botToken`               | yes      | `SlackClient` constructor — passed to `WebClient`.                                                                                                 |
+| `signingSecret`          | no       | Your signature verifier (Slack signs requests with this secret). Needed only when Slack calls you over HTTP; verification fails closed without it. |
+| `appToken`               | no       | `SlackClient.openSocketModeUrl`: the `xapp-` token with `connections:write`.                                                                       |
+| `apiBaseUrl`             | no       | Forwarded to `WebClient` as `slackApiUrl`.                                                                                                         |
+| `requestTimeoutMs`       | no       | Timeout for `postWebhook` (default 10s).                                                                                                           |
+| `fetch`                  | no       | The transport for every outbound call. See [bringing your own fetch](#bringing-your-own-fetch).                                                    |
+| `incomingWebhookUrl`     | no       | `SlackClient.postWebhook` default URL when no per-call URL is supplied.                                                                            |
+| `signatureMaxAgeSeconds` | no       | Replay-protection window for your signature verifier (default `300`).                                                                              |
 
 ## Sending messages
 
@@ -79,7 +85,19 @@ await slack.postWebhook({ text: 'still working on it…' }, payload.response_url
 await slack.web.users.info({ user: 'U123' });
 ```
 
-`postWebhook` throws `SlackError` if neither `config.incomingWebhookUrl` nor an explicit URL is provided, or if the HTTP response is non-2xx.
+`postWebhook` throws `SlackError` if neither `config.incomingWebhookUrl` nor an explicit URL is provided, if the HTTP response is non-2xx, or if the POST never reaches Slack. That last error carries the transport's reason with the URL's secret segment redacted, and no `cause`, because the cause would quote the URL.
+
+### Bringing your own fetch
+
+`SlackConfig.fetch` routes every outbound call through a transport the caller owns: an allowlisting host, a proxy, or a test. It covers the `WebClient` (as the SDK's own `fetch` option), `postWebhook`, and `openSocketModeUrl`. It defaults to the global `fetch`, and its type, `SlackFetch`, is the SDK's `FetchFunction`, so the global `fetch` satisfies it.
+
+```ts
+registry.register(SlackConfig).useValue({ ...appConfig.getAs<SlackConfig>('slack'), fetch: host.fetch });
+```
+
+### The app token
+
+Socket Mode authenticates with an app-level token (`xapp-...`, scope `connections:write`), not the bot token. `openSocketModeUrl()` trades it for a single-use WebSocket URL via `apps.connections.open`, over the same `fetch` and base URL. Call it again for every reconnect. It throws `SlackError` when `appToken` is not set, or when Slack does not hand back a URL.
 
 ## Receiving Slack requests
 
@@ -301,9 +319,10 @@ try {
 
 What the helper enforces:
 
+1. A signing secret is configured. Without one the helper throws with reason `missing_signing_secret`, so an HTTP route on a Socket Mode config fails closed.
 1. `X-Slack-Request-Timestamp` is present and an integer.
-2. `|now - timestamp| <= maxAgeSeconds` (default 300) — replay protection.
-3. `X-Slack-Signature` matches `v0=` + `HMAC-SHA256(signingSecret, "v0:{timestamp}:{rawBody}")` as hex, compared with `crypto.timingSafeEqual`.
+1. `|now - timestamp| <= maxAgeSeconds` (default 300) — replay protection.
+1. `X-Slack-Signature` matches `v0=` + `HMAC-SHA256(signingSecret, "v0:{timestamp}:{rawBody}")` as hex, compared with `crypto.timingSafeEqual`.
 
 On any failure the helper throws `SlackError` with `internalDetails.reason` set to a `SlackSignatureFailureReason` code. Map to HTTP 401 at the route boundary.
 
@@ -331,6 +350,45 @@ if (isPolicyResultDenied(result)) throw httpError(401).withInternalDetails(resul
 ```
 
 The context (`rawBody` + a case-insensitive `getHeader` + `options`) is structurally compatible with `@maroonedsoftware/koa`'s `SignaturePolicyContext<SlackSignatureOptions>`, so the koa `requireSignature` middleware can drive this policy when it's registered under the signature policy name — no koa dependency in this package.
+
+## Socket Mode
+
+`@maroonedsoftware/slack/socketmode` receives events, slash commands, and interactive payloads over a Slack Socket Mode WebSocket, for an app with no public HTTP endpoint. The caller supplies the socket, so the package never opens a connection of its own.
+
+```ts
+import { SlackClient } from '@maroonedsoftware/slack';
+import { SocketModeClient } from '@maroonedsoftware/slack/socketmode';
+
+const slack = container.get(SlackClient); // SlackConfig.appToken must be set
+
+const socketMode = new SocketModeClient({
+  openUrl: () => slack.openSocketModeUrl(),
+  connect: url => host.socket(url), // anything satisfying SocketLike
+  handlers: {
+    onEventsApi: (event, { envelopeId }) => dispatcher.dispatchEvent(event),
+    onSlashCommand: payload => slack.postWebhook({ text: 'on it' }, payload.response_url),
+    onInteractive: payload => dispatcher.dispatchInteraction(payload),
+  },
+  logger,
+  onError: error => logger.error('Socket Mode stopped', error),
+});
+
+await socketMode.start();
+// on shutdown
+socketMode.stop();
+```
+
+`SocketLike` is the whole transport contract: `send(text)`, `close(code?, reason?)`, `onMessage(listener)`, and `onClose(listener)`. `connect` may answer with the socket or a promise of one.
+
+How it behaves:
+
+- **Every envelope is acked the moment it arrives**, before its handler runs, so a slow handler never misses Slack's 3-second window. The ack is always empty, so a handler cannot answer through it: reply with the payload's `response_url` or the Web API. That rules out `view_submission` `response_action` errors, which only travel in an ack.
+- Handlers get the payload plus `{ envelopeId, retryAttempt?, retryReason? }`. A handler that throws or rejects is logged, and the client carries on.
+- `hello` sets `isReady`.
+- `disconnect` with `refresh_requested` or `warning` opens a fresh URL and moves to it before closing the old socket. `link_disabled` stops the client and calls `onError`.
+- Any other close reconnects with backoff: 1s doubling to 30s (configurable through `backoff`), reset by the next `hello`.
+- `start()` rejects if the first URL or socket cannot be opened. Later reconnects retry instead.
+- `stop()` closes the socket and cancels any pending reconnect. The client never reconnects after it.
 
 ## Use with `@maroonedsoftware/comms`
 
@@ -369,6 +427,7 @@ router.post('/slack/commands', async ctx => {
 ## Limitations
 
 - v1 supports a single workspace via the bot token in `SlackConfig`. Multi-workspace OAuth install is out of scope.
+- Socket Mode acks are always empty (see [Socket Mode](#socket-mode)).
 
 ## License
 
