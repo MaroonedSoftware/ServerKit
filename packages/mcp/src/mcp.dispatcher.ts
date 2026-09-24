@@ -26,7 +26,7 @@ import { mcpContext, type McpRequestContext } from './mcp.request.context.js';
  * router.post('/mcp', bodyParserMiddleware(['application/json']), async (ctx) => {
  *   const auth = await assertMcpAuth(ctx.container, name => ctx.get(name));
  *   const dispatcher = ctx.container.get(McpDispatcher);
- *   const context = createMcpRequestContext({ requestId: ctx.requestId, logger: ctx.logger, authenticationSession: ctx.authenticationSession, auth });
+ *   const context = createMcpRequestContext({ requestId: ctx.requestId, logger: ctx.logger, authenticationSession: ctx.authenticationSession, container: ctx.container, auth });
  *
  *   if (dispatcher.sessionMode === 'stateful') {
  *     ctx.respond = false; // hand the raw response stream to the SDK transport (SSE)

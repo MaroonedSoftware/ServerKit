@@ -16,25 +16,26 @@ pnpm add @maroonedsoftware/mcp @modelcontextprotocol/sdk
 
 ## Exports
 
-| Symbol                                          | Purpose                                                                                                                                                                                             |
-| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `McpConfig`                                     | Abstract `@Injectable()` token; carries `serverName`, `version`, optional `sessionMode`, `bearerToken`, `allowUnauthenticated`, `subject`, `requestTimeoutMs`. Consumer registers a concrete value. |
-| `McpAuthenticationHandler`                      | `AuthenticationHandler` resolving the shared token into an `AuthenticationSession`. Register under the `bearer` scheme — the supported way to authenticate MCP.                                     |
-| `MCP_DEFAULT_SUBJECT`                           | `'mcp'` — the `session.subject` assigned when `McpConfig.subject` is unset.                                                                                                                         |
-| `compareMcpToken(provided, expected)`           | Constant-time token comparison with a length guard. A blank side is `false`.                                                                                                                        |
-| `McpDispatcher`                                 | Entry point. `dispatch(message, context)` for stateless mode; `dispatchStateful(exchange, context)` for stateful. Selects the mode from `McpConfig.sessionMode`.                                    |
-| `McpServerFactory`                              | Builds SDK `Server` instances wired to the handler maps — memoizes the `tools/list` payload and uses stable, ALS-backed request handlers.                                                           |
-| `McpToolHandler` / `McpToolHandlerMap`          | One-method tool handler interface (`handle(args, context)`) + its `Map<toolName, handler>` DI token.                                                                                                |
-| `McpResourceHandler` / `McpResourceHandlerMap`  | Resource handler interface (`read(uri, context)`) + its `Map<uri, handler>` DI token.                                                                                                               |
-| `McpSessionRegistry`                            | Stateful-mode registry: one SDK `Server` + `StreamableHTTPServerTransport` per `Mcp-Session-Id`, reused across the session.                                                                         |
-| `KoaMcpTransport`                               | Minimal single-exchange `Transport` for stateless mode (one JSON-RPC message in, one response out).                                                                                                 |
-| `McpRequestContext` / `createMcpRequestContext` | Request-scoped context threaded to handlers (request id, logger, auth info, authentication session), plus the factory that builds one from your `ctx`.                                              |
-| `verifyMcpBearer(input)`                        | Pure bearer-token verifier. Returns `McpAuthInfo` or throws `McpError`. **Scaffold-grade** — swap for OAuth resource-server JWT validation.                                                         |
-| `isBlankBearerToken(bearerToken)`               | Distinguishes an unset shared token from one configured as a blank string. Both fail closed; only the second is a misconfiguration.                                                                 |
-| `assertMcpAuth(container, getHeader)`           | Gates a request on `MCP_AUTH_POLICY` and returns the identity it resolved, for `context.auth`. Throws 401 on denial.                                                                                |
-| `McpAuthPolicy`                                 | `@maroonedsoftware/policies` form of `verifyMcpBearer` (registered under `MCP_AUTH_POLICY`). Slots into koa's `requireSignature`.                                                                   |
-| `requireMcpAuthenticationSession(context)`      | Narrows a handler context to an authenticated `AuthenticationSession`, or throws 401. Use it before evaluating a policy in a tool.                                                                  |
-| `McpError` / `IsMcpError`                       | `ServerkitError` subclass for non-HTTP domain failures, plus its type guard.                                                                                                                        |
+| Symbol                                            | Purpose                                                                                                                                                                                             |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `McpConfig`                                       | Abstract `@Injectable()` token; carries `serverName`, `version`, optional `sessionMode`, `bearerToken`, `allowUnauthenticated`, `subject`, `requestTimeoutMs`. Consumer registers a concrete value. |
+| `McpAuthenticationHandler`                        | `AuthenticationHandler` resolving the shared token into an `AuthenticationSession`. Register under the `bearer` scheme — the supported way to authenticate MCP.                                     |
+| `MCP_DEFAULT_SUBJECT`                             | `'mcp'` — the `session.subject` assigned when `McpConfig.subject` is unset.                                                                                                                         |
+| `compareMcpToken(provided, expected)`             | Constant-time token comparison with a length guard. A blank side is `false`.                                                                                                                        |
+| `McpDispatcher`                                   | Entry point. `dispatch(message, context)` for stateless mode; `dispatchStateful(exchange, context)` for stateful. Selects the mode from `McpConfig.sessionMode`.                                    |
+| `McpServerFactory`                                | Builds SDK `Server` instances wired to the handler maps — memoizes the `tools/list` payload and uses stable, ALS-backed request handlers.                                                           |
+| `McpToolHandler` / `McpToolHandlerMap`            | One-method tool handler interface (`handle(args, context)`) + its `Map<toolName, handler>` DI token.                                                                                                |
+| `ExplainedToolHandler` / `explainToolErrors(map)` | Wraps a tool (or every tool in a map) so a thrown `HttpError` becomes an `isError` result the model can act on, instead of a JSON-RPC error.                                                        |
+| `McpResourceHandler` / `McpResourceHandlerMap`    | Resource handler interface (`read(uri, context)`) + its `Map<uri, handler>` DI token.                                                                                                               |
+| `McpSessionRegistry`                              | Stateful-mode registry: one SDK `Server` + `StreamableHTTPServerTransport` per `Mcp-Session-Id`, reused across the session.                                                                         |
+| `KoaMcpTransport`                                 | Minimal single-exchange `Transport` for stateless mode (one JSON-RPC message in, one response out).                                                                                                 |
+| `McpRequestContext` / `createMcpRequestContext`   | Request-scoped context threaded to handlers (request id, logger, auth info, authentication session, request-scoped container), plus the factory that builds one from your `ctx`.                    |
+| `verifyMcpBearer(input)`                          | Pure bearer-token verifier. Returns `McpAuthInfo` or throws `McpError`. **Scaffold-grade** — swap for OAuth resource-server JWT validation.                                                         |
+| `isBlankBearerToken(bearerToken)`                 | Distinguishes an unset shared token from one configured as a blank string. Both fail closed; only the second is a misconfiguration.                                                                 |
+| `assertMcpAuth(container, getHeader)`             | Gates a request on `MCP_AUTH_POLICY` and returns the identity it resolved, for `context.auth`. Throws 401 on denial.                                                                                |
+| `McpAuthPolicy`                                   | `@maroonedsoftware/policies` form of `verifyMcpBearer` (registered under `MCP_AUTH_POLICY`). Slots into koa's `requireSignature`.                                                                   |
+| `requireMcpAuthenticationSession(context)`        | Narrows a handler context to an authenticated `AuthenticationSession`, or throws 401. Use it before evaluating a policy in a tool.                                                                  |
+| `McpError` / `IsMcpError`                         | `ServerkitError` subclass for non-HTTP domain failures, plus its type guard.                                                                                                                        |
 
 ## Configuration
 
@@ -107,9 +108,33 @@ registry.register(McpResourceHandlerMap).useMap(McpResourceHandlerMap); // empty
 
 Resources follow the same shape with `McpResourceHandler` (`read(uri, context)`), registered by URI in `McpResourceHandlerMap`. The dispatcher advertises only the capabilities backed by a non-empty map, so a tools-only server doesn't claim resource support.
 
+### Explaining failures to the model
+
+A tool that throws surfaces as a JSON-RPC error, which the model cannot do much with. Wrap your tools with `explainToolErrors` and a thrown `HttpError` becomes a tool result with `isError: true` and text the model can act on:
+
+| Status        | What the model is told                                                                                                          |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| 400, 422      | Each invalid or missing field by path (a `body.` / `query.` prefix is dropped), then "ask the user for these, then call again". |
+| 401, 403      | "This caller is not allowed to do that", plus the scope an `insufficient_scope` `WWW-Authenticate` challenge names.             |
+| 404, 409      | The error's message.                                                                                                            |
+| anything else | A generic failure. The internal message and details are never relayed; the error is logged on `context.logger`.                 |
+
+Anything that is not an `HttpError` is rethrown unchanged. Apply it where you build the map:
+
+```ts
+import { McpToolHandlerMap, explainToolErrors } from '@maroonedsoftware/mcp';
+
+registry
+  .register(McpToolHandlerMap)
+  .useFactory(container => explainToolErrors(new McpToolHandlerMap([['search_docs', container.get(SearchDocsTool)]])))
+  .asSingleton();
+```
+
+`new ExplainedToolHandler(handler)` wraps a single tool.
+
 ## Serving MCP
 
-You own the route. Add `bodyParserMiddleware(['application/json'])` first (ServerKit puts the parsed payload on `ctx.parsedBody`, never on koa's `ctx.request.body`), gate it with `requirePolicy({ policy: false })`, build an `McpRequestContext` from `ctx`, and dispatch. The mode is chosen from `McpConfig.sessionMode`. On Fastify the same three context values come from `request.requestId`, `request.logger`, and `request.authenticationSession`, accepted content types go in the route's `config.body`, and the guard goes in `preHandler`.
+You own the route. Add `bodyParserMiddleware(['application/json'])` first (ServerKit puts the parsed payload on `ctx.parsedBody`, never on koa's `ctx.request.body`), gate it with `requirePolicy({ policy: false })`, build an `McpRequestContext` from `ctx`, and dispatch. The mode is chosen from `McpConfig.sessionMode`. On Fastify the same context values come from `request.requestId`, `request.logger`, `request.authenticationSession`, and `request.container`, accepted content types go in the route's `config.body`, and the guard goes in `preHandler`.
 
 Authentication has already happened by the time the route runs: the authentication stack resolved the `Authorization` header into `ctx.authenticationSession`. `{ policy: false }` rejects an unauthenticated caller with 401 without applying the MFA policy, which a shared-token session cannot satisfy. See [Authentication](#authentication).
 
@@ -120,7 +145,12 @@ import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 
 router.post('/mcp', bodyParserMiddleware(['application/json']), requirePolicy({ policy: false }), async ctx => {
   const dispatcher = ctx.container.get(McpDispatcher);
-  const context = createMcpRequestContext({ requestId: ctx.requestId, logger: ctx.logger, authenticationSession: ctx.authenticationSession });
+  const context = createMcpRequestContext({
+    requestId: ctx.requestId,
+    logger: ctx.logger,
+    authenticationSession: ctx.authenticationSession,
+    container: ctx.container,
+  });
 
   if (dispatcher.sessionMode === 'stateful') {
     ctx.respond = false; // hand the raw response stream to the SDK transport (SSE)

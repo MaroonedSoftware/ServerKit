@@ -8,6 +8,7 @@ export * from './mcp.request.context.js';
 export * from './mcp.authentication.session.js';
 export * from './mcp.require.policy.js';
 export * from './mcp.tool.handler.js';
+export * from './mcp.explained.tool.handler.js';
 export * from './mcp.resource.handler.js';
 export * from './mcp.server.factory.js';
 export * from './mcp.transport.js';

@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { AuthenticationSession } from '@maroonedsoftware/authentication';
+import type { Container } from 'injectkit';
 import type { Logger } from '@maroonedsoftware/logger';
 import type { McpAuthInfo } from './mcp.auth.js';
 
@@ -36,6 +37,12 @@ export interface McpContextBase {
    * before using it to evaluate a policy.
    */
   authenticationSession?: AuthenticationSession;
+  /**
+   * The request-scoped DI container (`ctx.container` on Koa, `request.container`
+   * on Fastify), when the route supplied it. Resolve request-scoped services from
+   * this, not from the root container a singleton handler was built from.
+   */
+  container?: Container;
 }
 
 /**
@@ -63,9 +70,11 @@ export interface McpResourceContext extends McpContextBase {
 
 /**
  * Request-scoped context threaded to MCP handlers. Deliberately transport-neutral
- * (no koa/injectkit coupling — mirrors how `@maroonedsoftware/discord` stays
+ * (no koa or fastify coupling, mirroring how `@maroonedsoftware/discord` stays
  * koa-free): the consumer builds one per request from its `ServerKitContext` via
- * {@link createMcpRequestContext} and hands it to the dispatcher.
+ * {@link createMcpRequestContext} and hands it to the dispatcher. It may carry the
+ * request's injectkit container; that is DI, which this package already depends
+ * on, not transport, so it does not change the neutrality.
  *
  * The dispatcher stores this in an {@link https://nodejs.org/api/async_context.html | AsyncLocalStorage}
  * ({@link mcpContext}) for the duration of a call, so the singleton request
@@ -96,8 +105,8 @@ export type CreateMcpRequestContextInput = McpContextBase;
 /**
  * Builds an {@link McpRequestContext} from request-scoped values. Call this in
  * your koa route from `ctx` and pass the result to the dispatcher. On Fastify
- * the same values come from `request.requestId`, `request.logger`, and
- * `request.authenticationSession`.
+ * the same values come from `request.requestId`, `request.logger`,
+ * `request.authenticationSession`, and `request.container`.
  *
  * @example
  * ```ts
@@ -105,16 +114,17 @@ export type CreateMcpRequestContextInput = McpContextBase;
  *   requestId: ctx.requestId,
  *   logger: ctx.logger,
  *   authenticationSession: ctx.authenticationSession,
+ *   container: ctx.container,
  * });
  * const response = await ctx.container.get(McpDispatcher).dispatch(ctx.parsedBody as JSONRPCMessage, context);
  * ```
  */
 export const createMcpRequestContext = (input: CreateMcpRequestContextInput): McpRequestContext => {
-  const { requestId, logger, auth, authenticationSession } = input;
+  const { requestId, logger, auth, authenticationSession, container } = input;
 
   // Destructured rather than aliasing `input`, so a caller mutating the object
   // it passed in cannot reach into a context already handed to a handler.
-  const shared: McpContextBase = { requestId, logger, auth, authenticationSession };
+  const shared: McpContextBase = { requestId, logger, auth, authenticationSession, container };
 
   return {
     ...shared,
