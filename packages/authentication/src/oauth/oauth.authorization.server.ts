@@ -162,20 +162,33 @@ export class OAuthAuthorizationServer {
    *
    * @param consent - The consenting user's subject, and the claims and factors
    *   of the session they consented from. The client's session is minted from them.
+   *   Its optional `scope` is what the user granted, when the consent page let them
+   *   choose; it replaces the requested scope from here on.
+   * @throws HTTP 400 when `consent.scope` names a scope the server does not support.
    * @throws HTTP 404 when `requestId` is unknown, expired, already decided, or not the subject's.
    */
   async approve(requestId: string, consent: AuthorizationConsent): Promise<{ redirectUrl: string }> {
+    // Checked before the request is taken, so a bad scope from the consent page
+    // leaves the request for a corrected answer rather than spending it.
+    const granted = consent.scope === undefined ? undefined : this.grantableScope(consent.scope);
     const request = await this.requests.take(requestId, consent.subject);
     if (!request) throw httpError(404).withDetails({ requestId: 'not found or expired' });
 
-    const code = await this.codes.issue(request, consent);
+    // The code carries the request as granted, so the grant, the session and the
+    // token response all see the user's scope without knowing it was narrowed.
+    const code = await this.codes.issue(granted === undefined ? request : { ...request, scope: granted }, consent);
 
     await this.audit.record({
       type: 'oauth.authorization.approved',
       category: 'privilege',
       outcome: 'success',
       actorId: consent.subject,
-      data: { clientId: request.clientId, resource: request.resource, scope: request.scope },
+      data: {
+        clientId: request.clientId,
+        resource: request.resource,
+        scope: granted ?? request.scope,
+        ...(granted === undefined ? {} : { requestedScope: request.scope }),
+      },
     });
 
     return {
@@ -185,6 +198,18 @@ export class OAuthAuthorizationServer {
         iss: this.options.issuer,
       }),
     };
+  }
+
+  /**
+   * The scope a consent may grant: each value one the server supports, once, in
+   * the order given.
+   *
+   * @throws HTTP 400 naming the values the server does not support.
+   */
+  private grantableScope(scope: readonly string[]): string[] {
+    const unsupported = scope.filter(value => !this.options.scopesSupported.includes(value));
+    if (unsupported.length > 0) throw httpError(400).withDetails({ scope: `not supported: ${unsupported.join(' ')}` });
+    return [...new Set(scope)];
   }
 
   /**

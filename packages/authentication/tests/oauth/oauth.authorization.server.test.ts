@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClientIdMetadataDocumentResolver } from '../../src/oauth/client.id.metadata.document.resolver.js';
+import { getOAuthSessionClaim } from '../../src/oauth/oauth.session.claim.js';
 import {
   CONSENT_FACTOR,
   FakeGrantRepository,
@@ -173,6 +174,78 @@ describe('OAuthAuthorizationServer.approve and deny', () => {
       actorId: 'user-1',
       data: { clientId: 'dyn_claude', resource: RESOURCE },
     });
+  });
+});
+
+describe('a consent that grants a scope of its own', () => {
+  const SCOPES = ['mcp', 'read', 'write'];
+  let grants: FakeGrantRepository;
+
+  beforeEach(() => {
+    grants = new FakeGrantRepository();
+    harness = makeAuthorizationServerHarness({ grants, scopesSupported: SCOPES });
+    harness.repository.clients.set(PUBLIC_CLIENT.clientId, PUBLIC_CLIENT);
+  });
+
+  const requestFor = async (scope = 'mcp') => {
+    const result = await harness.server.describeAuthorizationRequest(authorizeQuery({ scope }), 'user-1');
+    if (result.kind !== 'context') throw new Error('expected a context');
+    return result.requestId;
+  };
+
+  const exchange = async (redirectUrl: string) =>
+    harness.server.token({
+      grant_type: 'authorization_code',
+      code: params(redirectUrl).code!,
+      redirect_uri: 'https://claude.ai/api/mcp/auth_callback',
+      code_verifier: VERIFIER,
+      client_id: PUBLIC_CLIENT.clientId,
+    });
+
+  it('replaces the requested scope in the grant, the session and the token response', async () => {
+    // The client asked for `mcp` alone; the user chose `read` on the consent page.
+    const { redirectUrl } = await harness.server.approve(await requestFor('mcp'), { ...CONSENT, scope: ['mcp', 'read'] });
+
+    const tokens = await exchange(redirectUrl);
+
+    expect(tokens.scope).toBe('mcp read');
+    expect([...grants.grants.values()].map(grant => grant.scope)).toEqual([['mcp', 'read']]);
+    const { session } = await harness.sessions.lookupSessionFromJwt(tokens.access_token, false, RESOURCE);
+    expect(getOAuthSessionClaim(session)?.scope).toEqual(['mcp', 'read']);
+  });
+
+  it('records what was granted beside what was asked for', async () => {
+    await harness.server.approve(await requestFor('mcp read write'), { ...CONSENT, scope: ['mcp', 'read'] });
+
+    expect(harness.events.find(event => event.type === 'oauth.authorization.approved')?.data).toEqual({
+      clientId: 'dyn_claude',
+      resource: RESOURCE,
+      scope: ['mcp', 'read'],
+      requestedScope: ['mcp', 'read', 'write'],
+    });
+  });
+
+  it('grants each value once', async () => {
+    const { redirectUrl } = await harness.server.approve(await requestFor(), { ...CONSENT, scope: ['read', 'read', 'mcp'] });
+
+    expect((await exchange(redirectUrl)).scope).toBe('read mcp');
+  });
+
+  it('refuses a scope the server does not support, and leaves the request to be answered again', async () => {
+    const requestId = await requestFor();
+
+    await expect(harness.server.approve(requestId, { ...CONSENT, scope: ['mcp', 'admin'] })).rejects.toMatchObject({
+      statusCode: 400,
+      details: { scope: 'not supported: admin' },
+    });
+    await expect(harness.server.approve(requestId, { ...CONSENT, scope: ['mcp'] })).resolves.toBeDefined();
+  });
+
+  it('grants the request as asked when the consent names no scope', async () => {
+    const { redirectUrl } = await harness.server.approve(await requestFor('mcp write'), CONSENT);
+
+    expect((await exchange(redirectUrl)).scope).toBe('mcp write');
+    expect(harness.events.find(event => event.type === 'oauth.authorization.approved')?.data).not.toHaveProperty('requestedScope');
   });
 });
 

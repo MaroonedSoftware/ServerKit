@@ -21,6 +21,16 @@ export interface AuthorizationConsent {
   subject: string;
   claims: Record<string, unknown>;
   factors: AuthenticationSessionFactor[];
+  /**
+   * The scope the user granted, when it is not simply what the client asked for.
+   * RFC 6749 §3.3 lets the authorization server issue a scope other than the one
+   * requested "based on ... the resource owner's instructions", which is what a
+   * consent page offering choices produces. Each value must be one the server
+   * supports. It replaces the requested scope everywhere downstream: the grant,
+   * the session's `oauth` claim, and the token response's `scope`. Omit it to
+   * grant the request as asked.
+   */
+  scope?: string[];
 }
 
 /** A redeemed code: the request it answered and the consent behind it. */

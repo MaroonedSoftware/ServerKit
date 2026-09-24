@@ -1409,6 +1409,8 @@ router.post('/api/oauth/authorize/deny', requirePolicy(), async ctx => {
 });
 ```
 
+A consent page that lets the user choose what to grant passes the choice as `consent.scope`: `approve(requestId, { subject, claims, factors, scope: ['mcp', 'read'] })`. RFC 6749 §3.3 lets the server issue a scope other than the one requested on the resource owner's instructions, so it may name any scope in `scopesSupported`, whatever the client asked for; one outside it is a 400 that leaves the request to be answered again. The granted scope replaces the requested one in the grant, the session's `oauth` claim and the token response, and the approval's audit event records both. Omit it to grant the request as asked.
+
 On the MCP route, validate bearer tokens for the resource with `lookupSessionFromJwt(token, false, resource)` and answer a 401 with `WWW-Authenticate: Bearer resource_metadata="${protectedResourceMetadataUrl(resource)}"`. Every other route passes no audience, so it refuses MCP tokens with no extra code.
 
 **Clients.** A `client_id` that is an https URL is a Client ID Metadata Document: the resolver fetches it without following redirects, caps its size, checks that its `client_id` equals the URL exactly, and caches it for its `max-age` (clamped to 60 seconds..24 hours). It refuses IP-literal and `localhost` hosts, and `allowHost` lets you restrict the rest; DNS rebinding is not defended. Dynamic clients expire 90 days after their last use; schedule `OAuthClientRepository.deleteExpired`, since Claude registers a new client per connection. Pre-registered confidential clients store `hashOAuthClientSecret(secret)`; `createOAuthClientSecret()` makes a show-once secret.
@@ -1986,15 +1988,15 @@ Abstract base class with the same surface as `OidcFactorRepository`. Extends `Fa
 
 ### `OAuthAuthorizationServer`
 
-| Method                                         | Returns                                  | Description                                                                                      |
-| ---------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `metadata()`                                   | `AuthorizationServerMetadata`            | RFC 8414 document. `registration_endpoint` only when registration is on                          |
-| `resourceMetadata(resource)`                   | `ProtectedResourceMetadata \| undefined` | RFC 9728 document for a served resource                                                          |
-| `describeAuthorizationRequest(query, subject)` | `Promise<AuthorizationContextResult>`    | Validate and stash for consent; `context`, `redirect` (with `iss`), or `refuse` (never redirect) |
-| `approve(requestId, consent)`                  | `Promise<{ redirectUrl }>`               | Issue a code for the stashed request; 404 when unknown, decided, or another subject's            |
-| `deny(requestId, subject)`                     | `Promise<{ redirectUrl }>`               | Redirect with `access_denied`                                                                    |
-| `register(body)`                               | `Promise<{ client, response }>`          | Dynamic Client Registration; 404 when off                                                        |
-| `token(body, headers?)`                        | `Promise<TokenResponse>`                 | `authorization_code` and `refresh_token` grants; every refusal is an `OAuthError`                |
+| Method                                         | Returns                                  | Description                                                                                                                                              |
+| ---------------------------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `metadata()`                                   | `AuthorizationServerMetadata`            | RFC 8414 document. `registration_endpoint` only when registration is on                                                                                  |
+| `resourceMetadata(resource)`                   | `ProtectedResourceMetadata \| undefined` | RFC 9728 document for a served resource                                                                                                                  |
+| `describeAuthorizationRequest(query, subject)` | `Promise<AuthorizationContextResult>`    | Validate and stash for consent; `context`, `redirect` (with `iss`), or `refuse` (never redirect)                                                         |
+| `approve(requestId, consent)`                  | `Promise<{ redirectUrl }>`               | Issue a code for the stashed request, granting `consent.scope` when given; 400 for an unsupported scope, 404 when unknown, decided, or another subject's |
+| `deny(requestId, subject)`                     | `Promise<{ redirectUrl }>`               | Redirect with `access_denied`                                                                                                                            |
+| `register(body)`                               | `Promise<{ client, response }>`          | Dynamic Client Registration; 404 when off                                                                                                                |
+| `token(body, headers?)`                        | `Promise<TokenResponse>`                 | `authorization_code` and `refresh_token` grants; every refusal is an `OAuthError`                                                                        |
 
 `OAuthAuthorizationServerOptions`: `(issuer, authorizationEndpoint, tokenEndpoint, resources, scopesSupported, registrationEndpoint?, sessionExpiration?)`.
 

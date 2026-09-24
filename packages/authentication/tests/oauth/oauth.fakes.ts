@@ -130,7 +130,12 @@ export const CONSENT_FACTOR: AuthenticationSessionFactor = {
  * so audiences are genuinely signed and verified.
  */
 export const makeAuthorizationServerHarness = (
-  overrides: { grants?: OAuthGrantRepository; registration?: boolean; metadataDocuments?: ClientIdMetadataDocumentResolver } = {},
+  overrides: {
+    grants?: OAuthGrantRepository;
+    registration?: boolean;
+    metadataDocuments?: ClientIdMetadataDocumentResolver;
+    scopesSupported?: readonly string[];
+  } = {},
 ) => {
   const cache = makeCache();
   const { events, recorder } = makeCapturingRecorder();
@@ -152,7 +157,7 @@ export const makeAuthorizationServerHarness = (
     `${ISSUER}/oauth/authorize`,
     `${ISSUER}/api/auth/oauth/token`,
     [RESOURCE],
-    ['mcp'],
+    overrides.scopesSupported ?? ['mcp'],
     registration ? `${ISSUER}/api/auth/oauth/register` : undefined,
   );
   const tokens = new OAuthTokenEndpoint(sessions, clients, codes, options, overrides.grants, recorder);
