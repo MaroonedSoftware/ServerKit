@@ -1,5 +1,23 @@
 # @maroonedsoftware/slack
 
+## 3.2.0
+
+### Minor Changes
+
+- b07f927: A `fetch` of the caller's own, a configurable base URL, an optional signing secret, and an app token for Socket Mode.
+
+  - `SlackConfig.fetch` routes every outbound call through the caller's own transport: the Web API client, `postWebhook`, and `openSocketModeUrl`. It defaults to the global `fetch`. Its type, `SlackFetch`, is `@slack/web-api`'s `FetchFunction`.
+  - `SlackConfig.apiBaseUrl` is forwarded to the Web API client as `slackApiUrl`.
+  - `SlackConfig.signingSecret` is optional, since a Socket Mode app never verifies a request. Verification without one fails closed with the new reason `missing_signing_secret`.
+  - `SlackConfig.appToken` and `SlackClient.openSocketModeUrl()` open a Socket Mode connection through `apps.connections.open` and return its WebSocket URL.
+  - A `postWebhook` that never reached Slack now throws a `SlackError` rather than the transport's own error. The URL's secret segment is redacted from its `reason`, and no `cause` is attached.
+
+- f30c514: Socket Mode over a socket the caller supplies, at `@maroonedsoftware/slack/socketmode`.
+
+  - `SocketModeClient` receives Events API deliveries, slash commands, and interactive payloads over a Slack Socket Mode WebSocket. It never opens a connection itself: `openUrl` (normally `SlackClient.openSocketModeUrl`) fetches the URL, and `connect` opens whatever satisfies the exported `SocketLike` contract.
+  - Every envelope is acked the moment it arrives, before its handler runs, so a slow handler never misses Slack's 3-second window. A handler that throws is logged and does not stop the client.
+  - `refresh_requested` and `warning` disconnects move to a fresh URL. `link_disabled` stops the client and reports through `onError`. Any other close reconnects with exponential backoff. `stop()` never reconnects.
+
 ## 3.1.3
 
 ### Patch Changes
