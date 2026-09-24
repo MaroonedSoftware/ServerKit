@@ -1,5 +1,12 @@
 # @maroonedsoftware/fastify
 
+## 0.4.2
+
+### Patch Changes
+
+- Updated dependencies [9485c54]
+  - @maroonedsoftware/authentication@6.1.0
+
 ## 0.4.1
 
 ### Patch Changes
