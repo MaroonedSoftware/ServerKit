@@ -15,19 +15,19 @@ pnpm add @maroonedsoftware/slack
 
 ## Exports
 
-| Symbol                               | Purpose                                                                                                                                                                                                                                  |
-| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SlackConfig`                        | Abstract `@Injectable()` token; carries `botToken`, optional `signingSecret`, `appToken`, `incomingWebhookUrl`, `signatureMaxAgeSeconds`, `requestTimeoutMs`, `apiBaseUrl`, `fetch`. Consumer registers a concrete value.                |
-| `SlackClient`                        | Wraps `@slack/web-api`'s `WebClient`; routes its diagnostics through ServerKit's `Logger`. Methods: `postMessage`, `updateMessage`, `deleteMessage`, `openView`, `postWebhook`, `openSocketModeUrl`. Underlying SDK reachable at `.web`. |
-| `SlackDispatcher`                    | Three-method service: `dispatchEvent`, `dispatchCommand`, `dispatchInteraction`.                                                                                                                                                         |
-| `SlackEventHandlerMap`               | `Map<eventType, SlackEventHandler>` — register one handler per Slack event type (`app_mention`, `message`, …).                                                                                                                           |
-| `SlackCommandHandlerMap`             | `Map<commandKeyword, SlackCommandHandler>` — register one handler per slash command (`/deploy`, …).                                                                                                                                      |
-| `SlackInteractionHandlerMap`         | `Map<routingKey, SlackInteractionHandler>` — keys are `${type}:${identifier}`; see [interaction routing](#interaction-routing).                                                                                                          |
-| `SlackError`                         | `ServerkitError` subclass for non-HTTP domain failures (signature mismatch, webhook POST failed, …).                                                                                                                                     |
-| `verifySlackSignature(input)`        | Pure helper that validates Slack's v0 HMAC scheme + replay window. No request/context coupling.                                                                                                                                          |
-| `SlackSignaturePolicy`               | `@maroonedsoftware/policies` form of `verifySlackSignature` (registered under `SLACK_SIGNATURE_POLICY`). Delegates to the helper but answers as a `PolicyResult`, so it slots into ServerKit's policy pipeline.                          |
-| `interactionRouteKey(payload)`       | Helper that produces the `SlackInteractionHandlerMap` key for a given payload.                                                                                                                                                           |
-| `slackEventIdempotencyKey(envelope)` | Pure helper that derives a stable de-dup key (`slack:event:{team_id}:{event_id}`) for an `event_callback` envelope.                                                                                                                      |
+| Symbol                               | Purpose                                                                                                                                                                                                                                                        |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SlackConfig`                        | Abstract `@Injectable()` token; carries `botToken`, optional `signingSecret`, `appToken`, `incomingWebhookUrl`, `signatureMaxAgeSeconds`, `requestTimeoutMs`, `apiBaseUrl`, `fetch`, `retries`, `rejectRateLimitedCalls`. Consumer registers a concrete value. |
+| `SlackClient`                        | Wraps `@slack/web-api`'s `WebClient`; routes its diagnostics through ServerKit's `Logger`. Methods: `postMessage`, `updateMessage`, `deleteMessage`, `openView`, `postWebhook`, `openSocketModeUrl`. Underlying SDK reachable at `.web`.                       |
+| `SlackDispatcher`                    | Three-method service: `dispatchEvent`, `dispatchCommand`, `dispatchInteraction`.                                                                                                                                                                               |
+| `SlackEventHandlerMap`               | `Map<eventType, SlackEventHandler>` — register one handler per Slack event type (`app_mention`, `message`, …).                                                                                                                                                 |
+| `SlackCommandHandlerMap`             | `Map<commandKeyword, SlackCommandHandler>` — register one handler per slash command (`/deploy`, …).                                                                                                                                                            |
+| `SlackInteractionHandlerMap`         | `Map<routingKey, SlackInteractionHandler>` — keys are `${type}:${identifier}`; see [interaction routing](#interaction-routing).                                                                                                                                |
+| `SlackError`                         | `ServerkitError` subclass for non-HTTP domain failures (signature mismatch, webhook POST failed, …).                                                                                                                                                           |
+| `verifySlackSignature(input)`        | Pure helper that validates Slack's v0 HMAC scheme + replay window. No request/context coupling.                                                                                                                                                                |
+| `SlackSignaturePolicy`               | `@maroonedsoftware/policies` form of `verifySlackSignature` (registered under `SLACK_SIGNATURE_POLICY`). Delegates to the helper but answers as a `PolicyResult`, so it slots into ServerKit's policy pipeline.                                                |
+| `interactionRouteKey(payload)`       | Helper that produces the `SlackInteractionHandlerMap` key for a given payload.                                                                                                                                                                                 |
+| `slackEventIdempotencyKey(envelope)` | Pure helper that derives a stable de-dup key (`slack:event:{team_id}:{event_id}`) for an `event_callback` envelope.                                                                                                                                            |
 
 ## Configuration
 
@@ -65,6 +65,8 @@ registry.register(SlackConfig).useValue(slackConfig);
 | `apiBaseUrl`             | no       | Forwarded to `WebClient` as `slackApiUrl`.                                                                                                         |
 | `requestTimeoutMs`       | no       | Timeout for `postWebhook` (default 10s).                                                                                                           |
 | `fetch`                  | no       | The transport for every outbound call. See [bringing your own fetch](#bringing-your-own-fetch).                                                    |
+| `retries`                | no       | Forwarded to `WebClient` as `retryConfig: { retries }`. Defaults to the SDK's ten retries over about thirty minutes; see below.                    |
+| `rejectRateLimitedCalls` | no       | Forwarded to `WebClient`: reject a rate-limited call instead of pausing every call until `Retry-After` has passed.                                 |
 | `incomingWebhookUrl`     | no       | `SlackClient.postWebhook` default URL when no per-call URL is supplied.                                                                            |
 | `signatureMaxAgeSeconds` | no       | Replay-protection window for your signature verifier (default `300`).                                                                              |
 
@@ -93,6 +95,14 @@ await slack.web.users.info({ user: 'U123' });
 
 ```ts
 registry.register(SlackConfig).useValue({ ...appConfig.getAs<SlackConfig>('slack'), fetch: host.fetch });
+```
+
+### Owning retries
+
+`WebClient` retries a failed call (a transport error, a non-200, a rate limit it waited out) ten times over about thirty minutes by default, in the background. When something else already owns retrying (a job queue, or a host that abandons a call at its own deadline), those retries carry on after the caller has given up and can deliver a message long after it stopped being true. Set `retries: 0`, and `rejectRateLimitedCalls: true` if a rate limit should fail the call rather than pause it:
+
+```ts
+registry.register(SlackConfig).useValue({ ...slackConfig, fetch: host.fetch, retries: 0, rejectRateLimitedCalls: true });
 ```
 
 ### The app token

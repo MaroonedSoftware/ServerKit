@@ -59,6 +59,21 @@ export interface SlackConfig {
    * timeout; an implementation that enforces its own deadline as well may ignore it.
    */
   fetch?: SlackFetch;
+  /**
+   * How many times the Web API client retries a call that failed: a transport error, a non-200, or
+   * a rate limit it waited out. Forwarded to `@slack/web-api` as `retryConfig: { retries }`.
+   * Defaults to the SDK's own policy, ten retries over about thirty minutes.
+   *
+   * Set `0` when the caller owns retrying (a job queue, or a host that abandons a call at its own
+   * deadline): the SDK's retries otherwise carry on in the background after the caller has given
+   * up, and can deliver a message long after it stopped being true.
+   */
+  retries?: number;
+  /**
+   * Reject a rate-limited Web API call with `WebAPIRateLimitedError` instead of pausing every call
+   * until Slack's `Retry-After` has passed. Forwarded as-is. Defaults to `false`, the SDK's own.
+   */
+  rejectRateLimitedCalls?: boolean;
 }
 
 /**
