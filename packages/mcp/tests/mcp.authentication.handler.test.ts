@@ -1,16 +1,14 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { invalidAuthenticationSession } from '@maroonedsoftware/authentication';
 import { McpAuthenticationHandler, MCP_DEFAULT_SUBJECT } from '../src/mcp.authentication.handler.js';
 import { MCP_DEFAULT_REQUEST_TIMEOUT_MS, type McpConfig } from '../src/mcp.config.js';
 import { IsMcpError } from '../src/mcp.error.js';
-import { makeLogger } from './helpers.js';
 
 const TOKEN = 'sk-secret-token';
 
 const makeHandler = (config: Partial<McpConfig> = {}) => {
-  const logger = makeLogger();
-  const handler = new McpAuthenticationHandler({ serverName: 'test', version: '0.0.0', ...config }, logger);
-  return { handler, logger };
+  const handler = new McpAuthenticationHandler({ serverName: 'test', version: '0.0.0', ...config });
+  return { handler };
 };
 
 describe('McpAuthenticationHandler', () => {
@@ -25,23 +23,6 @@ describe('McpAuthenticationHandler', () => {
       const { handler } = makeHandler({ bearerToken: TOKEN });
 
       await expect(handler.authenticate('bearer', 'wrong-token')).resolves.toBe(invalidAuthenticationSession);
-    });
-
-    it('logs a mismatch at debug, not warn, since a chain reaches it on every request', async () => {
-      const { handler, logger } = makeHandler({ bearerToken: TOKEN });
-
-      await handler.authenticate('bearer', 'wrong-token');
-
-      expect(logger.debug).toHaveBeenCalledOnce();
-      expect(logger.warn).not.toHaveBeenCalled();
-    });
-
-    it('keeps the presented token out of the logs', async () => {
-      const { handler, logger } = makeHandler({ bearerToken: TOKEN });
-
-      await handler.authenticate('bearer', 'wrong-token');
-
-      expect(JSON.stringify(vi.mocked(logger.debug).mock.calls)).not.toContain('wrong-token');
     });
 
     it('authenticates nobody when running unauthenticated by explicit request', async () => {

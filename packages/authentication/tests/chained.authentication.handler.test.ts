@@ -1,10 +1,13 @@
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { DateTime } from 'luxon';
 import { Injectable, InjectKitRegistry } from 'injectkit';
 import { AuthenticationHandlerChain, ChainedAuthenticationHandler } from '../src/chained.authentication.handler.js';
 import { AuthenticationHandlerMap } from '../src/authentication.scheme.handler.js';
 import { invalidAuthenticationSession, type AuthenticationSession } from '../src/types.js';
 import type { AuthenticationHandler, AuthorizationScheme } from '../src/authentication.handler.js';
+import { Logger } from '@maroonedsoftware/logger';
+
+const makeLogger = (): Logger => ({ error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn(), trace: vi.fn() });
 
 const makeSession = (subject: string): AuthenticationSession => ({
   subject,
@@ -23,8 +26,13 @@ const makeHandler = (session: AuthenticationSession) => ({ authenticate: vi.fn(a
 const makeChain = (...handlers: AuthenticationHandler[]) => {
   const chain = new AuthenticationHandlerChain();
   chain.push(...handlers);
-  return new ChainedAuthenticationHandler(chain);
+  return new ChainedAuthenticationHandler(chain, logger);
 };
+
+let logger: Logger;
+beforeEach(() => {
+  logger = makeLogger();
+});
 
 describe('ChainedAuthenticationHandler', () => {
   describe('authenticate', () => {
@@ -68,6 +76,22 @@ describe('ChainedAuthenticationHandler', () => {
       expect(second.authenticate).toHaveBeenCalledOnce();
     });
 
+    it('logs once at debug when every handler declines, without the credential', async () => {
+      const chain = makeChain(makeHandler(invalidAuthenticationSession), makeHandler(invalidAuthenticationSession));
+
+      await chain.authenticate('bearer', 'secret-credential');
+
+      expect(logger.debug).toHaveBeenCalledOnce();
+      expect(logger.warn).not.toHaveBeenCalled();
+      expect(JSON.stringify(vi.mocked(logger.debug).mock.calls)).not.toContain('secret-credential');
+    });
+
+    it('does not log when a handler authenticates', async () => {
+      await makeChain(makeHandler(invalidAuthenticationSession), makeHandler(makeSession('alice'))).authenticate('bearer', 'credential');
+
+      expect(logger.debug).not.toHaveBeenCalled();
+    });
+
     it('returns the sentinel when the chain is empty', async () => {
       const result = await makeChain().authenticate('bearer', 'credential');
 
@@ -107,6 +131,7 @@ describe('ChainedAuthenticationHandler', () => {
 
     const build = () => {
       const registry = new InjectKitRegistry();
+      registry.register(Logger).useValue(makeLogger());
       registry.register(FirstHandler).useClass(FirstHandler).asSingleton();
       registry.register(SecondHandler).useClass(SecondHandler).asSingleton();
       registry.register(AuthenticationHandlerChain).useArray(AuthenticationHandlerChain).push(FirstHandler).push(SecondHandler);

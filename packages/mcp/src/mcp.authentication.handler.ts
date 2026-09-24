@@ -7,7 +7,6 @@ import {
   type AuthenticationSession,
   type AuthorizationScheme,
 } from '@maroonedsoftware/authentication';
-import { Logger } from '@maroonedsoftware/logger';
 import { McpConfig, MCP_DEFAULT_REQUEST_TIMEOUT_MS } from './mcp.config.js';
 import { compareMcpToken, isBlankBearerToken } from './mcp.auth.js';
 import { McpError } from './mcp.error.js';
@@ -45,10 +44,7 @@ export const MCP_DEFAULT_SUBJECT = 'mcp' as const;
  */
 @Injectable()
 export class McpAuthenticationHandler implements AuthenticationHandler {
-  constructor(
-    private readonly config: McpConfig,
-    private readonly logger: Logger,
-  ) {}
+  constructor(private readonly config: McpConfig) {}
 
   /**
    * Validate a presented bearer token against {@link McpConfig.bearerToken}.
@@ -96,9 +92,9 @@ export class McpAuthenticationHandler implements AuthenticationHandler {
     }
 
     if (!compareMcpToken(value, bearerToken)) {
-      // `debug`, not `warn`: behind a chain every JWT-bearing request reaches this
-      // handler too, so a mismatch is the ordinary case, not a signal.
-      this.logger.debug('MCP bearer token did not match');
+      // Deliberately silent: behind a chain every JWT-bearing request reaches this
+      // handler too, so a mismatch is the ordinary case. `ChainedAuthenticationHandler`
+      // logs when no handler accepts the credential, which this handler cannot know.
       return invalidAuthenticationSession;
     }
 

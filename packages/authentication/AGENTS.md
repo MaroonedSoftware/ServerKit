@@ -371,6 +371,9 @@ everywhere else pass nothing, and resource tokens are refused. Answer a 401 ther
   `ChainedAuthenticationHandler` relies on that split: a sentinel moves to the next handler, a
   throw stops the chain. A handler that threw on a bad credential would make one member of a
   chain able to reject a credential meant for another.
+- **Chain members do not log a decline.** Every credential is declined by all but one member, so a
+  per-handler log line fires on every request. `ChainedAuthenticationHandler` takes a `Logger` and
+  logs once, at `debug`, only when no member accepted the credential.
 - **One handler per scheme.** To put two kinds of credential on `bearer` (a session JWT and a
   service's static token, say), register `ChainedAuthenticationHandler` for the scheme and put the
   real handlers in an `AuthenticationHandlerChain`, most specific first.
