@@ -8,7 +8,13 @@ import { DiscordError } from './discord.error.js';
  * without pattern-matching on error messages.
  */
 export type DiscordSignatureFailureReason =
-  'missing_timestamp' | 'invalid_timestamp' | 'stale_timestamp' | 'missing_signature' | 'invalid_signature' | 'invalid_public_key';
+  | 'missing_public_key'
+  | 'missing_timestamp'
+  | 'invalid_timestamp'
+  | 'stale_timestamp'
+  | 'missing_signature'
+  | 'invalid_signature'
+  | 'invalid_public_key';
 
 /**
  * Fixed SPKI (`SubjectPublicKeyInfo`) DER prefix for an Ed25519 public key. The
@@ -26,8 +32,12 @@ const ED25519_PUBLIC_KEY_BYTES = 32;
  * the request — the helper does no header lookups or body reads of its own.
  */
 export type VerifyDiscordSignatureInput = {
-  /** Application Ed25519 public key as hex (`DiscordConfig.publicKey`). */
-  publicKey: string;
+  /**
+   * Application Ed25519 public key as hex (`DiscordConfig.publicKey`). Optional in the config
+   * because a Gateway-only bot never verifies a request; verification without one fails with
+   * `missing_public_key`.
+   */
+  publicKey: string | undefined;
   /** Raw, unparsed request body — exactly as Discord sent it. */
   rawBody: string;
   /** Value of the `X-Signature-Timestamp` header. */
@@ -107,6 +117,12 @@ const publicKeyFromHex = (publicKey: string): KeyObject => {
  */
 export const verifyDiscordSignature = (input: VerifyDiscordSignatureInput): void => {
   const { publicKey, rawBody, timestamp, signature, maxAgeSeconds, now = Math.floor(DateTime.now().toSeconds()) } = input;
+
+  if (!publicKey) {
+    throw new DiscordError('Discord signature verification needs DiscordConfig.publicKey, which is not set').withInternalDetails({
+      reason: 'missing_public_key' satisfies DiscordSignatureFailureReason,
+    });
+  }
 
   if (!timestamp) {
     throw new DiscordError('Discord request missing X-Signature-Timestamp header').withInternalDetails({

@@ -15,18 +15,18 @@ pnpm add @maroonedsoftware/discord
 
 ## Exports
 
-| Symbol                                          | Purpose                                                                                                                                                                                                                                       |
-| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DiscordConfig`                                 | Abstract `@Injectable()` token; carries `botToken`, `publicKey`, `applicationId`, optional `signatureMaxAgeSeconds`. Consumer registers a concrete value.                                                                                     |
-| `DiscordClient`                                 | `fetch`-based REST wrapper. Methods: `createMessage`, `createFollowupMessage`, `editOriginalInteractionResponse`, `deleteOriginalInteractionResponse`, `bulkOverwriteGlobalCommands`, `bulkOverwriteGuildCommands`, plus a generic `request`. |
-| `DiscordDispatcher`                             | Single-method service: `dispatchInteraction`.                                                                                                                                                                                                 |
-| `DiscordInteractionHandlerMap`                  | `Map<routingKey, DiscordInteractionHandler>` — keys are `${kind}:${identifier}`; see [interaction routing](#interaction-routing).                                                                                                             |
-| `DiscordError`                                  | `ServerkitError` subclass for non-HTTP domain failures (signature mismatch, REST call failed, …).                                                                                                                                             |
-| `verifyDiscordSignature(input)`                 | Pure helper that validates Discord's Ed25519 signature (with optional replay window). No request/context coupling.                                                                                                                            |
-| `DiscordSignaturePolicy`                        | `@maroonedsoftware/policies` form of `verifyDiscordSignature` (registered under `DISCORD_SIGNATURE_POLICY`). Delegates to the helper but answers as a `PolicyResult`, so it slots into ServerKit's policy pipeline.                           |
-| `interactionRouteKey(interaction)`              | Helper that produces the `DiscordInteractionHandlerMap` key for a given interaction.                                                                                                                                                          |
-| `discordInteractionIdempotencyKey(interaction)` | Pure helper → `discord:interaction:{interaction.id}`. Stable key for optional [side-effect de-duplication](#de-duplicating-side-effects).                                                                                                     |
-| `InteractionType` / `InteractionCallbackType`   | Numeric enums for Discord's interaction and callback `type` values.                                                                                                                                                                           |
+| Symbol                                          | Purpose                                                                                                                                                                                                                                                                                                                    |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DiscordConfig`                                 | Abstract `@Injectable()` token; carries `botToken`, `applicationId`, optional `publicKey`, `signatureMaxAgeSeconds`, `requestTimeoutMs`, `apiBaseUrl`, `fetch`. Consumer registers a concrete value.                                                                                                                       |
+| `DiscordClient`                                 | `fetch`-based REST wrapper. Methods: `createMessage`, `createFollowupMessage`, `editOriginalInteractionResponse`, `deleteOriginalInteractionResponse`, `bulkOverwriteGlobalCommands`, `bulkOverwriteGuildCommands`, `deferInteraction`, `getGatewayBot`, `getCurrentUser`, `getChannelMessages`, plus a generic `request`. |
+| `DiscordDispatcher`                             | Single-method service: `dispatchInteraction`.                                                                                                                                                                                                                                                                              |
+| `DiscordInteractionHandlerMap`                  | `Map<routingKey, DiscordInteractionHandler>` — keys are `${kind}:${identifier}`; see [interaction routing](#interaction-routing).                                                                                                                                                                                          |
+| `DiscordError`                                  | `ServerkitError` subclass for non-HTTP domain failures (signature mismatch, REST call failed, …).                                                                                                                                                                                                                          |
+| `verifyDiscordSignature(input)`                 | Pure helper that validates Discord's Ed25519 signature (with optional replay window). No request/context coupling.                                                                                                                                                                                                         |
+| `DiscordSignaturePolicy`                        | `@maroonedsoftware/policies` form of `verifyDiscordSignature` (registered under `DISCORD_SIGNATURE_POLICY`). Delegates to the helper but answers as a `PolicyResult`, so it slots into ServerKit's policy pipeline.                                                                                                        |
+| `interactionRouteKey(interaction)`              | Helper that produces the `DiscordInteractionHandlerMap` key for a given interaction.                                                                                                                                                                                                                                       |
+| `discordInteractionIdempotencyKey(interaction)` | Pure helper → `discord:interaction:{interaction.id}`. Stable key for optional [side-effect de-duplication](#de-duplicating-side-effects).                                                                                                                                                                                  |
+| `InteractionType` / `InteractionCallbackType`   | Numeric enums for Discord's interaction and callback `type` values.                                                                                                                                                                                                                                                        |
 
 ## Configuration
 
@@ -50,16 +50,20 @@ registry.register(DiscordConfig).useValue(discordConfig);
     "publicKey": "abc123...", // application Ed25519 public key (hex)
     "applicationId": "...", // application (client) id
     "signatureMaxAgeSeconds": 300, // optional; off by default
+    "apiBaseUrl": "https://discord.com/api/v10", // optional
   },
 }
 ```
 
-| Field                    | Required | Used by                                                                             |
-| ------------------------ | -------- | ----------------------------------------------------------------------------------- |
-| `botToken`               | yes      | `DiscordClient` — sent as `Authorization: Bot <token>` on bot-scoped routes.        |
-| `publicKey`              | yes      | Signature verification (Discord signs requests with the matching private key).      |
-| `applicationId`          | yes      | `DiscordClient` interaction-followup and command-registration routes.               |
-| `signatureMaxAgeSeconds` | no       | Optional replay-protection window. **Off by default** (Discord mandates no window). |
+| Field                    | Required | Used by                                                                                                                                                            |
+| ------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `botToken`               | yes      | `DiscordClient` — sent as `Authorization: Bot <token>` on bot-scoped routes.                                                                                       |
+| `publicKey`              | no       | Signature verification (Discord signs requests with the matching private key). Needed only when Discord calls you over HTTP; verification fails closed without it. |
+| `applicationId`          | yes      | `DiscordClient` interaction-followup and command-registration routes.                                                                                              |
+| `signatureMaxAgeSeconds` | no       | Optional replay-protection window. **Off by default** (Discord mandates no window).                                                                                |
+| `requestTimeoutMs`       | no       | Per-request REST timeout (default 10s). `request` also takes a per-call `timeoutMs`.                                                                               |
+| `apiBaseUrl`             | no       | REST base URL (default `DISCORD_API_BASE`, `https://discord.com/api/v10`).                                                                                         |
+| `fetch`                  | no       | The transport for every REST call. See [bringing your own fetch](#bringing-your-own-fetch).                                                                        |
 
 ## Sending messages
 
@@ -78,7 +82,17 @@ await discord.createFollowupMessage(interaction.token, { content: 'still working
 await discord.request('GET', '/users/@me');
 ```
 
-Every method throws `DiscordError` (with `{ status, body, url }` on `internalDetails`) on a non-2xx response.
+Every method throws `DiscordError` (with `{ status, body, url }` on `internalDetails`) on a non-2xx response. On a 429, `internalDetails.retryAfter` carries Discord's wait in seconds, from the body's `retry_after` or else the `Retry-After` header. A call that never reached Discord throws `DiscordError` too, with the transport's reason on `internalDetails.reason`. The bot token and any interaction token are redacted from it, and no `cause` is attached, because the cause would quote them.
+
+Other helpers: `deferInteraction(interaction, 'message' | 'update')` acknowledges now and answers later (callback type 5 or 6). `getGatewayBot()` returns the Gateway URL and identify budget. `getCurrentUser()` proves the token works. `getChannelMessages(channelId, { after, limit })` reads a page of messages.
+
+### Bringing your own fetch
+
+`DiscordConfig.fetch` routes every REST call through a transport the caller owns: an allowlisting host, a proxy, or a test. It defaults to the global `fetch`. The client passes an `AbortSignal` carrying its timeout.
+
+```ts
+registry.register(DiscordConfig).useValue({ ...appConfig.getAs<DiscordConfig>('discord'), fetch: host.fetch });
+```
 
 ## Receiving Discord interactions
 
@@ -201,7 +215,7 @@ try {
 } catch (err) {
   if (err instanceof DiscordError) {
     // err.internalDetails.reason is one of:
-    //   'missing_timestamp' | 'invalid_timestamp' | 'stale_timestamp'
+    //   'missing_public_key' | 'missing_timestamp' | 'invalid_timestamp' | 'stale_timestamp'
     //   'missing_signature' | 'invalid_signature' | 'invalid_public_key'
     throw httpError(401).withCause(err);
   }
@@ -211,9 +225,10 @@ try {
 
 What the helper enforces:
 
+1. A public key is configured. Without one the helper throws with reason `missing_public_key`, so an HTTP route on a Gateway-only config fails closed.
 1. `X-Signature-Timestamp` is present.
-2. The Ed25519 signature in `X-Signature-Ed25519` verifies over `timestamp + rawBody` using the application public key (via Node's native `crypto` — no third-party dependency).
-3. If `maxAgeSeconds` is provided, `|now - timestamp| <= maxAgeSeconds` (replay protection). Discord does not require this, so it is **off by default**.
+1. The Ed25519 signature in `X-Signature-Ed25519` verifies over `timestamp + rawBody` using the application public key (via Node's native `crypto` — no third-party dependency).
+1. If `maxAgeSeconds` is provided, `|now - timestamp| <= maxAgeSeconds` (replay protection). Discord does not require this, so it is **off by default**.
 
 On any failure the helper throws `DiscordError` with `internalDetails.reason` set to a `DiscordSignatureFailureReason` code. Map to HTTP 401 at the route boundary. For deterministic tests, pass `now` (Unix seconds) to override the clock.
 

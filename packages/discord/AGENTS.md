@@ -41,11 +41,12 @@ Runtime dependencies: `@maroonedsoftware/errors`, `@maroonedsoftware/logger`,
 
 ### `.` — config and errors
 
-| Export           | Kind                       | Shape                                                                                | Notes                                                  |
-| ---------------- | -------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------ |
-| `DiscordConfig`  | interface + abstract class | `{ botToken, publicKey, applicationId, signatureMaxAgeSeconds?, requestTimeoutMs? }` | Declaration-merged so one symbol is type and DI token. |
-| `DiscordError`   | class                      | `extends ServerkitError`                                                             | —                                                      |
-| `IsDiscordError` | type guard                 | `(error: unknown) => error is DiscordError`                                          | —                                                      |
+| Export           | Kind                       | Shape                                                                                                      | Notes                                                  |
+| ---------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `DiscordConfig`  | interface + abstract class | `{ botToken, applicationId, publicKey?, signatureMaxAgeSeconds?, requestTimeoutMs?, apiBaseUrl?, fetch? }` | Declaration-merged so one symbol is type and DI token. |
+| `DiscordFetch`   | type                       | `(url, { method, headers, body?, signal }) => Promise<Response>`                                           | The global `fetch` satisfies it.                       |
+| `DiscordError`   | class                      | `extends ServerkitError`                                                                                   | —                                                      |
+| `IsDiscordError` | type guard                 | `(error: unknown) => error is DiscordError`                                                                | —                                                      |
 
 `publicKey` is the Ed25519 verification key; `botToken` authenticates REST calls. They are different
 credentials.
@@ -80,13 +81,15 @@ credentials.
 
 ### `.` — client
 
-| Export                               | Kind     | Shape                                                                    | Notes                               |
-| ------------------------------------ | -------- | ------------------------------------------------------------------------ | ----------------------------------- |
-| `DiscordClient`                      | class    | `createMessage`, `createInteractionResponse`, `createFollowupMessage`, … | Built-in REST client, no SDK.       |
-| `DISCORD_API_BASE`                   | constant | —                                                                        | —                                   |
-| `DISCORD_DEFAULT_REQUEST_TIMEOUT_MS` | constant | —                                                                        | —                                   |
-| `DiscordRequestOptions`              | type     | —                                                                        | —                                   |
-| `redactDiscordWebhookToken`          | function | Strips the token from a webhook URL before logging                       | Use before logging any webhook URL. |
+| Export                               | Kind     | Shape                                                                                                                                                            | Notes                                                                          |
+| ------------------------------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `DiscordClient`                      | class    | `createMessage`, `createInteractionResponse`, `createFollowupMessage`, `deferInteraction`, `getGatewayBot`, `getCurrentUser`, `getChannelMessages`, `request`, … | Built-in REST client, no SDK. Every call goes through `config.fetch` when set. |
+| `DiscordGatewayBot`                  | type     | `{ url, shards, session_start_limit }`                                                                                                                           | What `getGatewayBot` answers.                                                  |
+| `DiscordChannelMessagesQuery`        | type     | `{ after?, limit? }`                                                                                                                                             | —                                                                              |
+| `DISCORD_API_BASE`                   | constant | —                                                                                                                                                                | —                                                                              |
+| `DISCORD_DEFAULT_REQUEST_TIMEOUT_MS` | constant | —                                                                                                                                                                | —                                                                              |
+| `DiscordRequestOptions`              | type     | `{ body?, auth?, timeoutMs? }`                                                                                                                                   | —                                                                              |
+| `redactDiscordWebhookToken`          | function | Strips the token from a webhook URL before logging                                                                                                               | Use before logging any webhook URL.                                            |
 
 ### `./comms`
 
@@ -178,6 +181,10 @@ async handle(interaction, context) {
 - **`InteractionType` and `InteractionCallbackType` are const objects, not TS enums** (each exports
   both a value and a type of the same name). `isolatedModules`-friendly, but they do not behave like
   enums for reverse lookup.
+- **`publicKey` is optional** because a Gateway-only bot never verifies a request. Without it,
+  verification fails closed with reason `missing_public_key`.
+- **A transport failure has no `cause`.** The cause would quote the URL, and with it an interaction
+  token; the redacted reason is in `internalDetails.reason`. A 429 carries `retryAfter` (seconds).
 - **`publicKey` verifies, `botToken` authenticates.** Swapping them produces a signature failure on
   every request and a 401 on every REST call, with no hint that the two are transposed.
 
