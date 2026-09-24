@@ -12,9 +12,19 @@ type Level = (typeof LEVELS)[number];
  * Pino accepts either `(message, ...interpolation)` or `(mergeObject, message?, ...interpolation)`.
  * ServerKit's `Logger` takes `(message, ...optionalParams)`, so a merge object is moved behind the
  * message and merged with the child bindings, keeping the message first wherever there is one.
+ *
+ * An `Error` in the merge-object position is passed through intact rather than spread, since its
+ * `name`, `message` and `stack` are not enumerable and a spread would drop them. The bindings follow
+ * it as a separate parameter, matching how ServerKit logs errors (`logger.error(err, meta)`).
  */
 const toLoggerArgs = (bindings: Record<string, unknown>, args: unknown[]): unknown[] => {
   const [first, ...rest] = args;
+
+  if (first instanceof Error) {
+    const [message, ...interpolation] = rest;
+    const meta = Object.keys(bindings).length === 0 ? [] : [bindings];
+    return message === undefined ? [first, ...meta] : [message, first, ...meta, ...interpolation];
+  }
 
   if (typeof first === 'object' && first !== null) {
     const merged = { ...bindings, ...(first as Record<string, unknown>) };
