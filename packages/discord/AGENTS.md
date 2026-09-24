@@ -34,6 +34,8 @@ Runtime dependencies: `@maroonedsoftware/errors`, `@maroonedsoftware/logger`,
   - `.` — config, errors, signature verification, handler map, dispatcher, client.
   - `./comms` — the adapter. Pulls in `@maroonedsoftware/comms`. It lives here, not in `comms`,
     because `comms` must stay channel-free; see the root AGENTS.md.
+  - `./gateway` — `GatewayClient` and `Intents` over a caller-supplied socket. No extra
+    dependencies; kept off the root barrel so an interactions-only app never loads it.
 
 **Not a dependency: `koa`.** Your route parses the request and calls the dispatcher.
 
@@ -98,6 +100,22 @@ credentials.
 | `createDiscordNotifier` | function | `(client: DiscordClient, templates: TemplateRegistry) => Notifier`                  | For **proactive** sends outside an interaction (`createMessage`). |
 | `dispatchDiscord`       | function | `(router, client, interaction) => Promise<DiscordInteractionResponse \| undefined>` | `PING` → `PONG`; command → `command`; component → `action`.       |
 
+### `./gateway`
+
+| Export                               | Kind      | Shape                                                                                                                                                              | Notes                                             |
+| ------------------------------------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------- |
+| `GatewayClient`                      | class     | `new GatewayClient({ token, intents, gatewayUrl, connect, onDispatch, logger, onError?, backoff?, properties?, random? })`, `start()`, `stop()`, `isReady`, `user` | One shard, JSON, no compression.                  |
+| `Intents`                            | const     | `{ GUILDS, GUILD_MESSAGES, DIRECT_MESSAGES, MESSAGE_CONTENT }`                                                                                                     | Const object plus a type, like `InteractionType`. |
+| `SocketLike`                         | interface | `send(text)`, `close(code?, reason?)`, `onMessage(listener)`, `onClose(listener)`                                                                                  | Same shape as slack's `SocketLike`.               |
+| `SocketConnect`                      | type      | `(url) => SocketLike \| Promise<SocketLike>`                                                                                                                       | —                                                 |
+| `GatewayClientOptions`               | type      | —                                                                                                                                                                  | —                                                 |
+| `GatewayUser`                        | type      | The bot user from `READY`                                                                                                                                          | —                                                 |
+| `GatewayOpcode`                      | const     | The opcodes the client sends or handles                                                                                                                            | —                                                 |
+| `GATEWAY_FATAL_CLOSE_CODES`          | constant  | `4004, 4010–4014`                                                                                                                                                  | The client stops and calls `onError` on these.    |
+| `DISCORD_GATEWAY_VERSION`            | constant  | `10`                                                                                                                                                               | —                                                 |
+| `GATEWAY_DEFAULT_BACKOFF_INITIAL_MS` | constant  | `1_000`                                                                                                                                                            | —                                                 |
+| `GATEWAY_DEFAULT_BACKOFF_MAX_MS`     | constant  | `30_000`                                                                                                                                                           | —                                                 |
+
 ## Canonical usage
 
 ```typescript
@@ -156,6 +174,10 @@ async handle(interaction, context) {
   2xx.
 - Never log a webhook URL without `redactDiscordWebhookToken`.
 - Import `./comms` functions from `@maroonedsoftware/discord/comms`, never from the root.
+- Import `GatewayClient` and `Intents` from `@maroonedsoftware/discord/gateway`. Take the URL from
+  `getGatewayBot()`; the client appends `?v=10&encoding=json` itself.
+- An interaction received over the Gateway is acknowledged over REST (`createInteractionResponse`
+  or `deferInteraction`), within Discord's 3 seconds.
 
 ## Gotchas
 
@@ -178,6 +200,11 @@ async handle(interaction, context) {
 - **Discord does not redeliver HTTP interactions** the way Slack, WhatsApp, and Telegram redeliver
   events. `DiscordDispatchOptions.idempotency` is a conservative guard against duplicate _side
   effects_ from a proxy retry or a client double-submit, not a redelivery net.
+- **`MESSAGE_CONTENT` is privileged.** Requesting it without enabling it in the Developer Portal
+  closes the Gateway with 4014, which is fatal: the client stops and calls `onError`.
+- **`GatewayClient.stop()` ends the session** (it closes with 1000). Its own reconnects close with
+  4000 so the session stays resumable.
+- **The Gateway client is single-shard.** Past 2,500 guilds Discord closes with 4011 (fatal).
 - **`InteractionType` and `InteractionCallbackType` are const objects, not TS enums** (each exports
   both a value and a type of the same name). `isolatedModules`-friendly, but they do not behave like
   enums for reverse lookup.
@@ -202,6 +229,10 @@ src/
                                 discordInteractionIdempotencyKey
   client/discord.client.ts      DiscordClient, redactDiscordWebhookToken
   comms.ts                      Subpath entry — notifier, render, interactionReply, dispatchDiscord
+  discord.socket.ts             SocketLike, SocketConnect
+  gateway/discord.gateway.client.ts  GatewayClient, GatewayOpcode, fatal close codes
+  gateway/discord.gateway.intents.ts Intents
+  gateway.ts                    Subpath entry — SocketLike, Intents, GatewayClient
 ```
 
 Tests are in `tests/`, mirroring `src/`.

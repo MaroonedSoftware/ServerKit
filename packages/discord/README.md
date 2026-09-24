@@ -3,9 +3,10 @@
 Transport-agnostic Discord integration for ServerKit. The package gives you:
 
 - a DI-friendly `fetch`-based wrapper around Discord's REST API (v10) for sending messages, interaction followups, and slash-command registration — no SDK dependency, and
-- a single `DiscordDispatcher` service that routes parsed Discord interactions (slash commands, message components, modals, autocomplete) to typed handlers.
+- a single `DiscordDispatcher` service that routes parsed Discord interactions (slash commands, message components, modals, autocomplete) to typed handlers, and
+- a `GatewayClient` at `@maroonedsoftware/discord/gateway` that receives real-time events over the Gateway WebSocket, on a socket you supply.
 
-The package owns no HTTP routes or signature middleware — wire `DiscordDispatcher` from your own Koa, Express, Fastify, or Lambda handler. Real-time Gateway (WebSocket) events are out of scope; this package targets the HTTP **interactions** endpoint.
+The package owns no HTTP routes, signature middleware, or connections. Wire `DiscordDispatcher` from your own Koa, Express, Fastify, or Lambda handler, and hand the `GatewayClient` your own socket.
 
 ## Installation
 
@@ -253,10 +254,58 @@ if (isPolicyResultDenied(result)) throw httpError(401).withInternalDetails(resul
 
 The context (`rawBody` + a case-insensitive `getHeader` + `options`) is structurally compatible with `@maroonedsoftware/koa`'s `SignaturePolicyContext<DiscordSignatureOptions>`, so the koa `requireSignature` middleware can drive this policy when it's registered under the signature policy name — no koa dependency in this package.
 
+## Gateway
+
+`@maroonedsoftware/discord/gateway` receives real-time events (messages, interactions, guild changes) over the Discord Gateway, for a bot with no public HTTP endpoint. The caller supplies the socket, so the package never opens a connection of its own.
+
+```ts
+import { DiscordClient, DiscordConfig } from '@maroonedsoftware/discord';
+import { GatewayClient, Intents } from '@maroonedsoftware/discord/gateway';
+
+const discord = container.get(DiscordClient);
+
+const gateway = new GatewayClient({
+  token: container.get(DiscordConfig).botToken,
+  intents: Intents.GUILDS | Intents.GUILD_MESSAGES | Intents.MESSAGE_CONTENT,
+  gatewayUrl: async () => (await discord.getGatewayBot()).url,
+  connect: url => host.socket(url), // anything satisfying SocketLike
+  onDispatch: (event, data) => {
+    if (event === 'INTERACTION_CREATE') return handleInteraction(data);
+    if (event === 'MESSAGE_CREATE') return handleMessage(data);
+  },
+  logger,
+  onError: error => logger.error('Gateway stopped', error),
+});
+
+await gateway.start();
+// on shutdown
+gateway.stop();
+```
+
+`SocketLike` is the whole transport contract: `send(text)`, `close(code?, reason?)`, `onMessage(listener)`, and `onClose(listener)`. It has the same shape as `@maroonedsoftware/slack/socketmode`'s, so one implementation serves both. `connect` may answer with the socket or a promise of one.
+
+How it behaves:
+
+- **Hello** starts the heartbeat, with the first beat jittered, then sends **Identify**, or **Resume** when a session, a sequence, and a `resume_gateway_url` are held.
+- **Dispatch** records the sequence and hands every event to `onDispatch(event, data)`, `READY` and `RESUMED` included. `READY` sets `isReady` and `user`. A handler that throws or rejects is logged, and the client carries on.
+- A heartbeat that is never acknowledged means a **zombie** connection. The client closes it with 4000, which keeps the session, and resumes.
+- **Reconnect** (op 7) resumes. **Invalid Session** (op 9) resumes when Discord says it can, and otherwise identifies afresh after 1–5 seconds.
+- **Close codes** 4004 and 4010–4014 are fatal: the client stops and calls `onError`. 4014 means the app requested a privileged intent (such as `MESSAGE_CONTENT`) that the Developer Portal has not enabled. 4007 and 4009 end the session, so the next connection identifies. Any other close resumes, with backoff from 1s doubling to 30s, reset by the next `READY` or `RESUMED`.
+- `start()` rejects if the first connection cannot be opened. Later reconnects retry instead.
+- `stop()` closes with 1000, which ends the session, cancels timers, and never reconnects.
+
+Interactions arriving over the Gateway are acknowledged over REST, not in a response body: use `createInteractionResponse` or `deferInteraction`.
+
+### Gateway limits
+
+- **One shard.** It fits a single bot on a modest number of guilds. Discord requires sharding past 2,500 guilds (close code 4011).
+- **JSON only**, with no zlib or zstd compression and no ETF.
+- The client does not track the identify budget (`session_start_limit`). `getGatewayBot()` reports it if you want to check it.
+
 ## Limitations
 
-- HTTP interactions only. Real-time Gateway (WebSocket) events are out of scope.
 - v1 targets a single application via the bot token in `DiscordConfig`.
+- The Gateway client runs one shard, JSON only (see [Gateway limits](#gateway-limits)).
 
 ## Use with `@maroonedsoftware/comms`
 
@@ -289,7 +338,7 @@ http.post('/discord/interactions', async ctx => {
   interaction out of band (via `createInteractionResponse`) so every reply is delivered as a valid
   followup; `dispatchDiscord` then returns `undefined` and the route responds with an empty 2xx.
   Discord's ~3s ack window applies, so reply promptly.
-- There is **no inbound `message`** (HTTP interactions only). Buttons render as component action rows.
+- There is **no inbound `message`** from `dispatchDiscord` (HTTP interactions only; Gateway `MESSAGE_CREATE` events are yours to route). Buttons render as component action rows.
   `createDiscordNotifier(client, router.templates)` posts proactively via `createMessage`;
   `reply.sendTemplate` / `reply.sendNative` cover rich payloads (embeds, etc.).
 
