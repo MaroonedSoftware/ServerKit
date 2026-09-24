@@ -311,8 +311,9 @@ app.post('/mcp', { config: { body: ['application/json'] }, preHandler: [requireP
   and nothing mistakes it for a stored, revocable session key. It references nothing.
 - **Chain order does not affect correctness, only work.** Handlers decline by returning the
   sentinel, so a JWT-bearing request reaching `McpAuthenticationHandler` first simply falls through.
-  Put the cheaper or more common one first. This is also why a mismatch logs at `debug`: behind a
-  chain it is the ordinary case.
+  Put the cheaper or more common one first. This is also why a mismatch does not log: behind a
+  chain it is the ordinary case. `ChainedAuthenticationHandler` logs at `debug` when no handler
+  accepts the credential.
 - **Stateful mode requires session affinity.** `McpSessionRegistry` is an in-memory `Map`, so a
   session lives in one process. Behind a load balancer you need sticky routing, or externalised
   session/event state (the SDK's `eventStore`, backed by the optional `@maroonedsoftware/cache`
