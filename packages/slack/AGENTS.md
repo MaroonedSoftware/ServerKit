@@ -34,6 +34,8 @@ Runtime dependencies: `@maroonedsoftware/errors`, `@maroonedsoftware/logger`,
   - `.` — config, errors, signature verification, handler maps, dispatcher, client.
   - `./comms` — the adapter. Pulls in `@maroonedsoftware/comms`. It lives here, not in `comms`,
     because `comms` must stay channel-free; see the root AGENTS.md.
+  - `./socketmode` — `SocketModeClient` over a caller-supplied socket. No extra dependencies; kept
+    off the root barrel so an HTTP-only app never loads it.
 
 **Not a dependency: `koa`.** Your route parses the request and calls the dispatcher.
 
@@ -100,6 +102,19 @@ guard.
 | `dispatchSlackCommand`     | function | `(router, client, payload) => Promise<void>`                            | Replies via `response_url` when present.                                  |
 | `dispatchSlackInteraction` | function | `(router, client, payload) => Promise<void>`                            | **Only `block_actions`** is normalised.                                   |
 
+### `./socketmode`
+
+| Export                                   | Kind      | Shape                                                                                                              | Notes                                                               |
+| ---------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
+| `SocketModeClient`                       | class     | `new SocketModeClient({ openUrl, connect, handlers, logger, onError?, backoff? })`, `start()`, `stop()`, `isReady` | Acks every envelope before its handler runs.                        |
+| `SocketLike`                             | interface | `send(text)`, `close(code?, reason?)`, `onMessage(listener)`, `onClose(listener)`                                  | The whole transport contract. Same shape as discord's `SocketLike`. |
+| `SocketConnect`                          | type      | `(url) => SocketLike \| Promise<SocketLike>`                                                                       | —                                                                   |
+| `SocketModeHandlers`                     | type      | `{ onEventsApi?, onSlashCommand?, onInteractive? }`                                                                | Each gets `(payload, SocketModeEnvelopeMeta)`.                      |
+| `SocketModeEnvelopeMeta`                 | type      | `{ envelopeId, retryAttempt?, retryReason? }`                                                                      | —                                                                   |
+| `SocketModeClientOptions`                | type      | —                                                                                                                  | —                                                                   |
+| `SOCKET_MODE_DEFAULT_BACKOFF_INITIAL_MS` | constant  | `1_000`                                                                                                            | —                                                                   |
+| `SOCKET_MODE_DEFAULT_BACKOFF_MAX_MS`     | constant  | `30_000`                                                                                                           | —                                                                   |
+
 ## Canonical usage
 
 ```typescript
@@ -150,6 +165,9 @@ await dispatchSlackCommand(router, client, payload);
 - Ack within 3 seconds and do slow work in a job. Slack times out and retries.
 - Never log a webhook URL without `redactSlackUrl` — the token is in the path.
 - Import `./comms` functions from `@maroonedsoftware/slack/comms`, never from the root.
+- Import `SocketModeClient` from `@maroonedsoftware/slack/socketmode`. Pass
+  `openUrl: () => slackClient.openSocketModeUrl()`; never cache a Socket Mode URL, since each is
+  single-use.
 
 ## Gotchas
 
@@ -165,6 +183,9 @@ await dispatchSlackCommand(router, client, payload);
   `http` would be misrouted.
 - **Bot messages are filtered out** of the comms path (`bot_id`, `subtype: 'bot_message'`) to avoid
   loops. The native event handlers see them.
+- **Socket Mode acks are always empty.** The client acks before the handler runs, so a handler's
+  return value is discarded; `view_submission` `response_action` errors cannot be sent that way.
+  Reply through `response_url` or the Web API.
 - **`verifySlackSignature` throws; `SlackSignaturePolicy` denies.** Same logic, two shapes.
 - **`signingSecret` is optional** because a Socket Mode app never verifies a request. Without it,
   verification fails closed with reason `missing_signing_secret`; it never checks against an empty key.
@@ -192,6 +213,9 @@ src/
   client/slack.client.ts      SlackClient
   client/slack.logger.adapter.ts adaptLogger, redactSlackUrl
   comms.ts                    Subpath entry — notifier, render, and the three dispatch functions
+  slack.socket.ts             SocketLike, SocketConnect
+  client/slack.socket.mode.client.ts SocketModeClient
+  socketmode.ts               Subpath entry — SocketLike and SocketModeClient
 ```
 
 Tests are in `tests/`, mirroring `src/`.

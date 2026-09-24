@@ -351,6 +351,45 @@ if (isPolicyResultDenied(result)) throw httpError(401).withInternalDetails(resul
 
 The context (`rawBody` + a case-insensitive `getHeader` + `options`) is structurally compatible with `@maroonedsoftware/koa`'s `SignaturePolicyContext<SlackSignatureOptions>`, so the koa `requireSignature` middleware can drive this policy when it's registered under the signature policy name — no koa dependency in this package.
 
+## Socket Mode
+
+`@maroonedsoftware/slack/socketmode` receives events, slash commands, and interactive payloads over a Slack Socket Mode WebSocket, for an app with no public HTTP endpoint. The caller supplies the socket, so the package never opens a connection of its own.
+
+```ts
+import { SlackClient } from '@maroonedsoftware/slack';
+import { SocketModeClient } from '@maroonedsoftware/slack/socketmode';
+
+const slack = container.get(SlackClient); // SlackConfig.appToken must be set
+
+const socketMode = new SocketModeClient({
+  openUrl: () => slack.openSocketModeUrl(),
+  connect: url => host.socket(url), // anything satisfying SocketLike
+  handlers: {
+    onEventsApi: (event, { envelopeId }) => dispatcher.dispatchEvent(event),
+    onSlashCommand: payload => slack.postWebhook({ text: 'on it' }, payload.response_url),
+    onInteractive: payload => dispatcher.dispatchInteraction(payload),
+  },
+  logger,
+  onError: error => logger.error('Socket Mode stopped', error),
+});
+
+await socketMode.start();
+// on shutdown
+socketMode.stop();
+```
+
+`SocketLike` is the whole transport contract: `send(text)`, `close(code?, reason?)`, `onMessage(listener)`, and `onClose(listener)`. `connect` may answer with the socket or a promise of one.
+
+How it behaves:
+
+- **Every envelope is acked the moment it arrives**, before its handler runs, so a slow handler never misses Slack's 3-second window. The ack is always empty, so a handler cannot answer through it: reply with the payload's `response_url` or the Web API. That rules out `view_submission` `response_action` errors, which only travel in an ack.
+- Handlers get the payload plus `{ envelopeId, retryAttempt?, retryReason? }`. A handler that throws or rejects is logged, and the client carries on.
+- `hello` sets `isReady`.
+- `disconnect` with `refresh_requested` or `warning` opens a fresh URL and moves to it before closing the old socket. `link_disabled` stops the client and calls `onError`.
+- Any other close reconnects with backoff: 1s doubling to 30s (configurable through `backoff`), reset by the next `hello`.
+- `start()` rejects if the first URL or socket cannot be opened. Later reconnects retry instead.
+- `stop()` closes the socket and cancels any pending reconnect. The client never reconnects after it.
+
 ## Use with `@maroonedsoftware/comms`
 
 The `@maroonedsoftware/slack/comms` subpath adapts this package to the channel-agnostic
@@ -388,6 +427,7 @@ router.post('/slack/commands', async ctx => {
 ## Limitations
 
 - v1 supports a single workspace via the bot token in `SlackConfig`. Multi-workspace OAuth install is out of scope.
+- Socket Mode acks are always empty (see [Socket Mode](#socket-mode)).
 
 ## License
 
