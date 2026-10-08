@@ -1,4 +1,5 @@
 export * from './mcp.config.js';
+export * from './mcp.instructions.js';
 export * from './mcp.error.js';
 export * from './mcp.auth.js';
 export * from './mcp.auth.policy.js';

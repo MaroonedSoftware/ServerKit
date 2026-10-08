@@ -109,11 +109,12 @@ export class McpServerFactory {
    * connection: per request in stateless mode, per session in stateful mode.
    *
    * Advertises only the capabilities backed by a non-empty handler map, so a
-   * tools-only server doesn't claim resource support. Sends
-   * {@link McpConfig.instructions} in the `initialize` result when configured.
+   * tools-only server doesn't claim resource support.
+   *
+   * @param instructions - Text for the `initialize` result. Defaults to
+   *   {@link McpConfig.instructions}; omitted from `initialize` when blank.
    */
-  create(): Server {
-    const { instructions } = this.config;
+  create(instructions: string | undefined = this.config.instructions): Server {
     const server = new Server(
       { name: this.config.serverName, version: this.config.version },
       {

@@ -7,6 +7,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { McpServerFactory } from './mcp.server.factory.js';
 import { mcpContext, type McpRequestContext } from './mcp.request.context.js';
+import { resolveMcpInstructions, type McpDispatchOptions } from './mcp.instructions.js';
 
 /** A live MCP session: one SDK `Server` bound to one Streamable-HTTP transport. */
 type McpSession = { server: Server; transport: StreamableHTTPServerTransport };
@@ -54,8 +55,11 @@ export class McpSessionRegistry {
    * stateless mode.
    *
    * Writes the response (including SSE streams) directly to `exchange.res`.
+   *
+   * `options.instructions` is resolved only when this request opens a session,
+   * and the session keeps that text for its lifetime.
    */
-  async handle(exchange: McpStatefulExchange, context: McpRequestContext): Promise<void> {
+  async handle(exchange: McpStatefulExchange, context: McpRequestContext, options: McpDispatchOptions = {}): Promise<void> {
     const { req, res, body, sessionId } = exchange;
 
     let session = sessionId ? this.sessions.get(sessionId) : undefined;
@@ -70,15 +74,15 @@ export class McpSessionRegistry {
         );
         return;
       }
-      session = await this.open();
+      session = await this.open(await resolveMcpInstructions(options.instructions, context));
     }
 
     await mcpContext.run(context, () => session.transport.handleRequest(req, res, body));
   }
 
   /** Opens a new session: a fresh `Server` connected to a new Streamable-HTTP transport. */
-  private async open(): Promise<McpSession> {
-    const server = this.factory.create();
+  private async open(instructions: string | undefined): Promise<McpSession> {
+    const server = this.factory.create(instructions);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       onsessioninitialized: id => {

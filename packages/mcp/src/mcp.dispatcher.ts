@@ -1,11 +1,12 @@
 import { Injectable } from 'injectkit';
 import { Logger } from '@maroonedsoftware/logger';
-import { isJSONRPCRequest, type JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
+import { isInitializeRequest, isJSONRPCRequest, type JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 import { McpConfig, McpSessionMode } from './mcp.config.js';
 import { McpServerFactory } from './mcp.server.factory.js';
 import { McpSessionRegistry, type McpStatefulExchange } from './mcp.session.registry.js';
 import { KoaMcpTransport } from './mcp.transport.js';
 import { mcpContext, type McpRequestContext } from './mcp.request.context.js';
+import { resolveMcpInstructions, type McpDispatchOptions } from './mcp.instructions.js';
 
 /**
  * Single entry point for serving MCP over ServerKit's Koa transport. Selects the
@@ -61,12 +62,16 @@ export class McpDispatcher {
    *
    * The {@link McpRequestContext} is made ambient via {@link mcpContext} for the
    * duration of the call so the factory's stable handlers resolve it.
+   *
+   * `options.instructions` is resolved only for an `initialize` message, the one
+   * response that carries it, so a resolver costs nothing on any other call.
    */
-  async dispatch(message: JSONRPCMessage, context: McpRequestContext): Promise<JSONRPCMessage | undefined> {
+  async dispatch(message: JSONRPCMessage, context: McpRequestContext, options: McpDispatchOptions = {}): Promise<JSONRPCMessage | undefined> {
     const expectsResponse = isJSONRPCRequest(message);
+    const instructions = isInitializeRequest(message) ? await resolveMcpInstructions(options.instructions, context) : undefined;
 
     return mcpContext.run(context, async () => {
-      const server = this.factory.create();
+      const server = this.factory.create(instructions);
       const transport = new KoaMcpTransport();
       await server.connect(transport);
 
@@ -83,12 +88,13 @@ export class McpDispatcher {
    * Stateful dispatch: delegate to {@link McpSessionRegistry}, which reuses (or
    * opens) a session keyed by `Mcp-Session-Id` and writes the response — SSE
    * included — directly to `exchange.res`. Only valid when
-   * {@link McpDispatcher.sessionMode} is `'stateful'`.
+   * {@link McpDispatcher.sessionMode} is `'stateful'`. `options.instructions`
+   * is resolved when the request opens a session.
    */
-  async dispatchStateful(exchange: McpStatefulExchange, context: McpRequestContext): Promise<void> {
+  async dispatchStateful(exchange: McpStatefulExchange, context: McpRequestContext, options: McpDispatchOptions = {}): Promise<void> {
     if (this.sessionMode !== 'stateful') {
       this.logger.warn('dispatchStateful called while sessionMode is not "stateful"; check your route wiring');
     }
-    await this.sessions.handle(exchange, context);
+    await this.sessions.handle(exchange, context, options);
   }
 }

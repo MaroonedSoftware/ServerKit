@@ -55,6 +55,14 @@ it reads the `Authorization` header, which the authentication stack deletes.
 | `McpError`                       | class                      | `extends ServerkitError`                                                                                                 | —                                                                                                                                                                                                    |
 | `IsMcpError`                     | type guard                 | `(error: unknown) => error is McpError`                                                                                  | —                                                                                                                                                                                                    |
 
+### Instructions
+
+| Export                   | Kind      | Shape                                                                                                   | Notes                                                                                                             |
+| ------------------------ | --------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `McpInstructions`        | type      | `string \| ((context: McpContextBase) => string \| undefined \| Promise<string \| undefined>)`          | Fixed text or a resolver of the caller. `undefined` falls back to `McpConfig.instructions`; `''` sends none.      |
+| `McpDispatchOptions`     | interface | `{ instructions?: McpInstructions }`                                                                    | Last argument of `dispatch` / `dispatchStateful`. Per-endpoint or per-caller text without a container of its own. |
+| `resolveMcpInstructions` | function  | `(instructions: McpInstructions \| undefined, context: McpContextBase) => Promise<string \| undefined>` | What the dispatcher calls. Exported so a tool can render the same text.                                           |
+
 ### Auth
 
 | Export                            | Kind      | Shape                                                                                                          | Notes                                                                                                                            |
@@ -116,13 +124,13 @@ All three context types extend one base, so a new request-scoped value is declar
 
 ### Server, transport, dispatch
 
-| Export                | Kind  | Shape                                                                                                   | Notes                                                                                             |
-| --------------------- | ----- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `McpServerFactory`    | class | `@Injectable()`. `create(): Server`                                                                     | Memoizes `tools/list` and `resources/list` at construction; handlers are stable instance methods. |
-| `KoaMcpTransport`     | class | `implements Transport`. `receive(message)`, `response()`                                                | Single-exchange transport for **stateless** mode only.                                            |
-| `McpSessionRegistry`  | class | `@Injectable()`. `handle(exchange, context)`                                                            | In-memory `Map` of `Mcp-Session-Id` → `{ server, transport }`.                                    |
-| `McpStatefulExchange` | type  | `{ req: IncomingMessage; res: ServerResponse; body: unknown; sessionId? }`                              | —                                                                                                 |
-| `McpDispatcher`       | class | `@Injectable()`. `get sessionMode`, `dispatch(message, context)`, `dispatchStateful(exchange, context)` | The single entry point.                                                                           |
+| Export                | Kind  | Shape                                                                                                                       | Notes                                                                                             |
+| --------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `McpServerFactory`    | class | `@Injectable()`. `create(instructions?): Server`                                                                            | Memoizes `tools/list` and `resources/list` at construction; handlers are stable instance methods. |
+| `KoaMcpTransport`     | class | `implements Transport`. `receive(message)`, `response()`                                                                    | Single-exchange transport for **stateless** mode only.                                            |
+| `McpSessionRegistry`  | class | `@Injectable()`. `handle(exchange, context, options?)`                                                                      | In-memory `Map` of `Mcp-Session-Id` → `{ server, transport }`.                                    |
+| `McpStatefulExchange` | type  | `{ req: IncomingMessage; res: ServerResponse; body: unknown; sessionId? }`                                                  | —                                                                                                 |
+| `McpDispatcher`       | class | `@Injectable()`. `get sessionMode`, `dispatch(message, context, options?)`, `dispatchStateful(exchange, context, options?)` | The single entry point.                                                                           |
 
 `dispatch` returns `undefined` for a notification (no `id`) — the route acks with 202.
 
@@ -399,6 +407,17 @@ app.post('/mcp', { config: { body: ['application/json'] }, preHandler: [requireP
   for every conversation the server is attached to. A client may also ignore or truncate it. Keep
   it short, phrase guidance as "when the user asks about X", and never use it to tell the model to
   call a tool on every first turn. A blank string is treated as unset.
+- **Per-caller instructions are text, not access control.** An `McpInstructions` resolver can read
+  `authenticationSession` and resolve permission services from `container`, but the result only
+  steers the model. Every tool still enforces its own permissions, and the text must not name
+  anything the caller is not allowed to know. `tools/list` stays the same for every caller.
+- **Instructions are frozen per MCP session.** The resolver runs once, for `initialize`: per
+  request in stateless mode only when the message is `initialize`, and once per session in stateful
+  mode. A role change mid-session is not reflected, and a client may keep one connection across many
+  chats. Put anything that must be current in a tool.
+- **Per-user instructions need per-user identity.** Behind `McpAuthenticationHandler` every caller
+  is `McpConfig.subject`, so a resolver has no role to branch on. Authenticate with a
+  subject-resolving handler (JWT) first.
 - **`McpConfig` is declaration-merged** (interface + abstract class), like `Logger` and
   `ServerKitContext`. Do not split it.
 
@@ -409,6 +428,7 @@ src/
   index.ts                  Barrel
   mcp.config.ts             McpConfig (interface + token), McpSessionMode,
                             MCP_DEFAULT_REQUEST_TIMEOUT_MS
+  mcp.instructions.ts       McpInstructions, McpDispatchOptions, resolveMcpInstructions
   mcp.error.ts              McpError, IsMcpError
   mcp.auth.ts               compareMcpToken, isBlankBearerToken, verifyMcpBearer,
                             McpAuthInfo, McpAuthOptions, header constant

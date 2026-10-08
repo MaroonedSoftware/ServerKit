@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { createServer, type Server as HttpServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -9,9 +9,10 @@ import { McpServerFactory } from '../src/mcp.server.factory.js';
 import { McpSessionRegistry } from '../src/mcp.session.registry.js';
 import { McpToolHandlerMap, type McpToolHandler } from '../src/mcp.tool.handler.js';
 import { McpResourceHandlerMap } from '../src/mcp.resource.handler.js';
-import { createMcpRequestContext } from '../src/mcp.request.context.js';
+import { createMcpRequestContext, type McpContextBase } from '../src/mcp.request.context.js';
 import type { McpConfig } from '../src/mcp.config.js';
-import { makeLogger } from './helpers.js';
+import type { McpDispatchOptions } from '../src/mcp.instructions.js';
+import { makeAuthenticatedSession, makeLogger } from './helpers.js';
 
 /** A tool that upper-cases its message, so we can prove args flow end to end. */
 const shoutTool = (): McpToolHandler => ({
@@ -62,14 +63,14 @@ const initialize = (id: number) => ({
 });
 
 /** Serves a stateful dispatcher over real HTTP, the way a koa route hands it `req`/`res`. */
-const serveStateful = (dispatcher: McpDispatcher): HttpServer =>
+const serveStateful = (dispatcher: McpDispatcher, options?: McpDispatchOptions): HttpServer =>
   createServer((req, res) => {
     void (async () => {
       const raw = req.method === 'POST' ? await readBody(req) : '';
       const body = raw ? JSON.parse(raw) : undefined;
       const sessionId = Array.isArray(req.headers['mcp-session-id']) ? req.headers['mcp-session-id'][0] : req.headers['mcp-session-id'];
-      const context = createMcpRequestContext({ requestId: 'req-e2e', logger: makeLogger() });
-      await dispatcher.dispatchStateful({ req, res, body, sessionId }, context);
+      const context = createMcpRequestContext({ requestId: 'req-e2e', logger: makeLogger(), authenticationSession: makeAuthenticatedSession() });
+      await dispatcher.dispatchStateful({ req, res, body, sessionId }, context, options);
     })();
   });
 
@@ -164,6 +165,64 @@ describe('MCP e2e over real HTTP', () => {
       try {
         await client.connect(new StreamableHTTPClientTransport(new URL(url)));
         expect(client.getInstructions()).toBe(instructions);
+      } finally {
+        await client.close();
+        await close(server);
+      }
+    });
+
+    const dispatchInitialize = async (config: Partial<McpConfig>, options: McpDispatchOptions) => {
+      const dispatcher = buildDispatcher('stateless', config);
+      const context = createMcpRequestContext({ requestId: 'req-e2e', logger: makeLogger(), authenticationSession: makeAuthenticatedSession() });
+      return dispatcher.dispatch(initialize(1), context, options);
+    };
+
+    it('lets a per-dispatch string override McpConfig.instructions', async () => {
+      const response = await dispatchInitialize({ instructions }, { instructions: 'HRIS endpoint.' });
+      expect(response).toMatchObject({ result: { instructions: 'HRIS endpoint.' } });
+    });
+
+    it('resolves instructions from the caller on initialize', async () => {
+      const resolver = vi.fn((context: McpContextBase) => `Hello ${context.authenticationSession?.subject}.`);
+      const response = await dispatchInitialize({}, { instructions: resolver });
+      expect(response).toMatchObject({ result: { instructions: 'Hello user-1.' } });
+      expect(resolver).toHaveBeenCalledTimes(1);
+    });
+
+    it('awaits an async resolver', async () => {
+      const response = await dispatchInitialize({}, { instructions: async () => 'async text' });
+      expect(response).toMatchObject({ result: { instructions: 'async text' } });
+    });
+
+    it('falls back to McpConfig.instructions when the resolver returns undefined', async () => {
+      const response = await dispatchInitialize({ instructions }, { instructions: () => undefined });
+      expect(response).toMatchObject({ result: { instructions } });
+    });
+
+    it('sends no instructions when the resolver returns an empty string', async () => {
+      const response = await dispatchInitialize({ instructions }, { instructions: () => '' });
+      expect(response).not.toHaveProperty('result.instructions');
+    });
+
+    it('does not run the resolver for messages other than initialize', async () => {
+      const resolver = vi.fn(() => 'unused');
+      const dispatcher = buildDispatcher('stateless');
+      const context = createMcpRequestContext({ requestId: 'req-e2e', logger: makeLogger() });
+      const response = await dispatcher.dispatch({ jsonrpc: '2.0', id: 2, method: 'tools/list' }, context, { instructions: resolver });
+      expect(response).toMatchObject({ id: 2, result: { tools: [{ name: 'shout' }] } });
+      expect(resolver).not.toHaveBeenCalled();
+    });
+
+    it('resolves instructions once per stateful session, from the caller that opened it', async () => {
+      const resolver = vi.fn((context: McpContextBase) => `Hello ${context.authenticationSession?.subject}.`);
+      const server = serveStateful(buildDispatcher('stateful', { instructions }), { instructions: resolver });
+      const url = await listen(server);
+      const client = new Client({ name: 'e2e-client', version: '1.0.0' });
+      try {
+        await client.connect(new StreamableHTTPClientTransport(new URL(url)));
+        await client.listTools();
+        expect(client.getInstructions()).toBe('Hello user-1.');
+        expect(resolver).toHaveBeenCalledTimes(1);
       } finally {
         await client.close();
         await close(server);
