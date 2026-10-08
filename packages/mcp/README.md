@@ -27,6 +27,7 @@ pnpm add @maroonedsoftware/mcp @modelcontextprotocol/sdk
 | `McpServerFactory`                                | Builds SDK `Server` instances wired to the handler maps — memoizes the `tools/list` payload and uses stable, ALS-backed request handlers.                                                                           |
 | `McpToolHandler` / `McpToolHandlerMap`            | One-method tool handler interface (`handle(args, context)`) + its `Map<toolName, handler>` DI token.                                                                                                                |
 | `ExplainedToolHandler` / `explainToolErrors(map)` | Wraps a tool (or every tool in a map) so a thrown `HttpError` becomes an `isError` result the model can act on, instead of a JSON-RPC error.                                                                        |
+| `McpHelpToolHandler`                              | Opt-in `help` tool: an overview plus every other tool's description, for clients that ignore `instructions` and for text that must be current per call.                                                             |
 | `McpResourceHandler` / `McpResourceHandlerMap`    | Resource handler interface (`read(uri, context)`) + its `Map<uri, handler>` DI token.                                                                                                                               |
 | `McpSessionRegistry`                              | Stateful-mode registry: one SDK `Server` + `StreamableHTTPServerTransport` per `Mcp-Session-Id`, reused across the session.                                                                                         |
 | `KoaMcpTransport`                                 | Minimal single-exchange `Transport` for stateless mode (one JSON-RPC message in, one response out).                                                                                                                 |
@@ -91,6 +92,19 @@ const instructions = async (context: McpContextBase) => {
 };
 
 const response = await dispatcher.dispatch(ctx.parsedBody as JSONRPCMessage, context, { instructions });
+```
+
+For clients that ignore `instructions`, or text that must reflect the caller on every call rather than once per session, add the opt-in help tool. The model calls it when the user asks what it can do:
+
+```ts
+registry
+  .register(McpToolHandlerMap)
+  .useFactory(container => {
+    const tools = new McpToolHandlerMap([['search_docs', container.get(SearchDocsTool)]]);
+    tools.set('help', new McpHelpToolHandler({ tools, overview: instructions }));
+    return tools;
+  })
+  .asSingleton();
 ```
 
 Instructions steer the model; they grant nothing. Tools still enforce their own permissions, and the text is computed once per MCP session, so a role change mid-session is not reflected. Per-user text also needs a per-user identity: behind the shared-token `McpAuthenticationHandler` every caller has the same subject.

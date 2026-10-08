@@ -113,14 +113,18 @@ All three context types extend one base, so a new request-scoped value is declar
 
 ### Handlers
 
-| Export                  | Kind      | Shape                                                                                                                    | Notes                                                                                         |
-| ----------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| `McpToolHandler`        | interface | `{ readonly definition: Tool; handle(args: Record<string, unknown>, context: McpToolContext): Promise<CallToolResult> }` | `definition` must be a stable value.                                                          |
-| `McpToolHandlerMap`     | class     | `@Injectable() extends Map<string, McpToolHandler>`                                                                      | Keyed by `definition.name`.                                                                   |
-| `ExplainedToolHandler`  | class     | `new ExplainedToolHandler(inner: McpToolHandler)`, implements `McpToolHandler`                                           | Turns a thrown `HttpError` into `{ isError: true, content: [text] }`. Rethrows anything else. |
-| `explainToolErrors`     | function  | `(tools: McpToolHandlerMap) => McpToolHandlerMap`                                                                        | Returns a new map with every handler wrapped; the input is untouched.                         |
-| `McpResourceHandler`    | interface | `{ readonly definition: Resource; read(uri: string, context: McpResourceContext): Promise<ReadResourceResult> }`         | —                                                                                             |
-| `McpResourceHandlerMap` | class     | `@Injectable() extends Map<string, McpResourceHandler>`                                                                  | Keyed by `definition.uri`. **Exact-URI matching only.**                                       |
+| Export                              | Kind      | Shape                                                                                                                    | Notes                                                                                                                                           |
+| ----------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `McpToolHandler`                    | interface | `{ readonly definition: Tool; handle(args: Record<string, unknown>, context: McpToolContext): Promise<CallToolResult> }` | `definition` must be a stable value.                                                                                                            |
+| `McpToolHandlerMap`                 | class     | `@Injectable() extends Map<string, McpToolHandler>`                                                                      | Keyed by `definition.name`.                                                                                                                     |
+| `ExplainedToolHandler`              | class     | `new ExplainedToolHandler(inner: McpToolHandler)`, implements `McpToolHandler`                                           | Turns a thrown `HttpError` into `{ isError: true, content: [text] }`. Rethrows anything else.                                                   |
+| `explainToolErrors`                 | function  | `(tools: McpToolHandlerMap) => McpToolHandlerMap`                                                                        | Returns a new map with every handler wrapped; the input is untouched.                                                                           |
+| `McpHelpToolHandler`                | class     | `new McpHelpToolHandler({ tools, overview?, name?, description? })`, implements `McpToolHandler`                         | Opt-in. Answers with `overview` (an `McpInstructions`, resolved per call) and every other tool's name and description. Excludes itself by name. |
+| `McpHelpToolOptions`                | interface | `{ tools: McpToolHandlerMap; overview?: McpInstructions; name?: string; description?: string }`                          | Pass the map the tool is registered in.                                                                                                         |
+| `MCP_DEFAULT_HELP_TOOL_NAME`        | constant  | `'help'`                                                                                                                 | —                                                                                                                                               |
+| `MCP_DEFAULT_HELP_TOOL_DESCRIPTION` | constant  | `string`                                                                                                                 | Tells the model to call it when the user asks what it can do.                                                                                   |
+| `McpResourceHandler`                | interface | `{ readonly definition: Resource; read(uri: string, context: McpResourceContext): Promise<ReadResourceResult> }`         | —                                                                                                                                               |
+| `McpResourceHandlerMap`             | class     | `@Injectable() extends Map<string, McpResourceHandler>`                                                                  | Keyed by `definition.uri`. **Exact-URI matching only.**                                                                                         |
 
 ### Server, transport, dispatch
 
@@ -415,6 +419,10 @@ app.post('/mcp', { config: { body: ['application/json'] }, preHandler: [requireP
   request in stateless mode only when the message is `initialize`, and once per session in stateful
   mode. A role change mid-session is not reflected, and a client may keep one connection across many
   chats. Put anything that must be current in a tool.
+- **The help tool reads the map it lives in.** Build the map in a `useFactory`, then
+  `tools.set('help', new McpHelpToolHandler({ tools, overview }))`. Its tool list is built on the
+  first call and then kept, which is safe because the map is bootstrap-frozen. Wrap the finished map
+  with `explainToolErrors` after adding it, not before. The list covers every tool, whoever asks.
 - **Per-user instructions need per-user identity.** Behind `McpAuthenticationHandler` every caller
   is `McpConfig.subject`, so a resolver has no role to branch on. Authenticate with a
   subject-resolving handler (JWT) first.
@@ -442,6 +450,7 @@ src/
                             requireMcpAuthenticationSession, McpAuthenticatedContext
   mcp.require.policy.ts     requireMcpPolicy, RequireMcpPolicyOptions
   mcp.tool.handler.ts       McpToolHandler, McpToolHandlerMap
+  mcp.help.tool.handler.ts  McpHelpToolHandler, McpHelpToolOptions, help tool defaults
   mcp.resource.handler.ts   McpResourceHandler, McpResourceHandlerMap
   mcp.server.factory.ts     McpServerFactory — memoized lists, stable handlers
   mcp.transport.ts          KoaMcpTransport — single-exchange, stateless only
