@@ -47,13 +47,13 @@ it reads the `Authorization` header, which the authentication stack deletes.
 
 ### Config and errors
 
-| Export                           | Kind                       | Shape                                                                                                     | Notes                                                                                                                                             |
-| -------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `McpConfig`                      | interface + abstract class | `{ serverName, version, sessionMode?, bearerToken?, allowUnauthenticated?, subject?, requestTimeoutMs? }` | Declaration-merged so one symbol is type and DI token. `requestTimeoutMs` aborts `context.signal`; `subject` names the MCP client on the session. |
-| `McpSessionMode`                 | type                       | `'stateless' \| 'stateful'`                                                                               | Default `'stateless'`.                                                                                                                            |
-| `MCP_DEFAULT_REQUEST_TIMEOUT_MS` | constant                   | `30_000`                                                                                                  | Applied when `requestTimeoutMs` is unset.                                                                                                         |
-| `McpError`                       | class                      | `extends ServerkitError`                                                                                  | —                                                                                                                                                 |
-| `IsMcpError`                     | type guard                 | `(error: unknown) => error is McpError`                                                                   | —                                                                                                                                                 |
+| Export                           | Kind                       | Shape                                                                                                                    | Notes                                                                                                                                                                                                |
+| -------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `McpConfig`                      | interface + abstract class | `{ serverName, version, instructions?, sessionMode?, bearerToken?, allowUnauthenticated?, subject?, requestTimeoutMs? }` | Declaration-merged so one symbol is type and DI token. `instructions` is sent in the `initialize` result; `requestTimeoutMs` aborts `context.signal`; `subject` names the MCP client on the session. |
+| `McpSessionMode`                 | type                       | `'stateless' \| 'stateful'`                                                                                              | Default `'stateless'`.                                                                                                                                                                               |
+| `MCP_DEFAULT_REQUEST_TIMEOUT_MS` | constant                   | `30_000`                                                                                                                 | Applied when `requestTimeoutMs` is unset.                                                                                                                                                            |
+| `McpError`                       | class                      | `extends ServerkitError`                                                                                                 | —                                                                                                                                                                                                    |
+| `IsMcpError`                     | type guard                 | `(error: unknown) => error is McpError`                                                                                  | —                                                                                                                                                                                                    |
 
 ### Auth
 
@@ -394,6 +394,11 @@ app.post('/mcp', { config: { body: ['application/json'] }, preHandler: [requireP
   are the protocol's connection session; `authenticationSession` is who the caller is. A stateful
   MCP session is not evidence of authentication, and a request carrying a session token is not a
   stateful MCP session.
+- **`instructions` is a hint, and it is always in context.** `McpConfig.instructions` goes out in
+  the `initialize` result, and clients that honour it (Claude does) put it in the model's context
+  for every conversation the server is attached to. A client may also ignore or truncate it. Keep
+  it short, phrase guidance as "when the user asks about X", and never use it to tell the model to
+  call a tool on every first turn. A blank string is treated as unset.
 - **`McpConfig` is declaration-merged** (interface + abstract class), like `Logger` and
   `ServerKitContext`. Do not split it.
 

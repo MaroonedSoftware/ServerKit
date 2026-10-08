@@ -42,6 +42,18 @@ export interface McpConfig {
   /** Server version advertised to clients during `initialize` (MCP `serverInfo.version`). */
   version: string;
   /**
+   * Guidance for the model, returned as `instructions` in the `initialize` result.
+   * Clients that honour it (Claude among them) put it in the model's context as
+   * soon as the server is attached, so it is the place to say what the server is
+   * for and how its tools fit together.
+   *
+   * It is a hint, not a contract: a client may ignore or truncate it. Keep it short,
+   * and scope any "when the user asks about X" guidance, since it is in context for
+   * every conversation the server is attached to, related or not. Omitted from
+   * `initialize` when unset.
+   */
+  instructions?: string;
+  /**
    * Session strategy for the HTTP transport. Defaults to `'stateless'` when
    * omitted — see {@link McpSessionMode}.
    */

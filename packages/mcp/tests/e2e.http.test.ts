@@ -25,10 +25,10 @@ const shoutTool = (): McpToolHandler => ({
   },
 });
 
-const buildDispatcher = (sessionMode: McpConfig['sessionMode']) => {
+const buildDispatcher = (sessionMode: McpConfig['sessionMode'], overrides: Partial<McpConfig> = {}) => {
   const tools = new McpToolHandlerMap();
   tools.set('shout', shoutTool());
-  const config: McpConfig = { serverName: 'e2e-server', version: '1.0.0', sessionMode };
+  const config: McpConfig = { serverName: 'e2e-server', version: '1.0.0', sessionMode, ...overrides };
   const logger = makeLogger();
   const factory = new McpServerFactory(tools, new McpResourceHandlerMap(), config, logger);
   const registry = new McpSessionRegistry(factory, logger);
@@ -53,6 +53,25 @@ const listen = (server: HttpServer): Promise<string> =>
   });
 
 const close = (server: HttpServer): Promise<void> => new Promise(resolve => server.close(() => resolve()));
+
+const initialize = (id: number) => ({
+  jsonrpc: '2.0' as const,
+  id,
+  method: 'initialize',
+  params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'c', version: '1' } },
+});
+
+/** Serves a stateful dispatcher over real HTTP, the way a koa route hands it `req`/`res`. */
+const serveStateful = (dispatcher: McpDispatcher): HttpServer =>
+  createServer((req, res) => {
+    void (async () => {
+      const raw = req.method === 'POST' ? await readBody(req) : '';
+      const body = raw ? JSON.parse(raw) : undefined;
+      const sessionId = Array.isArray(req.headers['mcp-session-id']) ? req.headers['mcp-session-id'][0] : req.headers['mcp-session-id'];
+      const context = createMcpRequestContext({ requestId: 'req-e2e', logger: makeLogger() });
+      await dispatcher.dispatchStateful({ req, res, body, sessionId }, context);
+    })();
+  });
 
 describe('MCP e2e over real HTTP', () => {
   describe('stateless (raw JSON-RPC over the wire)', () => {
@@ -85,13 +104,13 @@ describe('MCP e2e over real HTTP', () => {
     };
 
     it('answers initialize with server info + capabilities', async () => {
-      const result = await post({
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'initialize',
-        params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'c', version: '1' } },
-      });
+      const result = await post(initialize(1));
       expect(result).toMatchObject({ id: 1, result: { serverInfo: { name: 'e2e-server' }, capabilities: { tools: {} } } });
+    });
+
+    it('omits instructions from initialize when none are configured', async () => {
+      const result = await post(initialize(1));
+      expect(result).not.toHaveProperty('result.instructions');
     });
 
     it('lists tools and executes a tools/call over the wire', async () => {
@@ -108,16 +127,7 @@ describe('MCP e2e over real HTTP', () => {
     let url: string;
 
     beforeAll(async () => {
-      const dispatcher = buildDispatcher('stateful');
-      server = createServer((req, res) => {
-        void (async () => {
-          const raw = req.method === 'POST' ? await readBody(req) : '';
-          const body = raw ? JSON.parse(raw) : undefined;
-          const sessionId = Array.isArray(req.headers['mcp-session-id']) ? req.headers['mcp-session-id'][0] : req.headers['mcp-session-id'];
-          const context = createMcpRequestContext({ requestId: 'req-e2e', logger: makeLogger() });
-          await dispatcher.dispatchStateful({ req, res, body, sessionId }, context);
-        })();
-      });
+      server = serveStateful(buildDispatcher('stateful'));
       url = await listen(server);
     });
     afterAll(() => close(server));
@@ -134,6 +144,38 @@ describe('MCP e2e over real HTTP', () => {
       expect(result.content).toEqual([{ type: 'text', text: 'OVER SSE' }]);
 
       await client.close();
+    });
+  });
+
+  describe('instructions', () => {
+    const instructions = 'Use shout to upper-case a message.';
+
+    it('returns McpConfig.instructions from a stateless initialize', async () => {
+      const dispatcher = buildDispatcher('stateless', { instructions });
+      const context = createMcpRequestContext({ requestId: 'req-e2e', logger: makeLogger() });
+      const response = await dispatcher.dispatch(initialize(1), context);
+      expect(response).toMatchObject({ id: 1, result: { instructions } });
+    });
+
+    it('hands McpConfig.instructions to a client over a stateful session', async () => {
+      const server = serveStateful(buildDispatcher('stateful', { instructions }));
+      const url = await listen(server);
+      const client = new Client({ name: 'e2e-client', version: '1.0.0' });
+      try {
+        await client.connect(new StreamableHTTPClientTransport(new URL(url)));
+        expect(client.getInstructions()).toBe(instructions);
+      } finally {
+        await client.close();
+        await close(server);
+      }
+    });
+
+    it('treats a blank instructions string as unset', async () => {
+      const dispatcher = buildDispatcher('stateless', { instructions: '' });
+      const context = createMcpRequestContext({ requestId: 'req-e2e', logger: makeLogger() });
+      const response = await dispatcher.dispatch(initialize(1), context);
+      expect(response).toMatchObject({ id: 1, result: { serverInfo: { name: 'e2e-server' } } });
+      expect(response).not.toHaveProperty('result.instructions');
     });
   });
 });
