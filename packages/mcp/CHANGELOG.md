@@ -1,5 +1,17 @@
 # @maroonedsoftware/mcp
 
+## 0.6.0
+
+### Minor Changes
+
+- 77eb1f9: Add `McpHelpToolHandler`, an opt-in tool that answers with an overview followed by every other registered tool and its description. A tool is the one channel every MCP client exposes, so it covers clients that ignore server `instructions`. Its `overview` takes the same `McpInstructions` as the dispatcher, resolved on every call, so it can reflect the caller's current role where `instructions` is fixed at `initialize`. Register it in the map it lists; the name defaults to `help`.
+- b431128: `McpDispatcher.dispatch` and `dispatchStateful` take an optional `{ instructions }` that overrides `McpConfig.instructions` for that call. It is fixed text or a function of the request context (`McpInstructions`), so one container can serve a different welcome per endpoint, or tailor it to the caller's `authenticationSession`. The function runs only for an `initialize` message, and in stateful mode the session keeps its answer. Returning `undefined` falls back to the configured text; `''` sends none. `McpServerFactory.create` and `McpSessionRegistry.handle` take the matching optional argument. Existing calls are unchanged.
+- b4a96b2: Serve MCP prompts. `McpPromptHandler` (`definition` plus `get(args, context)`) and its `McpPromptHandlerMap` DI token mirror the tool and resource handlers: `prompts/list` is memoized at construction, `prompts/get` runs inside the request context with a per-prompt `McpPromptContext` (`context.forPrompt(name, signal)`), and the `prompts` capability is advertised only when the map is non-empty. `McpHelpToolHandler` takes an optional `prompts` map and lists them after the tools.
+
+  **Wiring change:** `McpServerFactory` now injects `McpPromptHandlerMap`, so a container must register it, even empty: `registry.register(McpPromptHandlerMap).useMap(McpPromptHandlerMap)`. Code constructing the factory by hand passes the prompt map after the resource map.
+
+- d4c0eb0: `McpConfig` gains an optional `instructions` string, sent to clients as `instructions` in the `initialize` result. Clients that honour it (Claude among them) put it in the model's context as soon as the server is attached, which makes it the place to say what the server is for and how its tools fit together. Omitted from `initialize` when unset or blank, exactly as before.
+
 ## 0.5.1
 
 ### Patch Changes
