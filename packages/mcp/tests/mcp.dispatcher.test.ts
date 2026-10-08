@@ -1,14 +1,15 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Container } from 'injectkit';
-import type { CallToolResult, JSONRPCMessage, ReadResourceResult, Resource, Tool } from '@modelcontextprotocol/sdk/types.js';
+import type { CallToolResult, GetPromptResult, JSONRPCMessage, Prompt, ReadResourceResult, Resource, Tool } from '@modelcontextprotocol/sdk/types.js';
 import { McpDispatcher } from '../src/mcp.dispatcher.js';
 import { McpServerFactory } from '../src/mcp.server.factory.js';
 import { McpSessionRegistry } from '../src/mcp.session.registry.js';
 import { McpToolHandlerMap, type McpToolHandler } from '../src/mcp.tool.handler.js';
 import { requireMcpAuthenticationSession } from '../src/mcp.authentication.session.js';
 import { McpResourceHandlerMap, type McpResourceHandler } from '../src/mcp.resource.handler.js';
+import { McpPromptHandlerMap, type McpPromptHandler } from '../src/mcp.prompt.handler.js';
 import type { McpConfig } from '../src/mcp.config.js';
-import type { McpResourceContext, McpToolContext } from '../src/mcp.request.context.js';
+import type { McpPromptContext, McpResourceContext, McpToolContext } from '../src/mcp.request.context.js';
 import { makeAuthenticatedSession, makeContext, makeLogger } from './helpers.js';
 
 /**
@@ -75,6 +76,18 @@ const appResource = () => {
   return { handler, seen };
 };
 
+const welcomePrompt = () => {
+  const seen: { args: Record<string, string>; context: McpPromptContext }[] = [];
+  const handler: McpPromptHandler = {
+    definition: { name: 'welcome', description: 'Get started.', arguments: [{ name: 'topic' }] } satisfies Prompt,
+    get: async (args: Record<string, string>, context: McpPromptContext): Promise<GetPromptResult> => {
+      seen.push({ args, context });
+      return { messages: [{ role: 'user', content: { type: 'text', text: `Welcome to ${args.topic ?? 'everything'}.` } }] };
+    },
+  };
+  return { handler, seen };
+};
+
 const buildDispatcher = (mode: McpConfig['sessionMode'] = 'stateless', requestTimeoutMs?: number) => {
   const tools = new McpToolHandlerMap();
   const echo = echoTool();
@@ -85,11 +98,14 @@ const buildDispatcher = (mode: McpConfig['sessionMode'] = 'stateless', requestTi
   const resources = new McpResourceHandlerMap();
   const resource = appResource();
   resources.set('config://app', resource.handler);
+  const prompts = new McpPromptHandlerMap();
+  const prompt = welcomePrompt();
+  prompts.set('welcome', prompt.handler);
   const config: McpConfig = { serverName: 'test', version: '0.0.0', sessionMode: mode, requestTimeoutMs };
   const logger = makeLogger();
-  const factory = new McpServerFactory(tools, resources, config, logger);
+  const factory = new McpServerFactory(tools, resources, prompts, config, logger);
   const registry = new McpSessionRegistry(factory, logger);
-  return { dispatcher: new McpDispatcher(factory, registry, config, logger), echo, slow, resource };
+  return { dispatcher: new McpDispatcher(factory, registry, config, logger), echo, slow, resource, prompt };
 };
 
 const rpc = (id: number, method: string, params?: Record<string, unknown>): JSONRPCMessage => ({
@@ -164,6 +180,46 @@ describe('McpDispatcher (stateless)', () => {
     const { dispatcher, resource } = buildDispatcher();
     await dispatcher.dispatch(rpc(10, 'resources/read', { uri: 'config://app' }), makeContext());
     expect(resource.seen[0]?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('advertises the prompts capability when prompts are registered', async () => {
+    const { dispatcher } = buildDispatcher();
+    const response = await dispatcher.dispatch(
+      rpc(20, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'c', version: '1' } }),
+      makeContext(),
+    );
+    expect(response).toMatchObject({ id: 20, result: { capabilities: { prompts: {} } } });
+  });
+
+  it('lists registered prompts from the memoized advertisement', async () => {
+    const { dispatcher } = buildDispatcher();
+    const response = await dispatcher.dispatch(rpc(21, 'prompts/list'), makeContext());
+    expect(response).toMatchObject({ id: 21, result: { prompts: [{ name: 'welcome', arguments: [{ name: 'topic' }] }] } });
+  });
+
+  it('routes a prompts/get to the registered handler with a per-prompt context', async () => {
+    const { dispatcher, prompt } = buildDispatcher();
+    const authenticationSession = makeAuthenticatedSession();
+    const response = await dispatcher.dispatch(
+      rpc(22, 'prompts/get', { name: 'welcome', arguments: { topic: 'payroll' } }),
+      makeContext({ authenticationSession }),
+    );
+    expect(response).toMatchObject({ id: 22, result: { messages: [{ role: 'user', content: { type: 'text', text: 'Welcome to payroll.' } }] } });
+    expect(prompt.seen[0]?.args).toEqual({ topic: 'payroll' });
+    expect(prompt.seen[0]?.context).toMatchObject({ promptName: 'welcome', requestId: 'req-1', authenticationSession });
+    expect(prompt.seen[0]?.context.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('hands a prompt with no arguments an empty object', async () => {
+    const { dispatcher, prompt } = buildDispatcher();
+    await dispatcher.dispatch(rpc(23, 'prompts/get', { name: 'welcome' }), makeContext());
+    expect(prompt.seen[0]?.args).toEqual({});
+  });
+
+  it('errors when getting an unregistered prompt', async () => {
+    const { dispatcher } = buildDispatcher();
+    const response = (await dispatcher.dispatch(rpc(24, 'prompts/get', { name: 'nope' }), makeContext())) as { error?: unknown };
+    expect(response.error).toBeDefined();
   });
 
   it('aborts the handler signal once requestTimeoutMs elapses', async () => {

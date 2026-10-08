@@ -9,6 +9,7 @@ import { McpServerFactory } from '../src/mcp.server.factory.js';
 import { McpSessionRegistry } from '../src/mcp.session.registry.js';
 import { McpToolHandlerMap, type McpToolHandler } from '../src/mcp.tool.handler.js';
 import { McpResourceHandlerMap } from '../src/mcp.resource.handler.js';
+import { McpPromptHandlerMap } from '../src/mcp.prompt.handler.js';
 import { createMcpRequestContext, type McpContextBase } from '../src/mcp.request.context.js';
 import type { McpConfig } from '../src/mcp.config.js';
 import type { McpDispatchOptions } from '../src/mcp.instructions.js';
@@ -31,7 +32,7 @@ const buildDispatcher = (sessionMode: McpConfig['sessionMode'], overrides: Parti
   tools.set('shout', shoutTool());
   const config: McpConfig = { serverName: 'e2e-server', version: '1.0.0', sessionMode, ...overrides };
   const logger = makeLogger();
-  const factory = new McpServerFactory(tools, new McpResourceHandlerMap(), config, logger);
+  const factory = new McpServerFactory(tools, new McpResourceHandlerMap(), new McpPromptHandlerMap(), config, logger);
   const registry = new McpSessionRegistry(factory, logger);
   return new McpDispatcher(factory, registry, config, logger);
 };
@@ -107,6 +108,7 @@ describe('MCP e2e over real HTTP', () => {
     it('answers initialize with server info + capabilities', async () => {
       const result = await post(initialize(1));
       expect(result).toMatchObject({ id: 1, result: { serverInfo: { name: 'e2e-server' }, capabilities: { tools: {} } } });
+      expect(result).not.toHaveProperty('result.capabilities.prompts');
     });
 
     it('omits instructions from initialize when none are configured', async () => {

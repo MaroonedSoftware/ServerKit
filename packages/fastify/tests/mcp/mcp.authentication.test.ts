@@ -14,6 +14,7 @@ import {
   McpAuthenticationHandler,
   McpConfig,
   McpDispatcher,
+  McpPromptHandlerMap,
   McpResourceHandlerMap,
   McpServerFactory,
   McpSessionRegistry,
@@ -82,6 +83,7 @@ const mcpModule = (config: Partial<McpConfig>, order: ChainOrder = 'mcpFirst'): 
     registry.register(WhoamiTool).useClass(WhoamiTool).asSingleton();
     registry.register(McpToolHandlerMap).useMap(McpToolHandlerMap).set('whoami', WhoamiTool);
     registry.register(McpResourceHandlerMap).useMap(McpResourceHandlerMap);
+    registry.register(McpPromptHandlerMap).useMap(McpPromptHandlerMap);
     registry.register(McpServerFactory).useClass(McpServerFactory).asSingleton();
     registry.register(McpSessionRegistry).useClass(McpSessionRegistry).asSingleton();
     registry.register(McpDispatcher).useClass(McpDispatcher).asSingleton();

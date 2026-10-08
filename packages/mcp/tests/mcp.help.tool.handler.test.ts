@@ -3,6 +3,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { McpHelpToolHandler, MCP_DEFAULT_HELP_TOOL_DESCRIPTION, MCP_DEFAULT_HELP_TOOL_NAME } from '../src/mcp.help.tool.handler.js';
 import { McpToolHandlerMap, type McpToolHandler } from '../src/mcp.tool.handler.js';
 import { explainToolErrors } from '../src/mcp.explained.tool.handler.js';
+import { McpPromptHandlerMap, type McpPromptHandler } from '../src/mcp.prompt.handler.js';
 import type { McpContextBase } from '../src/mcp.request.context.js';
 import { makeAuthenticatedSession, makeContext } from './helpers.js';
 
@@ -71,6 +72,22 @@ describe('McpHelpToolHandler', () => {
     expect(await call(help, makeContext({ authenticationSession: makeAuthenticatedSession() }))).toBe('Hello user-1.');
     expect(await call(help)).toBe('Hello stranger.');
     expect(overview).toHaveBeenCalledTimes(2);
+  });
+
+  it('lists prompts after the tools', async () => {
+    const prompt = (name: string, description?: string): McpPromptHandler => ({
+      definition: { name, description },
+      get: async () => ({ messages: [] }),
+    });
+    const tools = new McpToolHandlerMap([['ping', tool('ping', 'Ping.')]]);
+    const prompts = new McpPromptHandlerMap([
+      ['welcome', prompt('welcome', 'Get started.')],
+      ['tour', prompt('tour')],
+    ]);
+    const help = new McpHelpToolHandler({ tools, prompts });
+    tools.set('help', help);
+
+    expect(await call(help)).toBe('Tools:\n- ping: Ping.\n\nPrompts:\n- welcome: Get started.\n- tour');
   });
 
   it('answers with an empty text when there is neither overview nor other tools', async () => {

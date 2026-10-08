@@ -4,6 +4,7 @@ import type { CallToolResult, JSONRPCMessage, Tool } from '@modelcontextprotocol
 import { ExplainedToolHandler, explainToolErrors } from '../src/mcp.explained.tool.handler.js';
 import { McpToolHandlerMap, type McpToolHandler } from '../src/mcp.tool.handler.js';
 import { McpResourceHandlerMap } from '../src/mcp.resource.handler.js';
+import { McpPromptHandlerMap } from '../src/mcp.prompt.handler.js';
 import { McpServerFactory } from '../src/mcp.server.factory.js';
 import { McpSessionRegistry } from '../src/mcp.session.registry.js';
 import { McpDispatcher } from '../src/mcp.dispatcher.js';
@@ -189,7 +190,7 @@ describe('explainToolErrors', () => {
     );
     const config: McpConfig = { serverName: 'test', version: '0.0.0' };
     const logger = makeLogger();
-    const factory = new McpServerFactory(tools, new McpResourceHandlerMap(), config, logger);
+    const factory = new McpServerFactory(tools, new McpResourceHandlerMap(), new McpPromptHandlerMap(), config, logger);
     const dispatcher = new McpDispatcher(factory, new McpSessionRegistry(factory, logger), config, logger);
     const request: JSONRPCMessage = { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'create_ticket', arguments: {} } };
 

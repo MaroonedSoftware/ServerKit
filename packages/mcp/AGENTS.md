@@ -104,37 +104,40 @@ All three context types extend one base, so a new request-scoped value is declar
 | Export                         | Kind      | Shape                                                                                                                             | Notes                                                                                                                  |
 | ------------------------------ | --------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `McpContextBase`               | interface | `{ requestId: string; logger: Logger; auth?: McpAuthInfo; authenticationSession?: AuthenticationSession; container?: Container }` | The shared half of all three contexts. Add new fields **here**. `container` is the request-scoped injectkit container. |
-| `McpRequestContext`            | interface | `McpContextBase & { forTool(name, signal?), forResource(uri, signal?) }`                                                          | Transport-neutral: no koa or fastify types. The injectkit `Container` is DI, not transport.                            |
+| `McpRequestContext`            | interface | `McpContextBase & { forTool(name, signal?), forResource(uri, signal?), forPrompt(name, signal?) }`                                | Transport-neutral: no koa or fastify types. The injectkit `Container` is DI, not transport.                            |
 | `McpToolContext`               | interface | `McpContextBase & { toolName, signal? }`                                                                                          | What a tool handler receives.                                                                                          |
 | `McpResourceContext`           | interface | `McpContextBase & { uri, signal? }`                                                                                               | What a resource handler receives.                                                                                      |
+| `McpPromptContext`             | interface | `McpContextBase & { promptName, signal? }`                                                                                        | What a prompt handler receives.                                                                                        |
 | `createMcpRequestContext`      | function  | `(input: CreateMcpRequestContextInput) => McpRequestContext`                                                                      | Build it from `ctx` in your route.                                                                                     |
 | `CreateMcpRequestContextInput` | type      | Alias for `McpContextBase`                                                                                                        | The factory takes exactly the shared fields.                                                                           |
 | `mcpContext`                   | constant  | `AsyncLocalStorage<McpRequestContext>`                                                                                            | Set by the dispatcher. **Handlers never read it directly.**                                                            |
 
 ### Handlers
 
-| Export                              | Kind      | Shape                                                                                                                    | Notes                                                                                                                                           |
-| ----------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `McpToolHandler`                    | interface | `{ readonly definition: Tool; handle(args: Record<string, unknown>, context: McpToolContext): Promise<CallToolResult> }` | `definition` must be a stable value.                                                                                                            |
-| `McpToolHandlerMap`                 | class     | `@Injectable() extends Map<string, McpToolHandler>`                                                                      | Keyed by `definition.name`.                                                                                                                     |
-| `ExplainedToolHandler`              | class     | `new ExplainedToolHandler(inner: McpToolHandler)`, implements `McpToolHandler`                                           | Turns a thrown `HttpError` into `{ isError: true, content: [text] }`. Rethrows anything else.                                                   |
-| `explainToolErrors`                 | function  | `(tools: McpToolHandlerMap) => McpToolHandlerMap`                                                                        | Returns a new map with every handler wrapped; the input is untouched.                                                                           |
-| `McpHelpToolHandler`                | class     | `new McpHelpToolHandler({ tools, overview?, name?, description? })`, implements `McpToolHandler`                         | Opt-in. Answers with `overview` (an `McpInstructions`, resolved per call) and every other tool's name and description. Excludes itself by name. |
-| `McpHelpToolOptions`                | interface | `{ tools: McpToolHandlerMap; overview?: McpInstructions; name?: string; description?: string }`                          | Pass the map the tool is registered in.                                                                                                         |
-| `MCP_DEFAULT_HELP_TOOL_NAME`        | constant  | `'help'`                                                                                                                 | —                                                                                                                                               |
-| `MCP_DEFAULT_HELP_TOOL_DESCRIPTION` | constant  | `string`                                                                                                                 | Tells the model to call it when the user asks what it can do.                                                                                   |
-| `McpResourceHandler`                | interface | `{ readonly definition: Resource; read(uri: string, context: McpResourceContext): Promise<ReadResourceResult> }`         | —                                                                                                                                               |
-| `McpResourceHandlerMap`             | class     | `@Injectable() extends Map<string, McpResourceHandler>`                                                                  | Keyed by `definition.uri`. **Exact-URI matching only.**                                                                                         |
+| Export                              | Kind      | Shape                                                                                                                          | Notes                                                                                                                                           |
+| ----------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `McpToolHandler`                    | interface | `{ readonly definition: Tool; handle(args: Record<string, unknown>, context: McpToolContext): Promise<CallToolResult> }`       | `definition` must be a stable value.                                                                                                            |
+| `McpToolHandlerMap`                 | class     | `@Injectable() extends Map<string, McpToolHandler>`                                                                            | Keyed by `definition.name`.                                                                                                                     |
+| `ExplainedToolHandler`              | class     | `new ExplainedToolHandler(inner: McpToolHandler)`, implements `McpToolHandler`                                                 | Turns a thrown `HttpError` into `{ isError: true, content: [text] }`. Rethrows anything else.                                                   |
+| `explainToolErrors`                 | function  | `(tools: McpToolHandlerMap) => McpToolHandlerMap`                                                                              | Returns a new map with every handler wrapped; the input is untouched.                                                                           |
+| `McpHelpToolHandler`                | class     | `new McpHelpToolHandler({ tools, overview?, name?, description? })`, implements `McpToolHandler`                               | Opt-in. Answers with `overview` (an `McpInstructions`, resolved per call) and every other tool's name and description. Excludes itself by name. |
+| `McpHelpToolOptions`                | interface | `{ tools: McpToolHandlerMap; prompts?: McpPromptHandlerMap; overview?: McpInstructions; name?: string; description?: string }` | Pass the map the tool is registered in. `prompts` are listed after the tools.                                                                   |
+| `MCP_DEFAULT_HELP_TOOL_NAME`        | constant  | `'help'`                                                                                                                       | —                                                                                                                                               |
+| `MCP_DEFAULT_HELP_TOOL_DESCRIPTION` | constant  | `string`                                                                                                                       | Tells the model to call it when the user asks what it can do.                                                                                   |
+| `McpResourceHandler`                | interface | `{ readonly definition: Resource; read(uri: string, context: McpResourceContext): Promise<ReadResourceResult> }`               | —                                                                                                                                               |
+| `McpResourceHandlerMap`             | class     | `@Injectable() extends Map<string, McpResourceHandler>`                                                                        | Keyed by `definition.uri`. **Exact-URI matching only.**                                                                                         |
+| `McpPromptHandler`                  | interface | `{ readonly definition: Prompt; get(args: Record<string, string>, context: McpPromptContext): Promise<GetPromptResult> }`      | User-picked message templates (slash commands, "+" menu), not model-called.                                                                     |
+| `McpPromptHandlerMap`               | class     | `@Injectable() extends Map<string, McpPromptHandler>`                                                                          | Keyed by `definition.name`. **Must be registered, even empty.**                                                                                 |
 
 ### Server, transport, dispatch
 
-| Export                | Kind  | Shape                                                                                                                       | Notes                                                                                             |
-| --------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `McpServerFactory`    | class | `@Injectable()`. `create(instructions?): Server`                                                                            | Memoizes `tools/list` and `resources/list` at construction; handlers are stable instance methods. |
-| `KoaMcpTransport`     | class | `implements Transport`. `receive(message)`, `response()`                                                                    | Single-exchange transport for **stateless** mode only.                                            |
-| `McpSessionRegistry`  | class | `@Injectable()`. `handle(exchange, context, options?)`                                                                      | In-memory `Map` of `Mcp-Session-Id` → `{ server, transport }`.                                    |
-| `McpStatefulExchange` | type  | `{ req: IncomingMessage; res: ServerResponse; body: unknown; sessionId? }`                                                  | —                                                                                                 |
-| `McpDispatcher`       | class | `@Injectable()`. `get sessionMode`, `dispatch(message, context, options?)`, `dispatchStateful(exchange, context, options?)` | The single entry point.                                                                           |
+| Export                | Kind  | Shape                                                                                                                       | Notes                                                                                                             |
+| --------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `McpServerFactory`    | class | `@Injectable()`. `create(instructions?): Server`                                                                            | Memoizes `tools/list`, `resources/list` and `prompts/list` at construction; handlers are stable instance methods. |
+| `KoaMcpTransport`     | class | `implements Transport`. `receive(message)`, `response()`                                                                    | Single-exchange transport for **stateless** mode only.                                                            |
+| `McpSessionRegistry`  | class | `@Injectable()`. `handle(exchange, context, options?)`                                                                      | In-memory `Map` of `Mcp-Session-Id` → `{ server, transport }`.                                                    |
+| `McpStatefulExchange` | type  | `{ req: IncomingMessage; res: ServerResponse; body: unknown; sessionId? }`                                                  | —                                                                                                                 |
+| `McpDispatcher`       | class | `@Injectable()`. `get sessionMode`, `dispatch(message, context, options?)`, `dispatchStateful(exchange, context, options?)` | The single entry point.                                                                                           |
 
 `dispatch` returns `undefined` for a notification (no `id`) — the route acks with 202.
 
@@ -146,6 +149,7 @@ import {
   McpConfig,
   McpDispatcher,
   McpToolHandlerMap,
+  McpPromptHandlerMap,
   McpResourceHandlerMap,
   McpAuthenticationHandler,
   createMcpRequestContext,
@@ -183,6 +187,7 @@ registry.register(SearchDocsTool).useClass(SearchDocsTool).asSingleton();
 
 registry.register(McpToolHandlerMap).useMap(McpToolHandlerMap).set('search_docs', SearchDocsTool);
 registry.register(McpResourceHandlerMap).useMap(McpResourceHandlerMap);
+registry.register(McpPromptHandlerMap).useMap(McpPromptHandlerMap);
 registry.register(McpConfig).useValue(appConfig.getAs<McpConfig>('mcp'));
 
 // Auth: the MCP token is a session source, so it goes through the scheme handler
@@ -382,6 +387,9 @@ app.post('/mcp', { config: { body: ['application/json'] }, preHandler: [requireP
 - **Closing the connection aborts in-flight signals.** The SDK aborts every outstanding request
   signal on `Server.close()`, which the stateless dispatcher calls right after producing a
   response. Sample `signal.aborted` inside a handler, not after `dispatch` resolves.
+- **`McpPromptHandlerMap` is a required registration.** `McpServerFactory` injects it alongside the
+  tool and resource maps, so a container without it fails to build. Register it empty when the app
+  has no prompts; the `prompts` capability is advertised only when the map is non-empty.
 - **Resources are matched by exact URI.** `McpResourceHandlerMap` is a plain `Map.get`. Templated
   resources (`resources/templates`) need the factory extended to match against a template set.
 - **`dispatch` returns `undefined` for notifications.** Setting `ctx.body = undefined` yields a 404
@@ -445,13 +453,15 @@ src/
   mcp.auth.policy.ts        MCP_AUTH_POLICY, McpAuthPolicy, McpAuthPolicyContext
   mcp.auth.assert.ts        assertMcpAuth
   mcp.request.context.ts    McpContextBase, McpRequestContext, McpToolContext,
-                            McpResourceContext, mcpContext (ALS), createMcpRequestContext
+                            McpResourceContext, McpPromptContext, mcpContext (ALS),
+                            createMcpRequestContext
   mcp.authentication.session.ts
                             requireMcpAuthenticationSession, McpAuthenticatedContext
   mcp.require.policy.ts     requireMcpPolicy, RequireMcpPolicyOptions
   mcp.tool.handler.ts       McpToolHandler, McpToolHandlerMap
   mcp.help.tool.handler.ts  McpHelpToolHandler, McpHelpToolOptions, help tool defaults
   mcp.resource.handler.ts   McpResourceHandler, McpResourceHandlerMap
+  mcp.prompt.handler.ts     McpPromptHandler, McpPromptHandlerMap
   mcp.server.factory.ts     McpServerFactory — memoized lists, stable handlers
   mcp.transport.ts          KoaMcpTransport — single-exchange, stateless only
   mcp.session.registry.ts   McpSessionRegistry, McpStatefulExchange
@@ -472,7 +482,7 @@ Invariants a change must not break:
 - A new request-scoped value is declared on `McpContextBase` and spread into the derived contexts
   by `createMcpRequestContext`. Do not add a field to `McpToolContext` or `McpResourceContext`
   directly unless it is genuinely per-invocation, like `toolName`, `uri`, and `signal`.
-- `tools/list` and `resources/list` stay memoized at factory construction; the handler maps are
+- `tools/list`, `resources/list` and `prompts/list` stay memoized at factory construction; the handler maps are
   bootstrap-frozen.
 - Bearer comparison stays constant-time, with the length guard that covers an empty or mismatched
   token without tripping `timingSafeEqual`.

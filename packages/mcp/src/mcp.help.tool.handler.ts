@@ -2,13 +2,14 @@ import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js';
 import { resolveMcpInstructions, type McpInstructions } from './mcp.instructions.js';
 import type { McpToolContext } from './mcp.request.context.js';
 import type { McpToolHandler, McpToolHandlerMap } from './mcp.tool.handler.js';
+import type { McpPromptHandlerMap } from './mcp.prompt.handler.js';
 
 /** {@link McpHelpToolOptions.name} when the app does not choose one. */
 export const MCP_DEFAULT_HELP_TOOL_NAME = 'help' as const;
 
 /** {@link McpHelpToolOptions.description} when the app does not supply one. */
 export const MCP_DEFAULT_HELP_TOOL_DESCRIPTION =
-  'Explains what this server can do and lists its tools. Call it when the user asks what you can help with or how to get started.';
+  'Explains what this server can do and lists its tools and prompts. Call it when the user asks what you can help with or how to get started.';
 
 /** Options for {@link McpHelpToolHandler}. */
 export interface McpHelpToolOptions {
@@ -17,6 +18,8 @@ export interface McpHelpToolOptions {
    * bootstrap has finished filling it, to list the other tools.
    */
   tools: McpToolHandlerMap;
+  /** Prompts to list after the tools, so the model can point the user at them. */
+  prompts?: McpPromptHandlerMap;
   /**
    * Text that opens the answer. Fixed text, or a function of the call's context
    * that runs on every call, so it can reflect the caller's current role. Pass
@@ -32,7 +35,7 @@ export interface McpHelpToolOptions {
 
 /**
  * An opt-in tool that tells the model what the server is for: an overview, then
- * every other registered tool with its description.
+ * every other registered tool, and any prompts, with their descriptions.
  *
  * A tool is the one channel every MCP client exposes, and the model calls it on
  * its own when the user asks what it can do. That covers clients that ignore
@@ -59,12 +62,14 @@ export class McpHelpToolHandler implements McpToolHandler {
   readonly definition: Tool;
 
   private readonly tools: McpToolHandlerMap;
+  private readonly prompts?: McpPromptHandlerMap;
   private readonly overview?: McpInstructions;
-  /** The tool list, built on the first call rather than at construction, when the map is still being filled. */
+  /** The tool and prompt lists, built on the first call rather than at construction, when the map is still being filled. */
   private catalog?: string;
 
   constructor(options: McpHelpToolOptions) {
     this.tools = options.tools;
+    this.prompts = options.prompts;
     this.overview = options.overview;
     this.definition = {
       name: options.name ?? MCP_DEFAULT_HELP_TOOL_NAME,
@@ -75,19 +80,23 @@ export class McpHelpToolHandler implements McpToolHandler {
 
   async handle(_args: Record<string, unknown>, context: McpToolContext): Promise<CallToolResult> {
     const overview = await resolveMcpInstructions(this.overview, context);
-    const text = [overview, this.listTools()].filter(Boolean).join('\n\n');
+    const text = [overview, this.listCatalog()].filter(Boolean).join('\n\n');
     return { content: [{ type: 'text', text }] };
   }
 
-  private listTools(): string {
+  private listCatalog(): string {
     if (this.catalog === undefined) {
       // By name rather than identity: `explainToolErrors` registers a wrapper, not this instance.
-      const others = [...this.tools.values()].map(handler => handler.definition).filter(tool => tool.name !== this.definition.name);
-      this.catalog =
-        others.length === 0
-          ? ''
-          : ['Tools:', ...others.map(tool => (tool.description ? `- ${tool.name}: ${tool.description}` : `- ${tool.name}`))].join('\n');
+      const tools = [...this.tools.values()].map(handler => handler.definition).filter(tool => tool.name !== this.definition.name);
+      const prompts = [...(this.prompts?.values() ?? [])].map(handler => handler.definition);
+      this.catalog = [section('Tools:', tools), section('Prompts:', prompts)].filter(Boolean).join('\n\n');
     }
     return this.catalog;
   }
 }
+
+/** A titled bullet list of names and descriptions, or `''` when there is nothing to list. */
+const section = (title: string, entries: { name: string; description?: string }[]): string =>
+  entries.length === 0
+    ? ''
+    : [title, ...entries.map(entry => (entry.description ? `- ${entry.name}: ${entry.description}` : `- ${entry.name}`))].join('\n');

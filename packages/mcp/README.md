@@ -29,6 +29,7 @@ pnpm add @maroonedsoftware/mcp @modelcontextprotocol/sdk
 | `ExplainedToolHandler` / `explainToolErrors(map)` | Wraps a tool (or every tool in a map) so a thrown `HttpError` becomes an `isError` result the model can act on, instead of a JSON-RPC error.                                                                        |
 | `McpHelpToolHandler`                              | Opt-in `help` tool: an overview plus every other tool's description, for clients that ignore `instructions` and for text that must be current per call.                                                             |
 | `McpResourceHandler` / `McpResourceHandlerMap`    | Resource handler interface (`read(uri, context)`) + its `Map<uri, handler>` DI token.                                                                                                                               |
+| `McpPromptHandler` / `McpPromptHandlerMap`        | Prompt handler interface (`get(args, context)`) + its `Map<name, handler>` DI token. Register the map even when empty.                                                                                              |
 | `McpSessionRegistry`                              | Stateful-mode registry: one SDK `Server` + `StreamableHTTPServerTransport` per `Mcp-Session-Id`, reused across the session.                                                                                         |
 | `KoaMcpTransport`                                 | Minimal single-exchange `Transport` for stateless mode (one JSON-RPC message in, one response out).                                                                                                                 |
 | `McpRequestContext` / `createMcpRequestContext`   | Request-scoped context threaded to handlers (request id, logger, auth info, authentication session, request-scoped container), plus the factory that builds one from your `ctx`.                                    |
@@ -138,9 +139,25 @@ registry.register(SearchDocsTool).useClass(SearchDocsTool).asSingleton();
 
 registry.register(McpToolHandlerMap).useMap(McpToolHandlerMap).set('search_docs', SearchDocsTool);
 registry.register(McpResourceHandlerMap).useMap(McpResourceHandlerMap); // empty is fine
+registry.register(McpPromptHandlerMap).useMap(McpPromptHandlerMap); // empty is fine, but required
 ```
 
 Resources follow the same shape with `McpResourceHandler` (`read(uri, context)`), registered by URI in `McpResourceHandlerMap`. The dispatcher advertises only the capabilities backed by a non-empty map, so a tools-only server doesn't claim resource support.
+
+Prompts follow it too: an `McpPromptHandler` exposes a `definition` (name, description, `arguments`) and `get(args, context)`, which returns the messages the client inserts. Register them by name in `McpPromptHandlerMap`. Unlike tools, prompts are picked by the user (clients show them as slash commands or menu entries), which makes one a good home for a guided "get started" flow:
+
+```ts
+@Injectable()
+class WelcomePrompt implements McpPromptHandler {
+  readonly definition = { name: 'welcome', description: 'Get started with my-service.' };
+
+  async get(_args: Record<string, string>, _context: McpPromptContext) {
+    return { messages: [{ role: 'user' as const, content: { type: 'text' as const, text: 'Show me what you can do here.' } }] };
+  }
+}
+
+registry.register(McpPromptHandlerMap).useMap(McpPromptHandlerMap).set('welcome', WelcomePrompt);
+```
 
 ### Explaining failures to the model
 
