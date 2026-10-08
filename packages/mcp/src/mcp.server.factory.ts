@@ -4,11 +4,16 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import type { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import {
   CallToolRequestSchema,
+  GetPromptRequestSchema,
+  ListPromptsRequestSchema,
   ListResourcesRequestSchema,
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
   type CallToolRequest,
   type CallToolResult,
+  type GetPromptRequest,
+  type GetPromptResult,
+  type ListPromptsResult,
   type ListResourcesResult,
   type ListToolsResult,
   type ReadResourceRequest,
@@ -20,6 +25,7 @@ import { McpConfig, MCP_DEFAULT_REQUEST_TIMEOUT_MS } from './mcp.config.js';
 import { McpError } from './mcp.error.js';
 import { McpToolHandlerMap } from './mcp.tool.handler.js';
 import { McpResourceHandlerMap } from './mcp.resource.handler.js';
+import { McpPromptHandlerMap } from './mcp.prompt.handler.js';
 import { mcpContext } from './mcp.request.context.js';
 
 /** Per-request extras the SDK passes to a `Server` request handler. */
@@ -33,7 +39,7 @@ type McpHandlerExtra = RequestHandlerExtra<ServerRequest, ServerNotification>;
  * `initialize` state), so it can't be a shared singleton across concurrent HTTP
  * requests — a fresh one is needed per connection. To keep that cheap:
  *
- * - The `tools/list` and `resources/list` payloads are derived **once** here (the
+ * - The `tools/list`, `resources/list` and `prompts/list` payloads are derived **once** here (the
  *   handler maps are frozen at bootstrap), not per request.
  * - The request-handler callbacks are **stable** instance methods, not
  *   per-request closures. They read the request-scoped
@@ -42,7 +48,7 @@ type McpHandlerExtra = RequestHandlerExtra<ServerRequest, ServerNotification>;
  *   concurrent request without capturing any of them.
  *
  * The net cost of {@link McpServerFactory.create} is a thin `Server` shell plus
- * four `Map.set` registrations — on par with the per-request objects koa already
+ * up to six `Map.set` registrations — on par with the per-request objects koa already
  * allocates.
  */
 @Injectable()
@@ -51,15 +57,19 @@ export class McpServerFactory {
   private readonly toolList: ListToolsResult;
   /** Memoized `resources/list` result. */
   private readonly resourceList: ListResourcesResult;
+  /** Memoized `prompts/list` result. */
+  private readonly promptList: ListPromptsResult;
 
   constructor(
     private readonly tools: McpToolHandlerMap,
     private readonly resources: McpResourceHandlerMap,
+    private readonly prompts: McpPromptHandlerMap,
     private readonly config: McpConfig,
     private readonly logger: Logger,
   ) {
     this.toolList = { tools: [...tools.values()].map(handler => handler.definition) };
     this.resourceList = { resources: [...resources.values()].map(handler => handler.definition) };
+    this.promptList = { prompts: [...prompts.values()].map(handler => handler.definition) };
   }
 
   /**
@@ -75,6 +85,8 @@ export class McpServerFactory {
   private readonly onListTools = async (): Promise<ListToolsResult> => this.toolList;
 
   private readonly onListResources = async (): Promise<ListResourcesResult> => this.resourceList;
+
+  private readonly onListPrompts = async (): Promise<ListPromptsResult> => this.promptList;
 
   private readonly onCallTool = async (request: CallToolRequest, extra: McpHandlerExtra): Promise<CallToolResult> => {
     const context = mcpContext.getStore();
@@ -104,21 +116,40 @@ export class McpServerFactory {
     return handler.read(uri, context.forResource(uri, this.requestSignal(extra)));
   };
 
+  private readonly onGetPrompt = async (request: GetPromptRequest, extra: McpHandlerExtra): Promise<GetPromptResult> => {
+    const context = mcpContext.getStore();
+    if (!context) throw new McpError('MCP prompt requested outside a request context');
+
+    const name = request.params.name;
+    const handler = this.prompts.get(name);
+    if (!handler) {
+      this.logger.debug('No MCP prompt handler registered', { prompt: name });
+      throw new McpError(`No MCP prompt registered for "${name}"`).withInternalDetails({ prompt: name });
+    }
+
+    return handler.get(request.params.arguments ?? {}, context.forPrompt(name, this.requestSignal(extra)));
+  };
+
   /**
    * Create a fresh `Server` with the stable request handlers attached. One per
    * connection: per request in stateless mode, per session in stateful mode.
    *
    * Advertises only the capabilities backed by a non-empty handler map, so a
-   * tools-only server doesn't claim resource support.
+   * tools-only server doesn't claim resource or prompt support.
+   *
+   * @param instructions - Text for the `initialize` result. Defaults to
+   *   {@link McpConfig.instructions}; omitted from `initialize` when blank.
    */
-  create(): Server {
+  create(instructions: string | undefined = this.config.instructions): Server {
     const server = new Server(
       { name: this.config.serverName, version: this.config.version },
       {
         capabilities: {
           ...(this.tools.size > 0 ? { tools: {} } : {}),
           ...(this.resources.size > 0 ? { resources: {} } : {}),
+          ...(this.prompts.size > 0 ? { prompts: {} } : {}),
         },
+        ...(instructions ? { instructions } : {}),
       },
     );
 
@@ -129,6 +160,10 @@ export class McpServerFactory {
     if (this.resources.size > 0) {
       server.setRequestHandler(ListResourcesRequestSchema, this.onListResources);
       server.setRequestHandler(ReadResourceRequestSchema, this.onReadResource);
+    }
+    if (this.prompts.size > 0) {
+      server.setRequestHandler(ListPromptsRequestSchema, this.onListPrompts);
+      server.setRequestHandler(GetPromptRequestSchema, this.onGetPrompt);
     }
 
     return server;

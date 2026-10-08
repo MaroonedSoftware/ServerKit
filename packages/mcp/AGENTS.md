@@ -47,13 +47,21 @@ it reads the `Authorization` header, which the authentication stack deletes.
 
 ### Config and errors
 
-| Export                           | Kind                       | Shape                                                                                                     | Notes                                                                                                                                             |
-| -------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `McpConfig`                      | interface + abstract class | `{ serverName, version, sessionMode?, bearerToken?, allowUnauthenticated?, subject?, requestTimeoutMs? }` | Declaration-merged so one symbol is type and DI token. `requestTimeoutMs` aborts `context.signal`; `subject` names the MCP client on the session. |
-| `McpSessionMode`                 | type                       | `'stateless' \| 'stateful'`                                                                               | Default `'stateless'`.                                                                                                                            |
-| `MCP_DEFAULT_REQUEST_TIMEOUT_MS` | constant                   | `30_000`                                                                                                  | Applied when `requestTimeoutMs` is unset.                                                                                                         |
-| `McpError`                       | class                      | `extends ServerkitError`                                                                                  | —                                                                                                                                                 |
-| `IsMcpError`                     | type guard                 | `(error: unknown) => error is McpError`                                                                   | —                                                                                                                                                 |
+| Export                           | Kind                       | Shape                                                                                                                    | Notes                                                                                                                                                                                                |
+| -------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `McpConfig`                      | interface + abstract class | `{ serverName, version, instructions?, sessionMode?, bearerToken?, allowUnauthenticated?, subject?, requestTimeoutMs? }` | Declaration-merged so one symbol is type and DI token. `instructions` is sent in the `initialize` result; `requestTimeoutMs` aborts `context.signal`; `subject` names the MCP client on the session. |
+| `McpSessionMode`                 | type                       | `'stateless' \| 'stateful'`                                                                                              | Default `'stateless'`.                                                                                                                                                                               |
+| `MCP_DEFAULT_REQUEST_TIMEOUT_MS` | constant                   | `30_000`                                                                                                                 | Applied when `requestTimeoutMs` is unset.                                                                                                                                                            |
+| `McpError`                       | class                      | `extends ServerkitError`                                                                                                 | —                                                                                                                                                                                                    |
+| `IsMcpError`                     | type guard                 | `(error: unknown) => error is McpError`                                                                                  | —                                                                                                                                                                                                    |
+
+### Instructions
+
+| Export                   | Kind      | Shape                                                                                                   | Notes                                                                                                             |
+| ------------------------ | --------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `McpInstructions`        | type      | `string \| ((context: McpContextBase) => string \| undefined \| Promise<string \| undefined>)`          | Fixed text or a resolver of the caller. `undefined` falls back to `McpConfig.instructions`; `''` sends none.      |
+| `McpDispatchOptions`     | interface | `{ instructions?: McpInstructions }`                                                                    | Last argument of `dispatch` / `dispatchStateful`. Per-endpoint or per-caller text without a container of its own. |
+| `resolveMcpInstructions` | function  | `(instructions: McpInstructions \| undefined, context: McpContextBase) => Promise<string \| undefined>` | What the dispatcher calls. Exported so a tool can render the same text.                                           |
 
 ### Auth
 
@@ -96,33 +104,40 @@ All three context types extend one base, so a new request-scoped value is declar
 | Export                         | Kind      | Shape                                                                                                                             | Notes                                                                                                                  |
 | ------------------------------ | --------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `McpContextBase`               | interface | `{ requestId: string; logger: Logger; auth?: McpAuthInfo; authenticationSession?: AuthenticationSession; container?: Container }` | The shared half of all three contexts. Add new fields **here**. `container` is the request-scoped injectkit container. |
-| `McpRequestContext`            | interface | `McpContextBase & { forTool(name, signal?), forResource(uri, signal?) }`                                                          | Transport-neutral: no koa or fastify types. The injectkit `Container` is DI, not transport.                            |
+| `McpRequestContext`            | interface | `McpContextBase & { forTool(name, signal?), forResource(uri, signal?), forPrompt(name, signal?) }`                                | Transport-neutral: no koa or fastify types. The injectkit `Container` is DI, not transport.                            |
 | `McpToolContext`               | interface | `McpContextBase & { toolName, signal? }`                                                                                          | What a tool handler receives.                                                                                          |
 | `McpResourceContext`           | interface | `McpContextBase & { uri, signal? }`                                                                                               | What a resource handler receives.                                                                                      |
+| `McpPromptContext`             | interface | `McpContextBase & { promptName, signal? }`                                                                                        | What a prompt handler receives.                                                                                        |
 | `createMcpRequestContext`      | function  | `(input: CreateMcpRequestContextInput) => McpRequestContext`                                                                      | Build it from `ctx` in your route.                                                                                     |
 | `CreateMcpRequestContextInput` | type      | Alias for `McpContextBase`                                                                                                        | The factory takes exactly the shared fields.                                                                           |
 | `mcpContext`                   | constant  | `AsyncLocalStorage<McpRequestContext>`                                                                                            | Set by the dispatcher. **Handlers never read it directly.**                                                            |
 
 ### Handlers
 
-| Export                  | Kind      | Shape                                                                                                                    | Notes                                                                                         |
-| ----------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| `McpToolHandler`        | interface | `{ readonly definition: Tool; handle(args: Record<string, unknown>, context: McpToolContext): Promise<CallToolResult> }` | `definition` must be a stable value.                                                          |
-| `McpToolHandlerMap`     | class     | `@Injectable() extends Map<string, McpToolHandler>`                                                                      | Keyed by `definition.name`.                                                                   |
-| `ExplainedToolHandler`  | class     | `new ExplainedToolHandler(inner: McpToolHandler)`, implements `McpToolHandler`                                           | Turns a thrown `HttpError` into `{ isError: true, content: [text] }`. Rethrows anything else. |
-| `explainToolErrors`     | function  | `(tools: McpToolHandlerMap) => McpToolHandlerMap`                                                                        | Returns a new map with every handler wrapped; the input is untouched.                         |
-| `McpResourceHandler`    | interface | `{ readonly definition: Resource; read(uri: string, context: McpResourceContext): Promise<ReadResourceResult> }`         | —                                                                                             |
-| `McpResourceHandlerMap` | class     | `@Injectable() extends Map<string, McpResourceHandler>`                                                                  | Keyed by `definition.uri`. **Exact-URI matching only.**                                       |
+| Export                              | Kind      | Shape                                                                                                                          | Notes                                                                                                                                           |
+| ----------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `McpToolHandler`                    | interface | `{ readonly definition: Tool; handle(args: Record<string, unknown>, context: McpToolContext): Promise<CallToolResult> }`       | `definition` must be a stable value.                                                                                                            |
+| `McpToolHandlerMap`                 | class     | `@Injectable() extends Map<string, McpToolHandler>`                                                                            | Keyed by `definition.name`.                                                                                                                     |
+| `ExplainedToolHandler`              | class     | `new ExplainedToolHandler(inner: McpToolHandler)`, implements `McpToolHandler`                                                 | Turns a thrown `HttpError` into `{ isError: true, content: [text] }`. Rethrows anything else.                                                   |
+| `explainToolErrors`                 | function  | `(tools: McpToolHandlerMap) => McpToolHandlerMap`                                                                              | Returns a new map with every handler wrapped; the input is untouched.                                                                           |
+| `McpHelpToolHandler`                | class     | `new McpHelpToolHandler({ tools, overview?, name?, description? })`, implements `McpToolHandler`                               | Opt-in. Answers with `overview` (an `McpInstructions`, resolved per call) and every other tool's name and description. Excludes itself by name. |
+| `McpHelpToolOptions`                | interface | `{ tools: McpToolHandlerMap; prompts?: McpPromptHandlerMap; overview?: McpInstructions; name?: string; description?: string }` | Pass the map the tool is registered in. `prompts` are listed after the tools.                                                                   |
+| `MCP_DEFAULT_HELP_TOOL_NAME`        | constant  | `'help'`                                                                                                                       | —                                                                                                                                               |
+| `MCP_DEFAULT_HELP_TOOL_DESCRIPTION` | constant  | `string`                                                                                                                       | Tells the model to call it when the user asks what it can do.                                                                                   |
+| `McpResourceHandler`                | interface | `{ readonly definition: Resource; read(uri: string, context: McpResourceContext): Promise<ReadResourceResult> }`               | —                                                                                                                                               |
+| `McpResourceHandlerMap`             | class     | `@Injectable() extends Map<string, McpResourceHandler>`                                                                        | Keyed by `definition.uri`. **Exact-URI matching only.**                                                                                         |
+| `McpPromptHandler`                  | interface | `{ readonly definition: Prompt; get(args: Record<string, string>, context: McpPromptContext): Promise<GetPromptResult> }`      | User-picked message templates (slash commands, "+" menu), not model-called.                                                                     |
+| `McpPromptHandlerMap`               | class     | `@Injectable() extends Map<string, McpPromptHandler>`                                                                          | Keyed by `definition.name`. **Must be registered, even empty.**                                                                                 |
 
 ### Server, transport, dispatch
 
-| Export                | Kind  | Shape                                                                                                   | Notes                                                                                             |
-| --------------------- | ----- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `McpServerFactory`    | class | `@Injectable()`. `create(): Server`                                                                     | Memoizes `tools/list` and `resources/list` at construction; handlers are stable instance methods. |
-| `KoaMcpTransport`     | class | `implements Transport`. `receive(message)`, `response()`                                                | Single-exchange transport for **stateless** mode only.                                            |
-| `McpSessionRegistry`  | class | `@Injectable()`. `handle(exchange, context)`                                                            | In-memory `Map` of `Mcp-Session-Id` → `{ server, transport }`.                                    |
-| `McpStatefulExchange` | type  | `{ req: IncomingMessage; res: ServerResponse; body: unknown; sessionId? }`                              | —                                                                                                 |
-| `McpDispatcher`       | class | `@Injectable()`. `get sessionMode`, `dispatch(message, context)`, `dispatchStateful(exchange, context)` | The single entry point.                                                                           |
+| Export                | Kind  | Shape                                                                                                                       | Notes                                                                                                             |
+| --------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `McpServerFactory`    | class | `@Injectable()`. `create(instructions?): Server`                                                                            | Memoizes `tools/list`, `resources/list` and `prompts/list` at construction; handlers are stable instance methods. |
+| `KoaMcpTransport`     | class | `implements Transport`. `receive(message)`, `response()`                                                                    | Single-exchange transport for **stateless** mode only.                                                            |
+| `McpSessionRegistry`  | class | `@Injectable()`. `handle(exchange, context, options?)`                                                                      | In-memory `Map` of `Mcp-Session-Id` → `{ server, transport }`.                                                    |
+| `McpStatefulExchange` | type  | `{ req: IncomingMessage; res: ServerResponse; body: unknown; sessionId? }`                                                  | —                                                                                                                 |
+| `McpDispatcher`       | class | `@Injectable()`. `get sessionMode`, `dispatch(message, context, options?)`, `dispatchStateful(exchange, context, options?)` | The single entry point.                                                                                           |
 
 `dispatch` returns `undefined` for a notification (no `id`) — the route acks with 202.
 
@@ -134,6 +149,7 @@ import {
   McpConfig,
   McpDispatcher,
   McpToolHandlerMap,
+  McpPromptHandlerMap,
   McpResourceHandlerMap,
   McpAuthenticationHandler,
   createMcpRequestContext,
@@ -171,6 +187,7 @@ registry.register(SearchDocsTool).useClass(SearchDocsTool).asSingleton();
 
 registry.register(McpToolHandlerMap).useMap(McpToolHandlerMap).set('search_docs', SearchDocsTool);
 registry.register(McpResourceHandlerMap).useMap(McpResourceHandlerMap);
+registry.register(McpPromptHandlerMap).useMap(McpPromptHandlerMap);
 registry.register(McpConfig).useValue(appConfig.getAs<McpConfig>('mcp'));
 
 // Auth: the MCP token is a session source, so it goes through the scheme handler
@@ -370,6 +387,9 @@ app.post('/mcp', { config: { body: ['application/json'] }, preHandler: [requireP
 - **Closing the connection aborts in-flight signals.** The SDK aborts every outstanding request
   signal on `Server.close()`, which the stateless dispatcher calls right after producing a
   response. Sample `signal.aborted` inside a handler, not after `dispatch` resolves.
+- **`McpPromptHandlerMap` is a required registration.** `McpServerFactory` injects it alongside the
+  tool and resource maps, so a container without it fails to build. Register it empty when the app
+  has no prompts; the `prompts` capability is advertised only when the map is non-empty.
 - **Resources are matched by exact URI.** `McpResourceHandlerMap` is a plain `Map.get`. Templated
   resources (`resources/templates`) need the factory extended to match against a template set.
 - **`dispatch` returns `undefined` for notifications.** Setting `ctx.body = undefined` yields a 404
@@ -394,6 +414,26 @@ app.post('/mcp', { config: { body: ['application/json'] }, preHandler: [requireP
   are the protocol's connection session; `authenticationSession` is who the caller is. A stateful
   MCP session is not evidence of authentication, and a request carrying a session token is not a
   stateful MCP session.
+- **`instructions` is a hint, and it is always in context.** `McpConfig.instructions` goes out in
+  the `initialize` result, and clients that honour it (Claude does) put it in the model's context
+  for every conversation the server is attached to. A client may also ignore or truncate it. Keep
+  it short, phrase guidance as "when the user asks about X", and never use it to tell the model to
+  call a tool on every first turn. A blank string is treated as unset.
+- **Per-caller instructions are text, not access control.** An `McpInstructions` resolver can read
+  `authenticationSession` and resolve permission services from `container`, but the result only
+  steers the model. Every tool still enforces its own permissions, and the text must not name
+  anything the caller is not allowed to know. `tools/list` stays the same for every caller.
+- **Instructions are frozen per MCP session.** The resolver runs once, for `initialize`: per
+  request in stateless mode only when the message is `initialize`, and once per session in stateful
+  mode. A role change mid-session is not reflected, and a client may keep one connection across many
+  chats. Put anything that must be current in a tool.
+- **The help tool reads the map it lives in.** Build the map in a `useFactory`, then
+  `tools.set('help', new McpHelpToolHandler({ tools, overview }))`. Its tool list is built on the
+  first call and then kept, which is safe because the map is bootstrap-frozen. Wrap the finished map
+  with `explainToolErrors` after adding it, not before. The list covers every tool, whoever asks.
+- **Per-user instructions need per-user identity.** Behind `McpAuthenticationHandler` every caller
+  is `McpConfig.subject`, so a resolver has no role to branch on. Authenticate with a
+  subject-resolving handler (JWT) first.
 - **`McpConfig` is declaration-merged** (interface + abstract class), like `Logger` and
   `ServerKitContext`. Do not split it.
 
@@ -404,6 +444,7 @@ src/
   index.ts                  Barrel
   mcp.config.ts             McpConfig (interface + token), McpSessionMode,
                             MCP_DEFAULT_REQUEST_TIMEOUT_MS
+  mcp.instructions.ts       McpInstructions, McpDispatchOptions, resolveMcpInstructions
   mcp.error.ts              McpError, IsMcpError
   mcp.auth.ts               compareMcpToken, isBlankBearerToken, verifyMcpBearer,
                             McpAuthInfo, McpAuthOptions, header constant
@@ -412,12 +453,15 @@ src/
   mcp.auth.policy.ts        MCP_AUTH_POLICY, McpAuthPolicy, McpAuthPolicyContext
   mcp.auth.assert.ts        assertMcpAuth
   mcp.request.context.ts    McpContextBase, McpRequestContext, McpToolContext,
-                            McpResourceContext, mcpContext (ALS), createMcpRequestContext
+                            McpResourceContext, McpPromptContext, mcpContext (ALS),
+                            createMcpRequestContext
   mcp.authentication.session.ts
                             requireMcpAuthenticationSession, McpAuthenticatedContext
   mcp.require.policy.ts     requireMcpPolicy, RequireMcpPolicyOptions
   mcp.tool.handler.ts       McpToolHandler, McpToolHandlerMap
+  mcp.help.tool.handler.ts  McpHelpToolHandler, McpHelpToolOptions, help tool defaults
   mcp.resource.handler.ts   McpResourceHandler, McpResourceHandlerMap
+  mcp.prompt.handler.ts     McpPromptHandler, McpPromptHandlerMap
   mcp.server.factory.ts     McpServerFactory — memoized lists, stable handlers
   mcp.transport.ts          KoaMcpTransport — single-exchange, stateless only
   mcp.session.registry.ts   McpSessionRegistry, McpStatefulExchange
@@ -438,7 +482,7 @@ Invariants a change must not break:
 - A new request-scoped value is declared on `McpContextBase` and spread into the derived contexts
   by `createMcpRequestContext`. Do not add a field to `McpToolContext` or `McpResourceContext`
   directly unless it is genuinely per-invocation, like `toolName`, `uri`, and `signal`.
-- `tools/list` and `resources/list` stay memoized at factory construction; the handler maps are
+- `tools/list`, `resources/list` and `prompts/list` stay memoized at factory construction; the handler maps are
   bootstrap-frozen.
 - Bearer comparison stays constant-time, with the length guard that covers an empty or mismatched
   token without tripping `timingSafeEqual`.

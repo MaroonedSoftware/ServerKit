@@ -69,6 +69,17 @@ export interface McpResourceContext extends McpContextBase {
 }
 
 /**
+ * Per-prompt view of the request context handed to an
+ * {@link import('./mcp.prompt.handler.js').McpPromptHandler}.
+ */
+export interface McpPromptContext extends McpContextBase {
+  /** Name of the prompt being rendered. */
+  promptName: string;
+  /** Abort signal for the invocation, when available. */
+  signal?: AbortSignal;
+}
+
+/**
  * Request-scoped context threaded to MCP handlers. Deliberately transport-neutral
  * (no koa or fastify coupling, mirroring how `@maroonedsoftware/discord` stays
  * koa-free): the consumer builds one per request from its `ServerKitContext` via
@@ -87,6 +98,8 @@ export interface McpRequestContext extends McpContextBase {
   forTool(toolName: string, signal?: AbortSignal): McpToolContext;
   /** Derive the {@link McpResourceContext} for a specific resource read. */
   forResource(uri: string, signal?: AbortSignal): McpResourceContext;
+  /** Derive the {@link McpPromptContext} for a specific prompt render. */
+  forPrompt(promptName: string, signal?: AbortSignal): McpPromptContext;
 }
 
 /**
@@ -94,8 +107,8 @@ export interface McpRequestContext extends McpContextBase {
  * executing MCP call. Set by the dispatcher via `mcpContext.run(context, ...)`;
  * read by the SDK request handlers in
  * {@link import('./mcp.server.factory.js').McpServerFactory}. Handlers never
- * touch this directly — they receive a derived {@link McpToolContext} /
- * {@link McpResourceContext}.
+ * touch this directly — they receive a derived {@link McpToolContext},
+ * {@link McpResourceContext}, or {@link McpPromptContext}.
  */
 export const mcpContext = new AsyncLocalStorage<McpRequestContext>();
 
@@ -130,5 +143,6 @@ export const createMcpRequestContext = (input: CreateMcpRequestContextInput): Mc
     ...shared,
     forTool: (toolName, signal) => ({ ...shared, toolName, signal }),
     forResource: (uri, signal) => ({ ...shared, uri, signal }),
+    forPrompt: (promptName, signal) => ({ ...shared, promptName, signal }),
   };
 };

@@ -16,26 +16,29 @@ pnpm add @maroonedsoftware/mcp @modelcontextprotocol/sdk
 
 ## Exports
 
-| Symbol                                            | Purpose                                                                                                                                                                                             |
-| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `McpConfig`                                       | Abstract `@Injectable()` token; carries `serverName`, `version`, optional `sessionMode`, `bearerToken`, `allowUnauthenticated`, `subject`, `requestTimeoutMs`. Consumer registers a concrete value. |
-| `McpAuthenticationHandler`                        | `AuthenticationHandler` resolving the shared token into an `AuthenticationSession`. Register under the `bearer` scheme — the supported way to authenticate MCP.                                     |
-| `MCP_DEFAULT_SUBJECT`                             | `'mcp'` — the `session.subject` assigned when `McpConfig.subject` is unset.                                                                                                                         |
-| `compareMcpToken(provided, expected)`             | Constant-time token comparison with a length guard. A blank side is `false`.                                                                                                                        |
-| `McpDispatcher`                                   | Entry point. `dispatch(message, context)` for stateless mode; `dispatchStateful(exchange, context)` for stateful. Selects the mode from `McpConfig.sessionMode`.                                    |
-| `McpServerFactory`                                | Builds SDK `Server` instances wired to the handler maps — memoizes the `tools/list` payload and uses stable, ALS-backed request handlers.                                                           |
-| `McpToolHandler` / `McpToolHandlerMap`            | One-method tool handler interface (`handle(args, context)`) + its `Map<toolName, handler>` DI token.                                                                                                |
-| `ExplainedToolHandler` / `explainToolErrors(map)` | Wraps a tool (or every tool in a map) so a thrown `HttpError` becomes an `isError` result the model can act on, instead of a JSON-RPC error.                                                        |
-| `McpResourceHandler` / `McpResourceHandlerMap`    | Resource handler interface (`read(uri, context)`) + its `Map<uri, handler>` DI token.                                                                                                               |
-| `McpSessionRegistry`                              | Stateful-mode registry: one SDK `Server` + `StreamableHTTPServerTransport` per `Mcp-Session-Id`, reused across the session.                                                                         |
-| `KoaMcpTransport`                                 | Minimal single-exchange `Transport` for stateless mode (one JSON-RPC message in, one response out).                                                                                                 |
-| `McpRequestContext` / `createMcpRequestContext`   | Request-scoped context threaded to handlers (request id, logger, auth info, authentication session, request-scoped container), plus the factory that builds one from your `ctx`.                    |
-| `verifyMcpBearer(input)`                          | Pure bearer-token verifier. Returns `McpAuthInfo` or throws `McpError`. **Scaffold-grade** — swap for OAuth resource-server JWT validation.                                                         |
-| `isBlankBearerToken(bearerToken)`                 | Distinguishes an unset shared token from one configured as a blank string. Both fail closed; only the second is a misconfiguration.                                                                 |
-| `assertMcpAuth(container, getHeader)`             | Gates a request on `MCP_AUTH_POLICY` and returns the identity it resolved, for `context.auth`. Throws 401 on denial.                                                                                |
-| `McpAuthPolicy`                                   | `@maroonedsoftware/policies` form of `verifyMcpBearer` (registered under `MCP_AUTH_POLICY`). Slots into koa's `requireSignature`.                                                                   |
-| `requireMcpAuthenticationSession(context)`        | Narrows a handler context to an authenticated `AuthenticationSession`, or throws 401. Use it before evaluating a policy in a tool.                                                                  |
-| `McpError` / `IsMcpError`                         | `ServerkitError` subclass for non-HTTP domain failures, plus its type guard.                                                                                                                        |
+| Symbol                                            | Purpose                                                                                                                                                                                                             |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `McpConfig`                                       | Abstract `@Injectable()` token; carries `serverName`, `version`, optional `instructions`, `sessionMode`, `bearerToken`, `allowUnauthenticated`, `subject`, `requestTimeoutMs`. Consumer registers a concrete value. |
+| `McpAuthenticationHandler`                        | `AuthenticationHandler` resolving the shared token into an `AuthenticationSession`. Register under the `bearer` scheme — the supported way to authenticate MCP.                                                     |
+| `MCP_DEFAULT_SUBJECT`                             | `'mcp'` — the `session.subject` assigned when `McpConfig.subject` is unset.                                                                                                                                         |
+| `compareMcpToken(provided, expected)`             | Constant-time token comparison with a length guard. A blank side is `false`.                                                                                                                                        |
+| `McpDispatcher`                                   | Entry point. `dispatch(message, context, options?)` for stateless mode; `dispatchStateful(exchange, context, options?)` for stateful. Selects the mode from `McpConfig.sessionMode`.                                |
+| `McpInstructions` / `McpDispatchOptions`          | Per-dispatch `instructions` override: fixed text or a function of the caller, resolved for `initialize` only.                                                                                                       |
+| `McpServerFactory`                                | Builds SDK `Server` instances wired to the handler maps — memoizes the `tools/list` payload and uses stable, ALS-backed request handlers.                                                                           |
+| `McpToolHandler` / `McpToolHandlerMap`            | One-method tool handler interface (`handle(args, context)`) + its `Map<toolName, handler>` DI token.                                                                                                                |
+| `ExplainedToolHandler` / `explainToolErrors(map)` | Wraps a tool (or every tool in a map) so a thrown `HttpError` becomes an `isError` result the model can act on, instead of a JSON-RPC error.                                                                        |
+| `McpHelpToolHandler`                              | Opt-in `help` tool: an overview plus every other tool's description, for clients that ignore `instructions` and for text that must be current per call.                                                             |
+| `McpResourceHandler` / `McpResourceHandlerMap`    | Resource handler interface (`read(uri, context)`) + its `Map<uri, handler>` DI token.                                                                                                                               |
+| `McpPromptHandler` / `McpPromptHandlerMap`        | Prompt handler interface (`get(args, context)`) + its `Map<name, handler>` DI token. Register the map even when empty.                                                                                              |
+| `McpSessionRegistry`                              | Stateful-mode registry: one SDK `Server` + `StreamableHTTPServerTransport` per `Mcp-Session-Id`, reused across the session.                                                                                         |
+| `KoaMcpTransport`                                 | Minimal single-exchange `Transport` for stateless mode (one JSON-RPC message in, one response out).                                                                                                                 |
+| `McpRequestContext` / `createMcpRequestContext`   | Request-scoped context threaded to handlers (request id, logger, auth info, authentication session, request-scoped container), plus the factory that builds one from your `ctx`.                                    |
+| `verifyMcpBearer(input)`                          | Pure bearer-token verifier. Returns `McpAuthInfo` or throws `McpError`. **Scaffold-grade** — swap for OAuth resource-server JWT validation.                                                                         |
+| `isBlankBearerToken(bearerToken)`                 | Distinguishes an unset shared token from one configured as a blank string. Both fail closed; only the second is a misconfiguration.                                                                                 |
+| `assertMcpAuth(container, getHeader)`             | Gates a request on `MCP_AUTH_POLICY` and returns the identity it resolved, for `context.auth`. Throws 401 on denial.                                                                                                |
+| `McpAuthPolicy`                                   | `@maroonedsoftware/policies` form of `verifyMcpBearer` (registered under `MCP_AUTH_POLICY`). Slots into koa's `requireSignature`.                                                                                   |
+| `requireMcpAuthenticationSession(context)`        | Narrows a handler context to an authenticated `AuthenticationSession`, or throws 401. Use it before evaluating a policy in a tool.                                                                                  |
+| `McpError` / `IsMcpError`                         | `ServerkitError` subclass for non-HTTP domain failures, plus its type guard.                                                                                                                                        |
 
 ## Configuration
 
@@ -57,6 +60,7 @@ registry.register(McpConfig).useValue(mcpConfig);
   "mcp": {
     "serverName": "my-service",
     "version": "1.0.0",
+    "instructions": "Answers questions about my-service. Start with search_docs.", // optional
     "sessionMode": "stateless", // optional; "stateless" (default) or "stateful"
     "bearerToken": "${env:MCP_BEARER_TOKEN}", // enables the bundled auth policy
     // "allowUnauthenticated": true,          // only in place of bearerToken, only in development
@@ -65,15 +69,46 @@ registry.register(McpConfig).useValue(mcpConfig);
 }
 ```
 
-| Field                  | Required | Used by                                                                                                                                                       |
-| ---------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `serverName`           | yes      | Advertised to clients as `serverInfo.name` during `initialize`.                                                                                               |
-| `version`              | yes      | Advertised as `serverInfo.version`.                                                                                                                           |
-| `sessionMode`          | no       | `'stateless'` (default) or `'stateful'` — see [session modes](#session-modes).                                                                                |
-| `bearerToken`          | no       | Shared token accepted by `McpAuthPolicy`. Unset requires `allowUnauthenticated`.                                                                              |
-| `allowUnauthenticated` | no       | Run with no authentication, deliberately. Required when `bearerToken` is unset; ignored when it is set. Development only.                                     |
-| `subject`              | no       | `session.subject` for a caller presenting the token. Defaults to `MCP_DEFAULT_SUBJECT` (`'mcp'`). Policies and permission tuples key on it.                   |
-| `requestTimeoutMs`     | no       | Milliseconds after which `context.signal` aborts. Defaults to `MCP_DEFAULT_REQUEST_TIMEOUT_MS` (30s). Cooperative: forward the signal or the handler runs on. |
+| Field                  | Required | Used by                                                                                                                                                                        |
+| ---------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `serverName`           | yes      | Advertised to clients as `serverInfo.name` during `initialize`.                                                                                                                |
+| `version`              | yes      | Advertised as `serverInfo.version`.                                                                                                                                            |
+| `instructions`         | no       | Guidance for the model, sent as `instructions` in the `initialize` result. Clients that honour it put it in context whenever the server is attached; keep it short and scoped. |
+| `sessionMode`          | no       | `'stateless'` (default) or `'stateful'` — see [session modes](#session-modes).                                                                                                 |
+| `bearerToken`          | no       | Shared token accepted by `McpAuthPolicy`. Unset requires `allowUnauthenticated`.                                                                                               |
+| `allowUnauthenticated` | no       | Run with no authentication, deliberately. Required when `bearerToken` is unset; ignored when it is set. Development only.                                                      |
+| `subject`              | no       | `session.subject` for a caller presenting the token. Defaults to `MCP_DEFAULT_SUBJECT` (`'mcp'`). Policies and permission tuples key on it.                                    |
+| `requestTimeoutMs`     | no       | Milliseconds after which `context.signal` aborts. Defaults to `MCP_DEFAULT_REQUEST_TIMEOUT_MS` (30s). Cooperative: forward the signal or the handler runs on.                  |
+
+## Instructions
+
+`McpConfig.instructions` is sent to clients in the `initialize` result. Clients that honour it put it in the model's context whenever the server is attached, so use it to say what the server is for and how its tools fit together. Keep it short, and scope it ("when the user asks about payroll…"), since it is in context for unrelated conversations too.
+
+To vary it per endpoint or per caller, pass `instructions` to the dispatcher. It is fixed text or a function of the request, and it runs only for `initialize`:
+
+```ts
+const instructions = async (context: McpContextBase) => {
+  const roles = await context.container?.get(RoleService).rolesFor(context.authenticationSession?.subject);
+  return roles?.includes('admin') ? ADMIN_WELCOME : undefined; // undefined falls back to McpConfig.instructions
+};
+
+const response = await dispatcher.dispatch(ctx.parsedBody as JSONRPCMessage, context, { instructions });
+```
+
+For clients that ignore `instructions`, or text that must reflect the caller on every call rather than once per session, add the opt-in help tool. The model calls it when the user asks what it can do:
+
+```ts
+registry
+  .register(McpToolHandlerMap)
+  .useFactory(container => {
+    const tools = new McpToolHandlerMap([['search_docs', container.get(SearchDocsTool)]]);
+    tools.set('help', new McpHelpToolHandler({ tools, overview: instructions }));
+    return tools;
+  })
+  .asSingleton();
+```
+
+Instructions steer the model; they grant nothing. Tools still enforce their own permissions, and the text is computed once per MCP session, so a role change mid-session is not reflected. Per-user text also needs a per-user identity: behind the shared-token `McpAuthenticationHandler` every caller has the same subject.
 
 ## Defining tools
 
@@ -104,9 +139,25 @@ registry.register(SearchDocsTool).useClass(SearchDocsTool).asSingleton();
 
 registry.register(McpToolHandlerMap).useMap(McpToolHandlerMap).set('search_docs', SearchDocsTool);
 registry.register(McpResourceHandlerMap).useMap(McpResourceHandlerMap); // empty is fine
+registry.register(McpPromptHandlerMap).useMap(McpPromptHandlerMap); // empty is fine, but required
 ```
 
 Resources follow the same shape with `McpResourceHandler` (`read(uri, context)`), registered by URI in `McpResourceHandlerMap`. The dispatcher advertises only the capabilities backed by a non-empty map, so a tools-only server doesn't claim resource support.
+
+Prompts follow it too: an `McpPromptHandler` exposes a `definition` (name, description, `arguments`) and `get(args, context)`, which returns the messages the client inserts. Register them by name in `McpPromptHandlerMap`. Unlike tools, prompts are picked by the user (clients show them as slash commands or menu entries), which makes one a good home for a guided "get started" flow:
+
+```ts
+@Injectable()
+class WelcomePrompt implements McpPromptHandler {
+  readonly definition = { name: 'welcome', description: 'Get started with my-service.' };
+
+  async get(_args: Record<string, string>, _context: McpPromptContext) {
+    return { messages: [{ role: 'user' as const, content: { type: 'text' as const, text: 'Show me what you can do here.' } }] };
+  }
+}
+
+registry.register(McpPromptHandlerMap).useMap(McpPromptHandlerMap).set('welcome', WelcomePrompt);
+```
 
 ### Explaining failures to the model
 
