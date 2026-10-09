@@ -49,4 +49,14 @@ describe('createMcpRequestContext', () => {
     expect(context.forTool('echo').container).toBe(container);
     expect(context.forResource('config://app').container).toBe(container);
   });
+
+  it('carries clientCapabilities onto every derived context', () => {
+    const clientCapabilities = { extensions: { 'io.modelcontextprotocol/ui': { mimeTypes: ['text/html;profile=mcp-app'] } } };
+    const context = createMcpRequestContext({ requestId: 'req-1', logger: makeLogger(), clientCapabilities });
+
+    expect(context.clientCapabilities).toBe(clientCapabilities);
+    expect(context.forTool('echo').clientCapabilities).toBe(clientCapabilities);
+    expect(context.forResource('ui://a').clientCapabilities).toBe(clientCapabilities);
+    expect(context.forPrompt('p').clientCapabilities).toBe(clientCapabilities);
+  });
 });

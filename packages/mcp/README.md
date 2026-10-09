@@ -29,6 +29,10 @@ pnpm add @maroonedsoftware/mcp @modelcontextprotocol/sdk
 | `ExplainedToolHandler` / `explainToolErrors(map)` | Wraps a tool (or every tool in a map) so a thrown `HttpError` becomes an `isError` result the model can act on, instead of a JSON-RPC error.                                                                        |
 | `McpHelpToolHandler`                              | Opt-in `help` tool: an overview plus every other tool's description, for clients that ignore `instructions` and for text that must be current per call.                                                             |
 | `McpResourceHandler` / `McpResourceHandlerMap`    | Resource handler interface (`read(uri, context)`) + its `Map<uri, handler>` DI token.                                                                                                                               |
+| `McpUiResource`                                   | Base class for an MCP Apps `ui://` resource: subclass it, return the app HTML from `html(context)`, and it is served with the MCP Apps MIME type and `_meta.ui`.                                                    |
+| `withMcpUi(tool, ui)`                             | Returns a tool definition with `_meta.ui` (`resourceUri`, `visibility`) merged in.                                                                                                                                  |
+| `mcpUiSupport(context)` / `getMcpUiCapability`    | Whether this request's client renders MCP Apps (`'supported'`, `'unsupported'`, or `'unknown'` in stateless mode), and the capability it advertised.                                                                |
+| `MCP_UI_EXTENSION` / `MCP_UI_MIME_TYPE`           | `'io.modelcontextprotocol/ui'` and `'text/html;profile=mcp-app'`.                                                                                                                                                   |
 | `McpPromptHandler` / `McpPromptHandlerMap`        | Prompt handler interface (`get(args, context)`) + its `Map<name, handler>` DI token. Register the map even when empty.                                                                                              |
 | `McpSessionRegistry`                              | Stateful-mode registry: one SDK `Server` + `StreamableHTTPServerTransport` per `Mcp-Session-Id`, reused across the session.                                                                                         |
 | `KoaMcpTransport`                                 | Minimal single-exchange `Transport` for stateless mode (one JSON-RPC message in, one response out).                                                                                                                 |
@@ -183,6 +187,52 @@ registry
 
 `new ExplainedToolHandler(handler)` wraps a single tool.
 
+## MCP UI (MCP Apps)
+
+[MCP Apps](https://github.com/modelcontextprotocol/ext-apps) lets a tool point at a `ui://` HTML resource that the host renders in a sandboxed iframe next to the conversation. Two pieces make one: a resource that serves the app, and a tool whose definition names it.
+
+```ts
+import { Injectable } from 'injectkit';
+import { McpUiResource, mcpUiSupport, withMcpUi, type McpToolContext, type McpToolHandler } from '@maroonedsoftware/mcp';
+
+@Injectable()
+class MetricChartApp extends McpUiResource {
+  constructor() {
+    super({ uri: 'ui://charts/metric', name: 'metric_chart', ui: { csp: { connectDomains: ['https://api.example.com'] } } });
+  }
+
+  protected async html(): Promise<string> {
+    return chartAppHtml; // a bundled single-file app
+  }
+}
+
+@Injectable()
+class ShowMetricTool implements McpToolHandler {
+  readonly definition = withMcpUi(
+    { name: 'show_metric', description: 'Chart a metric over time.', inputSchema: { type: 'object', properties: { metric: { type: 'string' } } } },
+    { resourceUri: 'ui://charts/metric' },
+  );
+
+  async handle(args: Record<string, unknown>, context: McpToolContext) {
+    const series = await loadSeries(String(args.metric));
+    const summary = `${series.name}: ${series.latest} (${series.change} over 30 days)`;
+    // Always return text the model can read. Add the app's data when the client can render it.
+    if (mcpUiSupport(context) === 'unsupported') return { content: [{ type: 'text' as const, text: summary }] };
+    return { content: [{ type: 'text' as const, text: summary }], structuredContent: { series } };
+  }
+}
+
+registry.register(McpResourceHandlerMap).useMap(McpResourceHandlerMap).set('ui://charts/metric', MetricChartApp);
+```
+
+A tool with `visibility: ['app']` is callable only from the rendered app (a refresh button, say), never by the model.
+
+What the server does for you:
+
+- Advertises the `io.modelcontextprotocol/ui` extension in `initialize` when any tool or resource carries UI.
+- In a stateful session, a client that did not negotiate the extension gets a `tools/list` with app-only tools left out and `_meta.ui` stripped, and a `resources/list` without the `ui://` apps.
+- In stateless mode the client's capabilities are never seen (each request gets a fresh `Server`), so `mcpUiSupport` returns `'unknown'` and the listings are sent in full. A UI host needs app-only tools listed to enforce their visibility.
+
 ## Serving MCP
 
 You own the route. Add `bodyParserMiddleware(['application/json'])` first (ServerKit puts the parsed payload on `ctx.parsedBody`, never on koa's `ctx.request.body`), gate it with `requirePolicy({ policy: false })`, build an `McpRequestContext` from `ctx`, and dispatch. The mode is chosen from `McpConfig.sessionMode`. On Fastify the same context values come from `request.requestId`, `request.logger`, `request.authenticationSession`, and `request.container`, accepted content types go in the route's `config.body`, and the guard goes in `preHandler`.
@@ -314,6 +364,7 @@ Note that an error thrown from a handler â€” the 401 above, or `assert`'s 403 â€
 - Streamable HTTP only. stdio transport is out of scope.
 - The bundled auth is a static shared token; wire real OAuth resource-server validation before production.
 - Stateful mode assumes single-process session storage unless you externalize it (see [session modes](#session-modes)).
+- MCP UI support detection needs stateful mode. Stateless requests report `'unknown'` and get unfiltered listings.
 
 ## License
 
