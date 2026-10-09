@@ -12,6 +12,7 @@ export * from './mcp.tool.handler.js';
 export * from './mcp.explained.tool.handler.js';
 export * from './mcp.help.tool.handler.js';
 export * from './mcp.resource.handler.js';
+export * from './mcp.ui.js';
 export * from './mcp.prompt.handler.js';
 export * from './mcp.server.factory.js';
 export * from './mcp.transport.js';
