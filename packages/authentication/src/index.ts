@@ -48,6 +48,7 @@ export * from './policies/support.verification.allowed.policy.js';
 export * from './policies/api.key.allowed.policy.js';
 export * from './policies/auth.session.api.key.policy.js';
 export * from './policies/auth.session.mfa.satisfied.or.api.key.policy.js';
+export * from './policies/auth.session.scope.policy.js';
 export * from './policies/policy.mappings.js';
 export * from './mfa/types.js';
 export * from './mfa/mfa.challenge.service.js';

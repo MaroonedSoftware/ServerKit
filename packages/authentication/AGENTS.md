@@ -150,6 +150,7 @@ class) and an abstract `<Name>FactorRepository` you implement.
 | `auth.api.key.allowed`                  | `ApiKeyAllowedPolicy`              | `ApiKeyAllowedPolicyContext`              |
 | `auth.session.api.key`                  | `ApiKeySessionPolicy`              | `ApiKeySessionPolicyContext`              |
 | `auth.session.mfa.satisfied.or.api.key` | `MfaSatisfiedOrApiKeyPolicy`       | `AuthMfaSatisfiedPolicyContext`           |
+| `auth.session.scope`                    | `SessionScopePolicy`               | `SessionScopePolicyContext`               |
 
 | Export                         | Kind     | Shape                                                    | Notes                                                           |
 | ------------------------------ | -------- | -------------------------------------------------------- | --------------------------------------------------------------- |
@@ -191,6 +192,7 @@ default off the route path — a `@maroonedsoftware/mcp` tool passing it to `req
 | `ApiKeyService` (+ `…Options`)                                           | class          | Issue, validate, rotate, revoke. `authenticate(token)` mints the session.               |
 | `API_KEY_SESSION_POLICY`, `MFA_SATISFIED_OR_API_KEY_POLICY`              | constants      | Policy names for machine routes. `requirePolicy()`'s default rejects key sessions.      |
 | `getApiKeyClaim`                                                         | function       | `(session) => ApiKeySessionClaim \| undefined`. How a rule spots a machine caller.      |
+| `SESSION_SCOPE_POLICY`, `getSessionScopes`                               | const/function | Scope check for OAuth grants and keys alike. An undelegated session passes.             |
 | `ApiKeyRepository`                                                       | abstract class | `secretHash` needs a **unique index**; it is the hot-path lookup key.                   |
 | `ApiKey`, `ApiKeyCreateInput`, `ApiKeyUpdate`, `ApiKeyIssued`            | interfaces     | `ApiKeyIssued.token` is the only place the plaintext token exists.                      |
 | `ApiKeyValidation`, `ApiKeyRejectionReason`                              | types          | Discriminated result, never a throw — a handler that throws stops the chain.            |

@@ -13,7 +13,7 @@ export class OAuthAuthorizationServerOptions {
     public readonly tokenEndpoint: string,
     /** Every resource tokens may be issued for. A token is bound to exactly one. */
     public readonly resources: readonly string[],
-    /** Scopes advertised and echoed. Nothing in the package authorizes on them. */
+    /** Scopes advertised and echoed. Routes authorize on them with `SESSION_SCOPE_POLICY`. */
     public readonly scopesSupported: readonly string[],
     /** The consumer's registration route. Dynamic Client Registration is on exactly when this is set. */
     public readonly registrationEndpoint?: string,
