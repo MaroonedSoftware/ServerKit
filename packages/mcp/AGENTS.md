@@ -101,16 +101,16 @@ second identity model (`context.auth`) alongside `context.authenticationSession`
 
 All three context types extend one base, so a new request-scoped value is declared once.
 
-| Export                         | Kind      | Shape                                                                                                                             | Notes                                                                                                                  |
-| ------------------------------ | --------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `McpContextBase`               | interface | `{ requestId: string; logger: Logger; auth?: McpAuthInfo; authenticationSession?: AuthenticationSession; container?: Container }` | The shared half of all three contexts. Add new fields **here**. `container` is the request-scoped injectkit container. |
-| `McpRequestContext`            | interface | `McpContextBase & { forTool(name, signal?), forResource(uri, signal?), forPrompt(name, signal?) }`                                | Transport-neutral: no koa or fastify types. The injectkit `Container` is DI, not transport.                            |
-| `McpToolContext`               | interface | `McpContextBase & { toolName, signal? }`                                                                                          | What a tool handler receives.                                                                                          |
-| `McpResourceContext`           | interface | `McpContextBase & { uri, signal? }`                                                                                               | What a resource handler receives.                                                                                      |
-| `McpPromptContext`             | interface | `McpContextBase & { promptName, signal? }`                                                                                        | What a prompt handler receives.                                                                                        |
-| `createMcpRequestContext`      | function  | `(input: CreateMcpRequestContextInput) => McpRequestContext`                                                                      | Build it from `ctx` in your route.                                                                                     |
-| `CreateMcpRequestContextInput` | type      | Alias for `McpContextBase`                                                                                                        | The factory takes exactly the shared fields.                                                                           |
-| `mcpContext`                   | constant  | `AsyncLocalStorage<McpRequestContext>`                                                                                            | Set by the dispatcher. **Handlers never read it directly.**                                                            |
+| Export                         | Kind      | Shape                                                                                                                                                                      | Notes                                                                                                                                                                                             |
+| ------------------------------ | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `McpContextBase`               | interface | `{ requestId: string; logger: Logger; auth?: McpAuthInfo; authenticationSession?: AuthenticationSession; container?: Container; clientCapabilities?: ClientCapabilities }` | The shared half of all three contexts. Add new fields **here**. `container` is the request-scoped injectkit container. `clientCapabilities` is set by the session registry in stateful mode only. |
+| `McpRequestContext`            | interface | `McpContextBase & { forTool(name, signal?), forResource(uri, signal?), forPrompt(name, signal?) }`                                                                         | Transport-neutral: no koa or fastify types. The injectkit `Container` is DI, not transport.                                                                                                       |
+| `McpToolContext`               | interface | `McpContextBase & { toolName, signal? }`                                                                                                                                   | What a tool handler receives.                                                                                                                                                                     |
+| `McpResourceContext`           | interface | `McpContextBase & { uri, signal? }`                                                                                                                                        | What a resource handler receives.                                                                                                                                                                 |
+| `McpPromptContext`             | interface | `McpContextBase & { promptName, signal? }`                                                                                                                                 | What a prompt handler receives.                                                                                                                                                                   |
+| `createMcpRequestContext`      | function  | `(input: CreateMcpRequestContextInput) => McpRequestContext`                                                                                                               | Build it from `ctx` in your route.                                                                                                                                                                |
+| `CreateMcpRequestContextInput` | type      | Alias for `McpContextBase`                                                                                                                                                 | The factory takes exactly the shared fields.                                                                                                                                                      |
+| `mcpContext`                   | constant  | `AsyncLocalStorage<McpRequestContext>`                                                                                                                                     | Set by the dispatcher. **Handlers never read it directly.**                                                                                                                                       |
 
 ### Handlers
 
@@ -129,15 +129,33 @@ All three context types extend one base, so a new request-scoped value is declar
 | `McpPromptHandler`                  | interface | `{ readonly definition: Prompt; get(args: Record<string, string>, context: McpPromptContext): Promise<GetPromptResult> }`      | User-picked message templates (slash commands, "+" menu), not model-called.                                                                     |
 | `McpPromptHandlerMap`               | class     | `@Injectable() extends Map<string, McpPromptHandler>`                                                                          | Keyed by `definition.name`. **Must be registered, even empty.**                                                                                 |
 
+### MCP UI (MCP Apps)
+
+| Export                 | Kind           | Shape                                                                                                       | Notes                                                                                                          |
+| ---------------------- | -------------- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `MCP_UI_EXTENSION`     | constant       | `'io.modelcontextprotocol/ui'`                                                                              | Extension key under `capabilities.extensions`.                                                                 |
+| `MCP_UI_MIME_TYPE`     | constant       | `'text/html;profile=mcp-app'`                                                                               | Hosts render only resources with this type.                                                                    |
+| `MCP_UI_URI_SCHEME`    | constant       | `'ui://'`                                                                                                   | —                                                                                                              |
+| `withMcpUi`            | function       | `(tool: Tool, ui: McpUiToolMeta) => Tool`                                                                   | Merges into `_meta.ui`, keeps other `_meta` keys. Throws `McpError` for a non-`ui://` `resourceUri`.           |
+| `getMcpUiToolMeta`     | function       | `(tool: Tool) => McpUiToolMeta \| undefined`                                                                | —                                                                                                              |
+| `isMcpUiAppOnlyTool`   | function       | `(tool: Tool) => boolean`                                                                                   | `visibility` set and missing `'model'`.                                                                        |
+| `assertMcpUiUri`       | function       | `(uri: string) => void`                                                                                     | Throws `McpError` unless the URI starts with `ui://`.                                                          |
+| `McpUiResource`        | abstract class | `protected constructor(options: McpUiResourceOptions)`; `protected abstract html(context): Promise<string>` | Implements `McpResourceHandler`. Puts the MIME type and `_meta.ui` on the definition and on the read contents. |
+| `McpUiResourceOptions` | interface      | `{ uri; name; title?; description?; ui?: McpUiResourceMeta }`                                               | —                                                                                                              |
+| `mcpUiSupport`         | function       | `(context: McpContextBase) => McpUiSupport`                                                                 | `'supported'`, `'unsupported'`, or `'unknown'` (no capabilities, always the case in stateless mode).           |
+| `getMcpUiCapability`   | function       | `(context: McpContextBase) => McpUiClientCapability \| undefined`                                           | The `{ mimeTypes }` the client advertised.                                                                     |
+| `McpUiToolMeta`        | interface      | `{ resourceUri?: string; visibility?: McpUiVisibility[] }`                                                  | `McpUiVisibility` is `'model' \| 'app'`; omitted means both.                                                   |
+| `McpUiResourceMeta`    | interface      | `{ csp?: McpUiCsp; permissions?: McpUiPermissions; domain?: string; prefersBorder?: boolean }`              | `McpUiCsp` has `connectDomains`, `resourceDomains`, `frameDomains`, `baseUriDomains`.                          |
+
 ### Server, transport, dispatch
 
-| Export                | Kind  | Shape                                                                                                                       | Notes                                                                                                             |
-| --------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `McpServerFactory`    | class | `@Injectable()`. `create(instructions?): Server`                                                                            | Memoizes `tools/list`, `resources/list` and `prompts/list` at construction; handlers are stable instance methods. |
-| `KoaMcpTransport`     | class | `implements Transport`. `receive(message)`, `response()`                                                                    | Single-exchange transport for **stateless** mode only.                                                            |
-| `McpSessionRegistry`  | class | `@Injectable()`. `handle(exchange, context, options?)`                                                                      | In-memory `Map` of `Mcp-Session-Id` → `{ server, transport }`.                                                    |
-| `McpStatefulExchange` | type  | `{ req: IncomingMessage; res: ServerResponse; body: unknown; sessionId? }`                                                  | —                                                                                                                 |
-| `McpDispatcher`       | class | `@Injectable()`. `get sessionMode`, `dispatch(message, context, options?)`, `dispatchStateful(exchange, context, options?)` | The single entry point.                                                                                           |
+| Export                | Kind  | Shape                                                                                                                       | Notes                                                                                                                                     |
+| --------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `McpServerFactory`    | class | `@Injectable()`. `create(instructions?): Server`                                                                            | Memoizes `tools/list`, `resources/list` and `prompts/list` at construction (plus UI-free variants); handlers are stable instance methods. |
+| `KoaMcpTransport`     | class | `implements Transport`. `receive(message)`, `response()`                                                                    | Single-exchange transport for **stateless** mode only.                                                                                    |
+| `McpSessionRegistry`  | class | `@Injectable()`. `handle(exchange, context, options?)`                                                                      | In-memory `Map` of `Mcp-Session-Id` → `{ server, transport }`.                                                                            |
+| `McpStatefulExchange` | type  | `{ req: IncomingMessage; res: ServerResponse; body: unknown; sessionId? }`                                                  | —                                                                                                                                         |
+| `McpDispatcher`       | class | `@Injectable()`. `get sessionMode`, `dispatch(message, context, options?)`, `dispatchStateful(exchange, context, options?)` | The single entry point.                                                                                                                   |
 
 `dispatch` returns `undefined` for a notification (no `id`) — the route acks with 202.
 
@@ -306,6 +324,12 @@ app.post('/mcp', { config: { body: ['application/json'] }, preHandler: [requireP
   the `check()` call in a policy so HTTP and MCP share one rule.
 - Never read `mcpContext` directly from a handler. Use the `McpToolContext` / `McpResourceContext`
   you were handed.
+- For an MCP Apps tool, build `definition` with `withMcpUi` and serve the app by subclassing
+  `McpUiResource`. Do not hand-write `_meta.ui`, and never emit the deprecated flat
+  `_meta["ui/resourceUri"]` key.
+- A UI tool still returns meaningful text `content`: the model reads that, and a client without
+  MCP Apps sees nothing else. Branch on `mcpUiSupport(context)` to add `structuredContent` for the
+  app, treating `'unknown'` like `'supported'`.
 
 ## Gotchas
 
@@ -422,7 +446,15 @@ app.post('/mcp', { config: { body: ['application/json'] }, preHandler: [requireP
 - **Per-caller instructions are text, not access control.** An `McpInstructions` resolver can read
   `authenticationSession` and resolve permission services from `container`, but the result only
   steers the model. Every tool still enforces its own permissions, and the text must not name
-  anything the caller is not allowed to know. `tools/list` stays the same for every caller.
+  anything the caller is not allowed to know. `tools/list` does not vary by caller identity.
+- **MCP UI detection needs stateful mode.** `clientCapabilities` comes from the session's
+  `initialize`, so stateless requests see `mcpUiSupport(context) === 'unknown'` and get the full
+  listings. In a stateful session, a client without the extension gets `tools/list` minus app-only
+  tools and `_meta.ui`, and `resources/list` minus the `ui://` apps. `tools/call` on an app-only
+  tool is not blocked server-side; enforcing visibility is the host's job.
+- **The session registry rebuilds the context.** To add `clientCapabilities`, it passes your
+  context through `createMcpRequestContext`, so only `McpContextBase` fields survive. A hand-built
+  `McpRequestContext` with extra members loses them in stateful mode.
 - **Instructions are frozen per MCP session.** The resolver runs once, for `initialize`: per
   request in stateless mode only when the message is `initialize`, and once per session in stateful
   mode. A role change mid-session is not reflected, and a client may keep one connection across many
@@ -462,6 +494,10 @@ src/
   mcp.help.tool.handler.ts  McpHelpToolHandler, McpHelpToolOptions, help tool defaults
   mcp.resource.handler.ts   McpResourceHandler, McpResourceHandlerMap
   mcp.prompt.handler.ts     McpPromptHandler, McpPromptHandlerMap
+  mcp.ui.ts                 MCP Apps constants and types, withMcpUi, mcpUiSupport,
+                            getMcpUiCapability, getMcpUiToolMeta, isMcpUiAppOnlyTool
+  mcp.ui.resource.handler.ts
+                            McpUiResource, McpUiResourceOptions
   mcp.server.factory.ts     McpServerFactory — memoized lists, stable handlers
   mcp.transport.ts          KoaMcpTransport — single-exchange, stateless only
   mcp.session.registry.ts   McpSessionRegistry, McpStatefulExchange
