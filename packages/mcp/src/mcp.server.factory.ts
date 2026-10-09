@@ -20,6 +20,7 @@ import {
   type ReadResourceResult,
   type ServerNotification,
   type ServerRequest,
+  type Tool,
 } from '@modelcontextprotocol/sdk/types.js';
 import { McpConfig, MCP_DEFAULT_REQUEST_TIMEOUT_MS } from './mcp.config.js';
 import { McpError } from './mcp.error.js';
@@ -27,9 +28,18 @@ import { McpToolHandlerMap } from './mcp.tool.handler.js';
 import { McpResourceHandlerMap } from './mcp.resource.handler.js';
 import { McpPromptHandlerMap } from './mcp.prompt.handler.js';
 import { mcpContext } from './mcp.request.context.js';
+import { getMcpUiToolMeta, isMcpUiAppOnlyTool, mcpUiSupport, MCP_UI_EXTENSION, MCP_UI_MIME_TYPE } from './mcp.ui.js';
 
 /** Per-request extras the SDK passes to a `Server` request handler. */
 type McpHandlerExtra = RequestHandlerExtra<ServerRequest, ServerNotification>;
+
+/** A tool definition without `_meta.ui`, dropping `_meta` entirely when nothing else is in it. */
+const withoutMcpUi = (tool: Tool): Tool => {
+  if (!tool._meta || !('ui' in tool._meta)) return tool;
+  const { _meta, ...rest } = tool;
+  const meta = Object.fromEntries(Object.entries(_meta).filter(([key]) => key !== 'ui'));
+  return Object.keys(meta).length > 0 ? { ...rest, _meta: meta } : rest;
+};
 
 /**
  * Builds SDK `Server` instances wired to ServerKit's DI-registered handler maps.
@@ -59,6 +69,12 @@ export class McpServerFactory {
   private readonly resourceList: ListResourcesResult;
   /** Memoized `prompts/list` result. */
   private readonly promptList: ListPromptsResult;
+  /** `tools/list` for a client that did not negotiate MCP UI: no app-only tools, no `_meta.ui`. */
+  private readonly toolListWithoutUi: ListToolsResult;
+  /** `resources/list` for a client that did not negotiate MCP UI: no MCP Apps resources. */
+  private readonly resourceListWithoutUi: ListResourcesResult;
+  /** Whether any tool or resource carries MCP UI, so `initialize` advertises the extension. */
+  private readonly hasUi: boolean;
 
   constructor(
     private readonly tools: McpToolHandlerMap,
@@ -70,6 +86,22 @@ export class McpServerFactory {
     this.toolList = { tools: [...tools.values()].map(handler => handler.definition) };
     this.resourceList = { resources: [...resources.values()].map(handler => handler.definition) };
     this.promptList = { prompts: [...prompts.values()].map(handler => handler.definition) };
+
+    this.toolListWithoutUi = { tools: this.toolList.tools.filter(tool => !isMcpUiAppOnlyTool(tool)).map(withoutMcpUi) };
+    this.resourceListWithoutUi = { resources: this.resourceList.resources.filter(resource => resource.mimeType !== MCP_UI_MIME_TYPE) };
+    this.hasUi =
+      this.toolList.tools.some(tool => getMcpUiToolMeta(tool) !== undefined) ||
+      this.resourceListWithoutUi.resources.length < this.resourceList.resources.length;
+  }
+
+  /**
+   * Whether this request's client is known not to render MCP UI. Only a stateful
+   * session knows; an unknown client gets the full listings, since a UI host
+   * needs app-only tools listed to enforce their visibility.
+   */
+  private hidesUi(): boolean {
+    const context = mcpContext.getStore();
+    return context !== undefined && mcpUiSupport(context) === 'unsupported';
   }
 
   /**
@@ -82,9 +114,9 @@ export class McpServerFactory {
     return AbortSignal.any([extra.signal, AbortSignal.timeout(this.config.requestTimeoutMs ?? MCP_DEFAULT_REQUEST_TIMEOUT_MS)]);
   }
 
-  private readonly onListTools = async (): Promise<ListToolsResult> => this.toolList;
+  private readonly onListTools = async (): Promise<ListToolsResult> => (this.hidesUi() ? this.toolListWithoutUi : this.toolList);
 
-  private readonly onListResources = async (): Promise<ListResourcesResult> => this.resourceList;
+  private readonly onListResources = async (): Promise<ListResourcesResult> => (this.hidesUi() ? this.resourceListWithoutUi : this.resourceList);
 
   private readonly onListPrompts = async (): Promise<ListPromptsResult> => this.promptList;
 
@@ -135,7 +167,8 @@ export class McpServerFactory {
    * connection: per request in stateless mode, per session in stateful mode.
    *
    * Advertises only the capabilities backed by a non-empty handler map, so a
-   * tools-only server doesn't claim resource or prompt support.
+   * tools-only server doesn't claim resource or prompt support. The MCP UI
+   * extension is advertised only when a tool or resource carries UI.
    *
    * @param instructions - Text for the `initialize` result. Defaults to
    *   {@link McpConfig.instructions}; omitted from `initialize` when blank.
@@ -148,6 +181,7 @@ export class McpServerFactory {
           ...(this.tools.size > 0 ? { tools: {} } : {}),
           ...(this.resources.size > 0 ? { resources: {} } : {}),
           ...(this.prompts.size > 0 ? { prompts: {} } : {}),
+          ...(this.hasUi ? { extensions: { [MCP_UI_EXTENSION]: {} } } : {}),
         },
         ...(instructions ? { instructions } : {}),
       },
