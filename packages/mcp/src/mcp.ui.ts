@@ -1,5 +1,6 @@
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { McpError } from './mcp.error.js';
+import type { McpContextBase } from './mcp.request.context.js';
 
 /**
  * Extension identifier for MCP Apps (spec 2026-01-26). A client that can render
@@ -68,14 +69,50 @@ export interface McpUiClientCapability {
   mimeTypes: string[];
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/**
+ * Whether the client on this request can render MCP Apps:
+ *
+ * - `'supported'`: it advertised {@link MCP_UI_EXTENSION} with {@link MCP_UI_MIME_TYPE}.
+ * - `'unsupported'`: it sent capabilities without that.
+ * - `'unknown'`: no capabilities are known, which is always the case in
+ *   stateless mode.
+ */
+export type McpUiSupport = 'supported' | 'unsupported' | 'unknown';
+
+/**
+ * The client's MCP Apps capability, or `undefined` when it did not advertise one
+ * (or when capabilities are unknown, as in stateless mode).
+ */
+export const getMcpUiCapability = (context: McpContextBase): McpUiClientCapability | undefined => {
+  const capability = context.clientCapabilities?.extensions?.[MCP_UI_EXTENSION];
+  if (!isRecord(capability) || !Array.isArray(capability.mimeTypes)) return undefined;
+  return { mimeTypes: capability.mimeTypes.filter((mimeType): mimeType is string => typeof mimeType === 'string') };
+};
+
+/**
+ * Classifies the client on this request; see {@link McpUiSupport}. A tool
+ * handler uses it to decide whether to shape its result for the app. Always
+ * return meaningful text `content` either way, since the model reads that.
+ *
+ * @example
+ * ```ts
+ * if (mcpUiSupport(context) === 'unsupported') return { content: [{ type: 'text', text: summary }] };
+ * return { content: [{ type: 'text', text: summary }], structuredContent: chartData };
+ * ```
+ */
+export const mcpUiSupport = (context: McpContextBase): McpUiSupport => {
+  if (context.clientCapabilities === undefined) return 'unknown';
+  return getMcpUiCapability(context)?.mimeTypes.includes(MCP_UI_MIME_TYPE) ? 'supported' : 'unsupported';
+};
+
 /** Throws unless `uri` uses the {@link MCP_UI_URI_SCHEME}. */
 export const assertMcpUiUri = (uri: string): void => {
   if (!uri.startsWith(MCP_UI_URI_SCHEME)) {
     throw new McpError(`MCP UI resource URIs must use the ${MCP_UI_URI_SCHEME} scheme`).withDetails({ uri });
   }
 };
-
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /**
  * Returns a copy of `tool` with `ui` merged into `_meta.ui`. Other `_meta` keys

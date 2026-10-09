@@ -6,7 +6,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { McpServerFactory } from './mcp.server.factory.js';
-import { mcpContext, type McpRequestContext } from './mcp.request.context.js';
+import { createMcpRequestContext, mcpContext, type McpRequestContext } from './mcp.request.context.js';
 import { resolveMcpInstructions, type McpDispatchOptions } from './mcp.instructions.js';
 
 /** A live MCP session: one SDK `Server` bound to one Streamable-HTTP transport. */
@@ -52,7 +52,10 @@ export class McpSessionRegistry {
    * or opens a new one when the request is an `initialize`. The
    * {@link McpRequestContext} is made ambient (via {@link mcpContext}) for the
    * duration so tool/resource handlers see request-scoped state, exactly as in
-   * stateless mode.
+   * stateless mode. The context is rebuilt with the session's negotiated
+   * `clientCapabilities`, so only the
+   * {@link import('./mcp.request.context.js').McpContextBase} fields of a custom
+   * context survive.
    *
    * Writes the response (including SSE streams) directly to `exchange.res`.
    *
@@ -77,7 +80,10 @@ export class McpSessionRegistry {
       session = await this.open(await resolveMcpInstructions(options.instructions, context));
     }
 
-    await mcpContext.run(context, () => session.transport.handleRequest(req, res, body));
+    // The session's `Server` holds what the client sent in `initialize`; hand it to
+    // handlers. It is still undefined while the `initialize` request itself runs.
+    const sessionContext = createMcpRequestContext({ ...context, clientCapabilities: session.server.getClientCapabilities() });
+    await mcpContext.run(sessionContext, () => session.transport.handleRequest(req, res, body));
   }
 
   /** Opens a new session: a fresh `Server` connected to a new Streamable-HTTP transport. */

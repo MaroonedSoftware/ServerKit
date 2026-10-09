@@ -13,6 +13,7 @@ import { McpPromptHandlerMap } from '../src/mcp.prompt.handler.js';
 import { createMcpRequestContext, type McpContextBase } from '../src/mcp.request.context.js';
 import type { McpConfig } from '../src/mcp.config.js';
 import type { McpDispatchOptions } from '../src/mcp.instructions.js';
+import { mcpUiSupport, MCP_UI_EXTENSION, MCP_UI_MIME_TYPE } from '../src/mcp.ui.js';
 import { makeAuthenticatedSession, makeLogger } from './helpers.js';
 
 /** A tool that upper-cases its message, so we can prove args flow end to end. */
@@ -27,9 +28,18 @@ const shoutTool = (): McpToolHandler => ({
   },
 });
 
+/** A tool that reports what the server knows about the client's MCP UI support. */
+const uiSupportTool = (): McpToolHandler => ({
+  definition: { name: 'ui_support', inputSchema: { type: 'object', properties: {} } },
+  async handle(_args, context): Promise<CallToolResult> {
+    return { content: [{ type: 'text', text: mcpUiSupport(context) }] };
+  },
+});
+
 const buildDispatcher = (sessionMode: McpConfig['sessionMode'], overrides: Partial<McpConfig> = {}) => {
   const tools = new McpToolHandlerMap();
   tools.set('shout', shoutTool());
+  tools.set('ui_support', uiSupportTool());
   const config: McpConfig = { serverName: 'e2e-server', version: '1.0.0', sessionMode, ...overrides };
   const logger = makeLogger();
   const factory = new McpServerFactory(tools, new McpResourceHandlerMap(), new McpPromptHandlerMap(), config, logger);
@@ -118,10 +128,15 @@ describe('MCP e2e over real HTTP', () => {
 
     it('lists tools and executes a tools/call over the wire', async () => {
       const list = await post({ jsonrpc: '2.0', id: 2, method: 'tools/list' });
-      expect(list).toMatchObject({ id: 2, result: { tools: [{ name: 'shout' }] } });
+      expect(list).toMatchObject({ id: 2, result: { tools: [{ name: 'shout' }, { name: 'ui_support' }] } });
 
       const call = await post({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'shout', arguments: { message: 'hello wire' } } });
       expect(call).toMatchObject({ id: 3, result: { content: [{ type: 'text', text: 'HELLO WIRE' }] } });
+    });
+
+    it('reports MCP UI support as unknown, since no initialize reached this server', async () => {
+      const call = await post({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'ui_support', arguments: {} } });
+      expect(call).toMatchObject({ id: 4, result: { content: [{ type: 'text', text: 'unknown' }] } });
     });
   });
 
@@ -147,6 +162,25 @@ describe('MCP e2e over real HTTP', () => {
       expect(result.content).toEqual([{ type: 'text', text: 'OVER SSE' }]);
 
       await client.close();
+    });
+
+    const uiSupportFor = async (client: Client): Promise<unknown> => {
+      await client.connect(new StreamableHTTPClientTransport(new URL(url)));
+      const result = (await client.callTool({ name: 'ui_support', arguments: {} })) as CallToolResult;
+      await client.close();
+      return result.content;
+    };
+
+    it('tells handlers the client supports MCP UI when it negotiated the extension', async () => {
+      const client = new Client(
+        { name: 'ui-client', version: '1.0.0' },
+        { capabilities: { extensions: { [MCP_UI_EXTENSION]: { mimeTypes: [MCP_UI_MIME_TYPE] } } } },
+      );
+      expect(await uiSupportFor(client)).toEqual([{ type: 'text', text: 'supported' }]);
+    });
+
+    it('tells handlers the client does not support MCP UI when it left the extension out', async () => {
+      expect(await uiSupportFor(new Client({ name: 'plain-client', version: '1.0.0' }))).toEqual([{ type: 'text', text: 'unsupported' }]);
     });
   });
 
@@ -211,7 +245,7 @@ describe('MCP e2e over real HTTP', () => {
       const dispatcher = buildDispatcher('stateless');
       const context = createMcpRequestContext({ requestId: 'req-e2e', logger: makeLogger() });
       const response = await dispatcher.dispatch({ jsonrpc: '2.0', id: 2, method: 'tools/list' }, context, { instructions: resolver });
-      expect(response).toMatchObject({ id: 2, result: { tools: [{ name: 'shout' }] } });
+      expect(response).toMatchObject({ id: 2, result: { tools: [{ name: 'shout' }, { name: 'ui_support' }] } });
       expect(resolver).not.toHaveBeenCalled();
     });
 

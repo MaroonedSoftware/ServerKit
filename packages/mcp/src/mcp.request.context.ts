@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import type { AuthenticationSession } from '@maroonedsoftware/authentication';
 import type { Container } from 'injectkit';
 import type { Logger } from '@maroonedsoftware/logger';
+import type { ClientCapabilities } from '@modelcontextprotocol/sdk/types.js';
 import type { McpAuthInfo } from './mcp.auth.js';
 
 /**
@@ -43,6 +44,14 @@ export interface McpContextBase {
    * this, not from the root container a singleton handler was built from.
    */
   container?: Container;
+  /**
+   * Capabilities the client sent in `initialize`. Filled in by
+   * {@link import('./mcp.session.registry.js').McpSessionRegistry} for every
+   * request in a stateful session; `undefined` in stateless mode, where the
+   * request's `Server` never saw an `initialize`. Read UI support through
+   * {@link import('./mcp.ui.js').mcpUiSupport} rather than this directly.
+   */
+  clientCapabilities?: ClientCapabilities;
 }
 
 /**
@@ -133,11 +142,11 @@ export type CreateMcpRequestContextInput = McpContextBase;
  * ```
  */
 export const createMcpRequestContext = (input: CreateMcpRequestContextInput): McpRequestContext => {
-  const { requestId, logger, auth, authenticationSession, container } = input;
+  const { requestId, logger, auth, authenticationSession, container, clientCapabilities } = input;
 
   // Destructured rather than aliasing `input`, so a caller mutating the object
   // it passed in cannot reach into a context already handed to a handler.
-  const shared: McpContextBase = { requestId, logger, auth, authenticationSession, container };
+  const shared: McpContextBase = { requestId, logger, auth, authenticationSession, container, clientCapabilities };
 
   return {
     ...shared,

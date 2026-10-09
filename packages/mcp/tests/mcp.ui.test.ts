@@ -1,7 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { IsMcpError } from '../src/mcp.error.js';
-import { assertMcpUiUri, getMcpUiToolMeta, isMcpUiAppOnlyTool, withMcpUi } from '../src/mcp.ui.js';
+import {
+  assertMcpUiUri,
+  getMcpUiCapability,
+  getMcpUiToolMeta,
+  isMcpUiAppOnlyTool,
+  mcpUiSupport,
+  MCP_UI_EXTENSION,
+  MCP_UI_MIME_TYPE,
+  withMcpUi,
+} from '../src/mcp.ui.js';
+import { makeContext } from './helpers.js';
 
 const tool = (extra: Partial<Tool> = {}): Tool => ({ name: 'show_chart', inputSchema: { type: 'object', properties: {} }, ...extra });
 
@@ -58,5 +68,37 @@ describe('isMcpUiAppOnlyTool', () => {
   ] as const)('visibility %j → %s', (visibility, expected) => {
     const definition = visibility === undefined ? tool() : withMcpUi(tool(), { visibility: [...visibility] });
     expect(isMcpUiAppOnlyTool(definition)).toBe(expected);
+  });
+});
+
+describe('getMcpUiCapability', () => {
+  it('reads the advertised mime types', () => {
+    const context = makeContext({ clientCapabilities: { extensions: { [MCP_UI_EXTENSION]: { mimeTypes: [MCP_UI_MIME_TYPE, 42] } } } });
+    expect(getMcpUiCapability(context)).toEqual({ mimeTypes: [MCP_UI_MIME_TYPE] });
+  });
+
+  it('returns undefined for a missing or malformed capability', () => {
+    expect(getMcpUiCapability(makeContext())).toBeUndefined();
+    expect(getMcpUiCapability(makeContext({ clientCapabilities: {} }))).toBeUndefined();
+    expect(getMcpUiCapability(makeContext({ clientCapabilities: { extensions: { [MCP_UI_EXTENSION]: {} } } }))).toBeUndefined();
+  });
+});
+
+describe('mcpUiSupport', () => {
+  it('is unknown without client capabilities', () => {
+    expect(mcpUiSupport(makeContext())).toBe('unknown');
+  });
+
+  it('is supported when the client lists the MCP Apps mime type', () => {
+    expect(mcpUiSupport(makeContext({ clientCapabilities: { extensions: { [MCP_UI_EXTENSION]: { mimeTypes: [MCP_UI_MIME_TYPE] } } } }))).toBe(
+      'supported',
+    );
+  });
+
+  it('is unsupported when capabilities leave the extension or mime type out', () => {
+    expect(mcpUiSupport(makeContext({ clientCapabilities: {} }))).toBe('unsupported');
+    expect(mcpUiSupport(makeContext({ clientCapabilities: { extensions: { [MCP_UI_EXTENSION]: { mimeTypes: ['text/html'] } } } }))).toBe(
+      'unsupported',
+    );
   });
 });
