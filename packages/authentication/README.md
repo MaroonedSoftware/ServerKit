@@ -1216,6 +1216,26 @@ router.get('/v1/reports', requirePolicy({ policy: MFA_SATISFIED_OR_API_KEY_POLIC
 Scope enforcement lives in the policy rather than the service, because what a scope permits is a
 property of the route and the service has no idea which route a key was presented to.
 
+`SESSION_SCOPE_POLICY` (`auth.session.scope`, context `{ session, scope }`) checks a scope on any
+delegated session: an OAuth grant's consented `claims.oauth.scope` or a key's `scopes` (where `*`
+matches anything). A person's own session carries neither and passes, since scopes only narrow what
+a delegate may do. Pair it with the route's authentication rather than using it alone.
+
+```typescript
+import { SESSION_SCOPE_POLICY } from '@maroonedsoftware/authentication';
+
+// A read-only grant or key is refused with insufficient_scope; the person's own session is not.
+// `requirePolicy` passes only `{ session }`, so a scope is asserted through the policy service.
+const requireScope =
+  (scope: string): ServerKitRouterMiddleware =>
+  async (ctx, next) => {
+    await ctx.container.get(PolicyService).assert(SESSION_SCOPE_POLICY, { session: ctx.authenticationSession, scope });
+    await next();
+  };
+
+router.post('/v1/roles', requirePolicy(), requireScope('write'), handler);
+```
+
 There is no validation cache, so a revocation takes effect on the next request rather than at the
 end of a TTL. `lastUsedAt` writes are throttled to one per five minutes per key, so a busy key does
 not turn every request into a database write.
@@ -1307,7 +1327,7 @@ A remote MCP server protected by OAuth needs an authorization server that its cl
 
 **Your app owns the HTTP.** Every method answers a structured result or throws an `OAuthError` carrying its RFC code. The RFC endpoints need RFC 6749 error bodies, which the default error renderer does not produce, so render `error.toBody()` with `error.statusCode` and `error.headers` yourself. You also own the consent page, the session claims you consent with, and revoking a grant.
 
-**A grant is a session.** Exchanging a code mints an ordinary `AuthenticationSessionService` session for the consenting user, carrying their claims and factors plus `claims.oauth` (`{ clientId, clientName?, resource, scope, grantId? }`). Its audience is the resource, so its tokens are refused by every `lookupSessionFromJwt` call that does not ask for that resource. Scopes are advertised and echoed; nothing authorizes on them.
+**A grant is a session.** Exchanging a code mints an ordinary `AuthenticationSessionService` session for the consenting user, carrying their claims and factors plus `claims.oauth` (`{ clientId, clientName?, resource, scope, grantId? }`). Its audience is the resource, so its tokens are refused by every `lookupSessionFromJwt` call that does not ask for that resource. Scopes are advertised and echoed; a route requires one with `SESSION_SCOPE_POLICY` (below).
 
 ```typescript
 import {

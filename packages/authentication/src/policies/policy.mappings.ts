@@ -14,6 +14,7 @@ import { SupportVerificationAllowedPolicy, SupportVerificationAllowedPolicyConte
 import { ApiKeyAllowedPolicy, ApiKeyAllowedPolicyContext } from './api.key.allowed.policy.js';
 import { API_KEY_SESSION_POLICY, ApiKeySessionPolicy, ApiKeySessionPolicyContext } from './auth.session.api.key.policy.js';
 import { MFA_SATISFIED_OR_API_KEY_POLICY, MfaSatisfiedOrApiKeyPolicy } from './auth.session.mfa.satisfied.or.api.key.policy.js';
+import { SESSION_SCOPE_POLICY, SessionScopePolicy, SessionScopePolicyContext } from './auth.session.scope.policy.js';
 
 /**
  * Names of the policies bundled with this package. Use as the policy-name keys
@@ -33,7 +34,8 @@ export type AuthenticationPolicyNames =
   | 'auth.support.verification.allowed'
   | 'auth.api.key.allowed'
   | typeof API_KEY_SESSION_POLICY
-  | typeof MFA_SATISFIED_OR_API_KEY_POLICY;
+  | typeof MFA_SATISFIED_OR_API_KEY_POLICY
+  | typeof SESSION_SCOPE_POLICY;
 
 /**
  * Default mapping from each bundled {@link AuthenticationPolicyNames} value to
@@ -56,6 +58,7 @@ export const AuthenticationPolicyMappings: Record<AuthenticationPolicyNames, Con
   'auth.api.key.allowed': ApiKeyAllowedPolicy,
   [API_KEY_SESSION_POLICY]: ApiKeySessionPolicy,
   [MFA_SATISFIED_OR_API_KEY_POLICY]: MfaSatisfiedOrApiKeyPolicy,
+  [SESSION_SCOPE_POLICY]: SessionScopePolicy,
 };
 
 /**
@@ -79,4 +82,5 @@ export type AuthenticationPolicyContexts = {
   'auth.api.key.allowed': ApiKeyAllowedPolicyContext;
   [API_KEY_SESSION_POLICY]: ApiKeySessionPolicyContext;
   [MFA_SATISFIED_OR_API_KEY_POLICY]: AuthMfaSatisfiedPolicyContext;
+  [SESSION_SCOPE_POLICY]: SessionScopePolicyContext;
 };
