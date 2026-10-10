@@ -39,6 +39,17 @@ const makeCache = () => {
     set: vi.fn(async (key: string, value: string) => {
       store.set(key, value);
     }),
+    // Set-if-absent, returning whether this caller won. The check and the write
+    // happen with no intervening await, so it is genuinely atomic the way the
+    // ioredis `SET key value NX EX` backing it is: concurrent callers race on
+    // the same key and exactly one wins.
+    add: vi.fn(async (key: string, value: string) => {
+      if (store.has(key)) {
+        return false;
+      }
+      store.set(key, value);
+      return true;
+    }),
     update: vi.fn(async (key: string, value: string) => {
       store.set(key, value);
     }),
@@ -197,6 +208,20 @@ describe('SupportVerificationCodeService', () => {
       const { code } = await service.issueCode(actor);
       await service.verifyCode(actor, code);
       await expect(service.verifyCode(actor, code)).rejects.toMatchObject({ statusCode: 401 });
+      expect(logger.warn).toHaveBeenCalledWith('support_verification.replay', expect.any(Object));
+    });
+
+    it('allows only one of two concurrent verifications of the same valid code', async () => {
+      const { code } = await service.issueCode(actor);
+
+      const results = await Promise.allSettled([service.verifyCode(actor, code), service.verifyCode(actor, code)]);
+
+      const fulfilled = results.filter((r) => r.status === 'fulfilled');
+      const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0]!.reason).toMatchObject({ statusCode: 401 });
       expect(logger.warn).toHaveBeenCalledWith('support_verification.replay', expect.any(Object));
     });
 

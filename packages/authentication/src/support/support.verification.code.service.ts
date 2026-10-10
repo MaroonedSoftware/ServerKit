@@ -211,17 +211,20 @@ export class SupportVerificationCodeService {
       });
     }
 
+    // Claim the matched counter atomically. `add` is set-if-absent, so two
+    // concurrent presentations of the same valid code race on the same key and
+    // only one wins; the loser is rejected as a replay rather than both
+    // succeeding on a non-atomic get-then-set.
     const consumedKey = this.getConsumedKey(actor.actorId, matchedCounter);
-    const alreadyConsumed = await this.cache.get(consumedKey);
-    if (alreadyConsumed) {
+    const ttlSeconds = periodSeconds * (2 * this.options.driftWindow + 1);
+    const claimed = await this.cache.add(consumedKey, '1', { ttl: Duration.fromObject({ seconds: ttlSeconds }) });
+    if (!claimed) {
       this.logger.warn('support_verification.replay', { actorId: actor.actorId, counter: matchedCounter });
       throw unauthorizedError('Bearer error="invalid_code"').withInternalDetails({
         message: `${actor.actorId} replayed support verification code at counter ${matchedCounter}`,
       });
     }
 
-    const ttlSeconds = periodSeconds * (2 * this.options.driftWindow + 1);
-    await this.cache.set(consumedKey, '1', Duration.fromObject({ seconds: ttlSeconds }));
     await this.rateLimiter.reward(rateLimitKey);
 
     this.logger.info('support_verification.succeeded', { actorId: actor.actorId, counter: matchedCounter });
