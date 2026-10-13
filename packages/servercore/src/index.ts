@@ -9,6 +9,7 @@ export * from './parsers/multipart.parser.js';
 export * from './parsers/binary.parser.js';
 export * from './parsers/serverkit.default.parsers.js';
 export * from './policies/request.signature.valid.policy.js';
+export { signRequestBody, type SignRequestBodyInput, type SignedRequestBody } from './policies/request.body.signer.js';
 export * from './errors/error.renderer.js';
 export * from './request/request.identity.js';
 export * from './ratelimit/rate.limiter.js';

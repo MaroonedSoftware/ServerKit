@@ -31,7 +31,9 @@ an adapter for another framework, or a library that must work under either adapt
 - **Anonymous paths**: `createAnonymousPathMatcher` for routes that skip authentication.
 - **Credential scrubbing**: `stripRawAuthorizationHeader` removes the `Authorization` entry from a Node `rawHeaders` array, which `delete headers.authorization` does not touch.
 - **Request signatures**: `DefaultSignaturePolicy`, `SignaturePolicyContext`, and
-  `assertRequestSignature`, verifying an HMAC over the raw body in constant time.
+  `assertRequestSignature`, verifying an HMAC over the raw body in constant time, with an
+  optional signed timestamp and replay window; `signRequestBody` produces the matching
+  signature for an outbound request.
 - **SSE transport**: `openSseStream` with heartbeat, backpressure, and lifecycle-signal drain,
   plus `frameEvent`, `frameComment`, and `resolveLastEventId`.
 - **Server feed handler** (`@maroonedsoftware/servercore/serverfeed`): `handleServerFeed` streams
@@ -126,6 +128,48 @@ stream.event({ id: 1, event: 'tick', data: { at: DateTime.now().toISO() } });
 stream.onClose(() => clearInterval(timer));
 ```
 
+### Signing and verifying a request body
+
+`signRequestBody` and `DefaultSignaturePolicy` implement one scheme from both ends. The sender
+signs the exact body bytes; the receiver's `SignatureOptions` (resolved from `AppConfig` by
+`requireSignature`) name the headers and must agree on `secret`, `algorithm`, `digest`, and
+`prefix`.
+
+With a timestamp, the HMAC covers `"<unix seconds>.<raw body>"` and the receiver rejects a
+missing, non-integer, or out-of-window timestamp (past or future) before checking the HMAC:
+
+```typescript
+import { DateTime } from 'luxon';
+import { signRequestBody } from '@maroonedsoftware/servercore';
+
+// Sender
+const body = JSON.stringify(event);
+const { signature, timestamp } = signRequestBody({ secret, body, timestamp: DateTime.now(), prefix: 'v1=' });
+// POST body with headers:
+//   Example-Timestamp: <timestamp>
+//   Example-Signature: v1=<hex HMAC-SHA256(secret, "<timestamp>.<body>")>
+```
+
+```json
+{
+  "webhook": {
+    "header": "Example-Signature",
+    "secret": "…",
+    "algorithm": "sha256",
+    "digest": "hex",
+    "prefix": "v1=",
+    "timestamp": { "header": "Example-Timestamp", "maxAgeSeconds": 300 }
+  }
+}
+```
+
+The receiver then guards the route with `requireSignature('webhook')`. Leave out `timestamp` on
+both sides and the signature is `prefix + HMAC(raw body)`; with no `prefix` either, that is the
+bare HMAC the policy has always verified, so existing configs keep working unchanged. A denial
+is a 401 whose reason is one of `SignatureFailureReason`: `missing_timestamp`,
+`invalid_timestamp`, `timestamp_out_of_window`, or `invalid_signature`. The policy reads "now"
+from the policy envelope, so tests control the clock through `PolicyService.buildEnvelope`.
+
 ## API
 
 ### Lifecycle
@@ -155,8 +199,10 @@ stream.onClose(() => clearInterval(timer));
 - `CorsOrigin`, `normalizeCorsOrigins(origin)`, `createOriginMatcher(matchers)` (Koa adapter only).
 - `createAnonymousPathMatcher(paths)`.
 - `stripRawAuthorizationHeader(rawHeaders)`.
-- `REQUIRE_SIGNATURE_POLICY`, `SignatureOptions`, `SignaturePolicyContext`, `DefaultSignaturePolicy`,
-  `SignatureRequest`, `assertRequestSignature(container, request, optionsKey, policy?)`.
+- `REQUIRE_SIGNATURE_POLICY`, `SignatureOptions`, `SignatureTimestampOptions`, `SignatureFailureReason`,
+  `SignaturePolicyContext`, `DefaultSignaturePolicy`, `SignatureRequest`,
+  `assertRequestSignature(container, request, optionsKey, policy?)`.
+- `signRequestBody(input)`, `SignRequestBodyInput`, `SignedRequestBody`.
 
 ### SSE
 

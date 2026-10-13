@@ -80,21 +80,26 @@ plus `@hapi/bourne`, `inflation`, `injectkit`, `luxon`, `qs`, `rate-limiter-flex
 
 ### Guards
 
-| Export                        | Kind                       | Shape                                                                                          | Notes                                                                        |
-| ----------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `RateLimiter`                 | interface + abstract class | `extends RateLimiterAbstract`                                                                  | DI token for a `rate-limiter-flexible` limiter.                              |
-| `consumeRateLimit`            | function                   | `(rateLimiter: RateLimiter, key: string) => Promise<void>`                                     | Throws 429 with `retry-after` / `x-ratelimit-*` headers.                     |
-| `CorsOrigin`                  | type                       | `string \| (string \| RegExp)[]`                                                               | Koa adapter only; see the note below the table.                              |
-| `normalizeCorsOrigins`        | function                   | `(origin?: CorsOrigin) => (string \| RegExp)[]`                                                | `undefined` → `['*']`; a string is one origin. Koa only.                     |
-| `createOriginMatcher`         | function                   | `(matchers) => (requestOrigin: string) => string`                                              | Reflects the origin on match, `''` otherwise. Koa only.                      |
-| `createAnonymousPathMatcher`  | function                   | `(paths?: (string \| RegExp)[]) => (path: string) => boolean`                                  | Strings exact, RegExps tested.                                               |
-| `stripRawAuthorizationHeader` | function                   | `(rawHeaders: string[]) => void`                                                               | Removes every `Authorization` pair from a Node `rawHeaders` array, in place. |
-| `REQUIRE_SIGNATURE_POLICY`    | constant                   | `'request.signature.valid'`                                                                    | —                                                                            |
-| `SignatureOptions`            | type                       | `{ header, secret, algorithm, digest }`                                                        | Stored in `AppConfig`, resolved by key.                                      |
-| `SignaturePolicyContext<T>`   | interface                  | `{ rawBody: BinaryLike; getHeader: (name) => string; options: T }`                             | The policy context for a signature scheme.                                   |
-| `DefaultSignaturePolicy`      | class                      | `extends Policy<SignaturePolicyContext>`                                                       | HMAC over `rawBody`, `timingSafeEqual`. Denies `'invalid_signature'`.        |
-| `SignatureRequest`            | interface                  | `{ rawBody; getHeader }`                                                                       | —                                                                            |
-| `assertRequestSignature<T>`   | function                   | `(container, request: SignatureRequest, optionsKey: string, policy?: string) => Promise<void>` | Resolves `AppConfig` and `PolicyService` from `container`; asserts with 401. |
+| Export                        | Kind                       | Shape                                                                                                 | Notes                                                                                    |
+| ----------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `RateLimiter`                 | interface + abstract class | `extends RateLimiterAbstract`                                                                         | DI token for a `rate-limiter-flexible` limiter.                                          |
+| `consumeRateLimit`            | function                   | `(rateLimiter: RateLimiter, key: string) => Promise<void>`                                            | Throws 429 with `retry-after` / `x-ratelimit-*` headers.                                 |
+| `CorsOrigin`                  | type                       | `string \| (string \| RegExp)[]`                                                                      | Koa adapter only; see the note below the table.                                          |
+| `normalizeCorsOrigins`        | function                   | `(origin?: CorsOrigin) => (string \| RegExp)[]`                                                       | `undefined` → `['*']`; a string is one origin. Koa only.                                 |
+| `createOriginMatcher`         | function                   | `(matchers) => (requestOrigin: string) => string`                                                     | Reflects the origin on match, `''` otherwise. Koa only.                                  |
+| `createAnonymousPathMatcher`  | function                   | `(paths?: (string \| RegExp)[]) => (path: string) => boolean`                                         | Strings exact, RegExps tested.                                                           |
+| `stripRawAuthorizationHeader` | function                   | `(rawHeaders: string[]) => void`                                                                      | Removes every `Authorization` pair from a Node `rawHeaders` array, in place.             |
+| `REQUIRE_SIGNATURE_POLICY`    | constant                   | `'request.signature.valid'`                                                                           | —                                                                                        |
+| `SignatureOptions`            | type                       | `{ header, secret, algorithm, digest, prefix?, timestamp? }`                                          | Stored in `AppConfig`, resolved by key. Omit both optionals for a bare HMAC.             |
+| `SignatureTimestampOptions`   | type                       | `{ header: string; maxAgeSeconds: number }`                                                           | Signs `"<ts>.<rawBody>"`; window applies to past and future skew.                        |
+| `SignatureFailureReason`      | type                       | `'missing_timestamp' \| 'invalid_timestamp' \| 'timestamp_out_of_window' \| 'invalid_signature'`      | The policy's denial reasons.                                                             |
+| `SignaturePolicyContext<T>`   | interface                  | `{ rawBody: BinaryLike; getHeader: (name) => string; options: T }`                                    | The policy context for a signature scheme.                                               |
+| `DefaultSignaturePolicy`      | class                      | `extends Policy<SignaturePolicyContext>`                                                              | HMAC over `rawBody` (or `"<ts>.<rawBody>"`), `timingSafeEqual`. Clock is `envelope.now`. |
+| `SignatureRequest`            | interface                  | `{ rawBody; getHeader }`                                                                              | —                                                                                        |
+| `assertRequestSignature<T>`   | function                   | `(container, request: SignatureRequest, optionsKey: string, policy?: string) => Promise<void>`        | Resolves `AppConfig` and `PolicyService` from `container`; asserts with 401.             |
+| `signRequestBody`             | function                   | `({ secret, body, algorithm?, digest?, timestamp?: DateTime, prefix? }) => { signature, timestamp? }` | Outbound counterpart of the policy. Defaults `sha256` / `hex`, no prefix.                |
+| `SignRequestBodyInput`        | type                       | Input to `signRequestBody`                                                                            | —                                                                                        |
+| `SignedRequestBody`           | type                       | `{ signature: string; timestamp?: string }`                                                           | Header values; the caller names the headers.                                             |
 
 ### SSE
 
@@ -171,6 +176,10 @@ if (assertBodyExpectation({ length, type, is: types => typeis(req, types) }, ['a
   runs off the Node server's `close` event. Tests must spy on `process.exit`.
 - **`start()` leaves the server listening if a `start` hook throws.** The rejection is the
   caller's signal to close it; boot failed and nothing else is unwound automatically.
+- **A timestamped signature is verified over the timestamp header verbatim.** The policy signs
+  the exact string it received (after checking it is an unsigned integer), so the sender must
+  sign the same string it sends. `signRequestBody` returns both from one call; do not format
+  the timestamp separately.
 - **`openSseStream` sets `ctx.status`/`ctx.respond` unconditionally** (they are harmless extra
   properties on a non-Koa context) and calls `hijack` exactly once before any write.
 
@@ -185,6 +194,7 @@ src/
   body.gate.ts                     assertBodyExpectation, parseRouteBody
   parsers/                         serverkit.parser, json, text, form, multipart, binary, serverkit.default.parsers
   policies/request.signature.valid.policy.ts   SignatureOptions, DefaultSignaturePolicy, assertRequestSignature
+  policies/request.body.signer.ts  signRequestBody (and the HMAC both sides share)
   errors/error.renderer.ts         renderError, notFoundBody
   request/request.identity.ts      resolveRequestIdentity
   ratelimit/rate.limiter.ts        RateLimiter, consumeRateLimit
@@ -209,6 +219,9 @@ Invariants a change must not break:
 - The body gate's status contract (400 / 411 / 415 / 422) is what both adapters promise.
 - Signature comparison must stay constant-time (`timingSafeEqual`), and the secret must never
   reach `details` or the response.
+- `signRequestBody` and `DefaultSignaturePolicy` compute the HMAC through the same
+  `computeRequestSignature`, and with neither `prefix` nor `timestamp` set the policy must keep
+  verifying a bare `HMAC(rawBody)` exactly as before.
 - The SSE stream must keep owning the socket and swallowing disconnect teardown.
 - Graceful shutdown must remain bounded: long-lived connections are force-closed once the grace
   period elapses so `close()` can never hang.
