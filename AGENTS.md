@@ -58,7 +58,7 @@ Two audiences use these files:
 | `slack`             | L3      | Slack command/event/interaction dispatcher with signature verification                    | [slack](./packages/slack/AGENTS.md)                         |
 | `telegram`          | L3      | Telegram Bot API dispatcher with secret-token webhook verification                        | [telegram](./packages/telegram/AGENTS.md)                   |
 | `whatsapp`          | L3      | WhatsApp Cloud API dispatcher with HMAC signature verification                            | [whatsapp](./packages/whatsapp/AGENTS.md)                   |
-| `scim`              | L3      | SCIM 2.0 server toolkit: schemas, filter parser, PATCH applier; Koa transport at `/koa`   | [scim](./packages/scim/AGENTS.md)                           |
+| `scim`              | L3      | SCIM 2.0 server toolkit: schemas, filter parser, PATCH applier, Koa and Fastify routes    | [scim](./packages/scim/AGENTS.md)                           |
 | `johnny5`           | L3      | CLI framework for ServerKit apps, with a doctor runner and plugin discovery               | [johnny5](./packages/johnny5/AGENTS.md)                     |
 | `config-eslint`     | tooling | Shared ESLint flat configs (private, workspace-only)                                      | [config-eslint](./packages/config-eslint/AGENTS.md)         |
 | `config-typescript` | tooling | Shared `tsconfig` bases (private, workspace-only)                                         | [config-typescript](./packages/config-typescript/AGENTS.md) |
@@ -96,9 +96,9 @@ logger bridge goes the other way — `@maroonedsoftware/serverfeed/logger`, with
 optional peer of `serverfeed` — specifically so `logger` stays dependency-free.
 
 The same pattern covers `discord/comms`, `slack/comms`, `telegram/comms`, `whatsapp/comms`
-(adapter in the chat package, `comms` is the core), `scim/koa` (the transport-free SCIM core
-at the root, the Koa router behind the subpath), and every cloud SDK: `appconfig/{aws,gcp}`,
-`storage/{s3,gcs}`, `cache/ioredis`, `jobbroker/pgboss`.
+(adapter in the chat package, `comms` is the core), `scim/koa` and `scim/fastify` (the
+transport-free SCIM core at the root, each framework's transport behind its subpath), and every
+cloud SDK: `appconfig/{aws,gcp}`, `storage/{s3,gcs}`, `cache/ioredis`, `jobbroker/pgboss`.
 
 **When adding an integration:** put the adapter in the higher-level package, export it as a
 subpath, and take the other side as an optional peer. Do not add a hard dependency to keep an

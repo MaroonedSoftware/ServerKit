@@ -8,7 +8,8 @@ Repo-wide conventions live in the [root AGENTS.md](../../AGENTS.md).
 A SCIM 2.0 (RFC 7643 / 7644) server toolkit: the core schemas (User, Group, EnterpriseUser), the
 discovery endpoints, a full filter grammar with a typed AST, a PATCH-op applier with value-path
 support, the SCIM error envelope, and abstract repositories you implement. The root entry is
-transport-free; the Koa router that mounts all of it lives at `@maroonedsoftware/scim/koa`.
+transport-free; the transports that mount all of it live at `@maroonedsoftware/scim/koa` (a Koa
+router) and `@maroonedsoftware/scim/fastify` (a Fastify plugin).
 
 Reach for this when an enterprise customer needs directory-driven user provisioning from Okta, Entra
 ID, or similar. Do **not** expect a datastore or an identity model — you implement
@@ -21,17 +22,22 @@ parsed AST for you to translate.
 pnpm add @maroonedsoftware/scim
 # plus, for the Koa transport:
 pnpm add @maroonedsoftware/koa koa @koa/router
+# or, for the Fastify transport:
+pnpm add @maroonedsoftware/fastify fastify
 ```
 
-Optional peers: `@maroonedsoftware/koa`, `koa`, `@koa/router` (only for `/koa`). Runtime
+Optional peers: `@maroonedsoftware/koa`, `koa`, `@koa/router` (only for `/koa`);
+`@maroonedsoftware/fastify`, `fastify` (only for `/fastify`). Runtime
 dependencies: `@maroonedsoftware/authentication`, `@maroonedsoftware/errors`,
 `@maroonedsoftware/logger`, `@maroonedsoftware/utilities`, `injectkit`, `luxon`.
 
 ## Position in the graph
 
-- **Depends on:** `authentication`, `errors`, `logger`, `utilities`. `koa` is an optional peer.
+- **Depends on:** `authentication`, `errors`, `logger`, `utilities`. `koa` and `fastify` are
+  optional peers.
 - **Depended on by:** nothing internal.
-- **Subpath exports:** `@maroonedsoftware/scim/koa` (router and Koa middleware). The root entry
+- **Subpath exports:** `@maroonedsoftware/scim/koa` (router and Koa middleware) and
+  `@maroonedsoftware/scim/fastify` (route plugin and `preHandler` guard). The root entry
   never imports a framework, following the optional-peer + subpath pattern in the root AGENTS.md.
 
 ## API surface
@@ -123,6 +129,14 @@ Endpoints mounted: `GET|POST /Users`, `GET|PUT|PATCH|DELETE /Users/:id`, `POST /
 same six plus `.search` for `/Groups`, and `GET /Schemas`, `/Schemas/:id`, `/ResourceTypes`,
 `/ResourceTypes/:id`, `/ServiceProviderConfig`.
 
+### Fastify transport (`@maroonedsoftware/scim/fastify`)
+
+| Export              | Kind      | Shape                                                                                        | Notes                                                                                                                                                                                   |
+| ------------------- | --------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scimRoutes`        | function  | `(options: ScimRoutesOptions) => FastifyPluginAsync`                                         | Encapsulated plugin mounting the same endpoints as `createScimRouter`, with a scoped SCIM error handler, a scoped SCIM 404 (under a prefix), and `application/scim+json` body handling. |
+| `ScimRoutesOptions` | interface | `{ userService, groupService, serviceProviderService, routeGuards?, maxResults?, baseUrl? }` | `routeGuards` are `preHandlerAsyncHookHandler`s. Same `maxResults` / `baseUrl` semantics as Koa.                                                                                        |
+| `requireScimScope`  | function  | `(scope: string) => preHandlerAsyncHookHandler`                                              | Reads `request.authenticationSession.claims.scimScopes` via `assertScimScope`. `*` grants everything.                                                                                   |
+
 ## Canonical usage
 
 ```typescript
@@ -162,12 +176,37 @@ app.use(authenticationMiddleware());
 app.use(router.routes()).use(router.allowedMethods());
 ```
 
+On Fastify, with the same services and repositories:
+
+```typescript
+import { requireScimScope, scimRoutes } from '@maroonedsoftware/scim/fastify';
+
+// After builder.setup(...); setupPlugins() installs the ServerKit stack (error, context,
+// body parser, authentication) the SCIM routes rely on.
+builder.setupPlugins().setupRoutes([
+  {
+    prefix: '/scim/v2',
+    plugin: scimRoutes({
+      userService: new ScimUserService(userRepository, logger),
+      groupService: new ScimGroupService(groupRepository, logger),
+      serviceProviderService: new ScimServiceProviderService(config),
+      routeGuards: [requireScimScope('scim:write')],
+      baseUrl: 'https://api.example.com/scim/v2',
+    }),
+  },
+]);
+```
+
 ## Rules for generated code
 
-- Use `scimErrorMiddleware()` on the SCIM mountpoint instead of `errorMiddleware()`. SCIM has its
+- Import transports from their subpath (`/koa`, `/fastify`), never expect them on the root entry.
+- Koa: use `scimErrorMiddleware()` on the SCIM mountpoint instead of `errorMiddleware()`. SCIM has its
   own error envelope, and the default middleware renders the ServerKit one.
-- The mountpoint still needs `serverKitContextMiddleware` and `authenticationMiddleware`, in that
-  order, before the router.
+- Koa: the mountpoint still needs `serverKitContextMiddleware` and `authenticationMiddleware`, in
+  that order, before the router.
+- Fastify: register `scimRoutes` as a route plugin after the ServerKit plugin stack, under a
+  prefix, and do not wrap it in `fastify-plugin` — its error and not-found handlers must stay
+  scoped to the SCIM routes.
 - Translate `query.filter` — the AST — into your datastore's query language. You never see the raw
   filter string, which is the point.
 - Return the **filter-matching total** in `ScimListResult.totalResults`, not the page length.
@@ -205,7 +244,15 @@ app.use(router.routes()).use(router.allowedMethods());
 - **`maxResults` has a three-level fallback**: the option, then the service-provider config's
   `filter.maxResults`, then 200. A client asking for more is capped silently.
 - **`ScimError extends HttpError`**, so it flows through the standard ServerKit error path as well —
-  but only `scimErrorMiddleware` renders the SCIM envelope.
+  but only `scimErrorMiddleware` (Koa) or the error handler inside `scimRoutes` (Fastify) renders
+  the SCIM envelope.
+- **Fastify's SCIM 404 needs a prefix.** Fastify allows one not-found handler per prefix, and the
+  ServerKit `errorPlugin` already owns `/`. `scimRoutes` only installs its SCIM 404 when the plugin
+  is registered with a prefix; mounted at the root, unknown paths get the app's ServerKit 404.
+- **Fastify body parsing depends on the stack.** Under ServerKit, `bodyParserPlugin` reads
+  `application/scim+json` through its default `application/*+json` mapping, gated by each route's
+  `config.body`; `scimRoutes` only registers its own scoped parser when Fastify's built-in JSON
+  parser is still installed (a plain Fastify app).
 - **Never call `Object.setPrototypeOf` in a `ScimError` subclass constructor.** `ServerkitError`
   restores the prototype from `new.target`, which is already the right class; pinning it to a fixed
   one overwrites that and breaks `instanceof` for anything that subclasses yours. `ScimError` used
@@ -245,6 +292,8 @@ src/
                            every transport, not exported from any entry
   koa/                     scim.koa.router, scim.error.middleware, scim.content.type.middleware,
                            require.scim.scope.middleware
+  fastify.ts               `/fastify` subpath barrel
+  fastify/                 scim.fastify.routes, require.scim.scope.hook
 ```
 
 Core folders have their own `index.ts`; the root barrel re-exports those. A transport is a thin
@@ -263,7 +312,8 @@ Invariants a change must not break:
 - The filter grammar and the PATCH value-path semantics follow RFC 7644. Divergence shows up as an
   integration failure at a customer, not as a test failure here.
 - The root entry (`src/index.ts` and everything it reaches) never imports a framework. Koa code
-  lives under `src/koa/` and is reachable only through `src/koa.ts`; check `dist/index.js` after a
+  lives under `src/koa/` and is reachable only through `src/koa.ts`, Fastify code under
+  `src/fastify/` through `src/fastify.ts`; check `dist/index.js` after a
   build if in doubt.
 
 User-visible changes need a changeset in `.changeset/`.

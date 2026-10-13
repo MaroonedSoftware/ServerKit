@@ -1,7 +1,7 @@
 {
   "name": "@maroonedsoftware/scim",
   "version": "0.3.9",
-  "description": "SCIM 2.0 (RFC 7643/7644) server toolkit for ServerKit — schemas, filter parser, PATCH applier, error envelope, and abstract repositories, with a Koa transport at the /koa subpath.",
+  "description": "SCIM 2.0 (RFC 7643/7644) server toolkit for ServerKit — schemas, filter parser, PATCH applier, error envelope, and abstract repositories, with Koa and Fastify transports at the /koa and /fastify subpaths.",
   "author": {
     "name": "Marooned Software",
     "url": "https://github.com/MaroonedSoftware/serverkit"
@@ -37,6 +37,10 @@
       "types": "./dist/koa.d.ts",
       "import": "./dist/koa.js"
     },
+    "./fastify": {
+      "types": "./dist/fastify.d.ts",
+      "import": "./dist/fastify.js"
+    },
     "./package.json": "./package.json"
   },
   "license": "MIT",
@@ -45,7 +49,7 @@
     "dist/**"
   ],
   "scripts": {
-    "build": "tsup src/index.ts src/koa.ts --format esm --sourcemap && tsc --emitDeclarationOnly --declaration",
+    "build": "tsup src/index.ts src/koa.ts src/fastify.ts --format esm --sourcemap && tsc --emitDeclarationOnly --declaration",
     "build:ci": "eslint --max-warnings=0 && pnpm run build",
     "lint": "eslint --fix",
     "format": "prettier --write .",
@@ -62,14 +66,22 @@
   },
   "peerDependencies": {
     "@koa/router": "^15.2.0",
+    "@maroonedsoftware/fastify": "workspace:*",
     "@maroonedsoftware/koa": "workspace:*",
+    "fastify": "^5.0.0",
     "koa": "^3.1.1"
   },
   "peerDependenciesMeta": {
     "@koa/router": {
       "optional": true
     },
+    "@maroonedsoftware/fastify": {
+      "optional": true
+    },
     "@maroonedsoftware/koa": {
+      "optional": true
+    },
+    "fastify": {
       "optional": true
     },
     "koa": {
@@ -78,12 +90,15 @@
   },
   "devDependencies": {
     "@koa/router": "^15.7.0",
+    "@maroonedsoftware/appconfig": "workspace:*",
+    "@maroonedsoftware/fastify": "workspace:*",
     "@maroonedsoftware/koa": "workspace:*",
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
     "@types/koa": "^3.0.3",
     "@types/luxon": "^3.7.5",
     "@types/supertest": "^7.2.1",
+    "fastify": "^5.12.1",
     "koa": "^3.2.1",
     "supertest": "^7.2.2"
   },

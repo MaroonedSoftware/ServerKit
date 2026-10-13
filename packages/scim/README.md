@@ -2,7 +2,7 @@
 
 SCIM 2.0 (RFC 7643/7644) server toolkit for ServerKit.
 
-This package provides the protocol layer — schemas, filter parser, PATCH applier, error envelope — for building a SCIM server, plus an HTTP transport for Koa at a subpath. Resource storage is left to the consumer via abstract repositories, matching the pattern used by `@maroonedsoftware/authentication` and `@maroonedsoftware/permissions`.
+This package provides the protocol layer — schemas, filter parser, PATCH applier, error envelope — for building a SCIM server, plus HTTP transports for Koa and Fastify at subpaths. Resource storage is left to the consumer via abstract repositories, matching the pattern used by `@maroonedsoftware/authentication` and `@maroonedsoftware/permissions`.
 
 ## What's included
 
@@ -15,22 +15,25 @@ This package provides the protocol layer — schemas, filter parser, PATCH appli
 - **Services** — `ScimUserService`, `ScimGroupService`, `ScimServiceProviderService`.
 - **Scope helpers** — `hasScimScope(session, scope)` and `assertScimScope(session, scope)`, the transport-neutral check behind every `requireScimScope` guard.
 - **`SCIM_MEDIA_TYPE`** — `'application/scim+json'`.
+- **Fastify transport** (`@maroonedsoftware/scim/fastify`) — `scimRoutes(options)`, an encapsulated Fastify plugin mounting the same endpoints with the same semantics, plus a `requireScimScope(scope)` `preHandler`.
 - **Koa transport** (`@maroonedsoftware/scim/koa`) — `createScimRouter(options)` mounting the standard SCIM endpoints, plus `scimErrorMiddleware()`, `scimContentTypeMiddleware()`, and `requireScimScope(scope)`.
 
 ## Entry points
 
-| Import                       | Contents                                                                                    | Needs                                          |
-| ---------------------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| `@maroonedsoftware/scim`     | Types, schemas, filter, PATCH, projection, errors, repositories, services, scope helpers.   | Nothing framework-specific.                    |
-| `@maroonedsoftware/scim/koa` | `createScimRouter`, `scimErrorMiddleware`, `scimContentTypeMiddleware`, `requireScimScope`. | `@maroonedsoftware/koa`, `koa`, `@koa/router`. |
+| Import                           | Contents                                                                                    | Needs                                                                          |
+| -------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `@maroonedsoftware/scim`         | Types, schemas, filter, PATCH, projection, errors, repositories, services, scope helpers.   | Nothing framework-specific.                                                    |
+| `@maroonedsoftware/scim/koa`     | `createScimRouter`, `scimErrorMiddleware`, `scimContentTypeMiddleware`, `requireScimScope`. | `@maroonedsoftware/koa`, `koa`, `@koa/router`.                                 |
+| `@maroonedsoftware/scim/fastify` | `scimRoutes`, `ScimRoutesOptions`, `requireScimScope`.                                      | `fastify` (v5); `@maroonedsoftware/fastify` for the ServerKit request context. |
 
 The framework packages are optional peer dependencies: install the ones for the transport you use.
 
 ```bash
-pnpm add @maroonedsoftware/scim @maroonedsoftware/koa koa @koa/router
+pnpm add @maroonedsoftware/scim @maroonedsoftware/koa koa @koa/router   # Koa
+pnpm add @maroonedsoftware/scim @maroonedsoftware/fastify fastify       # Fastify
 ```
 
-## Quick start
+## Quick start (Koa)
 
 ```ts
 import Koa from 'koa';
@@ -74,13 +77,45 @@ app.use(scimRouter.routes());
 app.use(scimRouter.allowedMethods());
 ```
 
+## Fastify
+
+`scimRoutes` takes the same options as `createScimRouter`, with `routeGuards` as Fastify `preHandler` hooks. Register it after the ServerKit plugin stack, under a prefix:
+
+```ts
+import { ServerKitServerBuilder } from '@maroonedsoftware/fastify';
+import { ScimGroupService, ScimServiceProviderService, ScimUserService } from '@maroonedsoftware/scim';
+import { requireScimScope, scimRoutes } from '@maroonedsoftware/scim/fastify';
+
+const builder = new ServerKitServerBuilder();
+await builder.setup(config, logger, modules);
+
+builder.setupPlugins().setupRoutes([
+  {
+    prefix: '/scim/v2',
+    plugin: scimRoutes({
+      userService: new ScimUserService(new MyScimUserRepository(), logger),
+      groupService: new ScimGroupService(new MyScimGroupRepository(), logger),
+      serviceProviderService,
+      routeGuards: [requireScimScope('scim')],
+      baseUrl: 'https://api.example.com/scim/v2',
+    }),
+  },
+]);
+```
+
+The plugin is encapsulated, so what it installs applies only to the SCIM routes:
+
+- a scoped error handler rendering every failure as the SCIM error envelope with `Content-Type: application/scim+json` (no separate error middleware to mount);
+- a scoped not-found handler, when mounted under a prefix, answering unknown SCIM paths with a SCIM 404;
+- body parsing for `application/scim+json` and `application/json`. Under ServerKit, routes declare both in `config.body` and ServerKit's own parsers read them; on a plain Fastify instance the plugin registers a JSON parser for `application/scim+json` in its scope.
+
 ## Authentication
 
-This package does not validate bearer tokens itself. The transport reads the request's authentication session (`ctx.authenticationSession`, populated by `authenticationMiddleware()` from `@maroonedsoftware/koa`) and its `requireScimScope(scope)` guard checks for SCIM scopes on `session.claims.scimScopes` via `assertScimScope`. You register an `AuthenticationSchemeHandler` in your app that turns IdP-issued bearer tokens into a session.
+This package does not validate bearer tokens itself. The transport reads the request's authentication session (`ctx.authenticationSession` from `authenticationMiddleware()` in `@maroonedsoftware/koa`, or `request.authenticationSession` from `authenticationPlugin()` in `@maroonedsoftware/fastify`) and its `requireScimScope(scope)` guard checks for SCIM scopes on `session.claims.scimScopes` via `assertScimScope`. You register an `AuthenticationSchemeHandler` in your app that turns IdP-issued bearer tokens into a session.
 
 ## Compliance testing
 
-The router has been designed against RFC 7643/7644. To validate against a real IdP, point Okta or [`scim2-compliance-test-utils`](https://github.com/suvera/scim2-compliance-test-utils) at a sample app that mounts `createScimRouter`.
+The router has been designed against RFC 7643/7644. To validate against a real IdP, point Okta or [`scim2-compliance-test-utils`](https://github.com/suvera/scim2-compliance-test-utils) at a sample app that mounts `createScimRouter` or `scimRoutes`.
 
 ## Migrating from 0.x
 
