@@ -97,10 +97,12 @@ Two separate mechanisms: the `GET` handshake registers the webhook once, and the
 
 ### `./comms`
 
-| Export                   | Kind     | Shape                                                               | Notes                                                                            |
-| ------------------------ | -------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `createWhatsAppNotifier` | function | `(client: WhatsAppClient, templates: TemplateRegistry) => Notifier` | Recipient is a `wa_id` (phone). Native payloads omit `messaging_product` / `to`. |
-| `dispatchWhatsApp`       | function | `(router, client, body) => Promise<void>`                           | `/`-prefixed text → `command`; other text → `message`; interactive → `action`.   |
+| Export                     | Kind      | Shape                                                                                                | Notes                                                                                                                                                                                                                                            |
+| -------------------------- | --------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `createWhatsAppNotifier`   | function  | `(client: WhatsAppClient, templates: TemplateRegistry) => Notifier`                                  | Recipient is a `wa_id` (phone). Native payloads omit `messaging_product` / `to`.                                                                                                                                                                 |
+| `dispatchWhatsApp`         | function  | `(router, client, body, options?: DispatchWhatsAppOptions) => Promise<void>`                         | Routes each message through `normalizeWhatsAppMessage`.                                                                                                                                                                                          |
+| `normalizeWhatsAppMessage` | function  | `(message: WhatsAppMessage, value: WhatsAppValue) => IncomingEvent \| undefined`                     | `/`-prefixed text → `command`; other text → `message`; interactive → `action`; anything else → `undefined`. Sets `messageId` to the WhatsApp message id, and `conversation.group: true` for group messages (`conversation.id` stays the sender). |
+| `DispatchWhatsAppOptions`  | interface | `{ reply?: (to, event) => Reply; onUnsupported?: (message, value, reply) => Promise<void> \| void }` | `reply` replaces the inline client reply (e.g. to queue a job). `onUnsupported` gets unrouted messages; its `reply` always sends inline.                                                                                                         |
 
 ## Canonical usage
 
@@ -163,11 +165,16 @@ await dispatchWhatsApp(router, client, body);
   an interactive **button** message for 1–3, and an interactive **list** (with a hard-coded
   `"Choose"` trigger label) for 4 or more. Adding a fourth button changes the UI the user sees, with
   no error and no way to override the list label through the portable API.
+- **Long portable text is truncated, not refused.** `deliverPortable` cuts the text body to 4096
+  characters, an interactive body to 1024, a reply button title to 20, and a list row title to 24,
+  ending each cut with `…`. A label longer than that reaches the user shortened, with no error.
 - **A webhook body is deeply nested and plural at every level.** `entry[] → changes[] → value →
 messages[]`. `dispatchWhatsApp` walks all of it; a hand-rolled handler that reads
   `body.entry[0].changes[0].value.messages[0]` will drop batched messages.
-- **Media and non-text messages are skipped by the comms adapter.** They stay on
-  `WhatsAppMessageHandlerMap`. Mixing the two paths is expected.
+- **Media and non-text messages are skipped by the comms adapter** unless `dispatchWhatsApp` gets
+  `onUnsupported`. Otherwise they stay on `WhatsAppMessageHandlerMap`; mixing the two paths is
+  expected. The `reply` passed to `onUnsupported` always sends inline, even when `options.reply`
+  queues, because there is no normalized event to hand `options.reply`.
 - **Command detection in the comms path is a bare `/` prefix check** on text messages — WhatsApp has
   no native slash-command concept. Users do not naturally type `/`, so a WhatsApp-only bot usually
   wants `router.message(...)` rather than `router.command(...)`.

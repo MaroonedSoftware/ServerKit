@@ -26,8 +26,17 @@ export interface IncomingEvent {
   kind: IncomingEventKind;
   /** The user who triggered the event. */
   user: { id: string; username?: string };
-  /** The conversation/chat the event belongs to — also the address a {@link Reply} sends back to. */
-  conversation: { id: string };
+  /**
+   * The conversation/chat the event belongs to — also the address a {@link Reply} sends back to.
+   * `group` is `true` when the adapter knows the event came from a multi-party conversation
+   * (a group chat); it is absent when the adapter does not report it.
+   */
+  conversation: { id: string; group?: boolean };
+  /**
+   * The channel-native id of the inbound message, when the channel has one. Stable across
+   * redeliveries of the same message, so it is the key to dedupe at-least-once webhooks on.
+   */
+  messageId?: string;
   /** Message text or full command text, when present. */
   text?: string;
   /** Present when `kind === 'command'`. `name` is normalized (no leading slash, lowercased). */

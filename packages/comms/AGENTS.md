@@ -37,11 +37,11 @@ afford both dependencies, so this core stays free of every provider SDK. See the
 
 ### Inbound (`src/comms.event.ts`)
 
-| Export              | Kind      | Shape                                                                                                                                      | Notes                                                                        |
-| ------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
-| `ChannelId`         | type      | `'slack' \| 'discord' \| 'whatsapp' \| 'telegram' \| (string & {})`                                                                        | The open `string` keeps it extensible while preserving literal completions.  |
-| `IncomingEventKind` | type      | `'command' \| 'action' \| 'message'`                                                                                                       | —                                                                            |
-| `IncomingEvent`     | interface | `{ channel, kind, user: { id, username? }, conversation: { id }, text?, command?: { name, args }, action?: { id, value? }, raw: unknown }` | `command.name` is already normalized. `raw` is the untouched native payload. |
+| Export              | Kind      | Shape                                                                                                                                                          | Notes                                                                                                                                                      |
+| ------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ChannelId`         | type      | `'slack' \| 'discord' \| 'whatsapp' \| 'telegram' \| (string & {})`                                                                                            | The open `string` keeps it extensible while preserving literal completions.                                                                                |
+| `IncomingEventKind` | type      | `'command' \| 'action' \| 'message'`                                                                                                                           | —                                                                                                                                                          |
+| `IncomingEvent`     | interface | `{ channel, kind, user: { id, username? }, conversation: { id, group? }, messageId?, text?, command?: { name, args }, action?: { id, value? }, raw: unknown }` | `command.name` is already normalized. `raw` is the untouched native payload. `messageId` and `conversation.group` are set only by adapters that know them. |
 
 ### Outbound (`src/comms.message.ts`, `src/comms.reply.ts`)
 
