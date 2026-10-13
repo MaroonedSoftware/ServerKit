@@ -54,6 +54,8 @@ export type WhatsAppMessage = {
   timestamp: string;
   /** Message type: `text`, `image`, `audio`, `video`, `document`, `sticker`, `location`, `contacts`, `interactive`, `button`, `reaction`, `order`, `system`, … */
   type: string;
+  /** Present when the message was sent in a WhatsApp group; the group's id. */
+  group_id?: string;
   text?: { body: string };
   interactive?: {
     type: 'button_reply' | 'list_reply' | string;

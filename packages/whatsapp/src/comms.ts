@@ -59,29 +59,42 @@ export const createWhatsAppNotifier = (client: WhatsAppClient, templates: Templa
  * `/`-prefixed text → `command`, other text → `message`, interactive/quick-reply
  * → `action` (keyed by the reply id). Returns `undefined` for media and every
  * other type the router does not route. `value` is the change's `value`, which
- * carries the sender's contact profile.
+ * carries the sender's contact profile. The event carries the WhatsApp message id
+ * as `messageId`, and `conversation.group: true` when the message came from a group
+ * (the group id stays on `raw.message.group_id`; `conversation.id` is the sender).
  */
 export const normalizeWhatsAppMessage = (message: WhatsAppMessage, value: WhatsAppValue): IncomingEvent | undefined => {
   const from = message.from;
   const contact = value.contacts?.find(c => c.wa_id === from) ?? value.contacts?.[0];
   const user = { id: from, username: contact?.profile?.name };
-  const conversation = { id: from };
+  // The conversation stays keyed on the sender, who is also the reply address; group messages are flagged.
+  const conversation = message.group_id ? { id: from, group: true } : { id: from };
+  const messageId = message.id;
   const raw = { message, value };
 
   const replyId = interactiveReplyId(message);
   if (replyId) {
     const value2 =
       message.type === 'interactive' ? (message.interactive?.button_reply?.title ?? message.interactive?.list_reply?.title) : message.button?.text;
-    return { channel: 'whatsapp', kind: 'action', user, conversation, action: { id: replyId, value: value2 }, raw };
+    return { channel: 'whatsapp', kind: 'action', user, conversation, messageId, action: { id: replyId, value: value2 }, raw };
   }
 
   if (message.type === 'text') {
     const text = message.text?.body ?? '';
     if (text.startsWith('/')) {
       const [name, ...rest] = text.split(/\s+/);
-      return { channel: 'whatsapp', kind: 'command', user, conversation, text, command: { name: name ?? text, args: rest.join(' ').trim() }, raw };
+      return {
+        channel: 'whatsapp',
+        kind: 'command',
+        user,
+        conversation,
+        messageId,
+        text,
+        command: { name: name ?? text, args: rest.join(' ').trim() },
+        raw,
+      };
     }
-    return { channel: 'whatsapp', kind: 'message', user, conversation, text, raw };
+    return { channel: 'whatsapp', kind: 'message', user, conversation, messageId, text, raw };
   }
 
   return undefined; // media/other types stay on the native WhatsAppMessageHandlerMap

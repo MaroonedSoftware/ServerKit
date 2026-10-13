@@ -251,7 +251,10 @@ http.post('/whatsapp/webhook', async ctx => {
 
 - `dispatchWhatsApp` walks the batch: `/`-prefixed text → `command`, other text → `message`,
   interactive/quick-reply → `action`. The per-message step is exported as
-  `normalizeWhatsAppMessage(message, value)` for apps that walk the webhook themselves. Delivery
+  `normalizeWhatsAppMessage(message, value)` for apps that walk the webhook themselves. Every
+  routed event carries the WhatsApp message id as `messageId` (dedupe on it, since Meta redelivers),
+  and group messages set `conversation.group: true`. `conversation.id` is always the sender, which
+  is also the reply address; the group id stays on `raw.message.group_id`. Delivery
   statuses are skipped; media and other unrouted types are skipped too unless you pass
   `onUnsupported`, which receives the message, its `value`, and a reply to the sender.
 - Pass `reply: (to, event) => Reply` to build replies yourself, for example to queue outbound

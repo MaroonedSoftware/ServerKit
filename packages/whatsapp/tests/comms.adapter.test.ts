@@ -196,3 +196,27 @@ describe('whatsapp /comms normalizer and dispatch options', () => {
     expect(sendText).toHaveBeenCalledWith('15551112222', 'I can only read text messages');
   });
 });
+
+describe('whatsapp /comms message id and group', () => {
+  const value = webhook([]).entry![0]!.changes![0]!.value;
+
+  it('carries the message id on every routed kind', () => {
+    const text = normalizeWhatsAppMessage({ from: '15551112222', id: 'wamid.A', timestamp: '1', type: 'text', text: { body: 'hi' } }, value);
+    const command = normalizeWhatsAppMessage({ from: '15551112222', id: 'wamid.B', timestamp: '1', type: 'text', text: { body: '/help' } }, value);
+    const action = normalizeWhatsAppMessage(
+      { from: '15551112222', id: 'wamid.C', timestamp: '1', type: 'button', button: { payload: 'yes', text: 'Yes' } },
+      value,
+    );
+    expect([text?.messageId, command?.messageId, action?.messageId]).toEqual(['wamid.A', 'wamid.B', 'wamid.C']);
+  });
+
+  it('flags group messages and leaves direct messages unflagged', () => {
+    const group = normalizeWhatsAppMessage(
+      { from: '15551112222', id: 'm1', timestamp: '1', type: 'text', text: { body: 'hi' }, group_id: 'G1' },
+      value,
+    );
+    const direct = normalizeWhatsAppMessage({ from: '15551112222', id: 'm2', timestamp: '1', type: 'text', text: { body: 'hi' } }, value);
+    expect(group?.conversation).toEqual({ id: '15551112222', group: true });
+    expect(direct?.conversation).toEqual({ id: '15551112222' });
+  });
+});
