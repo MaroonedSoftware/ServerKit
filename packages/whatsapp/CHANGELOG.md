@@ -1,5 +1,18 @@
 # @maroonedsoftware/whatsapp
 
+## 2.1.0
+
+### Minor Changes
+
+- c04c17b: `normalizeWhatsAppMessage` (and so `dispatchWhatsApp`) now sets the comms event's `messageId` to the WhatsApp message id, so an app can dedupe redelivered webhooks without reaching into `raw`, and sets `conversation.group: true` for messages sent in a group. `conversation.id` is still the sender, which remains the reply address. `WhatsAppMessage` gains a typed optional `group_id`.
+- 74716fd: Export the `./comms` per-message normalizer as `normalizeWhatsAppMessage(message, value)`, and give `dispatchWhatsApp` an optional fourth `options` argument. `options.reply(to, event)` builds the `Reply` handed to the router, so an app can queue outbound messages (for example as a job inside its DB transaction) instead of sending inline; the default is unchanged. `options.onUnsupported(message, value, reply)` receives the media and other messages the router skips, with an inline reply to the sender.
+
+### Patch Changes
+
+- 4236a64: The `./comms` notifier now truncates portable messages to the WhatsApp Cloud API limits instead of letting Meta refuse the send: a text body to 4096 characters, an interactive body to 1024, a reply button title to 20, and a list row title to 24. A cut ends in an ellipsis and never splits an emoji.
+- Updated dependencies [3330303]
+  - @maroonedsoftware/comms@0.3.0
+
 ## 2.0.11
 
 ### Patch Changes
