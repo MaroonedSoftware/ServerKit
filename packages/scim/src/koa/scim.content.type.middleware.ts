@@ -1,8 +1,6 @@
 import type { ServerKitMiddleware } from '@maroonedsoftware/koa';
 import { scimError } from '../errors/scim.error.js';
-
-/** SCIM media type per RFC 7644 §3.8. */
-export const SCIM_MEDIA_TYPE = 'application/scim+json';
+import { SCIM_MEDIA_TYPE } from '../scim.media.type.js';
 
 /**
  * Enforce that mutating SCIM requests carry `Content-Type: application/scim+json`

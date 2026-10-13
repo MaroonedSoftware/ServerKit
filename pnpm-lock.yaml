@@ -749,9 +749,6 @@ importers:
       '@maroonedsoftware/errors':
         specifier: workspace:*
         version: link:../errors
-      '@maroonedsoftware/koa':
-        specifier: workspace:*
-        version: link:../koa
       '@maroonedsoftware/logger':
         specifier: workspace:*
         version: link:../logger
@@ -768,6 +765,15 @@ importers:
       '@koa/router':
         specifier: ^15.7.0
         version: 15.7.0(koa@3.2.1)
+      '@maroonedsoftware/appconfig':
+        specifier: workspace:*
+        version: link:../appconfig
+      '@maroonedsoftware/fastify':
+        specifier: workspace:*
+        version: link:../fastify
+      '@maroonedsoftware/koa':
+        specifier: workspace:*
+        version: link:../koa
       '@repo/config-eslint':
         specifier: workspace:*
         version: link:../config-eslint
@@ -783,6 +789,9 @@ importers:
       '@types/supertest':
         specifier: ^7.2.1
         version: 7.2.1
+      fastify:
+        specifier: ^5.12.1
+        version: 5.12.1
       koa:
         specifier: ^3.2.1
         version: 3.2.1

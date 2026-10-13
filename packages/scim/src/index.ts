@@ -26,8 +26,6 @@ export * from './repositories/index.js';
 // Services
 export * from './services/index.js';
 
-// Middleware
-export * from './middleware/index.js';
-
-// Router
-export * from './router/index.js';
+// Transport-neutral HTTP helpers
+export * from './scim.media.type.js';
+export * from './scope/scim.scope.js';

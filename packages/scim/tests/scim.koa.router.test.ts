@@ -12,13 +12,13 @@ import {
   serverKitContextMiddleware,
 } from '@maroonedsoftware/koa';
 import { type AuthenticationSession, invalidAuthenticationSession } from '@maroonedsoftware/authentication';
-import { createScimRouter } from '../src/router/scim.router.js';
+import { createScimRouter } from '../src/koa/scim.koa.router.js';
 import { ScimUserService } from '../src/services/scim.user.service.js';
 import { ScimGroupService } from '../src/services/scim.group.service.js';
 import { ScimServiceProviderService } from '../src/services/scim.service.provider.service.js';
-import { scimErrorMiddleware } from '../src/middleware/scim.error.middleware.js';
-import { requireScimScope } from '../src/middleware/require.scim.scope.middleware.js';
-import { SCIM_MEDIA_TYPE } from '../src/middleware/scim.content.type.middleware.js';
+import { scimErrorMiddleware } from '../src/koa/scim.error.middleware.js';
+import { requireScimScope } from '../src/koa/require.scim.scope.middleware.js';
+import { SCIM_MEDIA_TYPE } from '../src/scim.media.type.js';
 import { UserSchemaId } from '../src/schemas/user.schema.js';
 import { ListResponseSchema } from '../src/types/list.response.js';
 import { PatchOpSchema } from '../src/types/patch.op.js';
