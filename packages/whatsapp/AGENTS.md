@@ -165,6 +165,9 @@ await dispatchWhatsApp(router, client, body);
   an interactive **button** message for 1–3, and an interactive **list** (with a hard-coded
   `"Choose"` trigger label) for 4 or more. Adding a fourth button changes the UI the user sees, with
   no error and no way to override the list label through the portable API.
+- **Long portable text is truncated, not refused.** `deliverPortable` cuts the text body to 4096
+  characters, an interactive body to 1024, a reply button title to 20, and a list row title to 24,
+  ending each cut with `…`. A label longer than that reaches the user shortened, with no error.
 - **A webhook body is deeply nested and plural at every level.** `entry[] → changes[] → value →
 messages[]`. `dispatchWhatsApp` walks all of it; a hand-rolled handler that reads
   `body.entry[0].changes[0].value.messages[0]` will drop batched messages.

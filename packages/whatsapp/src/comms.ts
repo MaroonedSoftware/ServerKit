@@ -16,21 +16,37 @@ import {
 import { WhatsAppClient } from './client/whatsapp.client.js';
 import { interactiveReplyId, type WhatsAppMessage, type WhatsAppValue, type WhatsAppWebhookBody } from './whatsapp.message.handler.js';
 
-/** Sends a portable message: plain text, ≤3 reply buttons, or a list for >3 (degradation). */
+/** Cloud API length limits, in characters; Meta refuses a send that exceeds one. */
+const MAX_TEXT_BODY = 4096;
+const MAX_INTERACTIVE_BODY = 1024;
+const MAX_REPLY_BUTTON_TITLE = 20;
+const MAX_LIST_ROW_TITLE = 24;
+
+/** Shortens `text` to at most `max` characters, ending in an ellipsis when cut. Counts code points so an emoji is never split. */
+const truncateForWhatsApp = (text: string, max: number): string => {
+  const chars = Array.from(text);
+  return chars.length <= max ? text : `${chars.slice(0, max - 1).join('')}…`;
+};
+
+/**
+ * Sends a portable message: plain text, ≤3 reply buttons, or a list for >3 (degradation).
+ * Text, button titles, and row titles are truncated to the Cloud API limits rather than refused.
+ */
 const deliverPortable = (client: WhatsAppClient, to: string, message: OutgoingMessage): Promise<unknown> => {
   const buttons = message.buttons ?? [];
-  if (buttons.length === 0) return client.sendText(to, message.text);
+  if (buttons.length === 0) return client.sendText(to, truncateForWhatsApp(message.text, MAX_TEXT_BODY));
+  const body = { text: truncateForWhatsApp(message.text, MAX_INTERACTIVE_BODY) };
   if (buttons.length <= 3) {
     return client.sendInteractive(to, {
       type: 'button',
-      body: { text: message.text },
-      action: { buttons: buttons.map(b => ({ type: 'reply', reply: { id: b.id, title: b.label } })) },
+      body,
+      action: { buttons: buttons.map(b => ({ type: 'reply', reply: { id: b.id, title: truncateForWhatsApp(b.label, MAX_REPLY_BUTTON_TITLE) } })) },
     });
   }
   return client.sendInteractive(to, {
     type: 'list',
-    body: { text: message.text },
-    action: { button: 'Choose', sections: [{ rows: buttons.map(b => ({ id: b.id, title: b.label })) }] },
+    body,
+    action: { button: 'Choose', sections: [{ rows: buttons.map(b => ({ id: b.id, title: truncateForWhatsApp(b.label, MAX_LIST_ROW_TITLE) })) }] },
   });
 };
 

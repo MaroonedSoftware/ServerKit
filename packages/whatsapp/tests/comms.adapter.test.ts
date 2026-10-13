@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ChannelRouter, CommsError, type IncomingEvent, type Reply } from '@maroonedsoftware/comms';
+import { ChannelRouter, CommsError, type IncomingEvent, type OutgoingMessage, type Reply } from '@maroonedsoftware/comms';
 import { dispatchWhatsApp, createWhatsAppNotifier, normalizeWhatsAppMessage } from '../src/comms.js';
 import type { WhatsAppClient } from '../src/client/whatsapp.client.js';
 import type { WhatsAppWebhookBody } from '../src/whatsapp.message.handler.js';
@@ -218,5 +218,53 @@ describe('whatsapp /comms message id and group', () => {
     const direct = normalizeWhatsAppMessage({ from: '15551112222', id: 'm2', timestamp: '1', type: 'text', text: { body: 'hi' } }, value);
     expect(group?.conversation).toEqual({ id: '15551112222', group: true });
     expect(direct?.conversation).toEqual({ id: '15551112222' });
+  });
+});
+
+describe('whatsapp /comms truncation to Cloud API limits', () => {
+  const send = async (message: OutgoingMessage) => {
+    const router = new ChannelRouter();
+    router.message(async (_e, reply) => reply.send(message));
+    const mocks = makeClient();
+    await dispatchWhatsApp(router, mocks.client, webhook([{ from: '15551112222', id: 'm1', timestamp: '1', type: 'text', text: { body: 'hi' } }]));
+    return mocks;
+  };
+
+  it('truncates a plain text body to 4096 characters with an ellipsis', async () => {
+    const { sendText } = await send({ text: 'x'.repeat(5000) });
+    const body = sendText.mock.calls[0]![1] as string;
+    expect(body).toHaveLength(4096);
+    expect(body.endsWith('x…')).toBe(true);
+  });
+
+  it('leaves text at the limit untouched', async () => {
+    const { sendText } = await send({ text: 'x'.repeat(4096) });
+    expect(sendText.mock.calls[0]![1]).toBe('x'.repeat(4096));
+  });
+
+  it('truncates the interactive body to 1024 and reply button titles to 20', async () => {
+    const { sendInteractive } = await send({ text: 'y'.repeat(2000), buttons: [{ id: 'a', label: 'A very long button label indeed' }] });
+    const interactive = sendInteractive.mock.calls[0]![1] as {
+      body: { text: string };
+      action: { buttons: { reply: { id: string; title: string } }[] };
+    };
+    expect(interactive.body.text).toHaveLength(1024);
+    expect(interactive.body.text.endsWith('…')).toBe(true);
+    expect(interactive.action.buttons[0]!.reply).toEqual({ id: 'a', title: 'A very long button …' });
+  });
+
+  it('truncates list row titles to 24', async () => {
+    const buttons = ['a', 'b', 'c', 'd'].map(id => ({ id, label: `Option ${id} with a rather long label` }));
+    const { sendInteractive } = await send({ text: 'pick', buttons });
+    const interactive = sendInteractive.mock.calls[0]![1] as { action: { sections: { rows: { title: string }[] }[] } };
+    const titles = interactive.action.sections[0]!.rows.map(r => r.title);
+    expect(titles[0]).toBe('Option a with a rather …');
+    expect(titles.every(t => Array.from(t).length <= 24)).toBe(true);
+  });
+
+  it('never splits an emoji when truncating', async () => {
+    const { sendInteractive } = await send({ text: 'pick', buttons: [{ id: 'a', label: '😀'.repeat(25) }] });
+    const interactive = sendInteractive.mock.calls[0]![1] as { action: { buttons: { reply: { title: string } }[] } };
+    expect(interactive.action.buttons[0]!.reply.title).toBe(`${'😀'.repeat(19)}…`);
   });
 });

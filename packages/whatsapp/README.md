@@ -268,7 +268,9 @@ http.post('/whatsapp/webhook', async ctx => {
   ```
 
 - Replies go back to the sender (`message.from`). Buttons render as an interactive button message
-  (≤3) or degrade to a list (>3). `createWhatsAppNotifier(client, router.templates)` sends
+  (≤3) or degrade to a list (>3). Portable messages are truncated with an ellipsis to the Cloud API
+  limits instead of being refused: text body 4096 characters, interactive body 1024, reply button
+  title 20, list row title 24. `createWhatsAppNotifier(client, router.templates)` sends
   proactively; `reply.sendTemplate` / `reply.sendNative` cover templates and other rich payloads.
 
 ## License
