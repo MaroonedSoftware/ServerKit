@@ -15,16 +15,16 @@ pnpm add @maroonedsoftware/comms @maroonedsoftware/slack   # + any other channel
 
 ## Exports
 
-| Symbol                               | Purpose                                                                                                            |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| `ChannelRouter`                      | Registers `command`/`action`/`message`/`fallback` handlers and `dispatch`es normalized events. Holds `.templates`. |
-| `IncomingEvent`                      | Normalized inbound event (`channel`, `kind`, `user`, `conversation`, `text?`, `command?`, `action?`, `raw`).       |
-| `OutgoingMessage` / `OutgoingButton` | Portable outbound message (`text`, optional `subject`, optional `buttons`).                                        |
-| `Reply`                              | A `Notifier` bound to one recipient — what handlers use: `send` / `sendTemplate` / `sendNative`.                   |
-| `Notifier`                           | Send-to-recipient interface each channel adapter implements (the seam for future push/email).                      |
-| `bindReply(notifier, to)`            | Builds a `Reply` from a `Notifier` + recipient.                                                                    |
-| `TemplateRegistry`                   | Named rich templates: `register(name, channel, fn)`, `registerDefault(name, fn)`, `render(...)`.                   |
-| `CommsError`                         | `ServerkitError` subclass (e.g. `sendTemplate` for an unknown template).                                           |
+| Symbol                               | Purpose                                                                                                                    |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `ChannelRouter`                      | Registers `command`/`action`/`message`/`fallback` handlers and `dispatch`es normalized events. Holds `.templates`.         |
+| `IncomingEvent`                      | Normalized inbound event (`channel`, `kind`, `user`, `conversation`, `messageId?`, `text?`, `command?`, `action?`, `raw`). |
+| `OutgoingMessage` / `OutgoingButton` | Portable outbound message (`text`, optional `subject`, optional `buttons`).                                                |
+| `Reply`                              | A `Notifier` bound to one recipient — what handlers use: `send` / `sendTemplate` / `sendNative`.                           |
+| `Notifier`                           | Send-to-recipient interface each channel adapter implements (the seam for future push/email).                              |
+| `bindReply(notifier, to)`            | Builds a `Reply` from a `Notifier` + recipient.                                                                            |
+| `TemplateRegistry`                   | Named rich templates: `register(name, channel, fn)`, `registerDefault(name, fn)`, `render(...)`.                           |
+| `CommsError`                         | `ServerkitError` subclass (e.g. `sendTemplate` for an unknown template).                                                   |
 
 ## Defining handlers (channel-agnostic)
 
