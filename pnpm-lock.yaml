@@ -749,9 +749,6 @@ importers:
       '@maroonedsoftware/errors':
         specifier: workspace:*
         version: link:../errors
-      '@maroonedsoftware/koa':
-        specifier: workspace:*
-        version: link:../koa
       '@maroonedsoftware/logger':
         specifier: workspace:*
         version: link:../logger
@@ -768,6 +765,9 @@ importers:
       '@koa/router':
         specifier: ^15.7.0
         version: 15.7.0(koa@3.2.1)
+      '@maroonedsoftware/koa':
+        specifier: workspace:*
+        version: link:../koa
       '@repo/config-eslint':
         specifier: workspace:*
         version: link:../config-eslint

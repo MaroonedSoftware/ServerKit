@@ -2,7 +2,7 @@
 
 SCIM 2.0 (RFC 7643/7644) server toolkit for ServerKit.
 
-This package provides the protocol layer — schemas, filter parser, PATCH applier, error envelope, and a Koa router — for building a SCIM server. Resource storage is left to the consumer via abstract repositories, matching the pattern used by `@maroonedsoftware/authentication` and `@maroonedsoftware/permissions`.
+This package provides the protocol layer — schemas, filter parser, PATCH applier, error envelope — for building a SCIM server, plus an HTTP transport for Koa at a subpath. Resource storage is left to the consumer via abstract repositories, matching the pattern used by `@maroonedsoftware/authentication` and `@maroonedsoftware/permissions`.
 
 ## What's included
 
@@ -13,24 +13,30 @@ This package provides the protocol layer — schemas, filter parser, PATCH appli
 - **Error envelope** — `scimError(status, scimType?, statusText?)` builder producing the SCIM error JSON; the operator-facing reason goes on `.withDetails({ message })` and is rendered as the envelope's `detail`.
 - **Abstract repositories** — `ScimUserRepository`, `ScimGroupRepository`. The consumer implements these against their datastore.
 - **Services** — `ScimUserService`, `ScimGroupService`, `ScimServiceProviderService`.
-- **Koa middleware** — `scimErrorMiddleware()`, `scimContentTypeMiddleware()`, `requireScimScope(scope)`.
-- **Router factory** — `createScimRouter(options)` mounting the standard SCIM endpoints.
+- **Scope helpers** — `hasScimScope(session, scope)` and `assertScimScope(session, scope)`, the transport-neutral check behind every `requireScimScope` guard.
+- **`SCIM_MEDIA_TYPE`** — `'application/scim+json'`.
+- **Koa transport** (`@maroonedsoftware/scim/koa`) — `createScimRouter(options)` mounting the standard SCIM endpoints, plus `scimErrorMiddleware()`, `scimContentTypeMiddleware()`, and `requireScimScope(scope)`.
+
+## Entry points
+
+| Import                       | Contents                                                                                    | Needs                                          |
+| ---------------------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `@maroonedsoftware/scim`     | Types, schemas, filter, PATCH, projection, errors, repositories, services, scope helpers.   | Nothing framework-specific.                    |
+| `@maroonedsoftware/scim/koa` | `createScimRouter`, `scimErrorMiddleware`, `scimContentTypeMiddleware`, `requireScimScope`. | `@maroonedsoftware/koa`, `koa`, `@koa/router`. |
+
+The framework packages are optional peer dependencies: install the ones for the transport you use.
+
+```bash
+pnpm add @maroonedsoftware/scim @maroonedsoftware/koa koa @koa/router
+```
 
 ## Quick start
 
 ```ts
 import Koa from 'koa';
 import { ServerKitContext, serverKitContextMiddleware, authenticationMiddleware } from '@maroonedsoftware/koa';
-import {
-  createScimRouter,
-  requireScimScope,
-  ScimGroupRepository,
-  ScimGroupService,
-  ScimServiceProviderService,
-  ScimUserRepository,
-  ScimUserService,
-  scimErrorMiddleware,
-} from '@maroonedsoftware/scim';
+import { ScimGroupRepository, ScimGroupService, ScimServiceProviderService, ScimUserRepository, ScimUserService } from '@maroonedsoftware/scim';
+import { createScimRouter, requireScimScope, scimErrorMiddleware } from '@maroonedsoftware/scim/koa';
 
 class MyScimUserRepository extends ScimUserRepository {
   // implement against your datastore
@@ -70,11 +76,22 @@ app.use(scimRouter.allowedMethods());
 
 ## Authentication
 
-This package does not validate bearer tokens itself. It reads `ctx.authenticationSession` (populated by `authenticationMiddleware()` from `@maroonedsoftware/koa`) and provides a `requireScimScope(scope)` guard that checks for SCIM scopes on `session.claims.scimScopes`. You register an `AuthenticationSchemeHandler` in your app that turns IdP-issued bearer tokens into a session.
+This package does not validate bearer tokens itself. The transport reads the request's authentication session (`ctx.authenticationSession`, populated by `authenticationMiddleware()` from `@maroonedsoftware/koa`) and its `requireScimScope(scope)` guard checks for SCIM scopes on `session.claims.scimScopes` via `assertScimScope`. You register an `AuthenticationSchemeHandler` in your app that turns IdP-issued bearer tokens into a session.
 
 ## Compliance testing
 
 The router has been designed against RFC 7643/7644. To validate against a real IdP, point Okta or [`scim2-compliance-test-utils`](https://github.com/suvera/scim2-compliance-test-utils) at a sample app that mounts `createScimRouter`.
+
+## Migrating from 0.x
+
+The router and Koa middleware moved off the root entry so it no longer loads Koa:
+
+```diff
+-import { createScimRouter, requireScimScope, scimErrorMiddleware, scimContentTypeMiddleware } from '@maroonedsoftware/scim';
++import { createScimRouter, requireScimScope, scimErrorMiddleware, scimContentTypeMiddleware } from '@maroonedsoftware/scim/koa';
+```
+
+`SCIM_MEDIA_TYPE` stays on the root entry. `@maroonedsoftware/koa`, `koa`, and `@koa/router` are now optional peers, so add them to your app's dependencies if they were only arriving through this package.
 
 ## License
 

@@ -7,8 +7,8 @@ Repo-wide conventions live in the [root AGENTS.md](../../AGENTS.md).
 
 A SCIM 2.0 (RFC 7643 / 7644) server toolkit: the core schemas (User, Group, EnterpriseUser), the
 discovery endpoints, a full filter grammar with a typed AST, a PATCH-op applier with value-path
-support, the SCIM error envelope, and a Koa router that mounts all of it over abstract repositories
-you implement.
+support, the SCIM error envelope, and abstract repositories you implement. The root entry is
+transport-free; the Koa router that mounts all of it lives at `@maroonedsoftware/scim/koa`.
 
 Reach for this when an enterprise customer needs directory-driven user provisioning from Okta, Entra
 ID, or similar. Do **not** expect a datastore or an identity model — you implement
@@ -18,21 +18,21 @@ parsed AST for you to translate.
 ## Install
 
 ```bash
-pnpm add @maroonedsoftware/scim koa @koa/router
+pnpm add @maroonedsoftware/scim
+# plus, for the Koa transport:
+pnpm add @maroonedsoftware/koa koa @koa/router
 ```
 
-Peers: `koa`, `@koa/router`. Runtime dependencies: `@maroonedsoftware/authentication`,
-`@maroonedsoftware/errors`, `@maroonedsoftware/koa`, `@maroonedsoftware/logger`,
-`@maroonedsoftware/utilities`, `injectkit`, `luxon`.
+Optional peers: `@maroonedsoftware/koa`, `koa`, `@koa/router` (only for `/koa`). Runtime
+dependencies: `@maroonedsoftware/authentication`, `@maroonedsoftware/errors`,
+`@maroonedsoftware/logger`, `@maroonedsoftware/utilities`, `injectkit`, `luxon`.
 
 ## Position in the graph
 
-- **Depends on:** `authentication`, `errors`, `koa`, `logger`, `utilities`.
+- **Depends on:** `authentication`, `errors`, `logger`, `utilities`. `koa` is an optional peer.
 - **Depended on by:** nothing internal.
-- **Subpath exports:** none. The package has no `exports` map at all.
-
-Unlike the chat packages, this one **does** depend on `koa` — it ships a router, and SCIM's wire
-contract is inseparable from HTTP.
+- **Subpath exports:** `@maroonedsoftware/scim/koa` (router and Koa middleware). The root entry
+  never imports a framework, following the optional-peer + subpath pattern in the root AGENTS.md.
 
 ## API surface
 
@@ -101,13 +101,20 @@ contract is inseparable from HTTP.
 | `ScimSortOrder`                                                       | type           | `'ascending' \| 'descending'`                                                                                                                       |
 | `ScimUserService` / `ScimGroupService` / `ScimServiceProviderService` | class          | Sit between the router and the repositories.                                                                                                        |
 
-### Middleware and router
+### Scope helpers and media type (root)
+
+| Export            | Kind     | Shape                                      | Notes                                                                                                                                                             |
+| ----------------- | -------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `hasScimScope`    | function | `(session \| undefined, scope) => boolean` | Reads `session.claims.scimScopes`; `*` grants everything; a non-array denies.                                                                                     |
+| `assertScimScope` | function | `(session \| undefined, scope) => void`    | Throws `ScimError` 401 (with `WWW-Authenticate`) for a missing/invalid session, 403 `insufficientScope` otherwise. Every transport's `requireScimScope` calls it. |
+| `SCIM_MEDIA_TYPE` | constant | `'application/scim+json'`                  | —                                                                                                                                                                 |
+
+### Koa transport (`@maroonedsoftware/scim/koa`)
 
 | Export                      | Kind      | Shape                                                                                        | Notes                                                                                                                                              |
 | --------------------------- | --------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `scimErrorMiddleware`       | function  | `() => ServerKitMiddleware`                                                                  | **Replaces** `errorMiddleware()` on the SCIM mountpoint.                                                                                           |
 | `scimContentTypeMiddleware` | function  | `() => ServerKitMiddleware`                                                                  | Enforces `application/scim+json`.                                                                                                                  |
-| `SCIM_MEDIA_TYPE`           | constant  | `'application/scim+json'`                                                                    | —                                                                                                                                                  |
 | `requireScimScope`          | function  | `(scope: string) => ServerKitRouterMiddleware`                                               | Reads `ctx.authenticationSession.claims.scimScopes`. `*` grants everything.                                                                        |
 | `createScimRouter`          | function  | `(options: CreateScimRouterOptions) => Router<unknown, ServerKitContext>`                    | Mounts every endpoint below.                                                                                                                       |
 | `CreateScimRouterOptions`   | interface | `{ userService, groupService, serviceProviderService, routeGuards?, maxResults?, baseUrl? }` | `maxResults` defaults to the service-provider config's `filter.maxResults`, then 200. Set `baseUrl` whenever the router is mounted under a prefix. |
@@ -120,9 +127,6 @@ same six plus `.search` for `/Groups`, and `GET /Schemas`, `/Schemas/:id`, `/Res
 
 ```typescript
 import {
-  createScimRouter,
-  requireScimScope,
-  scimErrorMiddleware,
   ScimUserService,
   ScimGroupService,
   ScimServiceProviderService,
@@ -131,6 +135,7 @@ import {
   type ScimListResult,
   type ScimUser,
 } from '@maroonedsoftware/scim';
+import { createScimRouter, requireScimScope, scimErrorMiddleware } from '@maroonedsoftware/scim/koa';
 
 class PostgresScimUserRepository extends ScimUserRepository {
   async list(query: ScimListQuery): Promise<ScimListResult<ScimUser>> {
@@ -224,7 +229,9 @@ app.use(router.routes()).use(router.allowedMethods());
 
 ```
 src/
-  index.ts                 Root barrel (re-exports every folder's index)
+  index.ts                 Root barrel (transport-free; re-exports every core folder's index)
+  koa.ts                   `/koa` subpath barrel
+  scim.media.type.ts       SCIM_MEDIA_TYPE
   types/                   scim.meta, scim.user, scim.group, list.response, patch.op
   schemas/                 user, group, enterprise.user, resource.type,
                            service.provider.config, schema.types
@@ -233,11 +240,16 @@ src/
   errors/                  scim.error
   repositories/            scim.user.repository, scim.group.repository, repository.types
   services/                scim.user.service, scim.group.service, scim.service.provider.service
-  middleware/              require.scim.scope, scim.content.type, scim.error
-  router/                  scim.router
+  scope/                   scim.scope (hasScimScope, assertScimScope)
+  http/                    scim.endpoints (route table), scim.error.render — internal, shared by
+                           every transport, not exported from any entry
+  koa/                     scim.koa.router, scim.error.middleware, scim.content.type.middleware,
+                           require.scim.scope.middleware
 ```
 
-Every folder has its own `index.ts`; the root barrel re-exports those. Tests are in `tests/`,
+Core folders have their own `index.ts`; the root barrel re-exports those. A transport is a thin
+mapping of `createScimRouteTable` (`src/http/scim.endpoints.ts`) onto its framework plus
+`renderScimError` for the envelope, so endpoint semantics change in one place. Tests are in `tests/`,
 mirroring `src/`.
 
 Invariants a change must not break:
@@ -250,6 +262,8 @@ Invariants a change must not break:
   Entra ID, and every other provisioning client. It is not ServerKit's error shape.
 - The filter grammar and the PATCH value-path semantics follow RFC 7644. Divergence shows up as an
   integration failure at a customer, not as a test failure here.
-- `koa` is a legitimate dependency here (this package ships a router), unlike in the chat packages.
+- The root entry (`src/index.ts` and everything it reaches) never imports a framework. Koa code
+  lives under `src/koa/` and is reachable only through `src/koa.ts`; check `dist/index.js` after a
+  build if in doubt.
 
 User-visible changes need a changeset in `.changeset/`.

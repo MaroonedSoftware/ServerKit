@@ -1,7 +1,7 @@
 {
   "name": "@maroonedsoftware/scim",
   "version": "0.3.9",
-  "description": "SCIM 2.0 (RFC 7643/7644) server toolkit for ServerKit — schemas, filter parser, PATCH applier, error envelope, and a Koa router with abstract repositories.",
+  "description": "SCIM 2.0 (RFC 7643/7644) server toolkit for ServerKit — schemas, filter parser, PATCH applier, error envelope, and abstract repositories, with a Koa transport at the /koa subpath.",
   "author": {
     "name": "Marooned Software",
     "url": "https://github.com/MaroonedSoftware/serverkit"
@@ -28,13 +28,24 @@
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./koa": {
+      "types": "./dist/koa.d.ts",
+      "import": "./dist/koa.js"
+    },
+    "./package.json": "./package.json"
+  },
   "license": "MIT",
   "files": [
     "AGENTS.md",
     "dist/**"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm --sourcemap && tsc --emitDeclarationOnly --declaration",
+    "build": "tsup src/index.ts src/koa.ts --format esm --sourcemap && tsc --emitDeclarationOnly --declaration",
     "build:ci": "eslint --max-warnings=0 && pnpm run build",
     "lint": "eslint --fix",
     "format": "prettier --write .",
@@ -44,7 +55,6 @@
   "dependencies": {
     "@maroonedsoftware/authentication": "workspace:*",
     "@maroonedsoftware/errors": "workspace:*",
-    "@maroonedsoftware/koa": "workspace:*",
     "@maroonedsoftware/logger": "workspace:*",
     "@maroonedsoftware/utilities": "workspace:*",
     "injectkit": "^1.7.1",
@@ -52,10 +62,23 @@
   },
   "peerDependencies": {
     "@koa/router": "^15.2.0",
+    "@maroonedsoftware/koa": "workspace:*",
     "koa": "^3.1.1"
+  },
+  "peerDependenciesMeta": {
+    "@koa/router": {
+      "optional": true
+    },
+    "@maroonedsoftware/koa": {
+      "optional": true
+    },
+    "koa": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@koa/router": "^15.7.0",
+    "@maroonedsoftware/koa": "workspace:*",
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
     "@types/koa": "^3.0.3",
