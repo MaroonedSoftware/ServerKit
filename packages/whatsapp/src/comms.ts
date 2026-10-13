@@ -10,6 +10,7 @@ import {
   type IncomingEvent,
   type Notifier,
   type OutgoingMessage,
+  type Reply,
   type TemplateRegistry,
 } from '@maroonedsoftware/comms';
 import { WhatsAppClient } from './client/whatsapp.client.js';
@@ -53,7 +54,14 @@ export const createWhatsAppNotifier = (client: WhatsAppClient, templates: Templa
   sendNative: async (to, payload) => void (await deliverNative(client, to, payload)),
 });
 
-const normalize = (message: WhatsAppMessage, value: WhatsAppValue): IncomingEvent | undefined => {
+/**
+ * Normalizes one inbound WhatsApp message into a comms {@link IncomingEvent}:
+ * `/`-prefixed text → `command`, other text → `message`, interactive/quick-reply
+ * → `action` (keyed by the reply id). Returns `undefined` for media and every
+ * other type the router does not route. `value` is the change's `value`, which
+ * carries the sender's contact profile.
+ */
+export const normalizeWhatsAppMessage = (message: WhatsAppMessage, value: WhatsAppValue): IncomingEvent | undefined => {
   const from = message.from;
   const contact = value.contacts?.find(c => c.wa_id === from) ?? value.contacts?.[0];
   const user = { id: from, username: contact?.profile?.name };
@@ -79,22 +87,48 @@ const normalize = (message: WhatsAppMessage, value: WhatsAppValue): IncomingEven
   return undefined; // media/other types stay on the native WhatsAppMessageHandlerMap
 };
 
+/** Options for {@link dispatchWhatsApp}. */
+export interface DispatchWhatsAppOptions {
+  /**
+   * Builds the {@link Reply} handed to the router for one event; `to` is the sender's `wa_id`.
+   * Override it to queue outbound messages (for example as a job inside the request's DB
+   * transaction) instead of sending inline. Defaults to sending through the
+   * {@link WhatsAppClient} via {@link createWhatsAppNotifier}.
+   */
+  reply?: (to: string, event: IncomingEvent) => Reply;
+  /**
+   * Called for each message {@link normalizeWhatsAppMessage} does not route (media, location,
+   * reactions, …), with a {@link Reply} addressed to the sender. That reply always sends inline
+   * through the {@link WhatsAppClient}, since `options.reply` needs a normalized event; to queue
+   * it instead, ignore `reply` and address `message.from` yourself. Without this option, those
+   * messages are skipped silently.
+   */
+  onUnsupported?: (message: WhatsAppMessage, value: WhatsAppValue, reply: Reply) => Promise<void> | void;
+}
+
 /**
  * Walks a parsed WhatsApp webhook body and routes each message to the
- * {@link ChannelRouter}: `/`-prefixed text → `command`, other text → `message`,
- * interactive/quick-reply → `action` (keyed by the reply id). Media and other
- * message types are skipped here (handle them on the whatsapp package's native
- * handlers). Replies go back to the sender via the {@link WhatsAppClient}.
+ * {@link ChannelRouter} through {@link normalizeWhatsAppMessage}. Messages it
+ * does not route go to `options.onUnsupported` when given, and are skipped
+ * otherwise (handle them on the whatsapp package's native handlers). Replies go
+ * back to the sender through `options.reply`, or the {@link WhatsAppClient} by default.
  */
-export const dispatchWhatsApp = async (router: ChannelRouter, client: WhatsAppClient, body: WhatsAppWebhookBody): Promise<void> => {
+export const dispatchWhatsApp = async (
+  router: ChannelRouter,
+  client: WhatsAppClient,
+  body: WhatsAppWebhookBody,
+  options: DispatchWhatsAppOptions = {},
+): Promise<void> => {
+  const replyFor = (to: string, event?: IncomingEvent): Reply =>
+    event && options.reply ? options.reply(to, event) : bindReply(createWhatsAppNotifier(client, router.templates), to);
   for (const entry of body.entry ?? []) {
     for (const change of entry.changes ?? []) {
       const value = change.value;
       if (!value) continue;
       for (const message of value.messages ?? []) {
-        const event = normalize(message, value);
-        if (!event) continue;
-        await router.dispatch(event, bindReply(createWhatsAppNotifier(client, router.templates), message.from));
+        const event = normalizeWhatsAppMessage(message, value);
+        if (event) await router.dispatch(event, replyFor(message.from, event));
+        else if (options.onUnsupported) await options.onUnsupported(message, value, replyFor(message.from));
       }
     }
   }

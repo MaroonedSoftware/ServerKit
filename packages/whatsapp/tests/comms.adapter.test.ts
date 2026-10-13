@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ChannelRouter, CommsError } from '@maroonedsoftware/comms';
-import { dispatchWhatsApp, createWhatsAppNotifier } from '../src/comms.js';
+import { ChannelRouter, CommsError, type IncomingEvent, type Reply } from '@maroonedsoftware/comms';
+import { dispatchWhatsApp, createWhatsAppNotifier, normalizeWhatsAppMessage } from '../src/comms.js';
 import type { WhatsAppClient } from '../src/client/whatsapp.client.js';
 import type { WhatsAppWebhookBody } from '../src/whatsapp.message.handler.js';
 
@@ -143,5 +143,56 @@ describe('whatsapp /comms adapter', () => {
     });
 
     await expect(notifier.sendTemplate('x', 'missing', {})).rejects.toBeInstanceOf(CommsError);
+  });
+});
+
+describe('whatsapp /comms normalizer and dispatch options', () => {
+  const value = webhook([]).entry![0]!.changes![0]!.value;
+
+  it('normalizeWhatsAppMessage normalizes text and returns undefined for media', () => {
+    expect(normalizeWhatsAppMessage({ from: '15551112222', id: 'm1', timestamp: '1', type: 'text', text: { body: 'hi' } }, value)).toMatchObject({
+      channel: 'whatsapp',
+      kind: 'message',
+      text: 'hi',
+      user: { id: '15551112222', username: 'Ada' },
+      conversation: { id: '15551112222' },
+    });
+    expect(normalizeWhatsAppMessage({ from: '15551112222', id: 'm2', timestamp: '1', type: 'image' }, value)).toBeUndefined();
+  });
+
+  it('builds replies with options.reply instead of sending inline', async () => {
+    const router = new ChannelRouter();
+    router.message(async (_e, reply) => reply.send({ text: 'queued' }));
+    const { client, sendText } = makeClient();
+    const queued: unknown[] = [];
+    const reply = vi.fn((to: string, _event: IncomingEvent): Reply => ({
+      channel: 'whatsapp',
+      send: async message => void queued.push({ to, message }),
+      sendTemplate: async () => {},
+      sendNative: async () => {},
+    }));
+
+    await dispatchWhatsApp(router, client, webhook([{ from: '15551112222', id: 'm7', timestamp: '1', type: 'text', text: { body: 'hi' } }]), {
+      reply,
+    });
+
+    expect(reply.mock.calls[0]![1]).toMatchObject({ kind: 'message', text: 'hi' });
+    expect(queued).toEqual([{ to: '15551112222', message: { text: 'queued' } }]);
+    expect(sendText).not.toHaveBeenCalled();
+  });
+
+  it('hands unrouted messages to onUnsupported with a reply to the sender', async () => {
+    const router = new ChannelRouter();
+    const handler = vi.fn();
+    router.message(handler);
+    const { client, sendText } = makeClient();
+    const onUnsupported = vi.fn(async (_m: unknown, _v: unknown, reply: Reply) => reply.send({ text: 'I can only read text messages' }));
+
+    await dispatchWhatsApp(router, client, webhook([{ from: '15551112222', id: 'm8', timestamp: '1', type: 'image' }]), { onUnsupported });
+
+    expect(handler).not.toHaveBeenCalled();
+    expect(onUnsupported.mock.calls[0]![0]).toMatchObject({ id: 'm8', type: 'image' });
+    expect(onUnsupported.mock.calls[0]![1]).toMatchObject({ metadata: { phone_number_id: 'PN1' } });
+    expect(sendText).toHaveBeenCalledWith('15551112222', 'I can only read text messages');
   });
 });

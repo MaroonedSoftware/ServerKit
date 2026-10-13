@@ -250,8 +250,20 @@ http.post('/whatsapp/webhook', async ctx => {
 ```
 
 - `dispatchWhatsApp` walks the batch: `/`-prefixed text → `command`, other text → `message`,
-  interactive/quick-reply → `action`. Media and delivery statuses are skipped here — handle them on
-  the native `WhatsAppMessageHandlerMap` / `WhatsAppStatusHandlerMap`.
+  interactive/quick-reply → `action`. The per-message step is exported as
+  `normalizeWhatsAppMessage(message, value)` for apps that walk the webhook themselves. Delivery
+  statuses are skipped; media and other unrouted types are skipped too unless you pass
+  `onUnsupported`, which receives the message, its `value`, and a reply to the sender.
+- Pass `reply: (to, event) => Reply` to build replies yourself, for example to queue outbound
+  messages as a job inside your DB transaction instead of sending inline:
+
+  ```ts
+  await dispatchWhatsApp(router, client, body, {
+    reply: (to, event) => queuedReply(to, event), // your Reply implementation
+    onUnsupported: (_message, _value, reply) => reply.send({ text: 'I can only read text messages' }),
+  });
+  ```
+
 - Replies go back to the sender (`message.from`). Buttons render as an interactive button message
   (≤3) or degrade to a list (>3). `createWhatsAppNotifier(client, router.templates)` sends
   proactively; `reply.sendTemplate` / `reply.sendNative` cover templates and other rich payloads.
