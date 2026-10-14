@@ -1,5 +1,12 @@
 # @maroonedsoftware/fastify
 
+## 0.4.6
+
+### Patch Changes
+
+- Updated dependencies [f9cbdbf]
+  - @maroonedsoftware/servercore@0.4.0
+
 ## 0.4.5
 
 ### Patch Changes

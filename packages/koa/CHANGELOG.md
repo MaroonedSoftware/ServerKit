@@ -1,5 +1,12 @@
 # @maroonedsoftware/koa
 
+## 4.1.2
+
+### Patch Changes
+
+- Updated dependencies [f9cbdbf]
+  - @maroonedsoftware/servercore@0.4.0
+
 ## 4.1.1
 
 ### Patch Changes
