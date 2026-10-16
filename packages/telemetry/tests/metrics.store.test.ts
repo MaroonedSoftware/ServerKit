@@ -60,6 +60,17 @@ const bucket = (name: string, value: number, start: string, labels: MetricLabels
 });
 
 describe('MetricsStore', () => {
+  it('accepts an app’s own typed Kysely without a cast', async () => {
+    interface AppDB {
+      persons: { id: string; tags: string[] };
+    }
+    const { db, queries } = fakeDb();
+
+    await new MetricsStore(db as unknown as Kysely<AppDB>, { table: 'metric_samples' }).prune('hour', Duration.fromObject({ days: 1 }));
+
+    expect(queries).toHaveLength(1);
+  });
+
   describe('upsertMinutes', () => {
     it('inserts minute rows and merges a conflicting row into the stored one', async () => {
       const { db, queries } = fakeDb([{ numAffectedRows: 1n }]);

@@ -122,9 +122,12 @@ const instantOf = (value: DateTime | Date | string): DateTime => {
  * await store.upsertMinutes(recorder.drain());
  * await store.rollupHour(DateTime.utc().startOf('hour').minus({ hours: 1 }));
  * ```
+ *
+ * @typeParam DB - The app's database type. The store never uses it (every statement is raw SQL on the
+ *   table it was given), so any `Kysely<DB>` is accepted as it is, with no cast at the call site.
  */
-export class MetricsStore {
-  private readonly db: Kysely<unknown>;
+export class MetricsStore<DB = unknown> {
+  private readonly db: Kysely<DB>;
   private readonly table: string;
   private readonly scope: [string, string][];
   private readonly batchSize: number;
@@ -133,7 +136,7 @@ export class MetricsStore {
    * @param db - Any Kysely instance on the database holding the table.
    * @param options - The table and scope.
    */
-  constructor(db: Kysely<unknown>, options: MetricsStoreOptions) {
+  constructor(db: Kysely<DB>, options: MetricsStoreOptions) {
     this.db = db.withoutPlugins();
     this.table = options.table;
     this.scope = Object.entries(options.scope ?? {});
