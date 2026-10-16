@@ -30,25 +30,29 @@ Optional peers: `kysely` — unlocks the `./kysely` subpath (`MetricsStore`). `@
 
 ## API surface
 
-| Export                    | Kind      | Shape                                                                                                                            | Notes                                    |
-| ------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| `MetricsRecorder`         | class     | `observe(name, value, labels?, at?)`, `gauge(name, read, options?)`, `sampleGauges(now?)`, `drain()`, `pending`, `onGaugeError?` | `@Injectable()`; register as a singleton |
-| `GaugeReader`             | type      | `() => number \| undefined \| Promise<number \| undefined>`                                                                      | `undefined` records nothing              |
-| `GaugeOptions`            | interface | `{ labels?: MetricLabels; every?: Duration }`                                                                                    | `every` defaults to zero (every pass)    |
-| `GaugeErrorHandler`       | type      | `(name: string, error: unknown) => void`                                                                                         |                                          |
-| `MetricAggregate`         | interface | `{ count, sum, min, max, last }`                                                                                                 |                                          |
-| `aggregateOf`             | function  | `(value: number) => MetricAggregate`                                                                                             |                                          |
-| `mergeAggregates`         | function  | `(previous, next) => MetricAggregate`                                                                                            | associative; `last` is taken from `next` |
-| `MetricBucket`            | interface | `{ name, labels, labelsKey, start: DateTime, aggregate }`                                                                        | `start` is the UTC minute                |
-| `minuteOf`                | function  | `(at: DateTime) => DateTime`                                                                                                     | UTC start of minute                      |
-| `MetricLabels`            | type      | `Readonly<Record<string, string>>`                                                                                               | string values only                       |
-| `labelsKey`               | function  | `(labels: MetricLabels) => string`                                                                                               | sorted JSON; `'{}'` for none             |
-| `FinishedSpan`            | interface | `{ traceId, spanId, parentSpanId?, name, start, end, ok, error?, attributes?, links? }`                                          | the app's own ids; work already done     |
-| `SpanLink`                | interface | `{ traceId, spanId }`                                                                                                            |                                          |
-| `SpanAttributeValue`      | type      | `string \| number \| boolean`                                                                                                    |                                          |
-| `MetricResolution`        | type      | `'minute' \| 'hour'`                                                                                                             |                                          |
-| `resolutionFor`           | function  | `(from, to, limit?) => MetricResolution`                                                                                         | minutes up to `limit` (48h), else hours  |
-| `MINUTE_RESOLUTION_LIMIT` | const     | `Duration` (48 hours)                                                                                                            |                                          |
+| Export                       | Kind      | Shape                                                                                                                            | Notes                                                                    |
+| ---------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `MetricsRecorder`            | class     | `observe(name, value, labels?, at?)`, `gauge(name, read, options?)`, `sampleGauges(now?)`, `drain()`, `pending`, `onGaugeError?` | `@Injectable()`; register as a singleton                                 |
+| `GaugeReader`                | type      | `() => number \| undefined \| Promise<number \| undefined>`                                                                      | `undefined` records nothing                                              |
+| `GaugeOptions`               | interface | `{ labels?: MetricLabels; every?: Duration }`                                                                                    | `every` defaults to zero (every pass)                                    |
+| `GaugeErrorHandler`          | type      | `(name: string, error: unknown) => void`                                                                                         |                                                                          |
+| `MetricAggregate`            | interface | `{ count, sum, min, max, last }`                                                                                                 |                                                                          |
+| `aggregateOf`                | function  | `(value: number) => MetricAggregate`                                                                                             |                                                                          |
+| `mergeAggregates`            | function  | `(previous, next) => MetricAggregate`                                                                                            | associative; `last` is taken from `next`                                 |
+| `MetricBucket`               | interface | `{ name, labels, labelsKey, start: DateTime, aggregate }`                                                                        | `start` is the UTC minute                                                |
+| `minuteOf`                   | function  | `(at: DateTime) => DateTime`                                                                                                     | UTC start of minute                                                      |
+| `MetricLabels`               | type      | `Readonly<Record<string, string>>`                                                                                               | string values only                                                       |
+| `labelsKey`                  | function  | `(labels: MetricLabels) => string`                                                                                               | sorted JSON; `'{}'` for none                                             |
+| `FinishedSpan`               | interface | `{ traceId, spanId, parentSpanId?, name, start, end, ok, error?, attributes?, links? }`                                          | the app's own ids; work already done                                     |
+| `SpanLink`                   | interface | `{ traceId, spanId }`                                                                                                            |                                                                          |
+| `SpanAttributeValue`         | type      | `string \| number \| boolean`                                                                                                    |                                                                          |
+| `OtlpMetricsReceiver`        | class     | `new OtlpMetricsReceiver({ maxSeriesPerName?, maxNames? })`; `receive(body, now?) => OtlpReceiveResult`                          | OTLP/JSON only; holds cumulative baselines and the caps; one per process |
+| `OtlpMetricsReceiverOptions` | interface | `{ maxSeriesPerName?: number; maxNames?: number }`                                                                               | defaults 50 and 500                                                      |
+| `OtlpReceiveResult`          | interface | `{ buckets: MetricBucket[]; dropped: number; unsupported: number }`                                                              |                                                                          |
+| `OtlpPayloadError`           | class     | `extends Error`                                                                                                                  | body is not a metrics export; answer 400                                 |
+| `MetricResolution`           | type      | `'minute' \| 'hour'`                                                                                                             |                                                                          |
+| `resolutionFor`              | function  | `(from, to, limit?) => MetricResolution`                                                                                         | minutes up to `limit` (48h), else hours                                  |
+| `MINUTE_RESOLUTION_LIMIT`    | const     | `Duration` (48 hours)                                                                                                            |                                                                          |
 
 ### `./kysely`
 
@@ -116,6 +120,18 @@ await metrics.export(buckets).catch(log); // a dead collector must not stop the 
 await spans.export(finishedSinceLastFlush);
 ```
 
+Receiving OTLP/JSON from other services, in the app's own route:
+
+```typescript
+import { OtlpMetricsReceiver, OtlpPayloadError } from '@maroonedsoftware/telemetry';
+
+const receiver = new OtlpMetricsReceiver({ maxSeriesPerName: 50 }); // a singleton
+
+const { buckets, dropped } = receiver.receive(ctx.request.body); // throws OtlpPayloadError → 400
+await store.upsertMinutes(buckets, 'otlp');
+ctx.body = dropped > 0 ? { partialSuccess: { rejectedDataPoints: String(dropped) } } : {};
+```
+
 ## Rules for generated code
 
 - Register `MetricsRecorder` as a singleton. A scoped or transient recorder splits observations across
@@ -132,6 +148,10 @@ await spans.export(finishedSinceLastFlush);
 - Export to OTLP after the store write, and never let an export failure skip or retry the store write.
 - Give every metric that is a duration or a count a `kindOf` answer; the default sends everything as a gauge.
 
+- Keep one `OtlpMetricsReceiver` per process. A new one per request loses every cumulative baseline, so
+  cumulative sums and histograms never produce a point.
+- Put received metrics behind authentication and a size limit on the body: the caps bound rows, not bytes.
+
 ## Gotchas
 
 - `drain()` includes the still-open minute. A store must merge (upsert) rather than insert, or a
@@ -139,6 +159,10 @@ await spans.export(finishedSinceLastFlush);
 - The OTLP metrics are delta. A collector feeding Prometheus needs the `deltatocumulative` processor.
 - `otlpTraceId` hashes, so a trace id is only stable for the same app id string. Two apps sharing a trace
   must agree on the id string, or pass real 32-hex ids.
+- The receiver reads OTLP/JSON only. A sender on the default `http/protobuf` encoding must be switched to
+  `http/json` (`OTEL_EXPORTER_OTLP_METRICS_PROTOCOL=http/json`).
+- A cumulative series' first point, and its first after a sender restart, produce nothing: they set the baseline.
+- The caps last for the receiver's life. A dropped series stays dropped until the process restarts.
 - `observe()` silently drops `NaN` and `Infinity`.
 - `MetricsStore` ignores the app's Kysely plugins. Rows from `series()` are mapped by the store, never
   read raw, so a `CamelCasePlugin` cannot rename its columns underneath it.
@@ -149,6 +173,7 @@ await spans.export(finishedSinceLastFlush);
 
 `src/` holds one concern per file (`metric.aggregate.ts`, `metric.labels.ts`, `metric.bucket.ts`,
 `metric.resolution.ts`, `metrics.recorder.ts`) behind the `src/index.ts` barrel, `metrics.store.ts` behind the
-`src/kysely.ts` subpath entry, and the `otlp.*.ts` files behind `src/otlp.ts`; tests mirror them in `tests/`. Keep the root
+`src/kysely.ts` subpath entry, and the `otlp.*.ts` bridges behind `src/otlp.ts`.
+`otlp.metrics.receiver.ts` is in the root entry on purpose: it parses JSON and needs no OTel SDK; tests mirror them in `tests/`. Keep the root
 entry free of I/O and of external SDKs. A new subpath needs an `exports` entry, a tsup entry in
 `build`, and its SDK as an optional peer. Every user-visible change needs a changeset.
