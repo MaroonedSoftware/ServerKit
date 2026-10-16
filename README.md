@@ -123,6 +123,18 @@ Synchronous, in-process fan-out event dispatch.
 
 ---
 
+### Telemetry
+
+Minute-bucket metrics an app keeps and reads back.
+
+- An in-process recorder and gauge registry, no I/O
+- One five-number aggregate per series per minute
+- Dependency-free beyond injectkit and luxon
+
+[View documentation →](./packages/telemetry/README.md)
+
+---
+
 ### JobBroker
 
 Background job processing powered by PostgreSQL-backed queues.

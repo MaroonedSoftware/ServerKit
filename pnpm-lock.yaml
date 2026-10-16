@@ -996,6 +996,25 @@ importers:
         specifier: ^3.7.2
         version: 3.7.2
 
+  packages/telemetry:
+    dependencies:
+      injectkit:
+        specifier: ^1.7.1
+        version: 1.7.1
+      luxon:
+        specifier: ^3.7.2
+        version: 3.7.2
+    devDependencies:
+      '@repo/config-eslint':
+        specifier: workspace:*
+        version: link:../config-eslint
+      '@repo/config-typescript':
+        specifier: workspace:*
+        version: link:../config-typescript
+      '@types/luxon':
+        specifier: ^3.7.5
+        version: 3.7.5
+
   packages/utilities:
     devDependencies:
       '@repo/config-eslint':
