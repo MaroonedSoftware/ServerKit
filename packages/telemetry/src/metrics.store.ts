@@ -75,7 +75,7 @@ interface SeriesRow {
   labels: MetricLabels | string;
   labels_key: string;
   source: string;
-  bucket: Date | string;
+  bucket: DateTime | Date | string;
   count: number;
   sum: number;
   min: number;
@@ -86,15 +86,26 @@ interface SeriesRow {
 interface NameRow {
   name: string;
   source: string;
-  last_seen: Date | string;
+  last_seen: DateTime | Date | string;
   label_keys: string[] | null;
 }
 
 const PRIMARY_KEY = ['resolution', 'name', 'labels_key', 'bucket'] as const;
 
-/** Reads a `timestamptz` the way `pg` hands it back: a `Date`, or text under some type parsers. */
-const instantOf = (value: Date | string): DateTime =>
-  value instanceof Date ? DateTime.fromJSDate(value, { zone: 'utc' }) : DateTime.fromISO(value.replace(' ', 'T'), { zone: 'utc' });
+/**
+ * Reads a `timestamptz` however the pool hands it back: a `DateTime` under
+ * `@maroonedsoftware/kysely`'s `KyselyPgTypeOverrides`, a `Date` under `pg`'s defaults, or text under
+ * a parser that returns the raw value.
+ */
+const instantOf = (value: DateTime | Date | string): DateTime => {
+  if (DateTime.isDateTime(value)) {
+    return value.toUTC();
+  }
+  if (value instanceof Date) {
+    return DateTime.fromJSDate(value, { zone: 'utc' });
+  }
+  return DateTime.fromISO(value.replace(' ', 'T'), { zone: 'utc' });
+};
 
 /**
  * Keeps metric buckets in one PostgreSQL table at two resolutions, minutes and hours.
