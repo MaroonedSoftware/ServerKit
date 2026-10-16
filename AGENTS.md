@@ -37,7 +37,7 @@ Two audiences use these files:
 | `utilities`         | L0      | Validation, base32, deterministic avatars, and misc dependency-free helpers               | [utilities](./packages/utilities/AGENTS.md)                 |
 | `permissions`       | L0      | Zanzibar-style relationship-based access control with a validated authorization model     | [permissions](./packages/permissions/AGENTS.md)             |
 | `eventbus`          | L0      | Synchronous in-process fan-out event dispatch                                             | [eventbus](./packages/eventbus/AGENTS.md)                   |
-| `telemetry`         | L0      | Minute-bucket metrics recorder and gauge registry                                         | [telemetry](./packages/telemetry/AGENTS.md)                 |
+| `telemetry`         | L0      | Minute-bucket metrics recorder, gauge registry, and PostgreSQL store                      | [telemetry](./packages/telemetry/AGENTS.md)                 |
 | `appconfig`         | L1      | Typed config loading, merging, transformation, and runtime reload                         | [appconfig](./packages/appconfig/AGENTS.md)                 |
 | `policies`          | L1      | Named, injectable allow/deny rules returning a discriminated `PolicyResult`               | [policies](./packages/policies/AGENTS.md)                   |
 | `encryption`        | L1      | Envelope encryption with a pluggable KMS provider interface                               | [encryption](./packages/encryption/AGENTS.md)               |

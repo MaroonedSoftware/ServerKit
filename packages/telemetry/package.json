@@ -33,6 +33,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./kysely": {
+      "types": "./dist/kysely.d.ts",
+      "import": "./dist/kysely.js"
+    },
     "./package.json": "./package.json"
   },
   "license": "MIT",
@@ -41,7 +45,7 @@
     "dist/**"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm --sourcemap && tsc --emitDeclarationOnly --declaration",
+    "build": "tsup src/index.ts src/kysely.ts --format esm --sourcemap && tsc --emitDeclarationOnly --declaration",
     "build:ci": "eslint --max-warnings=0 && pnpm run build",
     "lint": "eslint --fix",
     "format": "prettier --write .",
@@ -52,10 +56,19 @@
     "injectkit": "^1.7.1",
     "luxon": "^3.7.2"
   },
+  "peerDependencies": {
+    "kysely": "^0.29.5"
+  },
+  "peerDependenciesMeta": {
+    "kysely": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
-    "@types/luxon": "^3.7.5"
+    "@types/luxon": "^3.7.5",
+    "kysely": "^0.29.5"
   },
   "engines": {
     "node": ">=22"

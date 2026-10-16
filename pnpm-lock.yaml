@@ -1014,6 +1014,9 @@ importers:
       '@types/luxon':
         specifier: ^3.7.5
         version: 3.7.5
+      kysely:
+        specifier: ^0.29.5
+        version: 0.29.5
 
   packages/utilities:
     devDependencies:
