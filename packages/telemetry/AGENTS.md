@@ -17,13 +17,16 @@ pnpm add @maroonedsoftware/telemetry injectkit reflect-metadata
 ```
 
 Required peers: none beyond `injectkit`'s own `reflect-metadata`.
-Optional peers: `kysely` — unlocks the `./kysely` subpath (`MetricsStore`).
+Optional peers: `kysely` — unlocks the `./kysely` subpath (`MetricsStore`). `@opentelemetry/api`, `/core`,
+`/resources`, `/sdk-metrics` and `/sdk-trace` — unlock the `./otlp` subpath. The OTLP exporters themselves
+(`@opentelemetry/exporter-metrics-otlp-http` and the like) are the app's choice and not peers.
 
 ## Position in the graph
 
 - **Depends on:** nothing internal
 - **Depended on by:** nothing internal
 - **Subpath exports:** `./kysely` — `MetricsStore`, the PostgreSQL store; a subpath so the root entry stays free of `kysely`
+- **Subpath exports:** `./otlp` — `OtlpMetricsBridge`, `OtlpSpanBridge` and the id helpers; a subpath so the root entry stays free of the OTel SDK
 
 ## API surface
 
@@ -40,6 +43,9 @@ Optional peers: `kysely` — unlocks the `./kysely` subpath (`MetricsStore`).
 | `minuteOf`                | function  | `(at: DateTime) => DateTime`                                                                                                     | UTC start of minute                      |
 | `MetricLabels`            | type      | `Readonly<Record<string, string>>`                                                                                               | string values only                       |
 | `labelsKey`               | function  | `(labels: MetricLabels) => string`                                                                                               | sorted JSON; `'{}'` for none             |
+| `FinishedSpan`            | interface | `{ traceId, spanId, parentSpanId?, name, start, end, ok, error?, attributes?, links? }`                                          | the app's own ids; work already done     |
+| `SpanLink`                | interface | `{ traceId, spanId }`                                                                                                            |                                          |
+| `SpanAttributeValue`      | type      | `string \| number \| boolean`                                                                                                    |                                          |
 | `MetricResolution`        | type      | `'minute' \| 'hour'`                                                                                                             |                                          |
 | `resolutionFor`           | function  | `(from, to, limit?) => MetricResolution`                                                                                         | minutes up to `limit` (48h), else hours  |
 | `MINUTE_RESOLUTION_LIMIT` | const     | `Duration` (48 hours)                                                                                                            |                                          |
@@ -54,6 +60,18 @@ Optional peers: `kysely` — unlocks the `./kysely` subpath (`MetricsStore`).
 | `MetricSeries`        | interface | `{ name, labels, labelsKey, source, points: MetricPoint[] }`                                                                                             | points oldest first                                                           |
 | `MetricPoint`         | interface | `{ start: DateTime; aggregate: MetricAggregate }`                                                                                                        |                                                                               |
 | `MetricName`          | interface | `{ name, source, labelKeys: string[], lastSeen: DateTime }`                                                                                              |                                                                               |
+
+### `./otlp`
+
+| Export                     | Kind      | Shape                                                                                              | Notes                                                                    |
+| -------------------------- | --------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `OtlpMetricsBridge`        | class     | `new OtlpMetricsBridge({ exporter, resource?, scope?, kindOf? })`; `export(buckets)`, `shutdown()` | builds `ResourceMetrics` directly, no `MeterProvider`; delta temporality |
+| `OtlpMetricsBridgeOptions` | interface | as above                                                                                           | `kindOf` defaults to `gauge`                                             |
+| `MetricKind`               | type      | `'gauge' \| 'counter' \| 'histogram'`                                                              | gauge → `last`, counter → `sum`, histogram → count/sum/min/max           |
+| `OtlpSpanBridge`           | class     | `new OtlpSpanBridge({ exporter, resource?, scope? })`; `export(spans)`, `shutdown()`               | builds finished `ReadableSpan`s with recorded times                      |
+| `OtlpSpanBridgeOptions`    | interface | as above                                                                                           |                                                                          |
+| `otlpTraceId`              | function  | `(id: string) => string`                                                                           | 32 hex; kept if already, else sha256-derived                             |
+| `otlpSpanId`               | function  | `(id: string) => string`                                                                           | 16 hex; same rule                                                        |
 
 ## Canonical usage
 
@@ -82,6 +100,22 @@ await store.rollupHour(DateTime.utc().minus({ hours: 1 })); // hourly job
 await store.prune('minute', Duration.fromObject({ days: 7 })); // nightly job
 ```
 
+Exporting over OTLP:
+
+```typescript
+import { OtlpMetricsBridge, OtlpSpanBridge } from '@maroonedsoftware/telemetry/otlp';
+import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http';
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
+
+const metrics = new OtlpMetricsBridge({ exporter: new OTLPMetricExporter({ url }), kindOf: name => (name.endsWith('.ms') ? 'histogram' : 'gauge') });
+const spans = new OtlpSpanBridge({ exporter: new OTLPTraceExporter({ url }) });
+
+const buckets = recorder.drain();
+await store.upsertMinutes(buckets);
+await metrics.export(buckets).catch(log); // a dead collector must not stop the store write
+await spans.export(finishedSinceLastFlush);
+```
+
 ## Rules for generated code
 
 - Register `MetricsRecorder` as a singleton. A scoped or transient recorder splits observations across
@@ -95,10 +129,16 @@ await store.prune('minute', Duration.fromObject({ days: 7 })); // nightly job
 - Roll an hour up only once it is complete. Rolling up early is not wrong (the next run replaces the row)
   but the hour row lags until then.
 
+- Export to OTLP after the store write, and never let an export failure skip or retry the store write.
+- Give every metric that is a duration or a count a `kindOf` answer; the default sends everything as a gauge.
+
 ## Gotchas
 
 - `drain()` includes the still-open minute. A store must merge (upsert) rather than insert, or a
   minute flushed twice is double-counted or rejected.
+- The OTLP metrics are delta. A collector feeding Prometheus needs the `deltatocumulative` processor.
+- `otlpTraceId` hashes, so a trace id is only stable for the same app id string. Two apps sharing a trace
+  must agree on the id string, or pass real 32-hex ids.
 - `observe()` silently drops `NaN` and `Infinity`.
 - `MetricsStore` ignores the app's Kysely plugins. Rows from `series()` are mapped by the store, never
   read raw, so a `CamelCasePlugin` cannot rename its columns underneath it.
@@ -108,7 +148,7 @@ await store.prune('minute', Duration.fromObject({ days: 7 })); // nightly job
 ## Working inside this package
 
 `src/` holds one concern per file (`metric.aggregate.ts`, `metric.labels.ts`, `metric.bucket.ts`,
-`metric.resolution.ts`, `metrics.recorder.ts`) behind the `src/index.ts` barrel, and `metrics.store.ts` behind the
-`src/kysely.ts` subpath entry; tests mirror them in `tests/`. Keep the root
+`metric.resolution.ts`, `metrics.recorder.ts`) behind the `src/index.ts` barrel, `metrics.store.ts` behind the
+`src/kysely.ts` subpath entry, and the `otlp.*.ts` files behind `src/otlp.ts`; tests mirror them in `tests/`. Keep the root
 entry free of I/O and of external SDKs. A new subpath needs an `exports` entry, a tsup entry in
 `build`, and its SDK as an optional peer. Every user-visible change needs a changeset.

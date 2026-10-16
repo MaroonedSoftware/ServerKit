@@ -1,3 +1,4 @@
+export * from './finished.span.js';
 export * from './metric.aggregate.js';
 export * from './metric.bucket.js';
 export * from './metric.labels.js';

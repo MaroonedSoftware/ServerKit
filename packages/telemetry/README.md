@@ -9,6 +9,7 @@ Minute-bucket metrics for ServerKit. Producers observe numbers into an in-proces
 - **Merge-friendly**: aggregates are associative, so a later flush of the same minute merges into the row already stored, and minutes fold into hours
 - **No I/O in the recorder**: storage and export are separate, so a dead database or collector never blocks a producer
 - **A PostgreSQL store** (`/kysely`): merging upserts, idempotent hourly rollups, pruning, range reads
+- **OpenTelemetry bridges** (`/otlp`): send the same buckets, and finished spans, to any OTLP exporter
 - **Zero internal dependencies**: [injectkit](https://www.npmjs.com/package/injectkit) and [luxon](https://moment.github.io/luxon/) only
 
 ## Installation
@@ -73,6 +74,25 @@ await store.prune('hour', Duration.fromObject({ days: 400 }));
 
 const series = await store.series({ names: ['work.job.ms'], from, to, resolution: resolutionFor(from, to) });
 ```
+
+## Exporting over OTLP
+
+`@maroonedsoftware/telemetry/otlp` needs `@opentelemetry/api`, `/core`, `/resources`, `/sdk-metrics` and `/sdk-trace`, plus whichever exporter you send with.
+
+```typescript
+import { OtlpMetricsBridge, OtlpSpanBridge } from '@maroonedsoftware/telemetry/otlp';
+
+const metrics = new OtlpMetricsBridge({
+  exporter: new OTLPMetricExporter({ url: 'http://collector:4318/v1/metrics' }),
+  kindOf: name => (name.endsWith('.ms') ? 'histogram' : name.endsWith('.count') ? 'counter' : 'gauge'),
+});
+await metrics.export(buckets);
+
+const spans = new OtlpSpanBridge({ exporter: new OTLPTraceExporter({ url: 'http://collector:4318/v1/traces' }) });
+await spans.export([{ traceId: 'job-42', spanId: 'job-42/run', name: 'job.run', start, end, ok: true }]);
+```
+
+Metrics go out with delta temporality: each bucket is one point spanning its minute. Spans keep the times you recorded, and your own ids are hashed into OTLP form so the same id always lands in the same trace.
 
 ## Reading an aggregate
 

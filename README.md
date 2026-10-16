@@ -128,6 +128,7 @@ Synchronous, in-process fan-out event dispatch.
 Minute-bucket metrics an app keeps and reads back.
 
 - An in-process recorder and gauge registry, no I/O
+- A PostgreSQL store with hourly rollups, and OTLP export bridges
 - One five-number aggregate per series per minute
 - Dependency-free beyond injectkit and luxon
 
