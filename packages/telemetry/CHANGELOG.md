@@ -1,5 +1,12 @@
 # @maroonedsoftware/telemetry
 
+## 0.1.1
+
+### Patch Changes
+
+- a1ddd60: `MetricsStore.series` and `names` now read a `timestamptz` the pool has already parsed into a Luxon `DateTime`, which is what `@maroonedsoftware/kysely`'s `KyselyPgTypeOverrides` does. They threw a `TypeError` on such a pool before.
+- 51323cf: `MetricsStore` is generic over the app's database type, so an app's own `Kysely<DB>` is accepted without a cast. A typed `Kysely<DB>` was not assignable to the `Kysely<unknown>` it took before, so it could not be passed at all without one.
+
 ## 0.1.0
 
 ### Minor Changes
