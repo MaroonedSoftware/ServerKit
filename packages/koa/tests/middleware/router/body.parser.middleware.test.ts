@@ -17,6 +17,7 @@ describe('bodyParserMiddleware', () => {
     length: number;
     is: ReturnType<typeof vi.fn>;
     type: string;
+    get: ReturnType<typeof vi.fn>;
   };
 
   beforeEach(() => {
@@ -27,6 +28,7 @@ describe('bodyParserMiddleware', () => {
       length: 0,
       is: vi.fn(),
       type: '',
+      get: vi.fn().mockReturnValue(''),
     };
 
     mockNext = vi.fn().mockResolvedValue(undefined);
@@ -299,6 +301,20 @@ describe('bodyParserMiddleware', () => {
         }
         expect(mockNext).not.toHaveBeenCalled();
       });
+    });
+  });
+
+  describe('with a chunked body', () => {
+    it('parses it, though it declares no length, rather than answering 411', async () => {
+      const middleware = bodyParserMiddleware(['application/json']);
+      mockRequest.get.mockImplementation((name: string) => (name === 'transfer-encoding' ? 'chunked' : ''));
+      mockRequest.is.mockReturnValue('application/json');
+      mockBodyParser.parse.mockResolvedValue({ parsed: { a: 1 }, raw: '{"a":1}' });
+
+      await middleware(mockCtx, mockNext);
+
+      expect(mockCtx.parsedBody).toEqual({ a: 1 });
+      expect(mockNext).toHaveBeenCalled();
     });
   });
 });

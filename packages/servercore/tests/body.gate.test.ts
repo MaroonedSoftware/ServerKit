@@ -22,11 +22,21 @@ describe('assertBodyExpectation', () => {
         expect.objectContaining({ statusCode: 400, details: { body: 'Unexpected body' } }),
       );
     });
+
+    it('throws 400 for a chunked body too, which declares no length', () => {
+      expect(() => assertBodyExpectation(request({ chunked: true }), [])).toThrow(expect.objectContaining({ statusCode: 400 }));
+    });
   });
 
   describe('when content types are allowed', () => {
     it('throws 411 when the body is missing', () => {
       expect(() => assertBodyExpectation(request(), ['application/json'])).toThrow(expect.objectContaining({ statusCode: 411 }));
+    });
+
+    it('parses a chunked body, which has no declared length, rather than answering 411', () => {
+      const req = request({ chunked: true, type: 'application/json', is: vi.fn((): string | false => 'application/json') });
+
+      expect(assertBodyExpectation(req, ['application/json'])).toBe(true);
     });
 
     it('throws 415 with details when the content type is not allowed', () => {

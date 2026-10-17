@@ -7,8 +7,15 @@ import { ServerKitParserResult } from './parsers/serverkit.parser.js';
  * build one from its own request object (Koa's `ctx.request`, or Fastify's headers plus `type-is`).
  */
 export interface BodyGateRequest {
-  /** Declared body length in bytes; `0` when there is no body. */
+  /** Declared body length in bytes; `0` when there is no body, or when it is chunked. */
   length: number;
+  /**
+   * Whether the request announces a body by `Transfer-Encoding` rather than `Content-Length`. A
+   * chunked body has no declared length, so without this a valid HTTP/1.1 body (what Node's own
+   * `fetch` sends for a streamed request, and what OpenTelemetry's OTLP exporters send) reads as no
+   * body at all and a route that requires one answers 411.
+   */
+  chunked?: boolean;
   /** The request's media type without parameters (e.g. `application/json`), or `''` when absent. */
   type: string;
   /** Content-type matcher with `type-is` semantics: the matched type, or a falsy value when none match. */
@@ -23,20 +30,24 @@ export interface BodyGateRequest {
  * - `contentTypes` non-empty: a body is required. Throws **411** when absent and **415** when its
  *   `Content-Type` is not in the allow-list.
  *
+ * A body is present when it declares a length or is sent chunked; see {@link BodyGateRequest.chunked}.
+ *
  * @param request - The request facts; see {@link BodyGateRequest}.
  * @param contentTypes - Allowed MIME types for this route; empty to forbid a body.
  * @returns `true` when the caller should now parse the body, `false` when there is nothing to parse.
  * @throws {HttpError} 400, 411, or 415 as described above.
  */
 export const assertBodyExpectation = (request: BodyGateRequest, contentTypes: string[]): boolean => {
+  const hasBody = request.length > 0 || request.chunked === true;
+
   if (contentTypes.length === 0) {
-    if (request.length > 0) {
+    if (hasBody) {
       throw httpError(400).withDetails({ body: 'Unexpected body' });
     }
     return false;
   }
 
-  if (request.length > 0) {
+  if (hasBody) {
     if (!request.is(contentTypes)) {
       throw httpError(415).withDetails({
         'content-type': `must be ${contentTypes.length > 1 ? 'one of ' : ''}${contentTypes.join(', ')}`,

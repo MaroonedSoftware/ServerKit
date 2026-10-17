@@ -1,3 +1,4 @@
+import { Readable } from 'node:stream';
 import { describe, it, expect } from 'vitest';
 import { bodyParserPlugin } from '../../src/plugins/body.parser.plugin.js';
 import { errorPlugin } from '../../src/plugins/error.plugin.js';
@@ -95,6 +96,20 @@ describe('bodyParserPlugin', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ parsed: null, raw: '' });
+  });
+
+  it('parses a chunked body, which declares no length, rather than answering 411', async () => {
+    const app = await build(['application/json']);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/',
+      headers: { 'content-type': 'application/json', 'transfer-encoding': 'chunked' },
+      payload: Readable.from([Buffer.from('{"a":'), Buffer.from('1}')]),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ parsed: { a: 1 }, raw: '{"a":1}' });
   });
 
   it('rejects a missing body with 411 when one is required', async () => {

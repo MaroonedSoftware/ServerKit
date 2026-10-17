@@ -26,7 +26,12 @@ import { assertBodyExpectation, parseRouteBody, ServerKitBodyParser } from '@mar
 export const bodyParserMiddleware = (contentTypes: string[]): ServerKitRouterMiddleware => {
   return async (ctx, next) => {
     const shouldParse = assertBodyExpectation(
-      { length: ctx.request.length, type: ctx.request.type, is: types => ctx.request.is(types) },
+      {
+        length: ctx.request.length,
+        chunked: ctx.request.get('transfer-encoding') !== '',
+        type: ctx.request.type,
+        is: types => ctx.request.is(types),
+      },
       contentTypes,
     );
     if (shouldParse) {
