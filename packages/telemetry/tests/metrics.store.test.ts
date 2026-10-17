@@ -60,6 +60,17 @@ const bucket = (name: string, value: number, start: string, labels: MetricLabels
 });
 
 describe('MetricsStore', () => {
+  it('accepts an app’s own typed Kysely without a cast', async () => {
+    interface AppDB {
+      persons: { id: string; tags: string[] };
+    }
+    const { db, queries } = fakeDb();
+
+    await new MetricsStore(db as unknown as Kysely<AppDB>, { table: 'metric_samples' }).prune('hour', Duration.fromObject({ days: 1 }));
+
+    expect(queries).toHaveLength(1);
+  });
+
   describe('upsertMinutes', () => {
     it('inserts minute rows and merges a conflicting row into the stored one', async () => {
       const { db, queries } = fakeDb([{ numAffectedRows: 1n }]);
@@ -237,13 +248,28 @@ describe('MetricsStore', () => {
       expect(read[0]?.points[1]?.start.toISO()).toBe('2026-10-16T12:01:00.000Z');
       expect(read[0]?.points[1]?.aggregate.sum).toBe(3);
     });
+
+    it('reads a bucket the pool already parsed into a DateTime, as KyselyPgTypeOverrides does', async () => {
+      const bucket = DateTime.fromISO('2026-10-16T08:00:00', { zone: 'America/New_York' });
+      const rows = [{ name: 'a', labels: {}, labels_key: '{}', source: 'app', bucket, count: 1, sum: 1, min: 1, max: 1, last: 1 }];
+      const { db } = fakeDb([{ rows }]);
+
+      const [series] = await new MetricsStore(db, { table: 'metric_samples' }).series({
+        names: ['a'],
+        from: at('2026-10-16T00:00:00Z'),
+        to: at('2026-10-17T00:00:00Z'),
+        resolution: 'minute',
+      });
+
+      expect(series?.points[0]?.start.toISO()).toBe('2026-10-16T12:00:00.000Z');
+    });
   });
 
   describe('names', () => {
     it('lists names with their sorted label keys and newest bucket', async () => {
       const rows = [
         { name: 'a', source: 'app', last_seen: new Date('2026-10-16T12:00:00Z'), label_keys: ['z', 'q'] },
-        { name: 'b', source: 'otlp', last_seen: new Date('2026-10-16T12:00:00Z'), label_keys: null },
+        { name: 'b', source: 'otlp', last_seen: DateTime.fromISO('2026-10-16T12:00:00Z'), label_keys: null },
       ];
       const { db } = fakeDb([{ rows }]);
 
@@ -253,6 +279,7 @@ describe('MetricsStore', () => {
         ['a', 'app', ['q', 'z']],
         ['b', 'otlp', []],
       ]);
+      expect(names[1]?.lastSeen.toISO()).toBe('2026-10-16T12:00:00.000Z');
     });
   });
 });

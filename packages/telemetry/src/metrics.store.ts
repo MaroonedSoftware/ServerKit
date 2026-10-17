@@ -75,7 +75,7 @@ interface SeriesRow {
   labels: MetricLabels | string;
   labels_key: string;
   source: string;
-  bucket: Date | string;
+  bucket: DateTime | Date | string;
   count: number;
   sum: number;
   min: number;
@@ -86,15 +86,26 @@ interface SeriesRow {
 interface NameRow {
   name: string;
   source: string;
-  last_seen: Date | string;
+  last_seen: DateTime | Date | string;
   label_keys: string[] | null;
 }
 
 const PRIMARY_KEY = ['resolution', 'name', 'labels_key', 'bucket'] as const;
 
-/** Reads a `timestamptz` the way `pg` hands it back: a `Date`, or text under some type parsers. */
-const instantOf = (value: Date | string): DateTime =>
-  value instanceof Date ? DateTime.fromJSDate(value, { zone: 'utc' }) : DateTime.fromISO(value.replace(' ', 'T'), { zone: 'utc' });
+/**
+ * Reads a `timestamptz` however the pool hands it back: a `DateTime` under
+ * `@maroonedsoftware/kysely`'s `KyselyPgTypeOverrides`, a `Date` under `pg`'s defaults, or text under
+ * a parser that returns the raw value.
+ */
+const instantOf = (value: DateTime | Date | string): DateTime => {
+  if (DateTime.isDateTime(value)) {
+    return value.toUTC();
+  }
+  if (value instanceof Date) {
+    return DateTime.fromJSDate(value, { zone: 'utc' });
+  }
+  return DateTime.fromISO(value.replace(' ', 'T'), { zone: 'utc' });
+};
 
 /**
  * Keeps metric buckets in one PostgreSQL table at two resolutions, minutes and hours.
@@ -111,9 +122,12 @@ const instantOf = (value: Date | string): DateTime =>
  * await store.upsertMinutes(recorder.drain());
  * await store.rollupHour(DateTime.utc().startOf('hour').minus({ hours: 1 }));
  * ```
+ *
+ * @typeParam DB - The app's database type. The store never uses it (every statement is raw SQL on the
+ *   table it was given), so any `Kysely<DB>` is accepted as it is, with no cast at the call site.
  */
-export class MetricsStore {
-  private readonly db: Kysely<unknown>;
+export class MetricsStore<DB = unknown> {
+  private readonly db: Kysely<DB>;
   private readonly table: string;
   private readonly scope: [string, string][];
   private readonly batchSize: number;
@@ -122,7 +136,7 @@ export class MetricsStore {
    * @param db - Any Kysely instance on the database holding the table.
    * @param options - The table and scope.
    */
-  constructor(db: Kysely<unknown>, options: MetricsStoreOptions) {
+  constructor(db: Kysely<DB>, options: MetricsStoreOptions) {
     this.db = db.withoutPlugins();
     this.table = options.table;
     this.scope = Object.entries(options.scope ?? {});
