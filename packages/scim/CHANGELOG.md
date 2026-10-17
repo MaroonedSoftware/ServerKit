@@ -1,5 +1,13 @@
 # @maroonedsoftware/scim
 
+## 1.0.2
+
+### Patch Changes
+
+- Updated dependencies [653ba6b]
+  - @maroonedsoftware/koa@4.1.3
+  - @maroonedsoftware/fastify@0.4.7
+
 ## 1.0.1
 
 ### Patch Changes
