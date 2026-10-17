@@ -3,7 +3,7 @@ import typeis from 'type-is';
 import { httpError, ServerkitError } from '@maroonedsoftware/errors';
 import { assertBodyExpectation, parseRouteBody, ServerKitBodyParser } from '@maroonedsoftware/servercore';
 import { serverKitPlugin, type ServerKitPlugin } from '../serverkit.plugin.js';
-import { requestBodyLength, requestMediaType } from '../request/request.accessors.js';
+import { requestBodyLength, requestIsChunked, requestMediaType } from '../request/request.accessors.js';
 
 /** The methods Fastify never parses a body for; a body sent to one is rejected, never parsed. */
 const BODYLESS_METHODS = new Set(['GET', 'HEAD', 'TRACE']);
@@ -67,6 +67,7 @@ export const bodyParserPlugin = (): ServerKitPlugin => {
       assertBodyExpectation(
         {
           length: requestBodyLength(request),
+          chunked: requestIsChunked(request),
           type: requestMediaType(request),
           is: types => typeis(request.raw, types),
         },
@@ -77,7 +78,7 @@ export const bodyParserPlugin = (): ServerKitPlugin => {
     // The payload stream is ignored: ServerKitBodyParser dispatches on the request's headers and
     // reads `request.raw` itself, so a preParsing hook that replaces the payload is not honoured.
     app.addContentTypeParser('*', async (request: FastifyRequest) => {
-      if (request.is404 || requestBodyLength(request) === 0) return undefined;
+      if (request.is404 || (requestBodyLength(request) === 0 && !requestIsChunked(request))) return undefined;
 
       // Fastify's own bodyLimit only applies to its `parseAs` parsers, and a stream parser owns
       // the stream, so this header check is all Fastify's limit can do here. The real ceiling is

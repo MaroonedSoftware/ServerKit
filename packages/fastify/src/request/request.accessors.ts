@@ -35,8 +35,8 @@ export const requestMediaType = (request: FastifyRequest): string => {
 
 /**
  * The declared body length: the `Content-Length` header parsed as an integer, or `0` when absent.
- * A chunked body without `Content-Length` reports `0`, and the body gate treats that as
- * "no body" — the same rule the Koa adapter applies.
+ * A chunked body without `Content-Length` reports `0`; {@link requestIsChunked} is what tells it from
+ * no body at all.
  *
  * @param request - The request.
  * @returns The declared length in bytes.
@@ -45,6 +45,14 @@ export const requestBodyLength = (request: FastifyRequest): number => {
   const header = request.headers['content-length'];
   return header === undefined ? 0 : ~~header;
 };
+
+/**
+ * Whether the request announces its body by `Transfer-Encoding` (chunked) rather than by length.
+ *
+ * @param request - The request.
+ * @returns `true` when a `Transfer-Encoding` header is present.
+ */
+export const requestIsChunked = (request: FastifyRequest): boolean => request.headers['transfer-encoding'] !== undefined;
 
 /**
  * Case-insensitive request header accessor returning `''` when absent and the first value when
