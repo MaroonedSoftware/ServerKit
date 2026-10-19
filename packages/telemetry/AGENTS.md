@@ -67,15 +67,16 @@ Optional peers: `kysely` — unlocks the `./kysely` subpath (`MetricsStore`). `@
 
 ### `./otlp`
 
-| Export                     | Kind      | Shape                                                                                              | Notes                                                                    |
-| -------------------------- | --------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `OtlpMetricsBridge`        | class     | `new OtlpMetricsBridge({ exporter, resource?, scope?, kindOf? })`; `export(buckets)`, `shutdown()` | builds `ResourceMetrics` directly, no `MeterProvider`; delta temporality |
-| `OtlpMetricsBridgeOptions` | interface | as above                                                                                           | `kindOf` defaults to `gauge`                                             |
-| `MetricKind`               | type      | `'gauge' \| 'counter' \| 'histogram'`                                                              | gauge → `last`, counter → `sum`, histogram → count/sum/min/max           |
-| `OtlpSpanBridge`           | class     | `new OtlpSpanBridge({ exporter, resource?, scope? })`; `export(spans)`, `shutdown()`               | builds finished `ReadableSpan`s with recorded times                      |
-| `OtlpSpanBridgeOptions`    | interface | as above                                                                                           |                                                                          |
-| `otlpTraceId`              | function  | `(id: string) => string`                                                                           | 32 hex; kept if already, else sha256-derived                             |
-| `otlpSpanId`               | function  | `(id: string) => string`                                                                           | 16 hex; same rule                                                        |
+| Export                     | Kind      | Shape                                                                                                                  | Notes                                                                                                                |
+| -------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `OtlpMetricsBridge`        | class     | `new OtlpMetricsBridge({ exporter, resource?, scope?, kindOf?, temporality? })`; `export(buckets, now?)`, `shutdown()` | builds `ResourceMetrics` directly, no `MeterProvider`; cumulative mode keeps a running total per series for its life |
+| `OtlpMetricsBridgeOptions` | interface | as above                                                                                                               | `kindOf` defaults to `gauge`, `temporality` to `delta`                                                               |
+| `MetricTemporality`        | type      | `'delta' \| 'cumulative'`                                                                                              | how counters and histograms are reported; gauges are unaffected                                                      |
+| `MetricKind`               | type      | `'gauge' \| 'counter' \| 'histogram'`                                                                                  | gauge → `last`, counter → `sum`, histogram → count/sum/min/max                                                       |
+| `OtlpSpanBridge`           | class     | `new OtlpSpanBridge({ exporter, resource?, scope? })`; `export(spans)`, `shutdown()`                                   | builds finished `ReadableSpan`s with recorded times                                                                  |
+| `OtlpSpanBridgeOptions`    | interface | as above                                                                                                               |                                                                                                                      |
+| `otlpTraceId`              | function  | `(id: string) => string`                                                                                               | 32 hex; kept if already, else sha256-derived                                                                         |
+| `otlpSpanId`               | function  | `(id: string) => string`                                                                                               | 16 hex; same rule                                                                                                    |
 
 ## Canonical usage
 
@@ -157,7 +158,10 @@ ctx.body = dropped > 0 ? { partialSuccess: { rejectedDataPoints: String(dropped)
 - `drain()` includes the still-open minute. A store must merge (upsert) rather than insert, or a
   minute flushed twice is double-counted or rejected. A delta OTLP export sends each point once, so
   feed it `drainClosed(now)`, which keeps the open minute until it has ended.
-- The OTLP metrics are delta. A collector feeding Prometheus needs the `deltatocumulative` processor.
+- The bridge's default is delta. A collector feeding Prometheus (or Google's Managed Prometheus) needs the
+  `deltatocumulative` processor, unless the bridge is built with `temporality: 'cumulative'`, which needs
+  neither that nor `drainClosed` (a minute exported in parts adds up). Cumulative state lasts for the
+  bridge's life, one entry per series, so keep one bridge per process and label values from a small set.
 - `otlpTraceId` hashes, so a trace id is only stable for the same app id string. Two apps sharing a trace
   must agree on the id string, or pass real 32-hex ids.
 - The receiver reads OTLP/JSON only. A sender on the default `http/protobuf` encoding must be switched to

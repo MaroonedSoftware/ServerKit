@@ -93,7 +93,7 @@ const spans = new OtlpSpanBridge({ exporter: new OTLPTraceExporter({ url: 'http:
 await spans.export([{ traceId: 'job-42', spanId: 'job-42/run', name: 'job.run', start, end, ok: true }]);
 ```
 
-Metrics go out with delta temporality: each bucket is one point spanning its minute. Drain them with `recorder.drainClosed()`, which holds the open minute back until it has ended, so no minute goes out twice. Spans keep the times you recorded, and your own ids are hashed into OTLP form so the same id always lands in the same trace.
+By default metrics go out with delta temporality: each bucket is one point spanning its minute. Drain them with `recorder.drainClosed()`, which holds the open minute back until it has ended, so no minute goes out twice. Pass `temporality: 'cumulative'` to send each series' running total instead, from its first minute to the export time: what Prometheus and Google Cloud's Managed Service for Prometheus keep, with no `deltatocumulative` step in a collector. Cumulative mode tolerates a minute exported in parts, and a failed export is caught up by the next one. Spans keep the times you recorded, and your own ids are hashed into OTLP form so the same id always lands in the same trace.
 
 ## Receiving OTLP/JSON
 
