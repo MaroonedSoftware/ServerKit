@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import Fastify, { type FastifyInstance, type LightMyRequestResponse } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyRequest, type LightMyRequestResponse } from 'fastify';
 import { AppConfig } from '@maroonedsoftware/appconfig';
 import { Logger } from '@maroonedsoftware/logger';
 import { ServerKitServerBuilder, bodyParserPlugin, errorPlugin, serverKitContextPlugin, serverKitPlugin } from '@maroonedsoftware/fastify';
 import { type AuthenticationSession, invalidAuthenticationSession } from '@maroonedsoftware/authentication';
-import { scimRoutes } from '../src/fastify/scim.fastify.routes.js';
+import { fromRequestContainer, scimRoutes } from '../src/fastify/scim.fastify.routes.js';
 import { requireScimScope } from '../src/fastify/require.scim.scope.hook.js';
 import { ScimUserService } from '../src/services/scim.user.service.js';
 import { ScimGroupService } from '../src/services/scim.group.service.js';
@@ -22,6 +22,8 @@ interface BuildOptions {
   scopes?: string[];
   baseUrl?: string;
   prefix?: string;
+  /** Hand the services in through `resolveServices`, counting the calls, rather than as instances. */
+  perRequest?: boolean;
 }
 
 const sessionFor = (options: BuildOptions): AuthenticationSession =>
@@ -65,11 +67,21 @@ const buildApp = async (options: BuildOptions = {}) => {
       });
     }),
   ]);
-  const plugin = scimRoutes({ ...services, routeGuards: [requireScimScope('scim')], baseUrl: options.baseUrl });
+  const resolved: FastifyRequest[] = [];
+  const settings = { routeGuards: [requireScimScope('scim')], baseUrl: options.baseUrl };
+  const plugin = options.perRequest
+    ? scimRoutes({
+        ...settings,
+        resolveServices: request => {
+          resolved.push(request);
+          return services;
+        },
+      })
+    : scimRoutes({ ...services, ...settings });
   builder.setupRoutes([options.prefix ? { plugin, prefix: options.prefix } : plugin]);
   await builder.app.ready();
 
-  return { app: builder.app, userRepository, groupRepository };
+  return { app: builder.app, userRepository, groupRepository, resolved };
 };
 
 const send = (app: FastifyInstance, method: 'POST' | 'PUT' | 'PATCH', url: string, body: unknown, contentType = SCIM_MEDIA_TYPE) =>
@@ -80,6 +92,42 @@ const get = (app: FastifyInstance, url: string) => app.inject({ method: 'GET', u
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const json = (res: LightMyRequestResponse): any => res.json();
+
+describe('scimRoutes — per-request services', () => {
+  it('calls resolveServices with each request and answers with what it returns', async () => {
+    const { app, resolved } = await buildApp({ perRequest: true });
+    const created = await post(app, '/Users', { userName: 'bjensen' });
+    expect(created.statusCode).toBe(201);
+    const listed = await get(app, '/Users');
+    expect(json(listed).totalResults).toBe(1);
+    expect(resolved).toHaveLength(2);
+    expect(resolved[1]?.url).toBe('/Users');
+  });
+
+  it('resolves the services for the discovery endpoints too', async () => {
+    const { app, resolved } = await buildApp({ perRequest: true });
+    const res = await get(app, '/ServiceProviderConfig');
+    expect(res.statusCode).toBe(200);
+    expect(resolved).toHaveLength(1);
+  });
+
+  it('does not resolve services for a request the guards refuse', async () => {
+    const { app, resolved } = await buildApp({ perRequest: true, authenticated: false });
+    expect((await get(app, '/Users')).statusCode).toBe(401);
+    expect(resolved).toHaveLength(0);
+  });
+
+  it('fromRequestContainer takes the three services from the request container', () => {
+    const { userService, groupService, serviceProviderService } = createServices();
+    const byToken = new Map<unknown, unknown>([
+      [ScimUserService, userService],
+      [ScimGroupService, groupService],
+      [ScimServiceProviderService, serviceProviderService],
+    ]);
+    const request = { container: { get: (token: unknown) => byToken.get(token) } } as unknown as FastifyRequest;
+    expect(fromRequestContainer(request)).toEqual({ userService, groupService, serviceProviderService });
+  });
+});
 
 describe('scimRoutes — integration', () => {
   describe('Users', () => {

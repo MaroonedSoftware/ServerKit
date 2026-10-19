@@ -24,7 +24,7 @@ This package provides the protocol layer — schemas, filter parser, PATCH appli
 | -------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | `@maroonedsoftware/scim`         | Types, schemas, filter, PATCH, projection, errors, repositories, services, scope helpers.   | Nothing framework-specific.                                                    |
 | `@maroonedsoftware/scim/koa`     | `createScimRouter`, `scimErrorMiddleware`, `scimContentTypeMiddleware`, `requireScimScope`. | `@maroonedsoftware/koa`, `koa`, `@koa/router`.                                 |
-| `@maroonedsoftware/scim/fastify` | `scimRoutes`, `ScimRoutesOptions`, `requireScimScope`.                                      | `fastify` (v5); `@maroonedsoftware/fastify` for the ServerKit request context. |
+| `@maroonedsoftware/scim/fastify` | `scimRoutes`, `ScimRoutesOptions`, `fromRequestContainer`, `requireScimScope`.              | `fastify` (v5); `@maroonedsoftware/fastify` for the ServerKit request context. |
 
 The framework packages are optional peer dependencies: install the ones for the transport you use.
 
@@ -111,7 +111,30 @@ The plugin is encapsulated, so what it installs applies only to the SCIM routes:
 
 ## Authentication
 
-This package does not validate bearer tokens itself. The transport reads the request's authentication session (`ctx.authenticationSession` from `authenticationMiddleware()` in `@maroonedsoftware/koa`, or `request.authenticationSession` from `authenticationPlugin()` in `@maroonedsoftware/fastify`) and its `requireScimScope(scope)` guard checks for SCIM scopes on `session.claims.scimScopes` via `assertScimScope`. You register an `AuthenticationSchemeHandler` in your app that turns IdP-issued bearer tokens into a session.
+This package does not validate bearer tokens itself. The transport reads the request's authentication session (`ctx.authenticationSession` from `authenticationMiddleware()` in `@maroonedsoftware/koa`, or `request.authenticationSession` from `authenticationPlugin()` in `@maroonedsoftware/fastify`) and its `requireScimScope(scope)` guard checks for SCIM scopes on `session.claims.scimScopes` via `assertScimScope`, or, when that claim is absent, on the session's delegated scopes (an `ApiKeyService` key's `scopes`, or an OAuth grant's), so a key issued to the IdP works as it is. You register an `AuthenticationSchemeHandler` in your app that turns IdP-issued bearer tokens into a session.
+
+## Request-scoped services
+
+Services handed in as instances are built once, when the routes are mounted. When your repositories are request-scoped (a per-request transaction, a tenant pinned per request), pass `resolveServices` instead; the transport calls it for each request, after the route guards. `fromRequestContainer` (from `/fastify` or `/koa`) resolves `ScimUserService`, `ScimGroupService` and `ScimServiceProviderService` from the request's scoped container:
+
+```typescript
+import { fromRequestContainer, requireScimScope, scimRoutes } from '@maroonedsoftware/scim/fastify';
+
+registry.register(ScimUserRepository).useClass(PostgresScimUserRepository).asScoped();
+registry.register(ScimUserService).useClass(ScimUserService).asScoped();
+// …the group repository and service the same way, ScimServiceProviderService as a singleton
+
+builder.setupRoutes([
+  {
+    prefix: '/scim/v2',
+    plugin: scimRoutes({
+      resolveServices: fromRequestContainer,
+      routeGuards: [requireScimScope('scim')],
+      baseUrl: 'https://api.example.com/scim/v2',
+    }),
+  },
+]);
+```
 
 ## Compliance testing
 

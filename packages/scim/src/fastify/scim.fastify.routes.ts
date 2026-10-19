@@ -3,17 +3,36 @@ import type {} from '@maroonedsoftware/fastify';
 import { httpError, HttpStatusMap, IsServerkitError, type HttpStatusCodes } from '@maroonedsoftware/errors';
 import type { Logger } from '@maroonedsoftware/logger';
 import { SCIM_MEDIA_TYPE } from '../scim.media.type.js';
-import { createScimRouteTable, type ScimEndpointOptions } from '../http/scim.endpoints.js';
+import { createScimRouteTable, scimServicesFrom, type ScimEndpointOptions, type ScimServices } from '../http/scim.endpoints.js';
+import { ScimUserService } from '../services/scim.user.service.js';
+import { ScimGroupService } from '../services/scim.group.service.js';
+import { ScimServiceProviderService } from '../services/scim.service.provider.service.js';
 import { renderScimError, scimNotFoundBody } from '../http/scim.error.render.js';
 
 /**
- * Options for {@link scimRoutes}. The caller constructs the three services (wiring them to their
- * backing repositories and a logger) and hands them in.
+ * Options for {@link scimRoutes}. The caller either constructs the three services (wiring them to
+ * their backing repositories and a logger) and hands them in, or passes `resolveServices`, called
+ * with each request (see {@link fromRequestContainer}).
  */
-export interface ScimRoutesOptions extends ScimEndpointOptions {
+export type ScimRoutesOptions = ScimEndpointOptions<FastifyRequest> & {
   /** Optional `preHandler` hooks run on every route (e.g. `requireScimScope('scim')`). */
   routeGuards?: preHandlerAsyncHookHandler[];
-}
+};
+
+/**
+ * A `resolveServices` for {@link scimRoutes} that takes the three SCIM services from the request's
+ * scoped container (`request.container`, set by `serverKitContextPlugin`). Register
+ * `ScimUserService`, `ScimGroupService` and `ScimServiceProviderService`, with your repositories
+ * request-scoped, so each request's repositories see its own transaction or tenant.
+ *
+ * @param request - The request being answered.
+ * @returns The services resolved from the request's container.
+ */
+export const fromRequestContainer = (request: FastifyRequest): ScimServices => ({
+  userService: request.container.get(ScimUserService),
+  groupService: request.container.get(ScimGroupService),
+  serviceProviderService: request.container.get(ScimServiceProviderService),
+});
 
 /** Content types the body-carrying SCIM routes accept. RFC 7644 §3.8 also allows plain JSON. */
 const SCIM_BODY_TYPES = [SCIM_MEDIA_TYPE, 'application/json'];
@@ -111,6 +130,7 @@ const logFailure = (request: FastifyRequest, error: unknown, status: number): vo
  */
 export const scimRoutes = (options: ScimRoutesOptions): FastifyPluginAsync => {
   const routes = createScimRouteTable(options);
+  const servicesFor = scimServicesFrom(options);
   const guards = options.routeGuards ?? [];
 
   return async (app: FastifyInstance): Promise<void> => {
@@ -146,6 +166,7 @@ export const scimRoutes = (options: ScimRoutesOptions): FastifyPluginAsync => {
             params: request.params as Record<string, string | undefined>,
             query: request.query as Record<string, unknown>,
             body: request.body,
+            services: await servicesFor(request),
           });
           if (response.location) reply.header('Location', response.location);
           reply.status(response.status);

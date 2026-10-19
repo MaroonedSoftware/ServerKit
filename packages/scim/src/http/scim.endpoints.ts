@@ -13,17 +13,35 @@ import { userSchema } from '../schemas/user.schema.js';
 import { groupSchema } from '../schemas/group.schema.js';
 import { enterpriseUserSchema } from '../schemas/enterprise.user.schema.js';
 
-/**
- * Options shared by every SCIM transport. The caller constructs the three services (wiring them
- * to their backing repositories and a logger) and hands them in.
- */
-export interface ScimEndpointOptions {
+/** The three services the SCIM endpoints answer with. */
+export interface ScimServices {
   /** Service handling all `/Users` endpoints. */
   userService: ScimUserService;
   /** Service handling all `/Groups` endpoints. */
   groupService: ScimGroupService;
   /** Service that owns `/Schemas`, `/ResourceTypes`, `/ServiceProviderConfig`. */
   serviceProviderService: ScimServiceProviderService;
+}
+
+/**
+ * Resolves the services for one request, for consumers whose repositories are request-scoped
+ * (a per-request transaction or tenant). Each transport passes its own request type.
+ */
+export type ScimServicesResolver<TRequest> = (request: TRequest) => ScimServices | Promise<ScimServices>;
+
+/** Where the endpoints get their services: built once and handed in, or resolved per request. */
+export type ScimServiceSource<TRequest> =
+  | (ScimServices & { resolveServices?: never })
+  | {
+      /** Resolve the services for each request, instead of handing in instances. */
+      resolveServices: ScimServicesResolver<TRequest>;
+      userService?: never;
+      groupService?: never;
+      serviceProviderService?: never;
+    };
+
+/** Paging and URL options shared by every SCIM transport. */
+export interface ScimEndpointSettings {
   /**
    * Maximum page size returned from list endpoints. Defaults to the
    * `serviceProviderService` `filter.maxResults` value, falling back to 200.
@@ -40,6 +58,30 @@ export interface ScimEndpointOptions {
   baseUrl?: string;
 }
 
+/**
+ * Options shared by every SCIM transport. The caller either constructs the three services (wiring
+ * them to their backing repositories and a logger) and hands them in, or hands in
+ * `resolveServices`, which the transport calls with each request.
+ */
+export type ScimEndpointOptions<TRequest = unknown> = ScimServiceSource<TRequest> & ScimEndpointSettings;
+
+/**
+ * The function a transport calls to get a request's services: `resolveServices` when given,
+ * else the instances handed in.
+ */
+export const scimServicesFrom = <TRequest>(options: ScimEndpointOptions<TRequest>): ((request: TRequest) => Promise<ScimServices>) => {
+  if (options.resolveServices) {
+    const resolve = options.resolveServices;
+    return async request => resolve(request);
+  }
+  const services: ScimServices = {
+    userService: options.userService,
+    groupService: options.groupService,
+    serviceProviderService: options.serviceProviderService,
+  };
+  return async () => services;
+};
+
 /** The transport-neutral view of a request a SCIM endpoint needs. */
 export interface ScimEndpointRequest {
   /** Route parameters; `id` for the single-resource endpoints. */
@@ -48,6 +90,8 @@ export interface ScimEndpointRequest {
   query: Record<string, unknown>;
   /** The parsed request body, for the endpoints that take one. */
   body?: unknown;
+  /** The services answering this request, from {@link scimServicesFrom}. */
+  services: ScimServices;
 }
 
 /** What a SCIM endpoint answers; the transport writes it with the SCIM media type. */
@@ -79,8 +123,9 @@ export interface ScimRoute {
  * Routes are listed in registration order; `/.search` precedes `/:id` so routers that match in
  * order resolve it correctly.
  */
-export const createScimRouteTable = (options: ScimEndpointOptions): ScimRoute[] => {
-  const maxResults = options.maxResults ?? options.serviceProviderService.getServiceProviderConfig().filter.maxResults ?? 200;
+export const createScimRouteTable = (options: ScimEndpointSettings): ScimRoute[] => {
+  const maxResults = (services: ScimServices): number =>
+    options.maxResults ?? services.serviceProviderService.getServiceProviderConfig().filter.maxResults ?? 200;
   const baseUrl = options.baseUrl?.replace(/\/+$/, '');
 
   /**
@@ -94,18 +139,39 @@ export const createScimRouteTable = (options: ScimEndpointOptions): ScimRoute[] 
   const ok = (body: unknown): ScimEndpointResponse => ({ status: 200, body });
   const id = (request: ScimEndpointRequest): string => request.params.id ?? '';
 
-  const users = options.userService;
-  const groups = options.groupService;
-  const provider = options.serviceProviderService;
-
   // Discovery endpoints — RFC 7644 §4 says these MAY be unauthenticated. Transports apply the
   // route guards anyway so the consumer can decide.
   return [
-    { method: 'GET', path: '/ServiceProviderConfig', body: false, handler: async () => ok(provider.getServiceProviderConfig()) },
-    { method: 'GET', path: '/Schemas', body: false, handler: async () => ok(listEnvelope(provider.listSchemas())) },
-    { method: 'GET', path: '/Schemas/:id', body: false, handler: async request => ok(provider.getSchema(id(request))) },
-    { method: 'GET', path: '/ResourceTypes', body: false, handler: async () => ok(listEnvelope(provider.listResourceTypes())) },
-    { method: 'GET', path: '/ResourceTypes/:id', body: false, handler: async request => ok(provider.getResourceType(id(request))) },
+    {
+      method: 'GET',
+      path: '/ServiceProviderConfig',
+      body: false,
+      handler: async request => ok(request.services.serviceProviderService.getServiceProviderConfig()),
+    },
+    {
+      method: 'GET',
+      path: '/Schemas',
+      body: false,
+      handler: async request => ok(listEnvelope(request.services.serviceProviderService.listSchemas())),
+    },
+    {
+      method: 'GET',
+      path: '/Schemas/:id',
+      body: false,
+      handler: async request => ok(request.services.serviceProviderService.getSchema(id(request))),
+    },
+    {
+      method: 'GET',
+      path: '/ResourceTypes',
+      body: false,
+      handler: async request => ok(listEnvelope(request.services.serviceProviderService.listResourceTypes())),
+    },
+    {
+      method: 'GET',
+      path: '/ResourceTypes/:id',
+      body: false,
+      handler: async request => ok(request.services.serviceProviderService.getResourceType(id(request))),
+    },
 
     // Users
     {
@@ -113,8 +179,8 @@ export const createScimRouteTable = (options: ScimEndpointOptions): ScimRoute[] 
       path: '/Users',
       body: false,
       handler: async request => {
-        const query = parseListQueryFromUrl(request.query, maxResults);
-        const result = await users.list(query);
+        const query = parseListQueryFromUrl(request.query, maxResults(request.services));
+        const result = await request.services.userService.list(query);
         return ok(
           listEnvelope(
             result.resources.map(user => projectUser(withLocation(user, 'Users'), query)),
@@ -129,8 +195,8 @@ export const createScimRouteTable = (options: ScimEndpointOptions): ScimRoute[] 
       path: '/Users/.search',
       body: true,
       handler: async request => {
-        const query = parseListQueryFromBody(request.body, maxResults);
-        const result = await users.list(query);
+        const query = parseListQueryFromBody(request.body, maxResults(request.services));
+        const result = await request.services.userService.list(query);
         return ok(
           listEnvelope(
             result.resources.map(user => projectUser(withLocation(user, 'Users'), query)),
@@ -145,7 +211,7 @@ export const createScimRouteTable = (options: ScimEndpointOptions): ScimRoute[] 
       path: '/Users',
       body: true,
       handler: async request => {
-        const located = withLocation(await users.create(request.body as Partial<ScimUser>), 'Users');
+        const located = withLocation(await request.services.userService.create(request.body as Partial<ScimUser>), 'Users');
         return { status: 201, body: projectUser(located, parseProjectionFromUrl(request.query)), location: located.meta.location };
       },
     },
@@ -153,7 +219,8 @@ export const createScimRouteTable = (options: ScimEndpointOptions): ScimRoute[] 
       method: 'GET',
       path: '/Users/:id',
       body: false,
-      handler: async request => ok(projectUser(withLocation(await users.get(id(request)), 'Users'), parseProjectionFromUrl(request.query))),
+      handler: async request =>
+        ok(projectUser(withLocation(await request.services.userService.get(id(request)), 'Users'), parseProjectionFromUrl(request.query))),
     },
     {
       method: 'PUT',
@@ -162,7 +229,7 @@ export const createScimRouteTable = (options: ScimEndpointOptions): ScimRoute[] 
       handler: async request =>
         ok(
           projectUser(
-            withLocation(await users.replace(id(request), request.body as Partial<ScimUser>), 'Users'),
+            withLocation(await request.services.userService.replace(id(request), request.body as Partial<ScimUser>), 'Users'),
             parseProjectionFromUrl(request.query),
           ),
         ),
@@ -173,7 +240,9 @@ export const createScimRouteTable = (options: ScimEndpointOptions): ScimRoute[] 
       body: true,
       handler: async request => {
         const ops = validatePatchRequest(request.body);
-        return ok(projectUser(withLocation(await users.patch(id(request), ops), 'Users'), parseProjectionFromUrl(request.query)));
+        return ok(
+          projectUser(withLocation(await request.services.userService.patch(id(request), ops), 'Users'), parseProjectionFromUrl(request.query)),
+        );
       },
     },
     {
@@ -181,7 +250,7 @@ export const createScimRouteTable = (options: ScimEndpointOptions): ScimRoute[] 
       path: '/Users/:id',
       body: false,
       handler: async request => {
-        await users.delete(id(request));
+        await request.services.userService.delete(id(request));
         return { status: 204 };
       },
     },
@@ -192,8 +261,8 @@ export const createScimRouteTable = (options: ScimEndpointOptions): ScimRoute[] 
       path: '/Groups',
       body: false,
       handler: async request => {
-        const query = parseListQueryFromUrl(request.query, maxResults);
-        const result = await groups.list(query);
+        const query = parseListQueryFromUrl(request.query, maxResults(request.services));
+        const result = await request.services.groupService.list(query);
         return ok(
           listEnvelope(
             result.resources.map(group => projectGroup(withLocation(group, 'Groups'), query)),
@@ -208,8 +277,8 @@ export const createScimRouteTable = (options: ScimEndpointOptions): ScimRoute[] 
       path: '/Groups/.search',
       body: true,
       handler: async request => {
-        const query = parseListQueryFromBody(request.body, maxResults);
-        const result = await groups.list(query);
+        const query = parseListQueryFromBody(request.body, maxResults(request.services));
+        const result = await request.services.groupService.list(query);
         return ok(
           listEnvelope(
             result.resources.map(group => projectGroup(withLocation(group, 'Groups'), query)),
@@ -224,7 +293,7 @@ export const createScimRouteTable = (options: ScimEndpointOptions): ScimRoute[] 
       path: '/Groups',
       body: true,
       handler: async request => {
-        const located = withLocation(await groups.create(request.body as Partial<ScimGroup>), 'Groups');
+        const located = withLocation(await request.services.groupService.create(request.body as Partial<ScimGroup>), 'Groups');
         return { status: 201, body: projectGroup(located, parseProjectionFromUrl(request.query)), location: located.meta.location };
       },
     },
@@ -232,7 +301,8 @@ export const createScimRouteTable = (options: ScimEndpointOptions): ScimRoute[] 
       method: 'GET',
       path: '/Groups/:id',
       body: false,
-      handler: async request => ok(projectGroup(withLocation(await groups.get(id(request)), 'Groups'), parseProjectionFromUrl(request.query))),
+      handler: async request =>
+        ok(projectGroup(withLocation(await request.services.groupService.get(id(request)), 'Groups'), parseProjectionFromUrl(request.query))),
     },
     {
       method: 'PUT',
@@ -241,7 +311,7 @@ export const createScimRouteTable = (options: ScimEndpointOptions): ScimRoute[] 
       handler: async request =>
         ok(
           projectGroup(
-            withLocation(await groups.replace(id(request), request.body as Partial<ScimGroup>), 'Groups'),
+            withLocation(await request.services.groupService.replace(id(request), request.body as Partial<ScimGroup>), 'Groups'),
             parseProjectionFromUrl(request.query),
           ),
         ),
@@ -252,7 +322,9 @@ export const createScimRouteTable = (options: ScimEndpointOptions): ScimRoute[] 
       body: true,
       handler: async request => {
         const ops = validatePatchRequest(request.body);
-        return ok(projectGroup(withLocation(await groups.patch(id(request), ops), 'Groups'), parseProjectionFromUrl(request.query)));
+        return ok(
+          projectGroup(withLocation(await request.services.groupService.patch(id(request), ops), 'Groups'), parseProjectionFromUrl(request.query)),
+        );
       },
     },
     {
@@ -260,7 +332,7 @@ export const createScimRouteTable = (options: ScimEndpointOptions): ScimRoute[] 
       path: '/Groups/:id',
       body: false,
       handler: async request => {
-        await groups.delete(id(request));
+        await request.services.groupService.delete(id(request));
         return { status: 204 };
       },
     },

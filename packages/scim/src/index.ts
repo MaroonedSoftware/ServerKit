@@ -29,3 +29,4 @@ export * from './services/index.js';
 // Transport-neutral HTTP helpers
 export * from './scim.media.type.js';
 export * from './scope/scim.scope.js';
+export type { ScimEndpointOptions, ScimEndpointSettings, ScimServiceSource, ScimServices, ScimServicesResolver } from './http/scim.endpoints.js';
