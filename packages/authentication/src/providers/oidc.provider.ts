@@ -3,6 +3,7 @@ import { Injectable } from 'injectkit';
 import * as openidClient from 'openid-client';
 import { httpError } from '@maroonedsoftware/errors';
 import { Logger } from '@maroonedsoftware/logger';
+import type { OidcProfile } from '../factors/oidc/oidc.factor.service.js';
 
 /**
  * Static configuration for a single OpenID Connect provider (Google, LinkedIn, Microsoft, etc.).
@@ -58,6 +59,23 @@ export type OidcProviderConfig = {
    * by accident. **Never set in production.**
    */
   allowInsecureIssuer?: boolean;
+  /**
+   * Decide whether this provider's asserted email may be trusted, in place of the IdP's
+   * `email_verified` claim. Many enterprise IdPs (Entra ID among them) omit `email_verified`,
+   * so an app that knows better (the address is in a domain the organization proved it owns)
+   * can vouch for it here.
+   *
+   * Asked only on a `sign-in` for a `(provider, subject)` with no factor yet, and only when
+   * the profile carries an email. `true` lets the address auto-link to the account holding
+   * that email; `false` treats it as unverified, so a matching account becomes an
+   * `emailConflict` instead. The answer replaces `email_verified` entirely: return
+   * `profile.emailVerified === true` from the hook to keep the IdP's word as a fallback.
+   *
+   * A hook that throws (or rejects) fails the authorization with that error. Omit it to keep
+   * the default rule, `email_verified === true`. The audit records `emailTrust: 'provider'`
+   * on `oidc.linked.auto` and `oidc.link.rejected` when this hook decided.
+   */
+  trustEmail?: (profile: OidcProfile) => boolean | Promise<boolean>;
 };
 
 /**
