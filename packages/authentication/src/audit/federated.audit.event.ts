@@ -82,7 +82,19 @@ export type FederatedFailureReason =
    */
   | 'issuer_mismatch'
   /** The profile-allowed policy refused the identity. */
-  | 'policy_denied';
+  | 'policy_denied'
+  /**
+   * SAML: a response that answers no request this service issued: no `InResponseTo`
+   * (IdP-initiated), or one that is unknown, expired, or already answered.
+   */
+  | 'unsolicited'
+  /**
+   * SAML: the response or assertion failed validation: signature, algorithm, issuer,
+   * audience, destination, recipient, validity window, or authentication context.
+   */
+  | 'assertion_invalid'
+  /** SAML: an assertion whose `ID` was already accepted once. */
+  | 'assertion_replayed';
 
 /**
  * OpenID Connect and OAuth 2.0 factor events.
@@ -124,4 +136,16 @@ export type FederatedAuditEvent =
   | AuditEvent<'oauth2.new_user', AuditFederatedIdentity>
   | AuditEvent<'oauth2.authorization.failed', AuditFederatedIdentity & { reason: FederatedFailureReason }>
   | AuditEvent<'oauth2.factor.created', AuditFederatedIdentity & { factorId: string }>
-  | AuditEvent<'oauth2.factor.deleted', { factorId: string }>;
+  | AuditEvent<'oauth2.factor.deleted', { factorId: string }>
+  /** SAML 2.0 counterparts of the `oidc.*` events, recorded by `@maroonedsoftware/saml`. `subject` is the NameID. */
+  | AuditEvent<'saml.authorization.begun', AuditFederatedIdentity>
+  | AuditEvent<'saml.signed_in', AuditFederatedIdentity & { factorId: string }>
+  | AuditEvent<'saml.linked.explicit', AuditFederatedIdentity & { actorId: string }>
+  | AuditEvent<'saml.linked.auto', AuditFederatedIdentity & { email?: string; emailTrust?: FederatedEmailTrust }>
+  | AuditEvent<'saml.link.rejected', AuditFederatedIdentity & { reason: FederatedLinkRejectedReason; emailTrust?: FederatedEmailTrust }>
+  | AuditEvent<'saml.new_user', AuditFederatedIdentity>
+  | AuditEvent<'saml.stepped_up', AuditFederatedIdentity & { factorId: string }>
+  | AuditEvent<'saml.step_up.rejected', AuditFederatedIdentity & { reason: FederatedStepUpRejectedReason }>
+  | AuditEvent<'saml.authorization.failed', AuditFederatedIdentity & { reason: FederatedFailureReason }>
+  | AuditEvent<'saml.factor.created', AuditFederatedIdentity & { factorId: string }>
+  | AuditEvent<'saml.factor.deleted', { factorId: string }>;

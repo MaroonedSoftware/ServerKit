@@ -92,10 +92,17 @@ const categoryFor = (type: AuthenticationAuditEvent['type']): AuditEventCategory
     case 'oauth2.signed_in':
     case 'oauth2.new_user':
     case 'oauth2.authorization.failed':
+    case 'saml.authorization.begun':
+    case 'saml.signed_in':
+    case 'saml.new_user':
+    case 'saml.authorization.failed':
+    case 'saml.stepped_up':
+    case 'saml.step_up.rejected':
       return 'login';
     case 'fido.registered':
     case 'oidc.factor.created':
     case 'oauth2.factor.created':
+    case 'saml.factor.created':
       return 'credential';
     case 'fido.enrolled':
     case 'fido.factor.deleted':
@@ -106,6 +113,10 @@ const categoryFor = (type: AuthenticationAuditEvent['type']): AuditEventCategory
     case 'oauth2.linked.explicit':
     case 'oauth2.linked.auto':
     case 'oauth2.factor.deleted':
+    case 'saml.linked.explicit':
+    case 'saml.linked.auto':
+    case 'saml.link.rejected':
+    case 'saml.factor.deleted':
       return 'privilege';
 
     case 'recovery.initiated':

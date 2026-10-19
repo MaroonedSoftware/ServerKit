@@ -5,9 +5,10 @@ SAML 2.0 service-provider toolkit for ServerKit, on [`@node-saml/node-saml`](htt
 It is its own package rather than part of `@maroonedsoftware/authentication` so the XML and
 xml-crypto dependency tree stays out of apps that only need passwords and OIDC.
 
-This release covers configuration and metadata: which IdPs this SP trusts, reading an IdP's
-metadata document, and producing the SP's own metadata for the IdP admin. The sign-in factor
-(AuthnRequest, response validation) is not part of it yet.
+It covers which IdPs this SP trusts, reading an IdP's metadata document, producing the SP's own
+metadata for the IdP admin, and SP-initiated sign-in as an authentication factor with the same
+shape and results as `@maroonedsoftware/authentication`'s OIDC factor. It is framework-free: your
+ACS route passes the posted form to the service.
 
 ## What's included
 
@@ -25,6 +26,18 @@ metadata document, and producing the SP's own metadata for the IdP admin. The si
   `WantAssertionsSigned="true"`, the NameID format, and the encryption certificate when configured.
 - **`parseSamlCertificate(text)`**: PEM or bare base64 to PEM, subject, `notBefore` / `notAfter`
   (Luxon) and SHA-256 fingerprint.
+- **`SamlFactorService`**: `beginAuthorization` (HTTP-Redirect AuthnRequest, `ForceAuthn` for
+  step-up, `RequestedAuthnContext`) and `completeAuthorization` (HTTP-POST response, every check
+  below), resolving `(provider, NameID)` to `signed-in`, `linked`, `new-user` or `stepped-up`, plus
+  `createFactorFromAuthorization` and a one-time authenticated exchange.
+- **`SamlProfile`**: subject (NameID), email, name, `authnContextClassRef`, `authnInstant`,
+  `sessionIndex`, and every attribute.
+- **`SamlFactorRepository`**, **`SamlActorEmailLookup`**: the abstract classes you implement, as
+  for OIDC.
+- **`SamlProfileAllowedPolicy`** (`auth.factor.saml.profile.allowed`): consulted on every
+  validated assertion; allows everything by default.
+- **`trustEmail`** on `SamlProviderConfig`: the only way an asserted address can auto-link to an
+  existing account, since SAML has no `email_verified`.
 
 ## Install
 
@@ -103,6 +116,79 @@ const xml = generateSpMetadata(await samlProviders.getConfig('acme'));
 // serve as application/samlmetadata+xml
 ```
 
+### Sign in
+
+Register the service and what it needs (the cache, a policy service with `SamlPolicyMappings`, and
+optionally an `AuditSink`):
+
+```ts
+import { SamlActorEmailLookup, SamlFactorRepository, SamlFactorService, SamlFactorServiceOptions } from '@maroonedsoftware/saml';
+
+registry.register(SamlFactorRepository).useClass(KyselySamlFactorRepository).asSingleton();
+registry.register(SamlActorEmailLookup).useClass(EmailFactorActorLookup).asSingleton(); // same class as OidcActorEmailLookup
+registry.register(SamlFactorServiceOptions).useValue(new SamlFactorServiceOptions());
+registry.register(SamlFactorService).useClass(SamlFactorService).asSingleton();
+```
+
+Start the flow and redirect:
+
+```ts
+const { url } = await saml.beginAuthorization({ provider: 'acme', intent: 'sign-in', redirectAfter: '/jobs' });
+// 302 to url
+```
+
+On the ACS route (HTTP-POST, `application/x-www-form-urlencoded`), pass the form through:
+
+```ts
+const result = await saml.completeAuthorization({ params: body });
+
+switch (result.kind) {
+  case 'signed-in':
+  case 'linked': {
+    const exchangeId = await saml.stashAuthenticatedExchange({ actorId: result.actorId, factorId: result.factorId });
+    // redirect to the SPA with exchangeId; it redeems it with redeemAuthenticatedExchange
+    break;
+  }
+  case 'new-user':
+    // sign-up (or just-in-time provisioning), then:
+    await saml.createFactorFromAuthorization(newActorId, result.authorizationId);
+    break;
+}
+```
+
+Step up a signed-in user at their IdP with `intent: 'step-up'` and their `actorId`: the request
+carries `ForceAuthn="true"`, the answer is `stepped-up`, and `profile.authnInstant` is checked to
+fall within the round trip. Judge `profile.authnContextClassRef` to decide what the step-up grants.
+
+To let an organization's IdP vouch for addresses in its verified domains:
+
+```ts
+{
+  name: `org:${connection.id}`,
+  // ...
+  trustEmail: profile => verifiedDomains.has(profile.email?.split('@')[1]?.toLowerCase() ?? ''),
+}
+```
+
+### What a response must pass
+
+Nothing here can be turned off. A response is refused unless:
+
+- it answers an AuthnRequest this service issued and has not seen answered (`InResponseTo`, held
+  in the cache for `requestExpiration`, ten minutes by default). IdP-initiated responses are refused;
+- its assertion is signed by one of the provider's `idpSigningCertificates` (never a certificate
+  from the message), with no SHA-1 signature or digest, and is the only assertion;
+- `Destination` and the bearer `SubjectConfirmationData/@Recipient` equal `acsUrl`, the assertion's
+  `Issuer` (and the response's, if present) equals `idpEntityId`, and the `Audience` equals `spEntityId`;
+- `NotBefore` / `NotOnOrAfter` hold, within `clockSkew` (60 seconds by default);
+- its `AuthnContextClassRef` is one of `acceptedAuthnContexts`, when the provider lists any;
+- its assertion `ID` has not been accepted before. Accepted ids are kept until the assertion expires.
+
+Refusals are HTTP errors: 400 for a missing, malformed or unsolicited response and for an IdP error
+status, 401 with `details.assertion` naming the failed check, 403 for a policy denial, 404 for an
+unknown or already-answered `InResponseTo`. Each one records a `saml.authorization.failed` audit
+event with its reason.
+
 ## Notes
 
 - Certificates are only ever taken from the provider configuration. The metadata document's own
@@ -112,3 +198,5 @@ const xml = generateSpMetadata(await samlProviders.getConfig('acme'));
   accept or warn is the app's call.
 - Okta, Entra ID and Google Workspace metadata are covered by the tests, including Entra's WS-Fed
   `RoleDescriptor` (its certificate is ignored) and its two-certificate rotation.
+- SHA-1 is refused only where the signature is visible: inside an encrypted assertion the
+  algorithm is not inspected.

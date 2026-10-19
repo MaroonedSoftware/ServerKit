@@ -266,7 +266,7 @@ Small, DI-friendly framework for encoding allow/deny rules as named, injectable 
 
 ### SAML
 
-SAML 2.0 service-provider configuration and metadata on `@node-saml/node-saml`.
+SAML 2.0 service provider on `@node-saml/node-saml`: provider registry, IdP and SP metadata, and SP-initiated sign-in as an authentication factor.
 
 - `SamlProviderConfig` and a pluggable `SamlProviderSource`, re-read on every lookup, for per-organization connections
 - `parseIdpMetadata` for Okta, Entra ID, Google and other IdP metadata: entity id, SSO URL, signing certificates with expiry
