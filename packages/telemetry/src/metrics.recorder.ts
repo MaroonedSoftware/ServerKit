@@ -1,6 +1,6 @@
 import { Injectable } from 'injectkit';
 import { DateTime, Duration } from 'luxon';
-import { aggregateOf, mergeAggregates } from './metric.aggregate.js';
+import { aggregateOf, bucketedAggregateOf, mergeAggregates, validBounds } from './metric.aggregate.js';
 import { MetricBucket, minuteOf } from './metric.bucket.js';
 import { labelsKey, MetricLabels } from './metric.labels.js';
 
@@ -71,6 +71,26 @@ export class MetricsRecorder {
   onGaugeError?: GaugeErrorHandler;
 
   /**
+   * Bucket bounds for a metric's observations, so an OTLP histogram can carry its distribution
+   * (percentiles). Unset, or `undefined` for a name, keeps only the five numbers. Asked once per
+   * name until it is set again; bounds that are not finite and strictly ascending are ignored.
+   *
+   * @example
+   * ```typescript
+   * recorder.bucketBounds = name => (name.endsWith('.ms') ? DURATION_BOUNDS_MS : undefined);
+   * ```
+   */
+  get bucketBounds(): ((name: string) => readonly number[] | undefined) | undefined {
+    return this.boundsOf;
+  }
+  set bucketBounds(boundsOf: ((name: string) => readonly number[] | undefined) | undefined) {
+    this.boundsOf = boundsOf;
+    this.boundsByName.clear();
+  }
+  private boundsOf?: (name: string) => readonly number[] | undefined;
+  private readonly boundsByName = new Map<string, readonly number[] | undefined>();
+
+  /**
    * Records one observation into the minute `at` falls in.
    *
    * Non-finite values (`NaN`, `Infinity`) are dropped: one of them would poison every aggregate
@@ -89,11 +109,21 @@ export class MetricsRecorder {
     const key = labelsKey(labels);
     const id = `${name}\u0000${key}\u0000${start.toMillis()}`;
     const existing = this.open.get(id);
+    const bounds = this.boundsFor(name);
+    const observed = bounds ? bucketedAggregateOf(value, bounds) : aggregateOf(value);
     if (existing === undefined) {
-      this.open.set(id, { name, labels, labelsKey: key, start, aggregate: aggregateOf(value) });
+      this.open.set(id, { name, labels, labelsKey: key, start, aggregate: observed });
     } else {
-      existing.aggregate = mergeAggregates(existing.aggregate, aggregateOf(value));
+      existing.aggregate = mergeAggregates(existing.aggregate, observed);
     }
+  }
+
+  private boundsFor(name: string): readonly number[] | undefined {
+    if (!this.boundsByName.has(name)) {
+      const bounds = this.boundsOf?.(name);
+      this.boundsByName.set(name, bounds !== undefined && validBounds(bounds) ? [...bounds] : undefined);
+    }
+    return this.boundsByName.get(name);
   }
 
   /**

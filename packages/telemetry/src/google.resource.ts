@@ -11,6 +11,12 @@ const DEFAULT_METADATA_TIMEOUT_MS = 1_000;
 export interface GoogleCloudResourceOptions {
   /** The project the telemetry belongs to. Defaults to `GOOGLE_CLOUD_PROJECT`, then the metadata server. */
   projectId?: string;
+  /**
+   * The region the telemetry is filed under (`cloud.region`, which Google requires and refuses as
+   * `global`). Defaults to `GOOGLE_CLOUD_REGION`, then the metadata server. Off Google Cloud there is
+   * no metadata server, so set one of the first two there.
+   */
+  region?: string;
   /** The service's name. Defaults to `OTEL_SERVICE_NAME`, then Cloud Run's `K_SERVICE`. */
   serviceName?: string;
   /** Ask the metadata server for what env does not say. Defaults to true. */
@@ -25,7 +31,8 @@ export interface GoogleCloudResourceOptions {
 
 /**
  * What Google's Telemetry API needs to know about the process sending: `gcp.project_id` (it refuses
- * a batch without one), a location (`cloud.region`) and an `instance` (`service.instance.id`).
+ * a batch without one), a location (`cloud.region`; metrics without one are refused as an
+ * unrecognized location) and an `instance` (`service.instance.id`).
  *
  * The instance is the Cloud Run or Compute instance id when the metadata server answers, else a
  * random id for this process. Either way it is unique per process, which cumulative series need:
@@ -41,6 +48,7 @@ export const googleCloudResource = (options: GoogleCloudResourceOptions = {}): R
   const env = options.env ?? process.env;
   const lookup = metadataLookup(options);
   const projectId = options.projectId ?? env['GOOGLE_CLOUD_PROJECT']?.trim();
+  const region = options.region ?? env['GOOGLE_CLOUD_REGION']?.trim();
   const serviceName = options.serviceName ?? (env['OTEL_SERVICE_NAME']?.trim() || env['K_SERVICE']?.trim() || undefined);
 
   return resourceFromAttributes({
@@ -49,7 +57,7 @@ export const googleCloudResource = (options: GoogleCloudResourceOptions = {}): R
     ...(serviceName ? { 'service.name': serviceName } : {}),
     'gcp.project_id': projectId || lookup('project/project-id'),
     // `projects/<number>/regions/<region>` on Cloud Run.
-    'cloud.region': lookup('instance/region').then(region => region?.split('/').at(-1)),
+    'cloud.region': region || lookup('instance/region').then(found => found?.split('/').at(-1)),
     'service.instance.id': lookup('instance/id').then(id => id ?? randomUUID()),
   });
 };

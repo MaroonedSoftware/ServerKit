@@ -60,6 +60,31 @@ describe('MetricsRecorder', () => {
     });
   });
 
+  describe('bucketBounds', () => {
+    it('counts the named metrics into buckets, ignoring bounds it cannot use', () => {
+      const recorder = new MetricsRecorder();
+      recorder.bucketBounds = name => (name === 'job.ms' ? [10, 100] : name === 'bad.ms' ? [5, 1] : undefined);
+      recorder.observe('job.ms', 5, {}, at('2026-10-16T12:00:00Z'));
+      recorder.observe('job.ms', 50, {}, at('2026-10-16T12:00:30Z'));
+      recorder.observe('bad.ms', 3, {}, at('2026-10-16T12:00:00Z'));
+      recorder.observe('other', 3, {}, at('2026-10-16T12:00:00Z'));
+
+      const byName = Object.fromEntries(recorder.drain().map(b => [b.name, b.aggregate.buckets]));
+      expect(byName['job.ms']).toEqual({ bounds: [10, 100], counts: [1, 1, 0] });
+      expect(byName['bad.ms']).toBeUndefined();
+      expect(byName['other']).toBeUndefined();
+    });
+
+    it('asks again once set again', () => {
+      const recorder = new MetricsRecorder();
+      recorder.observe('job.ms', 5);
+      recorder.bucketBounds = () => [10];
+      recorder.drain();
+      recorder.observe('job.ms', 5);
+      expect(recorder.drain()[0]?.aggregate.buckets?.counts).toEqual([1, 0]);
+    });
+  });
+
   describe('drainClosed', () => {
     it('hands over ended minutes and keeps the open one, whose later observations merge in', () => {
       const recorder = new MetricsRecorder();

@@ -115,7 +115,8 @@ const metrics = new OtlpMetricsBridge({
 const traces = new OTLPTraceExporter({ url: googleTracesUrl, headers });
 ```
 
-- `googleCloudResource()` names the project (`gcp.project_id`, which Google requires), the region and a `service.instance.id` unique to the process, from the environment (`GOOGLE_CLOUD_PROJECT`, `OTEL_SERVICE_NAME`, Cloud Run's `K_SERVICE`) and the metadata server. Off Google Cloud the lookups fail fast and the process gets a random instance id.
+- `googleCloudResource()` names the project (`gcp.project_id`, which Google requires), the region (`cloud.region`, also required, and never `global`) and a `service.instance.id` unique to the process, from the environment (`GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_REGION`, `OTEL_SERVICE_NAME`, Cloud Run's `K_SERVICE`) and the metadata server. Off Google Cloud the lookups fail fast, so set `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_REGION` there; the process gets a random instance id.
+- Give histograms bucket bounds (`recorder.bucketBounds`): Google refuses a histogram without any.
 - Use `temporality: 'cumulative'`: Google stores metrics the way Managed Service for Prometheus does, where a delta sum is a Cloud Monitoring delta metric that PromQL cannot `rate()`.
 - The identity the process runs as needs `roles/telemetry.writer` on the project and `roles/serviceusage.serviceUsageConsumer` on the quota project. Locally, `gcloud auth application-default login` provides one.
 
@@ -142,7 +143,13 @@ Gauges and up-down sums are read as values; monotonic sums and histograms contri
 | Counter  | `sum`                                       |
 | Duration | `sum / count` for the mean, `max` for worst |
 
-There are no percentiles: those need a histogram or sketch per bucket.
+Percentiles need a distribution. Give the recorder bucket bounds for the metrics that should have one, and it also counts their observations into those buckets; the OTLP bridge sends them as an explicit-bucket histogram (Google Cloud refuses a histogram without bounds). The PostgreSQL store keeps only the five numbers.
+
+```typescript
+import { DURATION_BOUNDS_MS } from '@maroonedsoftware/telemetry';
+
+recorder.bucketBounds = name => (name.endsWith('.ms') ? DURATION_BOUNDS_MS : undefined);
+```
 
 ## License
 

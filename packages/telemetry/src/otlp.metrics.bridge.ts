@@ -13,7 +13,8 @@ import { exportAsPromise } from './otlp.export.js';
  *
  * - `gauge` sends `last`.
  * - `counter` sends `sum` as a monotonic sum.
- * - `histogram` sends `count`, `sum`, `min` and `max` as a histogram with no bucket boundaries.
+ * - `histogram` sends `count`, `sum`, `min` and `max` as a histogram, with the bucket counts when the
+ *   recorder kept them (`MetricsRecorder.bucketBounds`) and no bounds otherwise.
  *
  * Counters and histograms go out with the bridge's {@link MetricTemporality}.
  */
@@ -186,7 +187,10 @@ export class OtlpMetricsBridge {
           dataPoints: points.map(point => ({
             ...timing(point),
             value: {
-              buckets: { boundaries: [], counts: [point.aggregate.count] },
+              // Without bucket counts the whole count is one bucket with no bounds, which Google refuses.
+              buckets: point.aggregate.buckets
+                ? { boundaries: [...point.aggregate.buckets.bounds], counts: [...point.aggregate.buckets.counts] }
+                : { boundaries: [], counts: [point.aggregate.count] },
               count: point.aggregate.count,
               sum: point.aggregate.sum,
               min: point.aggregate.min,
