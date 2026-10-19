@@ -27,7 +27,7 @@ pnpm add @maroonedsoftware/authentication
 - **Authenticator app factors** — TOTP/HOTP registration with QR code provisioning via `AuthenticatorFactorService`
 - **Phone number factors** — two-step phone factor registration via `PhoneFactorService` (send the OTP out-of-band via SMS)
 - **FIDO2/WebAuthn factors** — passkey/security-key registration and sign-in via `FidoFactorService` (built on [`fido2-lib`](https://www.npmjs.com/package/fido2-lib))
-- **OpenID Connect factors** — sign-in, account linking, and refresh-token rotation via `OidcFactorService` (built on [`openid-client`](https://www.npmjs.com/package/openid-client)) with public-client support and verified-email auto-linking
+- **OpenID Connect factors** — sign-in, account linking, and refresh-token rotation via `OidcFactorService` (built on [`openid-client`](https://www.npmjs.com/package/openid-client)) with public-client support and verified-email auto-linking (or a per-provider `trustEmail` rule)
 - **OAuth 2.0 factors** — non-OIDC sign-in (GitHub, Discord, Twitter/X, …) via `OAuth2FactorService` with an adapter interface that pairs cleanly with [`arctic`](https://www.npmjs.com/package/arctic)
 - **MFA orchestration** — `MfaOrchestrator` runs the primary → challenge → secondary handoff on top of the per-factor services, with a swappable `'auth.session.mfa.required'` policy; per-method `issueFactorChallenge` responses include the code and recipient so the caller controls delivery
 - **Step-up policies** — `DefaultRecentFactorPolicy` and `DefaultAssuranceLevelPolicy` gate sensitive operations on a recent re-auth or a NIST 800-63B-style AAL1/AAL2 check, with embedded `StepUpRequirement` hints so clients can drive the right re-auth flow
@@ -786,6 +786,17 @@ await oidc.beginAuthorization({ provider: 'acme', intent: 'step-up', actorId, au
 
 **Auto-link by verified email.** When sign-in finds no `(provider, subject)` mapping but the IdP returns a verified email matching an existing actor (via `OidcActorEmailLookup`), the service auto-creates the factor on that actor and returns `kind: 'linked'`. Unverified-email matches do **not** auto-link — they return `kind: 'new-user'` with `emailConflict` set so the UI can require sign-in to the existing account before linking.
 
+**Vouching for a provider's addresses.** Many enterprise IdPs (Entra ID among them) omit `email_verified`, so their users never auto-link. Set `trustEmail` on the provider config to decide instead: it receives the `OidcProfile` and answers `true` to trust the address (auto-link to the matching actor) or `false` to treat it as unverified (a match becomes `emailConflict`). It replaces `email_verified` for that provider rather than adding to it, so return `profile.emailVerified === true` as a fallback if you want the IdP's word too. It is asked only on a sign-in with no existing `(provider, subject)` factor and an email on the profile. A hook that throws fails `completeAuthorization` with that error. `oidc.linked.auto` and `oidc.link.rejected` (`unverified_email`) carry `emailTrust: 'provider' | 'email_verified'` saying which rule decided.
+
+```typescript
+{
+  name: `org:${org.id}`,
+  // ...
+  // Trust only addresses in domains this organization proved by DNS.
+  trustEmail: async profile => verifiedDomains.has(profile.email?.split('@')[1]?.toLowerCase() ?? ''),
+}
+```
+
 **Refresh tokens.** Set `persistRefreshToken: true` on the provider config to envelope-encrypt and persist the refresh token (via `@maroonedsoftware/encryption`). Call `oidc.refreshAccessToken(actorId, factorId)` later for a fresh access token; rotated refresh tokens are re-encrypted automatically. Refresh tokens are dropped for public clients regardless of the flag, since safe handling requires DPoP or a backend proxy that this package doesn't implement.
 
 **Local development against an http IdP.** Set `allowInsecureIssuer: true` on the provider config to permit an `http://` issuer URL (e.g. a docker-compose Keycloak on `http://localhost`). This wires `openid-client`'s `allowInsecureRequests` execute hook into discovery. A warning is logged whenever the flag is enabled — including on `https://` issuers where it has no effect — so it doesn't get left on by accident. **Never enable in production.**
@@ -1326,7 +1337,7 @@ Most events are ordinary traffic. These are not:
 | `recovery.initiated` with no `actorId`                 | An identifier that matched nobody. A run of these is enumeration   |
 | `recovery.sessions_not_revoked`                        | A misconfiguration: prior tokens survived a password reset         |
 | `mfa.failed` (`post_verification_mismatch`)            | A defence-in-depth trip, so a pre-check was bypassed               |
-| `oidc.linked.auto` / `oauth2.linked.auto`              | An account was joined on a verified-email match alone              |
+| `oidc.linked.auto` / `oauth2.linked.auto`              | An account was joined on a trusted-email match alone               |
 | `fido.verification.failed` (`missing_counter`)         | Replay protection is off for that credential                       |
 
 **Failure handling.** A sink that throws is caught, logged as `audit.sink_failed`, and the operation
@@ -1929,7 +1940,7 @@ Resolves providers from an injected `OidcProviderSource` on every lookup, and la
 
 Abstract class and DI token. Implement `list(): Promise<readonly OidcProviderConfig[]> | readonly OidcProviderConfig[]` to supply providers at runtime. It is called on every registry lookup, so cache anything expensive inside it. `OidcProviderRegistryConfig` is the static implementation: `new OidcProviderRegistryConfig(providers)`.
 
-`OidcProviderConfig`: `{ name; issuer: URL; clientId; clientSecret?; scopes: string[]; redirectUri: URL; authorizeParams?: Record<string, string>; persistRefreshToken?: boolean }`. Omit `clientSecret` for public (mobile/SPA) clients — the registry uses `openid-client.None()` and PKCE becomes mandatory.
+`OidcProviderConfig`: `{ name; issuer: URL; clientId; clientSecret?; scopes: string[]; redirectUri: URL; authorizeParams?: Record<string, string>; persistRefreshToken?: boolean; allowInsecureIssuer?: boolean; trustEmail?: (profile: OidcProfile) => boolean | Promise<boolean> }`. `trustEmail` replaces the `email_verified === true` rule for auto-linking and email conflicts on that provider. Omit `clientSecret` for public (mobile/SPA) clients — the registry uses `openid-client.None()` and PKCE becomes mandatory.
 
 ### `OidcFactorService`
 

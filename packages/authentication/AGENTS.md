@@ -128,7 +128,7 @@ class) and an abstract `<Name>FactorRepository` you implement.
 | `OtpProviderMock`                                         | class                  | `extends OtpProvider`. Tests only.                                                                                                                                                                         |
 | `PkceProvider`                                            | class                  | —                                                                                                                                                                                                          |
 | `OidcProviderRegistry`                                    | class                  | Async throughout: `getConfig`, `isPublicClient`, `listProviders`, `getConfiguration`. Consults the source on every lookup.                                                                                 |
-| `OidcProviderSource` / `OidcProviderRegistryConfig`       | abstract class / class | The DI token and its static implementation. Types: `OidcProviderConfig`.                                                                                                                                   |
+| `OidcProviderSource` / `OidcProviderRegistryConfig`       | abstract class / class | The DI token and its static implementation. Types: `OidcProviderConfig` (incl. `trustEmail`), `FederatedEmailTrust`.                                                                                       |
 | `OAuth2ProviderRegistry` / `OAuth2ProviderRegistryConfig` | class                  | Types: `OAuth2ProviderConfig`, `OAuth2ProviderClient`.                                                                                                                                                     |
 | `HtmlRedirectProvider`                                    | class                  | —                                                                                                                                                                                                          |
 
@@ -515,6 +515,13 @@ everywhere else pass nothing, and resource tokens are refused. Answer a 401 ther
   provider identity to an existing account on a verified-email match alone, so anyone who can get an
   identity provider to assert an address gains that account. Recorded with provider, subject, and
   email so the join can be reviewed.
+- **`OidcProviderConfig.trustEmail` replaces `email_verified`, it does not add to it.** When set, its
+  answer alone decides whether a sign-in's address auto-links (step 3) or counts as an unverified
+  conflict (step 4); fold `profile.emailVerified === true` in yourself if you want it. Asked only for a
+  new `(provider, subject)` on `sign-in` with an email, never on link or step-up. A throw fails the
+  authorization. `oidc.linked.auto` / `oidc.link.rejected` carry `emailTrust: 'provider' | 'email_verified'`.
+  A hook that answers `true` for any address an org's IdP asserts hands that IdP every matching account:
+  restrict it to domains the org proved it owns.
 - **A blank `userAgent` means absent, and that is load-bearing.** Both adapters set it to `''` when
   the header is missing — Koa's `ctx.get`, and the Fastify plugin explicitly — so
   `normaliseSessionDevice` drops it. Skip that and every session records an empty string.

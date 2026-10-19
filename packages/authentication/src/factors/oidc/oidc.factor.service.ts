@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { Injectable } from 'injectkit';
 import { AuditRecorder } from '../../audit/audit.recorder.js';
-import type { FederatedFailureReason } from '../../audit/federated.audit.event.js';
+import type { FederatedEmailTrust, FederatedFailureReason } from '../../audit/federated.audit.event.js';
 import { DateTime, Duration } from 'luxon';
 import * as openidClient from 'openid-client';
 import { CacheProvider } from '@maroonedsoftware/cache';
@@ -558,8 +558,17 @@ export class OidcFactorService {
       return { kind: 'linked', intent: stored.intent, actorId: factor.actorId, factorId: factor.id, profile, redirectAfter: stored.redirectAfter };
     }
 
-    // 3. Sign-in with a new (provider, subject). Try to auto-link by verified email.
-    if (profile.email && profile.emailVerified === true) {
+    // Whether the address is good enough to join an existing account on: the provider's
+    // `trustEmail` hook when it has one, otherwise the IdP's own `email_verified`.
+    const emailTrust: FederatedEmailTrust = providerConfig.trustEmail ? 'provider' : 'email_verified';
+    const emailTrusted = profile.email
+      ? providerConfig.trustEmail
+        ? (await providerConfig.trustEmail(profile)) === true
+        : profile.emailVerified === true
+      : false;
+
+    // 3. Sign-in with a new (provider, subject). Try to auto-link by a trusted email.
+    if (profile.email && emailTrusted) {
       const matchedActorId = await this.emailLookup.findActorByEmail(profile.email);
       if (matchedActorId) {
         const factor = await this.createFactor(matchedActorId, profile, refreshToken, refreshTokenExpiresAt);
@@ -571,16 +580,16 @@ export class OidcFactorService {
           category: 'privilege',
           outcome: 'success',
           actorId: factor.actorId,
-          data: { provider: stored.provider, subject, ...(profile.email === undefined ? {} : { email: profile.email }) },
+          data: { provider: stored.provider, subject, ...(profile.email === undefined ? {} : { email: profile.email }), emailTrust },
         });
 
         return { kind: 'linked', intent: stored.intent, actorId: factor.actorId, factorId: factor.id, profile, redirectAfter: stored.redirectAfter };
       }
     }
 
-    // 4. Email matches an existing actor but is unverified at the IdP — surface the conflict.
+    // 4. Email matches an existing actor but is not trusted — surface the conflict.
     let emailConflict: { actorId: string; reason: 'unverified-email' } | undefined;
-    if (profile.email && profile.emailVerified !== true) {
+    if (profile.email && !emailTrusted) {
       const matchedActorId = await this.emailLookup.findActorByEmail(profile.email);
       if (matchedActorId) {
         emailConflict = { actorId: matchedActorId, reason: 'unverified-email' };
@@ -589,7 +598,7 @@ export class OidcFactorService {
           category: 'privilege',
           outcome: 'failure',
           actorId: matchedActorId,
-          data: { provider: stored.provider, subject, reason: 'unverified_email' },
+          data: { provider: stored.provider, subject, reason: 'unverified_email', emailTrust },
         });
       }
     }

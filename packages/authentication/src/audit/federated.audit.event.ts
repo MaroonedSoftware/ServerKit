@@ -42,6 +42,17 @@ export type FidoAuditEvent =
 export type FederatedLinkRejectedReason = 'unverified_email' | 'subject_taken';
 
 /**
+ * Which rule decided whether an identity's email could join an existing account.
+ *
+ * - `email_verified`: the IdP's `email_verified` claim (the default).
+ * - `provider`: the provider's `trustEmail` hook, which replaces `email_verified`
+ *   for that provider. An auto-link recorded with `provider` was vouched for by the
+ *   app's own rule (for example, the address is in a domain the organization verified),
+ *   not by the IdP.
+ */
+export type FederatedEmailTrust = 'email_verified' | 'provider';
+
+/**
  * Why an OIDC step-up was refused.
  *
  * - `not_linked`: the identity the IdP returned is not a factor of the actor stepping
@@ -88,10 +99,16 @@ export type FederatedAuditEvent =
   | AuditEvent<'oidc.signed_in', AuditFederatedIdentity & { factorId: string }>
   /** The user explicitly linked a provider to the account they were signed in to. */
   | AuditEvent<'oidc.linked.explicit', AuditFederatedIdentity & { actorId: string }>
-  /** The package linked a provider identity to an existing account on a verified email match. */
-  | AuditEvent<'oidc.linked.auto', AuditFederatedIdentity & { email?: string }>
-  /** A link was declined: an unverified email match, or an identity already on another account. */
-  | AuditEvent<'oidc.link.rejected', AuditFederatedIdentity & { reason: FederatedLinkRejectedReason }>
+  /**
+   * The package linked a provider identity to an existing account on a trusted email match.
+   * `emailTrust` says which rule trusted the address.
+   */
+  | AuditEvent<'oidc.linked.auto', AuditFederatedIdentity & { email?: string; emailTrust?: FederatedEmailTrust }>
+  /**
+   * A link was declined: an untrusted email match, or an identity already on another account.
+   * For `unverified_email`, `emailTrust` says which rule refused the address.
+   */
+  | AuditEvent<'oidc.link.rejected', AuditFederatedIdentity & { reason: FederatedLinkRejectedReason; emailTrust?: FederatedEmailTrust }>
   | AuditEvent<'oidc.new_user', AuditFederatedIdentity>
   /** A signed-in actor re-authenticated through a provider identity they own. */
   | AuditEvent<'oidc.stepped_up', AuditFederatedIdentity & { factorId: string }>

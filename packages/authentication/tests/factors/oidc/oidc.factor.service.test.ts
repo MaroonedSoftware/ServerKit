@@ -608,6 +608,112 @@ describe('OidcFactorService', () => {
       });
     });
 
+    describe('provider trustEmail', () => {
+      const makeTrusting = (trustEmail: OidcProviderConfig['trustEmail']) => {
+        const events: AuthenticationAuditEvent[] = [];
+        const recorder = new AuditRecorder({ record: (event: AuthenticationAuditEvent) => void events.push(event) } as unknown as AuditSink);
+        const trusting = new OidcFactorService(
+          new OidcFactorServiceOptions(),
+          makeRegistry({ trustEmail }),
+          repo,
+          emailLookup,
+          cache,
+          encryption,
+          makeLogger(),
+          makePolicyService(),
+          recorder,
+        );
+        return { trusting, events };
+      };
+
+      it('auto-links an unverified address the provider vouches for, and records that it vouched', async () => {
+        const trustEmail = vi.fn(async () => true);
+        const { trusting, events } = makeTrusting(trustEmail);
+        await trusting.beginAuthorization({ provider: 'google', intent: 'sign-in' });
+        seedTokens({ email: 'user@example.com', email_verified: undefined });
+        vi.mocked(emailLookup.findActorByEmail).mockResolvedValue('actor-by-email');
+
+        const result = await trusting.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } });
+
+        expect(result).toMatchObject({ kind: 'linked', intent: 'sign-in', actorId: 'actor-by-email' });
+        expect(trustEmail).toHaveBeenCalledWith(expect.objectContaining({ provider: 'google', subject: 'subject-1', email: 'user@example.com' }));
+        expect(repo.createFactor).toHaveBeenCalledWith('actor-by-email', expect.anything());
+        expect(events.find(event => event.type === 'oidc.linked.auto')).toMatchObject({
+          actorId: 'actor-by-email',
+          data: { provider: 'google', subject: 'subject-1', email: 'user@example.com', emailTrust: 'provider' },
+        });
+      });
+
+      it('refuses a verified address the provider declines, surfacing the conflict as today', async () => {
+        const { trusting, events } = makeTrusting(() => false);
+        await trusting.beginAuthorization({ provider: 'google', intent: 'sign-in' });
+        seedTokens({ email: 'user@example.com', email_verified: true });
+        vi.mocked(emailLookup.findActorByEmail).mockResolvedValue('actor-by-email');
+
+        const result = await trusting.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } });
+
+        expect(result.kind).toBe('new-user');
+        if (result.kind !== 'new-user') throw new Error('unreachable');
+        expect(result.emailConflict).toEqual({ actorId: 'actor-by-email', reason: 'unverified-email' });
+        expect(repo.createFactor).not.toHaveBeenCalled();
+        expect(events.filter(event => event.type === 'oidc.linked.auto')).toEqual([]);
+        expect(events.find(event => event.type === 'oidc.link.rejected')).toMatchObject({
+          actorId: 'actor-by-email',
+          data: { provider: 'google', subject: 'subject-1', reason: 'unverified_email', emailTrust: 'provider' },
+        });
+      });
+
+      it('keeps the email_verified rule when the provider has no hook, and records that rule', async () => {
+        const { trusting, events } = makeTrusting(undefined);
+        await trusting.beginAuthorization({ provider: 'google', intent: 'sign-in' });
+        seedTokens({ email: 'user@example.com', email_verified: undefined });
+        vi.mocked(emailLookup.findActorByEmail).mockResolvedValue('actor-by-email');
+
+        const result = await trusting.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } });
+
+        expect(result).toMatchObject({ kind: 'new-user', emailConflict: { actorId: 'actor-by-email', reason: 'unverified-email' } });
+        expect(repo.createFactor).not.toHaveBeenCalled();
+        expect(events.find(event => event.type === 'oidc.link.rejected')).toMatchObject({
+          data: { reason: 'unverified_email', emailTrust: 'email_verified' },
+        });
+      });
+
+      it('fails the authorization when the hook throws, linking and staging nothing', async () => {
+        const { trusting, events } = makeTrusting(async () => {
+          throw new Error('domain lookup failed');
+        });
+        await trusting.beginAuthorization({ provider: 'google', intent: 'sign-in' });
+        seedTokens({ email: 'user@example.com', email_verified: true });
+        vi.mocked(emailLookup.findActorByEmail).mockResolvedValue('actor-by-email');
+
+        await expect(trusting.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } })).rejects.toThrow('domain lookup failed');
+
+        expect(repo.createFactor).not.toHaveBeenCalled();
+        expect(cache.set).toHaveBeenCalledTimes(1); // the state record only, no pending authorization
+        expect(events.filter(event => event.type === 'oidc.linked.auto' || event.type === 'oidc.new_user')).toEqual([]);
+      });
+
+      it('is not asked when (provider, subject) already has a factor', async () => {
+        const trustEmail = vi.fn(() => false);
+        const { trusting } = makeTrusting(trustEmail);
+        await trusting.beginAuthorization({ provider: 'google', intent: 'sign-in' });
+        seedTokens();
+        vi.mocked(repo.findFactor).mockResolvedValue({
+          id: 'factor-1',
+          actorId: 'actor-1',
+          active: true,
+          provider: 'google',
+          subject: 'subject-1',
+          email: 'user@example.com',
+        });
+
+        const result = await trusting.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } });
+
+        expect(result).toMatchObject({ kind: 'signed-in', actorId: 'actor-1' });
+        expect(trustEmail).not.toHaveBeenCalled();
+      });
+    });
+
     describe('authentication claims', () => {
       it('types amr, acr and auth_time from the merged claims', async () => {
         await seedState();
