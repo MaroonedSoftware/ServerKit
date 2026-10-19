@@ -1,6 +1,6 @@
 {
   "name": "@maroonedsoftware/saml",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "SAML 2.0 service-provider toolkit for ServerKit: per-provider configuration from a pluggable source, IdP metadata parsing, and SP metadata generation on @node-saml/node-saml.",
   "author": {
     "name": "Marooned Software",
