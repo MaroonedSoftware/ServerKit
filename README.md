@@ -264,6 +264,18 @@ Small, DI-friendly framework for encoding allow/deny rules as named, injectable 
 
 ---
 
+### SAML
+
+SAML 2.0 service-provider configuration and metadata on `@node-saml/node-saml`.
+
+- `SamlProviderConfig` and a pluggable `SamlProviderSource`, re-read on every lookup, for per-organization connections
+- `parseIdpMetadata` for Okta, Entra ID, Google and other IdP metadata: entity id, SSO URL, signing certificates with expiry
+- `generateSpMetadata` for the document an IdP admin imports
+
+[View documentation →](./packages/saml/README.md)
+
+---
+
 ### SCIM
 
 SCIM 2.0 (RFC 7643/7644) server toolkit — schemas, filter parser, PATCH applier, error envelope, and a Koa router with abstract repositories.
