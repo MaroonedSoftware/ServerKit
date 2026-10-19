@@ -42,6 +42,13 @@ describe('googleCloudResource', () => {
     expect(fromEnv).toMatchObject({ 'gcp.project_id': 'from-metadata', 'service.name': 'env' });
   });
 
+  it('takes the region from the option or GOOGLE_CLOUD_REGION before the metadata server', async () => {
+    const metadata = metadataServer({ 'instance/region': 'projects/1/regions/europe-west1' });
+    expect((await settled({ region: 'us-east1', env: { GOOGLE_CLOUD_REGION: 'us-west1' }, fetch: metadata }))['cloud.region']).toBe('us-east1');
+    expect((await settled({ env: { GOOGLE_CLOUD_REGION: 'us-west1' }, fetch: metadata }))['cloud.region']).toBe('us-west1');
+    expect((await settled({ env: {}, fetch: metadata }))['cloud.region']).toBe('europe-west1');
+  });
+
   it('off Google Cloud, keeps what env says and gives the process a random instance id', async () => {
     const unreachable = vi.fn(async () => {
       throw new TypeError('fetch failed');

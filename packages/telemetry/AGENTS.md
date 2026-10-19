@@ -82,15 +82,15 @@ Optional peers: `kysely` — unlocks the `./kysely` subpath (`MetricsStore`). `@
 
 ### `./google`
 
-| Export                                | Kind      | Shape                                                                       | Notes                                                                                                         |
-| ------------------------------------- | --------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `GOOGLE_TELEMETRY_URL`                | const     | `'https://telemetry.googleapis.com'`                                        | the OTLP base URL                                                                                             |
-| `googleTracesUrl`, `googleMetricsUrl` | const     | the base URL plus `/v1/traces`, `/v1/metrics`                               | for an exporter's `url`                                                                                       |
-| `isGoogleTelemetryUrl`                | function  | `(url?: string) => boolean`                                                 | matches the host only                                                                                         |
-| `googleOtlpHeaders`                   | function  | `(auth?: GoogleAuth) => OtlpHeadersFactory`                                 | an exporter's `headers`; ADC, `cloud-platform` scope, fresh per export                                        |
-| `OtlpHeadersFactory`                  | type      | `() => Promise<Record<string, string>>`                                     |                                                                                                               |
-| `googleCloudResource`                 | function  | `(options?) => Resource`                                                    | `gcp.project_id`, `cloud.region`, `service.instance.id`, `service.name`; metadata values are async attributes |
-| `GoogleCloudResourceOptions`          | interface | `{ projectId?, serviceName?, metadata?, metadataTimeoutMs?, env?, fetch? }` |                                                                                                               |
+| Export                                | Kind      | Shape                                                                                | Notes                                                                                                         |
+| ------------------------------------- | --------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `GOOGLE_TELEMETRY_URL`                | const     | `'https://telemetry.googleapis.com'`                                                 | the OTLP base URL                                                                                             |
+| `googleTracesUrl`, `googleMetricsUrl` | const     | the base URL plus `/v1/traces`, `/v1/metrics`                                        | for an exporter's `url`                                                                                       |
+| `isGoogleTelemetryUrl`                | function  | `(url?: string) => boolean`                                                          | matches the host only                                                                                         |
+| `googleOtlpHeaders`                   | function  | `(auth?: GoogleAuth) => OtlpHeadersFactory`                                          | an exporter's `headers`; ADC, `cloud-platform` scope, fresh per export                                        |
+| `OtlpHeadersFactory`                  | type      | `() => Promise<Record<string, string>>`                                              |                                                                                                               |
+| `googleCloudResource`                 | function  | `(options?) => Resource`                                                             | `gcp.project_id`, `cloud.region`, `service.instance.id`, `service.name`; metadata values are async attributes |
+| `GoogleCloudResourceOptions`          | interface | `{ projectId?, region?, serviceName?, metadata?, metadataTimeoutMs?, env?, fetch? }` |                                                                                                               |
 
 ## Canonical usage
 
@@ -185,7 +185,8 @@ ctx.body = dropped > 0 ? { partialSuccess: { rejectedDataPoints: String(dropped)
 
 - Send to Google with `temporality: 'cumulative'` and a resource from `googleCloudResource()`, shared by every
   exporter in the process. Google keeps delta sums only as Cloud Monitoring delta metrics, which PromQL cannot
-  rate, and refuses a batch without `gcp.project_id`.
+  rate, and refuses a batch without `gcp.project_id`, and metrics without a real `cloud.region` (never `global`):
+  off Google Cloud, set `GOOGLE_CLOUD_REGION`.
 - Give the identity the process runs as `roles/telemetry.writer` on the project and
   `roles/serviceusage.serviceUsageConsumer` on the quota project.
 
