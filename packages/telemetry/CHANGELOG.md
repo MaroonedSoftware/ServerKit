@@ -1,5 +1,13 @@
 # @maroonedsoftware/telemetry
 
+## 0.2.0
+
+### Minor Changes
+
+- 841100f: `OtlpMetricsBridge` takes `temporality: 'cumulative'`: counters and histograms then go out as each series' running total, from its first minute to the export time, one point per series per export. Prometheus and Google Cloud's Managed Service for Prometheus keep them as they arrive, with no `deltatocumulative` processor in a collector. A minute exported in parts adds up, and a failed export is caught up by the next one. `export` takes an optional `now`, the cumulative points' end time. The default stays `delta`, unchanged.
+- c6481d9: Add `MetricsRecorder.drainClosed(now?)`: it hands over only the minutes that have ended and keeps the open minute's buckets for a later drain. A delta OTLP export fed by `drain()` sent the rest of a minute flushed early as a second point over the same interval; fed by `drainClosed()`, each minute goes out once and whole. `drain()` is unchanged.
+- 2cf5750: Add `@maroonedsoftware/telemetry/google`, for exporting OTLP straight to Google Cloud's Telemetry API (Cloud Trace and Cloud Monitoring) with no collector. `googleOtlpHeaders()` gives an exporter Application Default Credentials headers, fresh for every export. `googleCloudResource()` describes the process the way Google needs: `gcp.project_id`, `cloud.region` and a `service.instance.id` unique to the process, read from the environment and the metadata server as asynchronous attributes. Also exports the endpoint URLs and `isGoogleTelemetryUrl`. `google-auth-library` is an optional peer. `OtlpMetricsBridge` and `OtlpSpanBridge` now wait for a resource's asynchronous attributes before exporting.
+
 ## 0.1.1
 
 ### Patch Changes
