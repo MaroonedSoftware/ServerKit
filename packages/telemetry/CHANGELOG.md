@@ -1,5 +1,15 @@
 # @maroonedsoftware/telemetry
 
+## 0.3.0
+
+### Minor Changes
+
+- 04ae0e7: Histograms can carry their distribution. Set `MetricsRecorder.bucketBounds` to give metrics bucket bounds (`DURATION_BOUNDS_MS` covers 5 ms to 10 minutes), and their observations are also counted into `MetricAggregate.buckets`, which merge by adding when the bounds match. `OtlpMetricsBridge` sends them as an explicit-bucket histogram, so collectors and Google Cloud get percentiles; Google refused the bridge's histograms before, since they had no bounds. Adds `bucketedAggregateOf`, `MetricBuckets` and `validBounds`. `aggregateOf` is unchanged, and `MetricsStore` keeps only the five numbers.
+
+### Patch Changes
+
+- 5cc7419: `googleCloudResource()` takes the region from a `region` option or `GOOGLE_CLOUD_REGION` before asking the metadata server. Google refuses metrics without a real `cloud.region` (and refuses `global`), and off Google Cloud there is no metadata server to ask, so a process exporting from a laptop or another cloud had every metric refused as an unrecognized location.
+
 ## 0.2.0
 
 ### Minor Changes
