@@ -52,6 +52,8 @@ export class OtlpSpanBridge {
     if (spans.length === 0) {
       return;
     }
+    // A resource with attributes still being detected (a cloud metadata lookup) settles first, as the SDK's own processors do.
+    await this.resource.waitForAsyncAttributes?.();
     await exportAsPromise(done =>
       this.exporter.export(
         spans.map(span => this.readableOf(span)),

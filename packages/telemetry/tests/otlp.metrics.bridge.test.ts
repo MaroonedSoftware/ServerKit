@@ -149,6 +149,15 @@ describe('OtlpMetricsBridge', () => {
     });
   });
 
+  it('waits for a resource’s asynchronous attributes before exporting', async () => {
+    const exporter = new InMemoryMetricExporter(AggregationTemporality.DELTA);
+    const resource = resourceFromAttributes({ 'service.instance.id': Promise.resolve('i-1') });
+    await new OtlpMetricsBridge({ exporter, resource }).export([bucket('a', [1])]);
+
+    expect(exporter.getMetrics()[0]?.resource.asyncAttributesPending).toBe(false);
+    expect(exporter.getMetrics()[0]?.resource.attributes['service.instance.id']).toBe('i-1');
+  });
+
   it('exports nothing for no buckets', async () => {
     expect(await exportOne([])).toEqual([]);
   });

@@ -20,6 +20,7 @@ Required peers: none beyond `injectkit`'s own `reflect-metadata`.
 Optional peers: `kysely` — unlocks the `./kysely` subpath (`MetricsStore`). `@opentelemetry/api`, `/core`,
 `/resources`, `/sdk-metrics` and `/sdk-trace` — unlock the `./otlp` subpath. The OTLP exporters themselves
 (`@opentelemetry/exporter-metrics-otlp-http` and the like) are the app's choice and not peers.
+`google-auth-library` and `@opentelemetry/resources` — unlock the `./google` subpath.
 
 ## Position in the graph
 
@@ -27,6 +28,7 @@ Optional peers: `kysely` — unlocks the `./kysely` subpath (`MetricsStore`). `@
 - **Depended on by:** nothing internal
 - **Subpath exports:** `./kysely` — `MetricsStore`, the PostgreSQL store; a subpath so the root entry stays free of `kysely`
 - **Subpath exports:** `./otlp` — `OtlpMetricsBridge`, `OtlpSpanBridge` and the id helpers; a subpath so the root entry stays free of the OTel SDK
+- **Subpath exports:** `./google` — auth headers and a resource for Google Cloud's Telemetry API; a subpath so nothing else loads Google's auth library
 
 ## API surface
 
@@ -78,6 +80,18 @@ Optional peers: `kysely` — unlocks the `./kysely` subpath (`MetricsStore`). `@
 | `otlpTraceId`              | function  | `(id: string) => string`                                                                                               | 32 hex; kept if already, else sha256-derived                                                                         |
 | `otlpSpanId`               | function  | `(id: string) => string`                                                                                               | 16 hex; same rule                                                                                                    |
 
+### `./google`
+
+| Export                                | Kind      | Shape                                                                       | Notes                                                                                                         |
+| ------------------------------------- | --------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `GOOGLE_TELEMETRY_URL`                | const     | `'https://telemetry.googleapis.com'`                                        | the OTLP base URL                                                                                             |
+| `googleTracesUrl`, `googleMetricsUrl` | const     | the base URL plus `/v1/traces`, `/v1/metrics`                               | for an exporter's `url`                                                                                       |
+| `isGoogleTelemetryUrl`                | function  | `(url?: string) => boolean`                                                 | matches the host only                                                                                         |
+| `googleOtlpHeaders`                   | function  | `(auth?: GoogleAuth) => OtlpHeadersFactory`                                 | an exporter's `headers`; ADC, `cloud-platform` scope, fresh per export                                        |
+| `OtlpHeadersFactory`                  | type      | `() => Promise<Record<string, string>>`                                     |                                                                                                               |
+| `googleCloudResource`                 | function  | `(options?) => Resource`                                                    | `gcp.project_id`, `cloud.region`, `service.instance.id`, `service.name`; metadata values are async attributes |
+| `GoogleCloudResourceOptions`          | interface | `{ projectId?, serviceName?, metadata?, metadataTimeoutMs?, env?, fetch? }` |                                                                                                               |
+
 ## Canonical usage
 
 ```typescript
@@ -121,6 +135,22 @@ await metrics.export(buckets).catch(log); // a dead collector must not stop the 
 await spans.export(finishedSinceLastFlush);
 ```
 
+Exporting straight to Google Cloud (Cloud Trace and Cloud Monitoring), with no collector:
+
+```typescript
+import { googleCloudResource, googleMetricsUrl, googleOtlpHeaders } from '@maroonedsoftware/telemetry/google';
+import { OtlpMetricsBridge } from '@maroonedsoftware/telemetry/otlp';
+import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-proto';
+
+const resource = googleCloudResource(); // share it with the trace SDK, so both report one instance
+const metrics = new OtlpMetricsBridge({
+  exporter: new OTLPMetricExporter({ url: googleMetricsUrl, headers: googleOtlpHeaders() }),
+  resource,
+  temporality: 'cumulative',
+  kindOf,
+});
+```
+
 Receiving OTLP/JSON from other services, in the app's own route:
 
 ```typescript
@@ -153,6 +183,12 @@ ctx.body = dropped > 0 ? { partialSuccess: { rejectedDataPoints: String(dropped)
   cumulative sums and histograms never produce a point.
 - Put received metrics behind authentication and a size limit on the body: the caps bound rows, not bytes.
 
+- Send to Google with `temporality: 'cumulative'` and a resource from `googleCloudResource()`, shared by every
+  exporter in the process. Google keeps delta sums only as Cloud Monitoring delta metrics, which PromQL cannot
+  rate, and refuses a batch without `gcp.project_id`.
+- Give the identity the process runs as `roles/telemetry.writer` on the project and
+  `roles/serviceusage.serviceUsageConsumer` on the quota project.
+
 ## Gotchas
 
 - `drain()` includes the still-open minute. A store must merge (upsert) rather than insert, or a
@@ -178,7 +214,8 @@ ctx.body = dropped > 0 ? { partialSuccess: { rejectedDataPoints: String(dropped)
 
 `src/` holds one concern per file (`metric.aggregate.ts`, `metric.labels.ts`, `metric.bucket.ts`,
 `metric.resolution.ts`, `metrics.recorder.ts`) behind the `src/index.ts` barrel, `metrics.store.ts` behind the
-`src/kysely.ts` subpath entry, and the `otlp.*.ts` bridges behind `src/otlp.ts`.
+`src/kysely.ts` subpath entry, the `otlp.*.ts` bridges behind `src/otlp.ts`, and the `google.*.ts` helpers behind
+`src/google.ts`.
 `otlp.metrics.receiver.ts` is in the root entry on purpose: it parses JSON and needs no OTel SDK; tests mirror them in `tests/`. Keep the root
 entry free of I/O and of external SDKs. A new subpath needs an `exports` entry, a tsup entry in
 `build`, and its SDK as an optional peer. Every user-visible change needs a changeset.

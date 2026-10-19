@@ -125,6 +125,8 @@ export class OtlpMetricsBridge {
       const points = this.temporality === 'cumulative' ? this.cumulativePoints(name, kind, group, now.toMillis()) : group.map(deltaPoint);
       return this.metricOf(name, kind, points);
     });
+    // A resource with attributes still being detected (a cloud metadata lookup) settles first, as the SDK's own processors do.
+    await this.resource.waitForAsyncAttributes?.();
     await exportAsPromise(done => this.exporter.export({ resource: this.resource, scopeMetrics: [{ scope: { name: this.scope }, metrics }] }, done));
   }
 

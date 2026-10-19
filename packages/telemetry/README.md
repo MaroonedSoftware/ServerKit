@@ -9,7 +9,8 @@ Minute-bucket metrics for ServerKit. Producers observe numbers into an in-proces
 - **Merge-friendly**: aggregates are associative, so a later flush of the same minute merges into the row already stored, and minutes fold into hours
 - **No I/O in the recorder**: storage and export are separate, so a dead database or collector never blocks a producer
 - **A PostgreSQL store** (`/kysely`): merging upserts, idempotent hourly rollups, pruning, range reads
-- **OpenTelemetry bridges** (`/otlp`): send the same buckets, and finished spans, to any OTLP exporter
+- **OpenTelemetry bridges** (`/otlp`): send the same buckets, and finished spans, to any OTLP exporter, as delta or cumulative series
+- **Google Cloud** (`/google`): auth headers and a resource for exporting straight to Google's Telemetry API
 - **An OTLP/JSON receiver**: read other services' metric exports into the same buckets, with cumulative-to-delta and a cardinality cap
 - **Zero internal dependencies**: [injectkit](https://www.npmjs.com/package/injectkit) and [luxon](https://moment.github.io/luxon/) only
 
@@ -94,6 +95,29 @@ await spans.export([{ traceId: 'job-42', spanId: 'job-42/run', name: 'job.run', 
 ```
 
 By default metrics go out with delta temporality: each bucket is one point spanning its minute. Drain them with `recorder.drainClosed()`, which holds the open minute back until it has ended, so no minute goes out twice. Pass `temporality: 'cumulative'` to send each series' running total instead, from its first minute to the export time: what Prometheus and Google Cloud's Managed Service for Prometheus keep, with no `deltatocumulative` step in a collector. Cumulative mode tolerates a minute exported in parts, and a failed export is caught up by the next one. Spans keep the times you recorded, and your own ids are hashed into OTLP form so the same id always lands in the same trace.
+
+## Exporting to Google Cloud
+
+`@maroonedsoftware/telemetry/google` needs `google-auth-library` and `@opentelemetry/resources`. It sends OTLP straight to Google's Telemetry API (`https://telemetry.googleapis.com`), which feeds Cloud Trace and Cloud Monitoring, with no collector in between.
+
+```typescript
+import { googleCloudResource, googleMetricsUrl, googleOtlpHeaders, googleTracesUrl } from '@maroonedsoftware/telemetry/google';
+
+const resource = googleCloudResource(); // one per process, shared by every exporter
+const headers = googleOtlpHeaders(); // Application Default Credentials, fresh for every export
+
+const metrics = new OtlpMetricsBridge({
+  exporter: new OTLPMetricExporter({ url: googleMetricsUrl, headers }),
+  resource,
+  temporality: 'cumulative',
+  kindOf,
+});
+const traces = new OTLPTraceExporter({ url: googleTracesUrl, headers });
+```
+
+- `googleCloudResource()` names the project (`gcp.project_id`, which Google requires), the region and a `service.instance.id` unique to the process, from the environment (`GOOGLE_CLOUD_PROJECT`, `OTEL_SERVICE_NAME`, Cloud Run's `K_SERVICE`) and the metadata server. Off Google Cloud the lookups fail fast and the process gets a random instance id.
+- Use `temporality: 'cumulative'`: Google stores metrics the way Managed Service for Prometheus does, where a delta sum is a Cloud Monitoring delta metric that PromQL cannot `rate()`.
+- The identity the process runs as needs `roles/telemetry.writer` on the project and `roles/serviceusage.serviceUsageConsumer` on the quota project. Locally, `gcloud auth application-default login` provides one.
 
 ## Receiving OTLP/JSON
 
