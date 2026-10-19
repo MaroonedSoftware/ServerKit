@@ -169,7 +169,12 @@ export class MetricsStore<DB = unknown> {
       labels: JSON.stringify(bucket.labels),
       labels_key: bucket.labelsKey,
       source,
-      ...bucket.aggregate,
+      // The five numbers only: bucket counts are for OTLP export, not stored.
+      count: bucket.aggregate.count,
+      sum: bucket.aggregate.sum,
+      min: bucket.aggregate.min,
+      max: bucket.aggregate.max,
+      last: bucket.aggregate.last,
     }));
 
     let written = 0;

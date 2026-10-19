@@ -4,7 +4,7 @@ import { JsonMetricsSerializer } from '@opentelemetry/otlp-transformer';
 import { resourceFromAttributes } from '@opentelemetry/resources';
 import { AggregationTemporality, DataPoint, DataPointType, InMemoryMetricExporter, PushMetricExporter } from '@opentelemetry/sdk-metrics';
 import { DateTime } from 'luxon';
-import { aggregateOf, mergeAggregates } from '../src/metric.aggregate.js';
+import { aggregateOf, bucketedAggregateOf, mergeAggregates } from '../src/metric.aggregate.js';
 import { MetricBucket } from '../src/metric.bucket.js';
 import { labelsKey } from '../src/metric.labels.js';
 import { MetricKind, OtlpMetricsBridge } from '../src/otlp.metrics.bridge.js';
@@ -63,6 +63,22 @@ describe('OtlpMetricsBridge', () => {
     expect(metric?.dataPoints[0]?.value).toEqual({ buckets: { boundaries: [], counts: [3] }, count: 3, sum: 60, min: 10, max: 30 });
   });
 
+  it('sends a histogram’s bucket counts when the recorder kept them', async () => {
+    const counted: MetricBucket = {
+      ...bucket('work.job.ms', [5, 50, 500]),
+      aggregate: [5, 50, 500].map(v => bucketedAggregateOf(v, [10, 100])).reduce(mergeAggregates),
+    };
+    const [exported] = await exportOne([counted]);
+    const metric = exported?.scopeMetrics[0]?.metrics[0];
+
+    expect(metric?.dataPoints[0]?.value).toEqual({ buckets: { boundaries: [10, 100], counts: [1, 1, 1] }, count: 3, sum: 555, min: 5, max: 500 });
+    const body = JSON.parse(new TextDecoder().decode(JsonMetricsSerializer.serializeRequest(exported!)));
+    expect(body.resourceMetrics[0].scopeMetrics[0].metrics[0].histogram.dataPoints[0]).toMatchObject({
+      explicitBounds: [10, 100],
+      bucketCounts: [1, 1, 1],
+    });
+  });
+
   it('serialises through the OTLP JSON encoding an OTLP/HTTP exporter sends', async () => {
     const [exported] = await exportOne([bucket('work.job.ms', [10, 30], { queue: 'a' }), bucket('station.listeners', [3])]);
     if (exported === undefined) {
@@ -116,6 +132,18 @@ describe('OtlpMetricsBridge', () => {
       const [first, second] = points('work.job.ms');
       expect(second?.value).toEqual({ buckets: { boundaries: [], counts: [3] }, count: 3, sum: 60, min: 10, max: 30 });
       expect(second!.endTime[0] * 1e9 + second!.endTime[1]).toBeGreaterThan(first!.endTime[0] * 1e9 + first!.endTime[1]);
+    });
+
+    it('adds bucket counts across exports', async () => {
+      const { bridge, points } = cumulative();
+      const counted = (values: number[], minute: number): MetricBucket => ({
+        ...bucket('work.job.ms', values, {}, minute),
+        aggregate: values.map(v => bucketedAggregateOf(v, [10, 100])).reduce(mergeAggregates),
+      });
+      await bridge.export([counted([5], 0)], start.plus({ minutes: 1 }));
+      await bridge.export([counted([50, 500], 1)], start.plus({ minutes: 2 }));
+
+      expect(points('work.job.ms').at(-1)?.value).toMatchObject({ buckets: { boundaries: [10, 100], counts: [1, 1, 1] }, count: 3 });
     });
 
     it('sends a gauge’s latest reading rather than a total', async () => {
