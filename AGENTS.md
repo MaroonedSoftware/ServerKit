@@ -49,6 +49,7 @@ Two audiences use these files:
 | `comms`             | L1      | Channel-agnostic messaging core: router, reply/notifier, template registry                | [comms](./packages/comms/AGENTS.md)                         |
 | `cache`             | L1      | Cache interface with a Redis backend, plus an idempotency store for at-least-once sources | [cache](./packages/cache/AGENTS.md)                         |
 | `kysely`            | L1      | Kysely/PostgreSQL client wiring plus `pg` and Luxon type helpers                          | [kysely](./packages/kysely/AGENTS.md)                       |
+| `saml`              | L1      | SAML 2.0 provider registry, IdP metadata parsing, and SP metadata on node-saml            | [saml](./packages/saml/AGENTS.md)                           |
 | `permissions-dsl`   | L1      | `.perm` surface syntax, compiler, fixtures, and the `pdsl` CLI                            | [permissions-dsl](./packages/permissions-dsl/AGENTS.md)     |
 | `servercore`        | L1      | Framework-agnostic HTTP core: module lifecycle, body parsers, error rendering, SSE        | [servercore](./packages/servercore/AGENTS.md)               |
 | `authentication`    | L2      | Auth factors, scheme handlers, sessions, JWT issuance, API keys, and account recovery     | [authentication](./packages/authentication/AGENTS.md)       |
@@ -73,7 +74,7 @@ Arrows point downward. A package may depend on any lower layer and never on a hi
 L3  discord  slack  telegram  whatsapp  scim  johnny5
 L2  authentication  fastify  koa  mcp
 L1  appconfig  policies  encryption  multipart  zod  storage
-    jobbroker  serverfeed  comms  cache  kysely  permissions-dsl  servercore
+    jobbroker  serverfeed  comms  cache  kysely  permissions-dsl  servercore  saml
 L0  errors  logger  utilities  permissions  eventbus  telemetry
 ```
 
