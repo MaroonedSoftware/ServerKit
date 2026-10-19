@@ -26,9 +26,55 @@ export type OidcProfile = {
   emailVerified?: boolean;
   name?: string;
   picture?: string;
+  /**
+   * `amr` claim: the authentication methods the IdP used (RFC 8176 values such as `pwd`,
+   * `mfa`, `otp`, `hwk`). Only string entries are kept; `undefined` when the IdP sent none.
+   */
+  amr?: string[];
+  /** `acr` claim: the authentication context class the IdP says it satisfied. */
+  acr?: string;
+  /**
+   * `auth_time` claim: when the end-user last actively authenticated at the IdP, in UTC.
+   * Always present when the flow asked for `max_age` (it is required and checked then).
+   */
+  authTime?: DateTime;
   /** Union of id_token claims and /userinfo response. /userinfo overrides on conflict. */
   rawClaims: Record<string, unknown>;
 };
+
+/**
+ * Why a flow is being run.
+ *
+ * - `sign-in`: resolve the identity to an actor, auto-linking or staging a new user.
+ * - `link`: attach the identity to the signed-in `actorId`.
+ * - `step-up`: re-authenticate the signed-in `actorId` at the IdP (typically with
+ *   `max_age: 0`) and return fresh claims. Nothing is linked or created.
+ */
+export type OidcAuthorizationIntent = 'sign-in' | 'link' | 'step-up';
+
+/**
+ * Per-request authorization request parameters for {@link OidcFactorService.beginAuthorization}.
+ *
+ * Merged over the provider's {@link OidcProviderConfig.authorizeParams}, so a request value
+ * wins on a conflict. Only these keys are forwarded; the protocol parameters the service owns
+ * (`state`, `nonce`, PKCE, `redirect_uri`, `scope`) cannot be overridden from here.
+ */
+export type OidcAuthorizeParams = {
+  /** Hint to the IdP about the identifier the user will sign in with, typically their email. */
+  login_hint?: string;
+  /**
+   * Maximum seconds since the user last actively authenticated at the IdP. `0` forces a fresh
+   * authentication. When set (here or in the provider's `authorizeParams`), the id_token must
+   * carry `auth_time` within that window or {@link OidcFactorService.completeAuthorization} fails.
+   */
+  max_age?: number;
+  /** Space-separated `prompt` values, e.g. `login`, `consent`, `select_account`. */
+  prompt?: string;
+  /** Space-separated requested `acr` values, in order of preference. */
+  acr_values?: string;
+};
+
+const AUTHORIZE_PARAM_KEYS = ['login_hint', 'max_age', 'prompt', 'acr_values'] as const;
 
 /**
  * Result of a successful authorization callback.
@@ -42,6 +88,9 @@ export type OidcProfile = {
  *   `emailConflict` is set when an actor with the same email exists but the email
  *   is unverified at the IdP — the UI should require the user to sign in to that
  *   account before linking the new provider.
+ * - `stepped-up` — only for `intent: 'step-up'`: the identity belongs to a factor of the
+ *   stepping-up actor. The profile carries fresh `amr` / `acr` / `authTime`; no factor was
+ *   created, linked, or updated, and the caller decides what the re-authentication grants.
  *
  * Every variant carries the `intent` the flow began with, so a callback can tell a
  * link completing (keep the caller's current session) from a sign-in (mint one).
@@ -73,6 +122,14 @@ export type OidcAuthorizationResult =
       profile: OidcProfile;
       emailConflict?: { actorId: string; reason: 'unverified-email' };
       redirectAfter?: string;
+    }
+  | {
+      kind: 'stepped-up';
+      intent: 'step-up';
+      actorId: string;
+      factorId: string;
+      profile: OidcProfile;
+      redirectAfter?: string;
     };
 
 type StoredAuthorizationState = {
@@ -80,9 +137,11 @@ type StoredAuthorizationState = {
   state: string;
   nonce: string;
   codeVerifier: string;
-  intent: 'sign-in' | 'link';
+  intent: OidcAuthorizationIntent;
   actorId?: string;
   redirectAfter?: string;
+  /** Effective `max_age` sent to the IdP, in seconds; enforced against `auth_time` on completion. */
+  maxAge?: number;
   issuedAt: number;
   expiresAt: number;
 };
@@ -176,6 +235,12 @@ type StoredAuthenticatedExchange = OidcAuthenticatedExchange & {
  * **Link an additional provider** to an already-signed-in actor:
  * 1. Call {@link beginAuthorization} with `intent: 'link'` and the current `actorId`.
  * 2. On the callback, call {@link completeAuthorization} → `kind: 'linked'`.
+ *
+ * **Step up** an already-signed-in actor through the IdP:
+ * 1. Call {@link beginAuthorization} with `intent: 'step-up'`, the current `actorId`, and
+ *    `authorizeParams: { max_age: 0 }` (plus `acr_values` if the IdP honours them).
+ * 2. On the callback, call {@link completeAuthorization} → `kind: 'stepped-up'`, then judge
+ *    `profile.amr` / `profile.acr` / `profile.authTime`.
  */
 @Injectable()
 export class OidcFactorService {
@@ -207,17 +272,23 @@ export class OidcFactorService {
   /**
    * Build the IdP authorize URL and cache the state record for the round-trip.
    *
+   * `authorizeParams` are merged over the provider's configured `authorizeParams` for this
+   * request only. When the effective request carries `max_age`, it is stored with the state
+   * and {@link completeAuthorization} requires a conforming `auth_time` in the id_token.
+   *
    * @throws HTTP 404 when `provider` is not registered.
-   * @throws HTTP 400 when `intent === 'link'` is requested without `actorId`.
+   * @throws HTTP 400 when `intent` is `link` or `step-up` without `actorId`, or when `max_age`
+   *   is not a non-negative integer.
    */
   async beginAuthorization(args: {
     provider: string;
-    intent: 'sign-in' | 'link';
+    intent: OidcAuthorizationIntent;
     actorId?: string;
     redirectAfter?: string;
+    authorizeParams?: OidcAuthorizeParams;
   }): Promise<{ url: URL; state: string; expiresAt: DateTime }> {
-    if (args.intent === 'link' && !args.actorId) {
-      throw httpError(400).withDetails({ actorId: 'required when intent is link' });
+    if ((args.intent === 'link' || args.intent === 'step-up') && !args.actorId) {
+      throw httpError(400).withDetails({ actorId: `required when intent is ${args.intent}` });
     }
 
     const config = await this.registry.getConfig(args.provider);
@@ -230,6 +301,21 @@ export class OidcFactorService {
 
     const scopes = config.scopes.length > 0 ? config.scopes : ['openid', 'profile', 'email'];
 
+    const requestParams: Record<string, string> = {};
+    for (const key of AUTHORIZE_PARAM_KEYS) {
+      const value = args.authorizeParams?.[key];
+      if (value !== undefined) requestParams[key] = String(value);
+    }
+    const extraParams = { ...(config.authorizeParams ?? {}), ...requestParams };
+
+    let maxAge: number | undefined;
+    if (extraParams.max_age !== undefined) {
+      maxAge = Number(extraParams.max_age);
+      if (!Number.isInteger(maxAge) || maxAge < 0) {
+        throw httpError(400).withDetails({ max_age: 'must be a non-negative integer' });
+      }
+    }
+
     const url = openidClient.buildAuthorizationUrl(oidcConfig, {
       redirect_uri: config.redirectUri.toString(),
       scope: scopes.join(' '),
@@ -237,7 +323,7 @@ export class OidcFactorService {
       nonce,
       code_challenge: codeChallenge,
       code_challenge_method: 'S256',
-      ...(config.authorizeParams ?? {}),
+      ...extraParams,
     });
 
     const issuedAt = DateTime.utc();
@@ -251,6 +337,7 @@ export class OidcFactorService {
       intent: args.intent,
       actorId: args.actorId,
       redirectAfter: args.redirectAfter,
+      ...(maxAge === undefined ? {} : { maxAge }),
       issuedAt: issuedAt.toUnixInteger(),
       expiresAt: expiresAt.toUnixInteger(),
     };
@@ -280,11 +367,18 @@ export class OidcFactorService {
    * provider's JWKS, `iss`, `aud`, `exp`, and the `nonce` we cached in
    * {@link beginAuthorization}. PKCE `code_verifier` is also bound to the
    * request. When `params.iss` is set, it is asserted against the discovered
-   * issuer per RFC 9207 to close the mix-up attack.
+   * issuer per RFC 9207 to close the mix-up attack. When the flow asked for
+   * `max_age`, openid-client also requires `auth_time` and rejects one older
+   * than `max_age` seconds.
+   *
+   * A `step-up` flow only checks that `(provider, subject)` is a factor of the
+   * stepping-up actor and answers `stepped-up`; it never links, creates, or
+   * updates a factor, and never stages a new user.
    *
    * @throws HTTP 400 when the IdP returned an `error`, `state` is missing,
    *   `id_token` claims are missing, or the supplied `iss` does not match.
-   * @throws HTTP 403 when the registered `'auth.factor.oidc.profile.allowed'` policy denies the profile.
+   * @throws HTTP 403 when the registered `'auth.factor.oidc.profile.allowed'` policy denies the profile,
+   *   or when a `step-up` identity is not a factor of the stepping-up actor.
    * @throws HTTP 404 when the state record has expired or does not exist.
    * @throws HTTP 409 when a `link` intent's `(provider, subject)` already belongs to another actor.
    */
@@ -334,6 +428,7 @@ export class OidcFactorService {
       expectedState: stored.state,
       expectedNonce: stored.nonce,
       pkceCodeVerifier: stored.codeVerifier,
+      ...(stored.maxAge === undefined ? {} : { maxAge: stored.maxAge }),
     });
 
     const idTokenClaims = tokens.claims();
@@ -366,8 +461,38 @@ export class OidcFactorService {
       providerConfig.persistRefreshToken && !(await this.registry.isPublicClient(stored.provider)) ? tokens.refresh_token : undefined;
     const refreshTokenExpiresAt = this.computeRefreshTokenExpiry(tokens);
 
-    // 1. Existing factor for (provider, subject) → signed-in
     const existing = await this.repo.findFactor({ provider: stored.provider, subject });
+
+    // Step-up re-authenticates a known factor of the signed-in actor and changes nothing.
+    if (stored.intent === 'step-up') {
+      if (!stored.actorId || !existing || existing.actorId !== stored.actorId) {
+        await this.audit.record({
+          type: 'oidc.step_up.rejected',
+          category: 'login',
+          outcome: 'failure',
+          ...(stored.actorId === undefined ? {} : { actorId: stored.actorId }),
+          data: { provider: stored.provider, subject, reason: 'not_linked' },
+        });
+        throw httpError(403).withDetails({ provider: 'not linked to this account' });
+      }
+      await this.audit.record({
+        type: 'oidc.stepped_up',
+        category: 'login',
+        outcome: 'success',
+        actorId: existing.actorId,
+        data: { provider: stored.provider, subject, factorId: existing.id },
+      });
+      return {
+        kind: 'stepped-up',
+        intent: 'step-up',
+        actorId: existing.actorId,
+        factorId: existing.id,
+        profile,
+        redirectAfter: stored.redirectAfter,
+      };
+    }
+
+    // 1. Existing factor for (provider, subject) → signed-in
     if (existing) {
       // A link whose identity already belongs to someone else must not sign the
       // caller in as that someone: refuse before touching the stranger's factor.
@@ -661,7 +786,21 @@ export class OidcFactorService {
     const emailVerified = typeof merged.email_verified === 'boolean' ? merged.email_verified : undefined;
     const name = (merged.name as string | undefined) ?? undefined;
     const picture = (merged.picture as string | undefined) ?? undefined;
-    return { provider, subject, email, emailVerified, name, picture, rawClaims: merged };
+    const amr = Array.isArray(merged.amr) ? merged.amr.filter((value): value is string => typeof value === 'string') : undefined;
+    const acr = typeof merged.acr === 'string' ? merged.acr : undefined;
+    const authTime = typeof merged.auth_time === 'number' ? DateTime.fromSeconds(merged.auth_time, { zone: 'utc' }) : undefined;
+    return {
+      provider,
+      subject,
+      email,
+      emailVerified,
+      name,
+      picture,
+      ...(amr === undefined ? {} : { amr }),
+      ...(acr === undefined ? {} : { acr }),
+      ...(authTime === undefined ? {} : { authTime }),
+      rawClaims: merged,
+    };
   }
 
   private computeRefreshTokenExpiry(tokens: openidClient.TokenEndpointResponse): DateTime | undefined {

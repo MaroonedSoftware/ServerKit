@@ -41,6 +41,15 @@ export type FidoAuditEvent =
  */
 export type FederatedLinkRejectedReason = 'unverified_email' | 'subject_taken';
 
+/**
+ * Why an OIDC step-up was refused.
+ *
+ * - `not_linked`: the identity the IdP returned is not a factor of the actor stepping
+ *   up. Either the user signed in to the IdP as someone else, or the identity belongs
+ *   to another account.
+ */
+export type FederatedStepUpRejectedReason = 'not_linked';
+
 export interface AuditFederatedIdentity {
   /** Provider key as configured in the provider registry. */
   provider: string;
@@ -84,6 +93,10 @@ export type FederatedAuditEvent =
   /** A link was declined: an unverified email match, or an identity already on another account. */
   | AuditEvent<'oidc.link.rejected', AuditFederatedIdentity & { reason: FederatedLinkRejectedReason }>
   | AuditEvent<'oidc.new_user', AuditFederatedIdentity>
+  /** A signed-in actor re-authenticated through a provider identity they own. */
+  | AuditEvent<'oidc.stepped_up', AuditFederatedIdentity & { factorId: string }>
+  /** A step-up returned an identity that is not a factor of the stepping-up actor. */
+  | AuditEvent<'oidc.step_up.rejected', AuditFederatedIdentity & { reason: FederatedStepUpRejectedReason }>
   | AuditEvent<'oidc.authorization.failed', AuditFederatedIdentity & { reason: FederatedFailureReason }>
   | AuditEvent<'oidc.factor.created', AuditFederatedIdentity & { factorId: string }>
   | AuditEvent<'oidc.factor.deleted', { factorId: string }>

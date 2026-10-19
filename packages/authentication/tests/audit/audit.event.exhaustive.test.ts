@@ -86,6 +86,8 @@ const categoryFor = (type: AuthenticationAuditEvent['type']): AuditEventCategory
     case 'oidc.signed_in':
     case 'oidc.new_user':
     case 'oidc.authorization.failed':
+    case 'oidc.stepped_up':
+    case 'oidc.step_up.rejected':
     case 'oauth2.authorization.begun':
     case 'oauth2.signed_in':
     case 'oauth2.new_user':

@@ -204,6 +204,61 @@ describe('OidcFactorService', () => {
 
       expect(openidClient.buildAuthorizationUrl).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ scope: 'openid profile email' }));
     });
+
+    it('throws 400 when intent is step-up without actorId', async () => {
+      await expect(service.beginAuthorization({ provider: 'google', intent: 'step-up' })).rejects.toMatchObject({
+        statusCode: 400,
+        details: { actorId: 'required when intent is step-up' },
+      });
+    });
+
+    it('merges per-request authorizeParams over the provider ones', async () => {
+      registry = makeRegistry({ authorizeParams: { access_type: 'offline', prompt: 'consent' } });
+      ({ service } = makeService(registry, repo, emailLookup, cache));
+
+      await service.beginAuthorization({
+        provider: 'google',
+        intent: 'sign-in',
+        authorizeParams: { login_hint: 'user@acme.example', prompt: 'login', max_age: 0, acr_values: 'phr' },
+      });
+
+      expect(openidClient.buildAuthorizationUrl).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ access_type: 'offline', prompt: 'login', login_hint: 'user@acme.example', max_age: '0', acr_values: 'phr' }),
+      );
+      expect(JSON.parse(cache._store.get('oidc_state_state-token')!)).toMatchObject({ maxAge: 0 });
+    });
+
+    it('does not let per-request params override the protocol parameters', async () => {
+      await service.beginAuthorization({
+        provider: 'google',
+        intent: 'sign-in',
+        authorizeParams: { state: 'attacker', nonce: 'attacker' } as unknown as Parameters<
+          OidcFactorService['beginAuthorization']
+        >[0]['authorizeParams'],
+      });
+
+      expect(openidClient.buildAuthorizationUrl).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ state: 'state-token', nonce: 'nonce-token' }),
+      );
+    });
+
+    it('stores no maxAge when max_age was not requested', async () => {
+      await service.beginAuthorization({ provider: 'google', intent: 'sign-in', authorizeParams: { login_hint: 'user@acme.example' } });
+
+      expect(JSON.parse(cache._store.get('oidc_state_state-token')!)).not.toHaveProperty('maxAge');
+    });
+
+    it.each([-1, 1.5, Number.NaN])('throws 400 for max_age %s', async maxAge => {
+      await expect(service.beginAuthorization({ provider: 'google', intent: 'sign-in', authorizeParams: { max_age: maxAge } })).rejects.toMatchObject(
+        {
+          statusCode: 400,
+          details: { max_age: 'must be a non-negative integer' },
+        },
+      );
+      expect(cache.set).not.toHaveBeenCalled();
+    });
   });
 
   describe('completeAuthorization', () => {
@@ -550,6 +605,179 @@ describe('OidcFactorService', () => {
       });
       expect(policyService.check).toHaveBeenCalledWith('auth.factor.oidc.profile.allowed', {
         profile: expect.objectContaining({ provider: 'google', subject: 'subject-1' }),
+      });
+    });
+
+    describe('authentication claims', () => {
+      it('types amr, acr and auth_time from the merged claims', async () => {
+        await seedState();
+        seedTokens({ amr: ['pwd', 'mfa', 7], acr: 'urn:mace:incommon:iap:silver', auth_time: 1_760_000_000 });
+
+        const result = await service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } });
+
+        expect(result.profile.amr).toEqual(['pwd', 'mfa']);
+        expect(result.profile.acr).toBe('urn:mace:incommon:iap:silver');
+        expect(result.profile.authTime?.toSeconds()).toBe(1_760_000_000);
+        expect(result.profile.authTime?.zoneName).toBe('UTC');
+      });
+
+      it('lets userinfo override the id_token claims', async () => {
+        await seedState();
+        seedTokens({ acr: 'id-token-acr' }, { acr: 'userinfo-acr' });
+
+        const result = await service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } });
+
+        expect(result.profile.acr).toBe('userinfo-acr');
+      });
+
+      it('leaves the claims undefined when the IdP sends none or malformed ones', async () => {
+        await seedState();
+        seedTokens({ amr: 'pwd', acr: 3, auth_time: '1760000000' });
+
+        const result = await service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } });
+
+        expect(result.profile.amr).toBeUndefined();
+        expect(result.profile.acr).toBeUndefined();
+        expect(result.profile.authTime).toBeUndefined();
+      });
+    });
+
+    describe('max_age enforcement', () => {
+      it('passes no maxAge to the code grant when max_age was not requested', async () => {
+        await seedState();
+        seedTokens();
+
+        await service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } });
+
+        const checks = vi.mocked(openidClient.authorizationCodeGrant).mock.calls[0]![2];
+        expect(checks).not.toHaveProperty('maxAge');
+      });
+
+      it('passes the requested max_age to the code grant so auth_time is required and checked', async () => {
+        await service.beginAuthorization({ provider: 'google', intent: 'sign-in', authorizeParams: { max_age: 300 } });
+        seedTokens();
+
+        await service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } });
+
+        expect(openidClient.authorizationCodeGrant).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.anything(),
+          expect.objectContaining({ expectedNonce: 'nonce-token', maxAge: 300 }),
+        );
+      });
+
+      it('enforces a max_age set in the provider authorizeParams', async () => {
+        registry = makeRegistry({ authorizeParams: { max_age: '600' } });
+        ({ service } = makeService(registry, repo, emailLookup, cache));
+        await seedState();
+        seedTokens();
+
+        await service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } });
+
+        expect(openidClient.authorizationCodeGrant).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.anything(),
+          expect.objectContaining({ maxAge: 600 }),
+        );
+      });
+
+      it('propagates the code grant rejection when auth_time is missing or too old', async () => {
+        await service.beginAuthorization({ provider: 'google', intent: 'sign-in', authorizeParams: { max_age: 0 } });
+        vi.mocked(openidClient.authorizationCodeGrant).mockRejectedValue(new Error('JWT "auth_time" (authentication time) claim missing'));
+
+        await expect(service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } })).rejects.toThrow('auth_time');
+        expect(repo.createFactor).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('step-up', () => {
+      const makeAudited = () => {
+        const events: AuthenticationAuditEvent[] = [];
+        const recorder = new AuditRecorder({ record: (event: AuthenticationAuditEvent) => void events.push(event) } as unknown as AuditSink);
+        const audited = new OidcFactorService(
+          new OidcFactorServiceOptions(),
+          registry,
+          repo,
+          emailLookup,
+          cache,
+          encryption,
+          makeLogger(),
+          makePolicyService(),
+          recorder,
+        );
+        return { audited, events };
+      };
+
+      it('returns stepped-up for a factor of the stepping-up actor and changes nothing', async () => {
+        const { audited, events } = makeAudited();
+        registry = makeRegistry({ persistRefreshToken: true });
+        await audited.beginAuthorization({
+          provider: 'google',
+          intent: 'step-up',
+          actorId: 'actor-1',
+          redirectAfter: '/settings',
+          authorizeParams: { max_age: 0 },
+        });
+        seedTokens({ email: 'new@example.com', amr: ['mfa'], auth_time: 1_760_000_000 }, { picture: 'https://cdn.example/new.png' });
+        vi.mocked(repo.findFactor).mockResolvedValue({
+          id: 'factor-1',
+          actorId: 'actor-1',
+          active: true,
+          provider: 'google',
+          subject: 'subject-1',
+          email: 'old@example.com',
+        });
+
+        const result = await audited.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } });
+
+        expect(result).toMatchObject({
+          kind: 'stepped-up',
+          intent: 'step-up',
+          actorId: 'actor-1',
+          factorId: 'factor-1',
+          redirectAfter: '/settings',
+          profile: { amr: ['mfa'] },
+        });
+        expect(openidClient.authorizationCodeGrant).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.anything(),
+          expect.objectContaining({ maxAge: 0 }),
+        );
+        expect(repo.createFactor).not.toHaveBeenCalled();
+        expect(repo.updateEmail).not.toHaveBeenCalled();
+        expect(repo.updatePicture).not.toHaveBeenCalled();
+        expect(repo.updateRefreshToken).not.toHaveBeenCalled();
+        expect(emailLookup.findActorByEmail).not.toHaveBeenCalled();
+        expect(events.map(event => event.type)).toEqual(['oidc.authorization.begun', 'oidc.stepped_up']);
+      });
+
+      it('refuses with 403 when the identity belongs to another actor', async () => {
+        const { audited, events } = makeAudited();
+        await audited.beginAuthorization({ provider: 'google', intent: 'step-up', actorId: 'actor-1' });
+        seedTokens();
+        vi.mocked(repo.findFactor).mockResolvedValue({ id: 'factor-2', actorId: 'actor-2', active: true, provider: 'google', subject: 'subject-1' });
+
+        await expect(audited.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } })).rejects.toMatchObject({
+          statusCode: 403,
+          details: { provider: 'not linked to this account' },
+        });
+        expect(events.at(-1)).toMatchObject({
+          type: 'oidc.step_up.rejected',
+          outcome: 'failure',
+          actorId: 'actor-1',
+          data: { provider: 'google', subject: 'subject-1', reason: 'not_linked' },
+        });
+      });
+
+      it('refuses with 403 when no factor exists, without auto-linking or staging a new user', async () => {
+        await service.beginAuthorization({ provider: 'google', intent: 'step-up', actorId: 'actor-1' });
+        seedTokens();
+        vi.mocked(emailLookup.findActorByEmail).mockResolvedValue('actor-1');
+
+        await expect(service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } })).rejects.toMatchObject({ statusCode: 403 });
+        expect(repo.createFactor).not.toHaveBeenCalled();
+        expect(emailLookup.findActorByEmail).not.toHaveBeenCalled();
+        expect([...cache._store.keys()].some(key => key.startsWith('oidc_authorization_'))).toBe(false);
       });
     });
   });
