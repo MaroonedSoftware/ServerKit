@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { ExportResultCode } from '@opentelemetry/core';
 import { JsonMetricsSerializer } from '@opentelemetry/otlp-transformer';
 import { resourceFromAttributes } from '@opentelemetry/resources';
-import { AggregationTemporality, DataPointType, InMemoryMetricExporter, PushMetricExporter } from '@opentelemetry/sdk-metrics';
+import { AggregationTemporality, DataPoint, DataPointType, InMemoryMetricExporter, PushMetricExporter } from '@opentelemetry/sdk-metrics';
 import { DateTime } from 'luxon';
 import { aggregateOf, mergeAggregates } from '../src/metric.aggregate.js';
 import { MetricBucket } from '../src/metric.bucket.js';
@@ -74,6 +74,88 @@ describe('OtlpMetricsBridge', () => {
     expect(histogram.name).toBe('work.job.ms');
     expect(histogram.histogram.dataPoints[0]).toMatchObject({ count: 2, sum: 40, min: 10, max: 30 });
     expect(gauge.gauge.dataPoints[0].asDouble).toBe(3);
+  });
+
+  describe('cumulative', () => {
+    const cumulative = () => {
+      const exporter = new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE);
+      const bridge = new OtlpMetricsBridge({ exporter, kindOf: name => kinds[name] ?? 'gauge', temporality: 'cumulative' });
+      const points = (name: string) =>
+        exporter
+          .getMetrics()
+          .flatMap(resource => resource.scopeMetrics.flatMap(scope => scope.metrics))
+          .filter(metric => metric.descriptor.name === name)
+          .flatMap((metric): DataPoint<unknown>[] => metric.dataPoints);
+      return { exporter, bridge, points };
+    };
+    const seconds = (minutes: number) => start.plus({ minutes }).toSeconds();
+
+    it('sends running totals from a fixed start, one point per series per export', async () => {
+      const { exporter, bridge, points } = cumulative();
+      await bridge.export([bucket('model.tokens', [100], { kind: 'a' }), bucket('model.tokens', [5], { kind: 'b' })], start.plus({ seconds: 70 }));
+      await bridge.export(
+        [bucket('model.tokens', [50], { kind: 'a' }, 1), bucket('model.tokens', [25], { kind: 'a' }, 2)],
+        start.plus({ minutes: 3 }),
+      );
+
+      const metric = exporter.getMetrics()[0]?.scopeMetrics[0]?.metrics[0];
+      expect(metric?.aggregationTemporality).toBe(AggregationTemporality.CUMULATIVE);
+      expect(points('model.tokens').map(p => [p.attributes['kind'], p.value, p.startTime[0], p.endTime[0]])).toEqual([
+        ['a', 100, seconds(0), seconds(0) + 70],
+        ['b', 5, seconds(0), seconds(0) + 70],
+        ['a', 175, seconds(0), seconds(3)],
+      ]);
+    });
+
+    it('adds up a minute exported in parts, and keeps end times rising', async () => {
+      const { bridge, points } = cumulative();
+      const now = start.plus({ seconds: 30 });
+      await bridge.export([bucket('work.job.ms', [10, 30])], now);
+      await bridge.export([bucket('work.job.ms', [20])], now);
+
+      const [first, second] = points('work.job.ms');
+      expect(second?.value).toEqual({ buckets: { boundaries: [], counts: [3] }, count: 3, sum: 60, min: 10, max: 30 });
+      expect(second!.endTime[0] * 1e9 + second!.endTime[1]).toBeGreaterThan(first!.endTime[0] * 1e9 + first!.endTime[1]);
+    });
+
+    it('sends a gauge’s latest reading rather than a total', async () => {
+      const { bridge, points } = cumulative();
+      await bridge.export([bucket('station.listeners', [4], {}, 1), bucket('station.listeners', [9], {}, 0)], start.plus({ minutes: 2 }));
+
+      expect(points('station.listeners').map(p => p.value)).toEqual([4]);
+    });
+
+    it('catches a failed export up on the next one', async () => {
+      let fail = true;
+      const sent: number[] = [];
+      const exporter: PushMetricExporter = {
+        export: (metrics, done) => {
+          if (fail) {
+            done({ code: ExportResultCode.FAILED, error: new Error('down') });
+            return;
+          }
+          sent.push(...metrics.scopeMetrics.flatMap(scope => scope.metrics.flatMap(metric => metric.dataPoints.map(p => p.value as number))));
+          done({ code: ExportResultCode.SUCCESS });
+        },
+        forceFlush: async () => {},
+        shutdown: async () => {},
+      };
+      const bridge = new OtlpMetricsBridge({ exporter, kindOf: () => 'counter', temporality: 'cumulative' });
+
+      await expect(bridge.export([bucket('a', [2])], start.plus({ minutes: 1 }))).rejects.toThrow('down');
+      fail = false;
+      await bridge.export([bucket('a', [3], {}, 1)], start.plus({ minutes: 2 }));
+      expect(sent).toEqual([5]);
+    });
+  });
+
+  it('waits for a resource’s asynchronous attributes before exporting', async () => {
+    const exporter = new InMemoryMetricExporter(AggregationTemporality.DELTA);
+    const resource = resourceFromAttributes({ 'service.instance.id': Promise.resolve('i-1') });
+    await new OtlpMetricsBridge({ exporter, resource }).export([bucket('a', [1])]);
+
+    expect(exporter.getMetrics()[0]?.resource.asyncAttributesPending).toBe(false);
+    expect(exporter.getMetrics()[0]?.resource.attributes['service.instance.id']).toBe('i-1');
   });
 
   it('exports nothing for no buckets', async () => {

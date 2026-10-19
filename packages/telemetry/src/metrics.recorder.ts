@@ -41,8 +41,10 @@ interface RegisteredGauge {
  *
  * Nothing here does I/O. The owner runs a loop that calls {@link sampleGauges} and then
  * {@link drain}, and writes what it drained wherever it keeps metrics (the `/kysely` store, an OTLP
- * bridge, both). Draining hands over the current, still-open minute too: a store merges a later
+ * bridge, both). {@link drain} hands over the current, still-open minute too: a store merges a later
  * flush of the same minute into the row already written, so nothing waits for a minute to close.
+ * An exporter that sends each minute once (delta OTLP) uses {@link drainClosed} instead, which keeps
+ * the open minute until it has ended.
  *
  * Register it as a singleton. One instance per process is the point: every producer observes into
  * the same buffer.
@@ -151,6 +153,27 @@ export class MetricsRecorder {
     const buckets = [...this.open.values()];
     this.open = new Map();
     return buckets.sort((a, b) => a.start.toMillis() - b.start.toMillis());
+  }
+
+  /**
+   * Hands over the buckets of every minute that has ended by `now`, and keeps the open minute's
+   * buckets for a later drain. For an exporter that must send each minute once and whole, such as
+   * a delta OTLP bridge: with {@link drain}, the rest of a minute flushed early would go out as a
+   * second point over the same interval.
+   *
+   * @param now - The instant whose minute is still open. Defaults to now.
+   * @returns The closed buckets, oldest minute first.
+   */
+  drainClosed(now: DateTime = DateTime.now()): MetricBucket[] {
+    const open = minuteOf(now).toMillis();
+    const closed: MetricBucket[] = [];
+    for (const [id, bucket] of this.open) {
+      if (bucket.start.toMillis() < open) {
+        closed.push(bucket);
+        this.open.delete(id);
+      }
+    }
+    return closed.sort((a, b) => a.start.toMillis() - b.start.toMillis());
   }
 
   /** How many buckets are waiting to be drained. */

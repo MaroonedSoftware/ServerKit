@@ -60,6 +60,24 @@ describe('MetricsRecorder', () => {
     });
   });
 
+  describe('drainClosed', () => {
+    it('hands over ended minutes and keeps the open one, whose later observations merge in', () => {
+      const recorder = new MetricsRecorder();
+      recorder.observe('a', 1, {}, at('2026-10-16T12:00:10Z'));
+      recorder.observe('a', 2, {}, at('2026-10-16T12:01:10Z'));
+
+      const closed = recorder.drainClosed(at('2026-10-16T12:01:30Z'));
+      expect(closed.map(b => b.start.minute)).toEqual([0]);
+      expect(recorder.pending).toBe(1);
+
+      recorder.observe('a', 3, {}, at('2026-10-16T12:01:50Z'));
+      const [rest, ...none] = recorder.drainClosed(at('2026-10-16T12:02:00Z'));
+      expect(none).toHaveLength(0);
+      expect(rest?.aggregate).toEqual({ count: 2, sum: 5, min: 2, max: 3, last: 3 });
+      expect(recorder.pending).toBe(0);
+    });
+  });
+
   describe('gauges', () => {
     it('samples each registered gauge at the sampling instant', async () => {
       const recorder = new MetricsRecorder();
