@@ -749,6 +749,9 @@ switch (result.kind) {
       // Issue a session for result.actorId
     }
     break;
+  case 'stepped-up':
+    // Only for intent: 'step-up'. Judge result.profile.amr / acr / authTime; nothing was linked.
+    break;
   case 'new-user':
     if (result.emailConflict) {
       // An account with this email already exists but the IdP didn't claim it
@@ -762,6 +765,24 @@ switch (result.kind) {
 ```
 
 **Account linking.** Pass `intent: 'link'` and an existing `actorId` on `beginAuthorization` to attach an additional provider to a signed-in user. Every result carries the `intent` the flow began with. When the provider identity already belongs to a different account, `completeAuthorization` throws a 409 and records `oidc.link.rejected` with reason `subject_taken`, rather than signing the caller in as that other account. An identity already on the linking account answers `signed-in` with `intent: 'link'`.
+
+**Per-request authorize parameters.** Pass `authorizeParams` on `beginAuthorization` to send `login_hint`, `max_age`, `prompt`, or `acr_values` for this request only. They are merged over the provider's configured `authorizeParams` and win on a conflict; other keys are ignored, so the request cannot override `state`, `nonce`, PKCE, `redirect_uri`, or `scope`. When the effective request carries `max_age` (from either side), it is kept with the state record and `completeAuthorization` passes it to openid-client's code grant, which requires `auth_time` in the id_token and rejects one older than `max_age` seconds. A `max_age` that is not a non-negative integer is a 400.
+
+```typescript
+await oidc.beginAuthorization({
+  provider: 'acme',
+  intent: 'sign-in',
+  authorizeParams: { login_hint: 'pat@acme.example', prompt: 'login' },
+});
+```
+
+**Authentication claims.** `OidcProfile` carries the IdP's `amr` (as `string[]`, non-string entries dropped), `acr`, and `auth_time` (as a UTC `DateTime` on `authTime`), read from the merged id_token and userinfo claims. Each is `undefined` when the IdP sends none or a malformed value. The raw values stay on `rawClaims`.
+
+**Step-up through the IdP.** Pass `intent: 'step-up'` with the signed-in `actorId`, typically with `authorizeParams: { max_age: 0 }`, to make the user re-authenticate at the IdP. `completeAuthorization` answers `kind: 'stepped-up'` when the returned `(provider, subject)` is a factor of that actor, with a fresh profile to judge (`amr`, `acr`, `authTime`). It never links, auto-links, creates, or updates a factor, and never stages a new user. An identity that is not a factor of the actor is a 403 recorded as `oidc.step_up.rejected` with reason `not_linked`; a success records `oidc.stepped_up`.
+
+```typescript
+await oidc.beginAuthorization({ provider: 'acme', intent: 'step-up', actorId, authorizeParams: { max_age: 0 } });
+```
 
 **Auto-link by verified email.** When sign-in finds no `(provider, subject)` mapping but the IdP returns a verified email matching an existing actor (via `OidcActorEmailLookup`), the service auto-creates the factor on that actor and returns `kind: 'linked'`. Unverified-email matches do **not** auto-link — they return `kind: 'new-user'` with `emailConflict` set so the UI can require sign-in to the existing account before linking.
 
@@ -1912,17 +1933,17 @@ Abstract class and DI token. Implement `list(): Promise<readonly OidcProviderCon
 
 ### `OidcFactorService`
 
-| Method                                                               | Returns                                                                   | Description                                                                                                                     |
-| -------------------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `beginAuthorization({ provider, intent, actorId?, redirectAfter? })` | `Promise<{ url: URL; state; expiresAt: DateTime }>`                       | Build the IdP authorize URL and cache the round-trip state record (state, nonce, PKCE verifier)                                 |
-| `completeAuthorization({ params })`                                  | `Promise<OidcAuthorizationResult>`                                        | Exchange the auth code, validate the id_token, fetch userinfo, and resolve to a factor; 409 when a link's identity is taken     |
-| `createFactorFromAuthorization(actorId, authorizationId)`            | `Promise<OidcFactor>`                                                     | Complete the `new-user` branch by attaching the cached profile to a freshly created actor                                       |
-| `refreshAccessToken(actorId, factorId)`                              | `Promise<{ accessToken; expiresAt: DateTime \| null; scope?; idToken? }>` | Rotate the access token using the persisted refresh token; re-encrypts a rotated refresh token automatically                    |
-| `hasPendingAuthorization(authorizationId)`                           | `Promise<boolean>`                                                        | Check whether a `new-user` pending authorization is still cached and unconsumed                                                 |
-| `stashAuthenticatedExchange({ actorId, factorId, isNewUser? })`      | `Promise<string>`                                                         | Stash a completed authorization under a one-time `exchangeId` so a follow-up route (e.g. an MFA gate) can pick the flow back up |
-| `redeemAuthenticatedExchange(exchangeId)`                            | `Promise<OidcAuthenticatedExchange \| null>`                              | Single-use redeem of a stash from `stashAuthenticatedExchange`. Returns `null` if expired or already consumed                   |
+| Method                                                                                 | Returns                                                                   | Description                                                                                                                                                                                                              |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `beginAuthorization({ provider, intent, actorId?, redirectAfter?, authorizeParams? })` | `Promise<{ url: URL; state; expiresAt: DateTime }>`                       | Build the IdP authorize URL and cache the round-trip state record (state, nonce, PKCE verifier, `max_age`). `authorizeParams` (`login_hint`, `max_age`, `prompt`, `acr_values`) merge over the provider's                |
+| `completeAuthorization({ params })`                                                    | `Promise<OidcAuthorizationResult>`                                        | Exchange the auth code, validate the id_token (and `auth_time` when `max_age` was asked), fetch userinfo, and resolve to a factor; 409 when a link's identity is taken, 403 when a step-up's identity is not the actor's |
+| `createFactorFromAuthorization(actorId, authorizationId)`                              | `Promise<OidcFactor>`                                                     | Complete the `new-user` branch by attaching the cached profile to a freshly created actor                                                                                                                                |
+| `refreshAccessToken(actorId, factorId)`                                                | `Promise<{ accessToken; expiresAt: DateTime \| null; scope?; idToken? }>` | Rotate the access token using the persisted refresh token; re-encrypts a rotated refresh token automatically                                                                                                             |
+| `hasPendingAuthorization(authorizationId)`                                             | `Promise<boolean>`                                                        | Check whether a `new-user` pending authorization is still cached and unconsumed                                                                                                                                          |
+| `stashAuthenticatedExchange({ actorId, factorId, isNewUser? })`                        | `Promise<string>`                                                         | Stash a completed authorization under a one-time `exchangeId` so a follow-up route (e.g. an MFA gate) can pick the flow back up                                                                                          |
+| `redeemAuthenticatedExchange(exchangeId)`                                              | `Promise<OidcAuthenticatedExchange \| null>`                              | Single-use redeem of a stash from `stashAuthenticatedExchange`. Returns `null` if expired or already consumed                                                                                                            |
 
-`OidcAuthorizationResult` is a discriminated union with `kind` ∈ `'signed-in' | 'linked' | 'new-user'`, and every variant carries `intent: 'sign-in' | 'link'`. The `'new-user'` branch carries `authorizationId` and an optional `emailConflict: { actorId; reason: 'unverified-email' }` when the IdP-claimed email matches an existing actor but is unverified.
+`OidcAuthorizationResult` is a discriminated union with `kind` ∈ `'signed-in' | 'linked' | 'new-user' | 'stepped-up'`. The first three carry `intent: 'sign-in' | 'link'`; `'stepped-up'` carries `intent: 'step-up'` with `actorId`, `factorId`, and `profile`, and is the only result a `step-up` flow returns. `OidcAuthorizationIntent` is `'sign-in' | 'link' | 'step-up'` and `OidcAuthorizeParams` is `{ login_hint?; max_age?: number; prompt?; acr_values? }`. `OidcProfile` adds `amr?: string[]`, `acr?: string`, and `authTime?: DateTime`. The `'new-user'` branch carries `authorizationId` and an optional `emailConflict: { actorId; reason: 'unverified-email' }` when the IdP-claimed email matches an existing actor but is unverified.
 
 `OidcAuthenticatedExchange`: `{ actorId; factorId; isNewUser? }`. Carries the bare facts needed to mint a session after the gate clears — `isNewUser` is true when the actor was created during this exchange (typically forwarded from a `new-user` completion).
 

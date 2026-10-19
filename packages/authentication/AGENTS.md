@@ -99,16 +99,16 @@ by area; type aliases for provider-specific payload shapes are grouped rather th
 Every factor follows the same shape: a `<Name>FactorService` (+ usually a `<Name>FactorServiceOptions`
 class) and an abstract `<Name>FactorRepository` you implement.
 
-| Factor          | Service                      | Repository                      | Notes                                                                                                                             |
-| --------------- | ---------------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Password        | `PasswordFactorService`      | `PasswordFactorRepository`      | Types: `PasswordFactor`, `PasswordValue`.                                                                                         |
-| Email           | `EmailFactorService`         | `EmailFactorRepository`         | OTP and magic link, one pending challenge slot each. Type: `EmailFactor`.                                                         |
-| Phone           | `PhoneFactorService`         | `PhoneFactorRepository`         | OTP. Type: `PhoneFactor`.                                                                                                         |
-| Authenticator   | `AuthenticatorFactorService` | `AuthenticatorFactorRepository` | TOTP/HOTP. Types: `AuthenticatorFactor`, `AuthenticatorFactorOptions`. The repository must implement `updateFactorCounter`.       |
-| FIDO / WebAuthn | `FidoFactorService`          | `FidoFactorRepository`          | Types: `FidoFactor`, `PublicKeyCredential*`, `AuthenticatorTransport`, `RegisterFidoFactorOptions`, `AuthorizeFidoFactorOptions`. |
-| OIDC            | `OidcFactorService`          | `OidcFactorRepository`          | Plus `OidcActorEmailLookup`, `OidcProfile`, `OidcAuthorizationResult`, `OidcAuthenticatedExchange`.                               |
-| OAuth2          | `OAuth2FactorService`        | `OAuth2FactorRepository`        | Plus `OAuth2ActorEmailLookup`, `OAuth2Profile`, `OAuth2Tokens`.                                                                   |
-| Recovery codes  | `RecoveryFactorService`      | `RecoveryCodeFactorRepository`  | Single-use. Types: `RecoveryCodeFactor`, `RecoveryCodeValue`.                                                                     |
+| Factor          | Service                      | Repository                      | Notes                                                                                                                                                 |
+| --------------- | ---------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Password        | `PasswordFactorService`      | `PasswordFactorRepository`      | Types: `PasswordFactor`, `PasswordValue`.                                                                                                             |
+| Email           | `EmailFactorService`         | `EmailFactorRepository`         | OTP and magic link, one pending challenge slot each. Type: `EmailFactor`.                                                                             |
+| Phone           | `PhoneFactorService`         | `PhoneFactorRepository`         | OTP. Type: `PhoneFactor`.                                                                                                                             |
+| Authenticator   | `AuthenticatorFactorService` | `AuthenticatorFactorRepository` | TOTP/HOTP. Types: `AuthenticatorFactor`, `AuthenticatorFactorOptions`. The repository must implement `updateFactorCounter`.                           |
+| FIDO / WebAuthn | `FidoFactorService`          | `FidoFactorRepository`          | Types: `FidoFactor`, `PublicKeyCredential*`, `AuthenticatorTransport`, `RegisterFidoFactorOptions`, `AuthorizeFidoFactorOptions`.                     |
+| OIDC            | `OidcFactorService`          | `OidcFactorRepository`          | Plus `OidcActorEmailLookup`, `OidcProfile`, `OidcAuthorizationResult`, `OidcAuthorizationIntent`, `OidcAuthorizeParams`, `OidcAuthenticatedExchange`. |
+| OAuth2          | `OAuth2FactorService`        | `OAuth2FactorRepository`        | Plus `OAuth2ActorEmailLookup`, `OAuth2Profile`, `OAuth2Tokens`.                                                                                       |
+| Recovery codes  | `RecoveryFactorService`      | `RecoveryCodeFactorRepository`  | Single-use. Types: `RecoveryCodeFactor`, `RecoveryCodeValue`.                                                                                         |
 
 | Export                                                | Kind      | Shape                                                                                     | Notes                                       |
 | ----------------------------------------------------- | --------- | ----------------------------------------------------------------------------------------- | ------------------------------------------- |
@@ -503,6 +503,14 @@ everywhere else pass nothing, and resource tokens are refused. Answer a 401 ther
   records `oidc.link.rejected` with `subject_taken` and throws, so a callback cannot mint a session for
   the other account. Every `OidcAuthorizationResult` carries `intent`; branch on it to keep the
   caller's session on a link.
+- **Per-request `authorizeParams` only forward `login_hint`, `max_age`, `prompt`, `acr_values`.** They
+  merge over the provider's `authorizeParams` and win. Any effective `max_age` (either side) is stored
+  with the state and passed to openid-client's code grant as `maxAge`, so a missing or stale `auth_time`
+  fails `completeAuthorization`. Don't rely on `prompt: 'login'` alone for step-up: IdPs may skip it.
+- **`step-up` answers `stepped-up` or throws, and changes nothing.** It needs `actorId`, checks the
+  returned `(provider, subject)` is that actor's factor (403 and `oidc.step_up.rejected` otherwise), and
+  never links, auto-links, creates, or refreshes a factor. Judge `profile.amr` / `acr` / `authTime`
+  yourself. An exhaustive `switch` on `result.kind` needs a `'stepped-up'` case.
 - **`oidc.linked.auto` / `oauth2.linked.auto` are the takeover-adjacent path.** The package links a
   provider identity to an existing account on a verified-email match alone, so anyone who can get an
   identity provider to assert an address gains that account. Recorded with provider, subject, and

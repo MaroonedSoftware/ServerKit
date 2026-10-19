@@ -36,6 +36,10 @@ export type OidcProviderConfig = {
   /**
    * Extra query parameters appended to the authorization request — e.g.
    * `{ access_type: 'offline', prompt: 'consent' }` for Google to issue a refresh token.
+   *
+   * Per-request `authorizeParams` on `OidcFactorService.beginAuthorization` are merged
+   * over these and win on a conflict. A `max_age` here is enforced like a per-request one:
+   * the id_token must then carry a conforming `auth_time`.
    */
   authorizeParams?: Record<string, string>;
   /**
