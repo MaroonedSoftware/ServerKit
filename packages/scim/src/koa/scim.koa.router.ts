@@ -2,17 +2,35 @@ import type { ServerKitContext, ServerKitRouterMiddleware } from '@maroonedsoftw
 import { bodyParserMiddleware, ServerKitRouter } from '@maroonedsoftware/koa';
 import type Router from '@koa/router';
 import { SCIM_MEDIA_TYPE } from '../scim.media.type.js';
-import { createScimRouteTable, type ScimEndpointOptions } from '../http/scim.endpoints.js';
+import { createScimRouteTable, scimServicesFrom, type ScimEndpointOptions, type ScimServices } from '../http/scim.endpoints.js';
+import { ScimUserService } from '../services/scim.user.service.js';
+import { ScimGroupService } from '../services/scim.group.service.js';
+import { ScimServiceProviderService } from '../services/scim.service.provider.service.js';
 
 /**
- * Options for {@link createScimRouter}. The caller constructs the three
- * services (wiring them to their backing repositories and a logger) and
- * hands them in.
+ * Options for {@link createScimRouter}. The caller either constructs the three services (wiring
+ * them to their backing repositories and a logger) and hands them in, or passes `resolveServices`,
+ * called with each request's context (see {@link fromRequestContainer}).
  */
-export interface CreateScimRouterOptions extends ScimEndpointOptions {
+export type CreateScimRouterOptions = ScimEndpointOptions<ServerKitContext> & {
   /** Optional middleware mounted on every route (e.g. `requireScimScope('users:read')`). */
   routeGuards?: ServerKitRouterMiddleware[];
-}
+};
+
+/**
+ * A `resolveServices` for {@link createScimRouter} that takes the three SCIM services from the
+ * request's scoped container (`ctx.container`, set by `serverKitContextMiddleware`). Register
+ * `ScimUserService`, `ScimGroupService` and `ScimServiceProviderService`, with your repositories
+ * request-scoped, so each request's repositories see its own transaction or tenant.
+ *
+ * @param ctx - The request's context.
+ * @returns The services resolved from the request's container.
+ */
+export const fromRequestContainer = (ctx: ServerKitContext): ScimServices => ({
+  userService: ctx.container.get(ScimUserService),
+  groupService: ctx.container.get(ScimGroupService),
+  serviceProviderService: ctx.container.get(ScimServiceProviderService),
+});
 
 /**
  * Build a SCIM 2.0 server router. Mount it inside a Koa app that already has
@@ -37,6 +55,7 @@ export const createScimRouter = (options: CreateScimRouterOptions): Router<unkno
   const router = ServerKitRouter();
   const guards = options.routeGuards ?? [];
   const json = bodyParserMiddleware([SCIM_MEDIA_TYPE, 'application/json']);
+  const servicesFor = scimServicesFrom(options);
 
   for (const route of createScimRouteTable(options)) {
     const middleware: ServerKitRouterMiddleware[] = route.body ? [...guards, json] : [...guards];
@@ -48,7 +67,12 @@ export const createScimRouter = (options: CreateScimRouterOptions): Router<unkno
         async ctx => {
           // `bodyParserMiddleware` writes the parsed request body to `ctx.parsedBody`
           // (distinct from `ctx.body`, which is the response).
-          const response = await route.handler({ params: ctx.params, query: ctx.query, body: ctx.parsedBody });
+          const response = await route.handler({
+            params: ctx.params,
+            query: ctx.query,
+            body: ctx.parsedBody,
+            services: await servicesFor(ctx),
+          });
           ctx.status = response.status;
           if (response.body !== undefined) {
             ctx.body = response.body;

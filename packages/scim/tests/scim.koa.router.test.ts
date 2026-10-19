@@ -36,7 +36,7 @@ class TestJsonParser extends ServerKitParser {
   }
 }
 
-const buildApp = (options: { authenticated?: boolean; scopes?: string[]; baseUrl?: string } = {}) => {
+const buildApp = (options: { authenticated?: boolean; scopes?: string[]; baseUrl?: string; perRequest?: boolean } = {}) => {
   const userRepository = new InMemoryUserRepository();
   const groupRepository = new InMemoryGroupRepository();
 
@@ -56,13 +56,17 @@ const buildApp = (options: { authenticated?: boolean; scopes?: string[]; baseUrl
   const groupService = new ScimGroupService(groupRepository, silentLogger);
   const serviceProviderService = new ScimServiceProviderService();
 
-  const router = createScimRouter({
-    userService,
-    groupService,
-    serviceProviderService,
-    routeGuards: [requireScimScope('scim')],
-    baseUrl: options.baseUrl,
-  });
+  const resolved: unknown[] = [];
+  const settings = { routeGuards: [requireScimScope('scim')], baseUrl: options.baseUrl };
+  const router = options.perRequest
+    ? createScimRouter({
+        ...settings,
+        resolveServices: ctx => {
+          resolved.push(ctx);
+          return { userService, groupService, serviceProviderService };
+        },
+      })
+    : createScimRouter({ userService, groupService, serviceProviderService, ...settings });
 
   const app = new Koa();
   app.use(scimErrorMiddleware());
@@ -86,8 +90,23 @@ const buildApp = (options: { authenticated?: boolean; scopes?: string[]; baseUrl
   app.use(router.routes());
   app.use(router.allowedMethods());
 
-  return { app, userRepository, groupRepository };
+  return { app, userRepository, groupRepository, resolved };
 };
+
+describe('createScimRouter — per-request services', () => {
+  it('calls resolveServices with each request and answers with what it returns', async () => {
+    const { app, resolved } = buildApp({ perRequest: true });
+    const server = app.callback();
+    const created = await request(server)
+      .post('/Users')
+      .set('Content-Type', SCIM_MEDIA_TYPE)
+      .send(JSON.stringify({ userName: 'bjensen' }));
+    expect(created.status).toBe(201);
+    const listed = await request(server).get('/Users');
+    expect(listed.body.totalResults).toBe(1);
+    expect(resolved).toHaveLength(2);
+  });
+});
 
 describe('createScimRouter — integration', () => {
   describe('Users', () => {

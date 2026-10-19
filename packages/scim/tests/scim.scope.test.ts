@@ -35,6 +35,34 @@ describe('hasScimScope', () => {
   });
 });
 
+describe('hasScimScope with delegated sessions', () => {
+  const delegated = (claims: Record<string, unknown>): AuthenticationSession =>
+    ({ sessionToken: 't', subject: 's', factors: [], claims }) as unknown as AuthenticationSession;
+  const apiKey = (scopes: string[]) => ({ id: 'k', name: 'idp', owner: { kind: 'service', actorId: 'a' }, scopes, metadata: {} });
+
+  it("reads an API key session's scopes", () => {
+    expect(hasScimScope(delegated({ apiKey: apiKey(['scim']) }), 'scim')).toBe(true);
+    expect(hasScimScope(delegated({ apiKey: apiKey(['other']) }), 'scim')).toBe(false);
+  });
+
+  it("grants anything to an API key's wildcard", () => {
+    expect(hasScimScope(delegated({ apiKey: apiKey(['*']) }), 'scim:write')).toBe(true);
+  });
+
+  it("reads an OAuth grant's scopes", () => {
+    const oauth = { clientId: 'c', resource: 'https://api.example.com', scope: ['scim'] };
+    expect(hasScimScope(delegated({ oauth }), 'scim')).toBe(true);
+  });
+
+  it('prefers scimScopes over the delegated scopes when both are present', () => {
+    expect(hasScimScope(delegated({ scimScopes: ['scim:read'], apiKey: apiKey(['scim:write']) }), 'scim:write')).toBe(false);
+  });
+
+  it('denies a session with no claims', () => {
+    expect(hasScimScope(delegated(undefined as unknown as Record<string, unknown>), 'scim')).toBe(false);
+  });
+});
+
 describe('assertScimScope', () => {
   it('passes when the scope is granted', () => {
     expect(() => assertScimScope(session(['scim']), 'scim')).not.toThrow();

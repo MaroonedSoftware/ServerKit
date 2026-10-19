@@ -109,21 +109,22 @@ dependencies: `@maroonedsoftware/authentication`, `@maroonedsoftware/errors`,
 
 ### Scope helpers and media type (root)
 
-| Export            | Kind     | Shape                                      | Notes                                                                                                                                                             |
-| ----------------- | -------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `hasScimScope`    | function | `(session \| undefined, scope) => boolean` | Reads `session.claims.scimScopes`; `*` grants everything; a non-array denies.                                                                                     |
-| `assertScimScope` | function | `(session \| undefined, scope) => void`    | Throws `ScimError` 401 (with `WWW-Authenticate`) for a missing/invalid session, 403 `insufficientScope` otherwise. Every transport's `requireScimScope` calls it. |
-| `SCIM_MEDIA_TYPE` | constant | `'application/scim+json'`                  | —                                                                                                                                                                 |
+| Export            | Kind     | Shape                                      | Notes                                                                                                                                                                  |
+| ----------------- | -------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `hasScimScope`    | function | `(session \| undefined, scope) => boolean` | Reads `session.claims.scimScopes`, else the session's delegated scopes (`getSessionScopes`: an API key's or OAuth grant's); `*` grants everything; a non-array denies. |
+| `assertScimScope` | function | `(session \| undefined, scope) => void`    | Throws `ScimError` 401 (with `WWW-Authenticate`) for a missing/invalid session, 403 `insufficientScope` otherwise. Every transport's `requireScimScope` calls it.      |
+| `SCIM_MEDIA_TYPE` | constant | `'application/scim+json'`                  | —                                                                                                                                                                      |
 
 ### Koa transport (`@maroonedsoftware/scim/koa`)
 
-| Export                      | Kind      | Shape                                                                                        | Notes                                                                                                                                              |
-| --------------------------- | --------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `scimErrorMiddleware`       | function  | `() => ServerKitMiddleware`                                                                  | **Replaces** `errorMiddleware()` on the SCIM mountpoint.                                                                                           |
-| `scimContentTypeMiddleware` | function  | `() => ServerKitMiddleware`                                                                  | Enforces `application/scim+json`.                                                                                                                  |
-| `requireScimScope`          | function  | `(scope: string) => ServerKitRouterMiddleware`                                               | Reads `ctx.authenticationSession.claims.scimScopes`. `*` grants everything.                                                                        |
-| `createScimRouter`          | function  | `(options: CreateScimRouterOptions) => Router<unknown, ServerKitContext>`                    | Mounts every endpoint below.                                                                                                                       |
-| `CreateScimRouterOptions`   | interface | `{ userService, groupService, serviceProviderService, routeGuards?, maxResults?, baseUrl? }` | `maxResults` defaults to the service-provider config's `filter.maxResults`, then 200. Set `baseUrl` whenever the router is mounted under a prefix. |
+| Export                      | Kind     | Shape                                                                                                                          | Notes                                                                                                                                              |
+| --------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scimErrorMiddleware`       | function | `() => ServerKitMiddleware`                                                                                                    | **Replaces** `errorMiddleware()` on the SCIM mountpoint.                                                                                           |
+| `scimContentTypeMiddleware` | function | `() => ServerKitMiddleware`                                                                                                    | Enforces `application/scim+json`.                                                                                                                  |
+| `requireScimScope`          | function | `(scope: string) => ServerKitRouterMiddleware`                                                                                 | Reads `ctx.authenticationSession.claims.scimScopes`, else its delegated scopes. `*` grants everything.                                             |
+| `createScimRouter`          | function | `(options: CreateScimRouterOptions) => Router<unknown, ServerKitContext>`                                                      | Mounts every endpoint below.                                                                                                                       |
+| `CreateScimRouterOptions`   | type     | `{ userService, groupService, serviceProviderService } \| { resolveServices }`, plus `{ routeGuards?, maxResults?, baseUrl? }` | `maxResults` defaults to the service-provider config's `filter.maxResults`, then 200. Set `baseUrl` whenever the router is mounted under a prefix. |
+| `fromRequestContainer`      | function | `(ctx: ServerKitContext) => ScimServices`                                                                                      | A `resolveServices` taking the three services from `ctx.container`.                                                                                |
 
 Endpoints mounted: `GET|POST /Users`, `GET|PUT|PATCH|DELETE /Users/:id`, `POST /Users/.search`, the
 same six plus `.search` for `/Groups`, and `GET /Schemas`, `/Schemas/:id`, `/ResourceTypes`,
@@ -131,11 +132,12 @@ same six plus `.search` for `/Groups`, and `GET /Schemas`, `/Schemas/:id`, `/Res
 
 ### Fastify transport (`@maroonedsoftware/scim/fastify`)
 
-| Export              | Kind      | Shape                                                                                        | Notes                                                                                                                                                                                   |
-| ------------------- | --------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `scimRoutes`        | function  | `(options: ScimRoutesOptions) => FastifyPluginAsync`                                         | Encapsulated plugin mounting the same endpoints as `createScimRouter`, with a scoped SCIM error handler, a scoped SCIM 404 (under a prefix), and `application/scim+json` body handling. |
-| `ScimRoutesOptions` | interface | `{ userService, groupService, serviceProviderService, routeGuards?, maxResults?, baseUrl? }` | `routeGuards` are `preHandlerAsyncHookHandler`s. Same `maxResults` / `baseUrl` semantics as Koa.                                                                                        |
-| `requireScimScope`  | function  | `(scope: string) => preHandlerAsyncHookHandler`                                              | Reads `request.authenticationSession.claims.scimScopes` via `assertScimScope`. `*` grants everything.                                                                                   |
+| Export                 | Kind     | Shape                                                                                                                          | Notes                                                                                                                                                                                   |
+| ---------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scimRoutes`           | function | `(options: ScimRoutesOptions) => FastifyPluginAsync`                                                                           | Encapsulated plugin mounting the same endpoints as `createScimRouter`, with a scoped SCIM error handler, a scoped SCIM 404 (under a prefix), and `application/scim+json` body handling. |
+| `ScimRoutesOptions`    | type     | `{ userService, groupService, serviceProviderService } \| { resolveServices }`, plus `{ routeGuards?, maxResults?, baseUrl? }` | `routeGuards` are `preHandlerAsyncHookHandler`s. Same `maxResults` / `baseUrl` semantics as Koa.                                                                                        |
+| `fromRequestContainer` | function | `(request: FastifyRequest) => ScimServices`                                                                                    | A `resolveServices` taking the three services from `request.container`.                                                                                                                 |
+| `requireScimScope`     | function | `(scope: string) => preHandlerAsyncHookHandler`                                                                                | Reads `request.authenticationSession.claims.scimScopes`, else its delegated scopes, via `assertScimScope`. `*` grants everything.                                                       |
 
 ## Canonical usage
 
@@ -211,8 +213,9 @@ builder.setupPlugins().setupRoutes([
   filter string, which is the point.
 - Return the **filter-matching total** in `ScimListResult.totalResults`, not the page length.
   Provisioning clients paginate on it, and a wrong value makes Okta or Entra loop or truncate.
-- Populate `claims.scimScopes` (a string array) when minting the bearer session, or every request
-  gets a 403.
+- Populate `claims.scimScopes` (a string array) when minting the bearer session, or give the
+  `ApiKeyService` key (or OAuth grant) the scope, which the guard reads when `scimScopes` is absent.
+  Otherwise every request gets a 403.
 - Honour `count: 0` by returning an empty `Resources` array with the real `totalResults`, per RFC
   7644 §3.4.2.4. The router already parses it that way from both the query string and a `.search`
   body; a repository that treats `0` as "unset" breaks the count probe Okta and Entra make on
@@ -229,6 +232,13 @@ builder.setupPlugins().setupRoutes([
   during setup and fail the connection without them.
 
 ## Gotchas
+
+- **Request-scoped repositories need `resolveServices`.** Services handed in as instances are built
+  once, when the routes are mounted, so their repositories cannot see a request's transaction or
+  tenant. Pass `resolveServices` instead (`fromRequestContainer` resolves the three services from
+  the request's scoped container); it runs after the route guards, once per request.
+- **`scimScopes` wins over delegated scopes.** When a session carries `claims.scimScopes`, the
+  guard reads only that and ignores the key's or grant's scopes, even if they would grant more.
 
 - **`requireScimScope` grants everything on a `*` scope.** A session minted with
   `scimScopes: ['*']` bypasses every per-route check. Convenient in development, dangerous if it
