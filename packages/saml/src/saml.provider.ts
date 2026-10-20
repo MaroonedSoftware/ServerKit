@@ -1,5 +1,6 @@
 import { Injectable } from 'injectkit';
 import { httpError } from '@maroonedsoftware/errors';
+import type { SamlProfile } from './saml.factor.service.js';
 
 /**
  * The SP's own key pair for encrypted assertions. The private key decrypts; the certificate
@@ -52,6 +53,40 @@ export type SamlProviderConfig = {
    * {@link DEFAULT_SAML_NAME_ID_FORMAT}.
    */
   nameIdFormat?: string;
+  /**
+   * Attribute names to read the profile's email and display name from, when the IdP uses names
+   * the defaults do not cover. See {@link SamlProfileAttributeNames}.
+   */
+  attributeNames?: SamlProfileAttributeNames;
+  /**
+   * Decides whether this provider's asserted email address may auto-link a sign-in to an existing
+   * account. SAML has no `email_verified`, so **without this hook an address is never trusted**:
+   * a sign-in with an unknown NameID whose email matches an account answers `new-user` with an
+   * `emailConflict` instead of linking.
+   *
+   * Return `true` only when the address is one the IdP is authoritative for, for example a
+   * domain the organization behind this connection has verified. Called only after the
+   * assertion has been validated and the `auth.factor.saml.profile.allowed` policy allowed it.
+   */
+  trustEmail?: (profile: SamlProfile) => boolean | Promise<boolean>;
+};
+
+/**
+ * Attribute names {@link SamlFactorService} reads a profile's email and display name from.
+ * Each list is tried in order and the first attribute with a value wins; a configured name is
+ * tried before the defaults.
+ *
+ * Defaults cover Okta, Entra ID and Google: email from `email`, `mail`,
+ * `urn:oid:0.9.2342.19200300.100.1.3` and the WS-Federation `emailaddress` claim, falling back to
+ * the NameID when its format is `emailAddress`; name from `name`, `displayName`,
+ * `urn:oid:2.16.840.1.113730.3.1.241` and the Microsoft `displayname` claim, falling back to
+ * given name and surname joined with a space.
+ */
+export type SamlProfileAttributeNames = {
+  /** Attribute holding the user's email address. */
+  email?: string;
+  /** Attribute holding the user's display name. */
+  name?: string;
 };
 
 /** The NameID format used when a provider sets none: `emailAddress`, which Okta, Entra ID and Google all issue. */

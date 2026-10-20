@@ -743,9 +743,18 @@ importers:
 
   packages/saml:
     dependencies:
+      '@maroonedsoftware/authentication':
+        specifier: workspace:*
+        version: link:../authentication
+      '@maroonedsoftware/cache':
+        specifier: workspace:*
+        version: link:../cache
       '@maroonedsoftware/errors':
         specifier: workspace:*
         version: link:../errors
+      '@maroonedsoftware/policies':
+        specifier: workspace:*
+        version: link:../policies
       '@node-saml/node-saml':
         specifier: ^5.1.0
         version: 5.1.0
@@ -768,6 +777,9 @@ importers:
       '@types/luxon':
         specifier: ^3.7.5
         version: 3.7.5
+      xml-crypto:
+        specifier: ^6.4.0
+        version: 6.4.0
 
   packages/scim:
     dependencies:

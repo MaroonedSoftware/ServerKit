@@ -1320,6 +1320,7 @@ minor release may add a member.
 | `fido.*`          | Registration, enrolment, assertion outcomes, removal                        |
 | `oidc.*`          | Authorization outcomes, sign-in, account linking, factor lifecycle          |
 | `oauth2.*`        | The non-OIDC counterpart to `oidc.*`                                        |
+| `saml.*`          | The SAML counterpart to `oidc.*`, recorded by `@maroonedsoftware/saml`      |
 | `mfa.*`           | Gate decisions, per-factor challenges, completion outcomes                  |
 | `recovery.*`      | Initiation, channel verification, the credential change, session revocation |
 | `api_key.*`       | Issue, authentication, rejection, rotation, revocation                      |

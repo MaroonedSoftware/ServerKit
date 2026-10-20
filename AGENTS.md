@@ -49,7 +49,6 @@ Two audiences use these files:
 | `comms`             | L1      | Channel-agnostic messaging core: router, reply/notifier, template registry                | [comms](./packages/comms/AGENTS.md)                         |
 | `cache`             | L1      | Cache interface with a Redis backend, plus an idempotency store for at-least-once sources | [cache](./packages/cache/AGENTS.md)                         |
 | `kysely`            | L1      | Kysely/PostgreSQL client wiring plus `pg` and Luxon type helpers                          | [kysely](./packages/kysely/AGENTS.md)                       |
-| `saml`              | L1      | SAML 2.0 provider registry, IdP metadata parsing, and SP metadata on node-saml            | [saml](./packages/saml/AGENTS.md)                           |
 | `permissions-dsl`   | L1      | `.perm` surface syntax, compiler, fixtures, and the `pdsl` CLI                            | [permissions-dsl](./packages/permissions-dsl/AGENTS.md)     |
 | `servercore`        | L1      | Framework-agnostic HTTP core: module lifecycle, body parsers, error rendering, SSE        | [servercore](./packages/servercore/AGENTS.md)               |
 | `authentication`    | L2      | Auth factors, scheme handlers, sessions, JWT issuance, API keys, and account recovery     | [authentication](./packages/authentication/AGENTS.md)       |
@@ -61,6 +60,7 @@ Two audiences use these files:
 | `telegram`          | L3      | Telegram Bot API dispatcher with secret-token webhook verification                        | [telegram](./packages/telegram/AGENTS.md)                   |
 | `whatsapp`          | L3      | WhatsApp Cloud API dispatcher with HMAC signature verification                            | [whatsapp](./packages/whatsapp/AGENTS.md)                   |
 | `scim`              | L3      | SCIM 2.0 server toolkit: schemas, filter parser, PATCH applier, Koa and Fastify routes    | [scim](./packages/scim/AGENTS.md)                           |
+| `saml`              | L3      | SAML 2.0 SP on node-saml: provider registry, metadata, and a sign-in factor               | [saml](./packages/saml/AGENTS.md)                           |
 | `johnny5`           | L3      | CLI framework for ServerKit apps, with a doctor runner and plugin discovery               | [johnny5](./packages/johnny5/AGENTS.md)                     |
 | `config-eslint`     | tooling | Shared ESLint flat configs (private, workspace-only)                                      | [config-eslint](./packages/config-eslint/AGENTS.md)         |
 | `config-typescript` | tooling | Shared `tsconfig` bases (private, workspace-only)                                         | [config-typescript](./packages/config-typescript/AGENTS.md) |
@@ -71,10 +71,10 @@ Two audiences use these files:
 Arrows point downward. A package may depend on any lower layer and never on a higher one.
 
 ```
-L3  discord  slack  telegram  whatsapp  scim  johnny5
+L3  discord  slack  telegram  whatsapp  scim  saml  johnny5
 L2  authentication  fastify  koa  mcp
 L1  appconfig  policies  encryption  multipart  zod  storage
-    jobbroker  serverfeed  comms  cache  kysely  permissions-dsl  servercore  saml
+    jobbroker  serverfeed  comms  cache  kysely  permissions-dsl  servercore
 L0  errors  logger  utilities  permissions  eventbus  telemetry
 ```
 

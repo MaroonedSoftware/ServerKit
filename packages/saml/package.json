@@ -1,7 +1,7 @@
 {
   "name": "@maroonedsoftware/saml",
   "version": "0.1.0",
-  "description": "SAML 2.0 service-provider toolkit for ServerKit: per-provider configuration from a pluggable source, IdP metadata parsing, and SP metadata generation on @node-saml/node-saml.",
+  "description": "SAML 2.0 service-provider toolkit for ServerKit: per-provider configuration from a pluggable source, IdP metadata parsing, SP metadata generation, and SP-initiated sign-in as an authentication factor on @node-saml/node-saml.",
   "author": {
     "name": "Marooned Software",
     "url": "https://github.com/MaroonedSoftware/serverkit"
@@ -49,7 +49,10 @@
     "test:ci": "vitest run --coverage"
   },
   "dependencies": {
+    "@maroonedsoftware/authentication": "workspace:*",
+    "@maroonedsoftware/cache": "workspace:*",
     "@maroonedsoftware/errors": "workspace:*",
+    "@maroonedsoftware/policies": "workspace:*",
     "@node-saml/node-saml": "^5.1.0",
     "@xmldom/xmldom": "^0.8.15",
     "injectkit": "^1.7.1",
@@ -58,7 +61,8 @@
   "devDependencies": {
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
-    "@types/luxon": "^3.7.5"
+    "@types/luxon": "^3.7.5",
+    "xml-crypto": "^6.4.0"
   },
   "engines": {
     "node": ">=22"

@@ -7,6 +7,7 @@ export * from './jwt/jwt.authentication.handler.js';
 export * from './jwt/jwt.autentication.issuer.js';
 export * from './basic/basic.authentication.handler.js';
 export * from './basic/basic.authentication.issuer.js';
+export * from './factors/factor.repository.js';
 export * from './factors/authenticator/authenticator.factor.service.js';
 export * from './factors/authenticator/authenticator.factor.repository.js';
 export * from './factors/email/email.factor.service.js';
