@@ -1,5 +1,12 @@
 # @maroonedsoftware/mcp
 
+## 0.7.5
+
+### Patch Changes
+
+- Updated dependencies [bafd84f]
+  - @maroonedsoftware/authentication@6.6.0
+
 ## 0.7.4
 
 ### Patch Changes

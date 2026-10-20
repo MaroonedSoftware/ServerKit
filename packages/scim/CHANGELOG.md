@@ -1,5 +1,13 @@
 # @maroonedsoftware/scim
 
+## 1.1.3
+
+### Patch Changes
+
+- Updated dependencies [bafd84f]
+  - @maroonedsoftware/authentication@6.6.0
+  - @maroonedsoftware/fastify@0.4.10
+
 ## 1.1.2
 
 ### Patch Changes
