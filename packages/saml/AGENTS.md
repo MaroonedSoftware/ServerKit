@@ -148,13 +148,15 @@ if (result.kind === 'new-user') {
   assertion `Issuer` equal `idpEntityId`; node-saml then checks `InResponseTo` (its own store, on
   the same cache), the assertion signature against `idpSigningCertificates` only (the response
   signature is optional), a single assertion, `Audience`, and `NotBefore` / `NotOnOrAfter` with
-  `clockSkew`; then a bearer `SubjectConfirmationData` whose `Recipient` equals `acsUrl` and which
-  has a `NotOnOrAfter`, an assertion `ID`, a NameID, an accepted `AuthnContextClassRef`, a fresh
+  `clockSkew`; then a bearer `SubjectConfirmationData` whose `Recipient` equals `acsUrl`, whose
+  `InResponseTo` is the request id (`does not answer the request`, audit reason `unsolicited`:
+  the response's own `InResponseTo` is unsigned and node-saml accepts a confirmation without one),
+  and whose `NotOnOrAfter` is present and holds within `clockSkew`, an assertion `ID`, a NameID, an accepted `AuthnContextClassRef`, a fresh
   `AuthnInstant` when `ForceAuthn` was sent, and finally the replay store (`cache.add` on the
   issuer and assertion `ID`, kept until the later `NotOnOrAfter` plus skew).
 - **401 `details.assertion` values**: `weak signature algorithm`, `destination mismatch`,
   `issuer mismatch`, `signature invalid`, `audience mismatch`, `outside validity window`,
-  `recipient mismatch`, `authentication context not accepted`, `authentication not fresh`,
+  `recipient mismatch`, `does not answer the request`, `authentication context not accepted`, `authentication not fresh`,
   `already used`, and a few `missing …` ones. node-saml's own message is in `internalDetails.reason`.
 - **SHA-1 inside an `EncryptedAssertion` is not caught**: the algorithm check runs on the
   received document before decryption.

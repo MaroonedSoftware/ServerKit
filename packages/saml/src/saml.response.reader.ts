@@ -31,8 +31,8 @@ export type VerifiedSamlAssertion = {
   issuer?: string;
   /** `Conditions/@NotOnOrAfter`. */
   conditionsNotOnOrAfter?: DateTime;
-  /** Bearer `SubjectConfirmationData` elements: where the assertion may be delivered and until when. */
-  bearerConfirmations: { recipient?: string; notOnOrAfter?: DateTime }[];
+  /** Bearer `SubjectConfirmationData` elements: where the assertion may be delivered, until when, and which request it answers. */
+  bearerConfirmations: { recipient?: string; notOnOrAfter?: DateTime; inResponseTo?: string }[];
   /** `AuthnStatement/@AuthnInstant`. */
   authnInstant?: DateTime;
   /** `AuthnStatement/@SessionIndex`. */
@@ -86,6 +86,7 @@ export function readVerifiedAssertion(xml: string): VerifiedSamlAssertion {
       return {
         ...optional('recipient', data ? attribute(data, 'Recipient') : undefined),
         ...optional('notOnOrAfter', data ? instant(attribute(data, 'NotOnOrAfter')) : undefined),
+        ...optional('inResponseTo', data ? attribute(data, 'InResponseTo') : undefined),
       };
     });
 

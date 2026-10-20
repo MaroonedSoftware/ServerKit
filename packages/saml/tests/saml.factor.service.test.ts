@@ -324,6 +324,22 @@ describe('SamlFactorService', () => {
         expect(failureReasons()).toEqual(['unsolicited']);
       });
 
+      it('an IdP-initiated assertion rewrapped in a response to another request', async () => {
+        // The response's InResponseTo is unsigned; the signed confirmation does not answer the request.
+        const error = await refusal({ subjectConfirmations: [{ inResponseTo: undefined }] });
+        expect(error.statusCode).toBe(401);
+        expect(error.details).toEqual({ assertion: 'does not answer the request' });
+        expect(failureReasons()).toEqual(['unsolicited']);
+      });
+
+      it('an expired confirmation for the ACS, beside a current one for another recipient', async () => {
+        const error = await refusal({
+          subjectConfirmations: [{ recipient: 'https://other.example.test/acs' }, { notOnOrAfter: DateTime.utc().minus({ minutes: 5 }) }],
+        });
+        expect(error.statusCode).toBe(401);
+        expect(error.details).toEqual({ assertion: 'outside validity window' });
+      });
+
       it('a response to a request this service never issued', async () => {
         const service = makeService();
         const error = await service

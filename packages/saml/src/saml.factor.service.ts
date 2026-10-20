@@ -199,6 +199,8 @@ const EMAIL_NAME_ID_FORMAT = 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAdd
  *   cache for {@link SamlFactorServiceOptions.requestExpiration}); IdP-initiated responses are refused;
  * - the assertion is signed by one of the provider's `idpSigningCertificates` (never a `KeyInfo`
  *   certificate), with no SHA-1 signature or digest, and is the only assertion in the response;
+ * - the bearer `SubjectConfirmationData` for `acsUrl` carries that same `InResponseTo` inside the
+ *   signed assertion, and its `NotOnOrAfter` holds;
  * - `Destination` and the bearer `Recipient` equal `acsUrl`; the assertion `Issuer` (and the
  *   response's, when present) equals `idpEntityId`; the `Audience` equals `spEntityId`;
  * - `NotBefore` / `NotOnOrAfter` hold within {@link SamlFactorServiceOptions.clockSkew};
@@ -603,8 +605,23 @@ export class SamlFactorService {
     if (!confirmation) {
       throw invalid('recipient mismatch', { recipients: assertion.bearerConfirmations.map(candidate => candidate.recipient) });
     }
+    // The response's InResponseTo is outside the signature, so only the signed confirmation's binds
+    // the assertion to the request. node-saml accepts a confirmation without one; that is an
+    // unsolicited assertion rewrapped in a response to someone else's request.
+    if (confirmation.inResponseTo !== stored.requestId) {
+      throw new SamlRefusal(
+        401,
+        'unsolicited',
+        { assertion: 'does not answer the request' },
+        { provider, subjectInResponseTo: confirmation.inResponseTo },
+      );
+    }
     if (!confirmation.notOnOrAfter) {
       throw invalid('missing NotOnOrAfter');
+    }
+    // node-saml times the first confirmation valid in time, whatever its recipient, so time this one too.
+    if (confirmation.notOnOrAfter <= DateTime.utc().minus(this.options.clockSkew)) {
+      throw invalid('outside validity window', { subjectNotOnOrAfter: confirmation.notOnOrAfter.toISO() });
     }
     if (!assertion.id) {
       throw invalid('missing assertion ID');

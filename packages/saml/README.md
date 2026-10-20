@@ -175,12 +175,15 @@ To let an organization's IdP vouch for addresses in its verified domains:
 Nothing here can be turned off. A response is refused unless:
 
 - it answers an AuthnRequest this service issued and has not seen answered (`InResponseTo`, held
-  in the cache for `requestExpiration`, ten minutes by default). IdP-initiated responses are refused;
+  in the cache for `requestExpiration`, ten minutes by default), and the signed assertion's bearer
+  `SubjectConfirmationData` carries the same `InResponseTo`. IdP-initiated responses are refused,
+  including an IdP-initiated assertion rewrapped in a response to another request;
 - its assertion is signed by one of the provider's `idpSigningCertificates` (never a certificate
   from the message), with no SHA-1 signature or digest, and is the only assertion;
 - `Destination` and the bearer `SubjectConfirmationData/@Recipient` equal `acsUrl`, the assertion's
   `Issuer` (and the response's, if present) equals `idpEntityId`, and the `Audience` equals `spEntityId`;
-- `NotBefore` / `NotOnOrAfter` hold, within `clockSkew` (60 seconds by default);
+- `NotBefore` / `NotOnOrAfter` hold, on the conditions and on that bearer confirmation, within
+  `clockSkew` (60 seconds by default);
 - its `AuthnContextClassRef` is one of `acceptedAuthnContexts`, when the provider lists any;
 - its assertion `ID` has not been accepted before. Accepted ids are kept until the assertion expires.
 

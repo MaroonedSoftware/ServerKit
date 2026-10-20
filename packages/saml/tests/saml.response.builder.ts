@@ -37,6 +37,12 @@ export type ResponseOptions = {
   authnContextClassRef?: string;
   sessionIndex?: string;
   attributes?: Record<string, string | string[]>;
+  /**
+   * Bearer subject confirmations, replacing the default single one. Each `recipient` defaults to
+   * {@link ACS_URL} and `notOnOrAfter` to the assertion's. `inResponseTo` defaults to the response's;
+   * pass it as `undefined` to leave it out.
+   */
+  subjectConfirmations?: SubjectConfirmationOptions[];
   /** Key the assertion is signed with; `undefined` leaves it unsigned. Defaults to {@link IDP_CURRENT}. */
   signWith?: { key: string; cert: string } | undefined;
   /** Also sign the whole response with this key. */
@@ -48,6 +54,8 @@ export type ResponseOptions = {
   /** Applied to the signed XML before encoding, to tamper with it. */
   mutate?: (xml: string) => string;
 };
+
+export type SubjectConfirmationOptions = { inResponseTo?: string | undefined; recipient?: string; notOnOrAfter?: DateTime };
 
 /** A `samlp:Response` to `options.inResponseTo`, signed as asked, base64-encoded for the POST binding. */
 export function buildResponse(options: ResponseOptions = {}): string {
@@ -66,6 +74,18 @@ export function buildResponseXml(options: ResponseOptions = {}): string {
   const destination = options.destination ?? ACS_URL;
   const responseIssuer = options.responseIssuer ?? issuer;
 
+  const confirmations = (options.subjectConfirmations ?? [{ recipient: options.recipient ?? ACS_URL }])
+    .map(confirmation => {
+      const answers = 'inResponseTo' in confirmation ? confirmation.inResponseTo : options.inResponseTo;
+      return (
+        `<saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">` +
+        `<saml:SubjectConfirmationData${answers === undefined ? '' : ` InResponseTo="${answers}"`} ` +
+        `NotOnOrAfter="${iso(confirmation.notOnOrAfter ?? notOnOrAfter)}" Recipient="${confirmation.recipient ?? ACS_URL}"/>` +
+        `</saml:SubjectConfirmation>`
+      );
+    })
+    .join('');
+
   const attributes = Object.entries(options.attributes ?? { email: 'ada@acme.test', displayName: 'Ada Lovelace' })
     .map(([name, value]) => {
       const values = (Array.isArray(value) ? value : [value]).map(entry => `<saml:AttributeValue>${entry}</saml:AttributeValue>`).join('');
@@ -78,9 +98,7 @@ export function buildResponseXml(options: ResponseOptions = {}): string {
     `<saml:Issuer>${issuer}</saml:Issuer>` +
     `<saml:Subject>` +
     `<saml:NameID Format="${options.nameIdFormat ?? 'urn:oasis:names:tc:SAML:2.0:nameid-format:persistent'}">${options.nameId ?? '00u1ada'}</saml:NameID>` +
-    `<saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">` +
-    `<saml:SubjectConfirmationData${inResponseTo} NotOnOrAfter="${iso(notOnOrAfter)}" Recipient="${options.recipient ?? ACS_URL}"/>` +
-    `</saml:SubjectConfirmation>` +
+    confirmations +
     `</saml:Subject>` +
     `<saml:Conditions NotBefore="${iso(notBefore)}" NotOnOrAfter="${iso(notOnOrAfter)}">` +
     `<saml:AudienceRestriction><saml:Audience>${options.audience ?? SP_ENTITY_ID}</saml:Audience></saml:AudienceRestriction>` +
