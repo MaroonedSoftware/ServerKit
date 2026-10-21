@@ -1,5 +1,31 @@
 # @maroonedsoftware/saml
 
+## 0.3.0
+
+### Minor Changes
+
+- f044b55: **Breaking:** `SamlFactorService.completeAuthorization` now requires `expectedRequestId`, the `requestId` that `beginAuthorization` returned to this browser. Keep it in a cookie (`SameSite=None; Secure`, since the ACS post is cross-site) or the session. A response answering any other request is refused with a 400 (`details.InResponseTo: 'not the expected request'`, audit reason `unsolicited`) before that request is consumed, which stops login CSRF and linking a victim's identity to an attacker's account. When the browser has no stored id, refuse the post or restart the flow.
+
+### Patch Changes
+
+- ab5d46d: Consume single-use cache entries atomically in the OIDC and SAML factors. The OIDC state record, the SAML request record, the pending `new-user` authorization (`createFactorFromAuthorization`), and the authenticated exchange (`redeemAuthenticatedExchange`) are now read with `CacheProvider.take` instead of a `get` followed by a `delete`, so two concurrent requests can no longer both redeem the same entry. Requires a `CacheProvider` that implements `take` (Redis 6.2+ for `IoRedisCacheProvider`).
+- 9c62bf3: Document what apps must enforce around `SamlFactorService` and `OidcFactorService`.
+
+  - New "Caller responsibilities" sections: bind the `requestId` (SAML) or `state` (OIDC) returned by `beginAuthorization` to the browser that started the flow and refuse a callback it did not start, check `result.actorId` against the current session on `linked` and `stepped-up` results, and allow-list `redirectAfter`, which is returned unvalidated.
+  - `SamlProfile.subject` no longer claims to be stable per end-user: under the default `emailAddress` NameID format a reassigned mailbox inherits the old factor. The README recommends the `persistent` format.
+
+- Updated dependencies [6993312]
+- Updated dependencies [4500bab]
+- Updated dependencies [691b176]
+- Updated dependencies [ab5d46d]
+- Updated dependencies [6d74f67]
+- Updated dependencies [44cbc0e]
+- Updated dependencies [a3205b1]
+- Updated dependencies [9c62bf3]
+- Updated dependencies [df15d43]
+  - @maroonedsoftware/authentication@6.7.0
+  - @maroonedsoftware/cache@0.6.0
+
 ## 0.2.0
 
 ### Minor Changes

@@ -1,5 +1,44 @@
 # @maroonedsoftware/authentication
 
+## 6.7.0
+
+### Minor Changes
+
+- 6993312: Consume the remaining single-use cache entries atomically with `CacheProvider.take`, so two concurrent requests can no longer both redeem one entry:
+
+  - `OAuth2FactorService`: the state record and the pending `new-user` authorization.
+  - `RecoveryChallengeService.redeem` and `RecoverySessionService.redeem`.
+  - `AuthorizationCodeService.redeem` (already guarded by its consumed marker; the read and delete are now one call).
+  - Password and FIDO registrations, and the phone, email and FIDO challenge verifications. These still check the code or credential first, so a wrong guess only costs an attempt. The `take` then decides which of two concurrent correct submissions wins. The loser gets a 404, or a 401 `invalid_credentials` for FIDO.
+
+  `PkceProvider` gains `takeChallenge` and `takeVerifier`, which read and delete an entry in one step. Use them instead of `getVerifier` followed by `deleteVerifier`, which two concurrent token requests can both pass.
+
+### Patch Changes
+
+- ab5d46d: Consume single-use cache entries atomically in the OIDC and SAML factors. The OIDC state record, the SAML request record, the pending `new-user` authorization (`createFactorFromAuthorization`), and the authenticated exchange (`redeemAuthenticatedExchange`) are now read with `CacheProvider.take` instead of a `get` followed by a `delete`, so two concurrent requests can no longer both redeem the same entry. Requires a `CacheProvider` that implements `take` (Redis 6.2+ for `IoRedisCacheProvider`).
+- 6d74f67: Track refresh-token families as a chain of successor links instead of a shared list. `rotateSession` now records the session it created under `auth_session_successor_{sessionToken}`, and theft revocation follows those links from the replayed token's session.
+
+  The old family record (`auth_refresh_family_{familyId}`) was read, modified and rewritten on every token issue. So concurrent refreshes and rotations could drop a live session from it, and that session then survived a theft revocation. Its `jtis` list also grew on every issue and was never read. Nothing in the chain is rewritten.
+
+  The successor link is claimed set-if-absent, so of two concurrent rotations of one session only one succeeds and the other gets a 401. A rotation that fails before it takes effect releases its claim and puts the old session back, unless the family was revoked meanwhile. So a transient error doesn't sign the user out, and the session can still be rotated afterwards. Family records written by earlier versions are still read until they expire. Theft revocation revokes the sessions they list and follows the chain from each one, so rotations made after the upgrade are covered too.
+
+- 44cbc0e: A rotation that races a theft revocation can no longer outlive it. Revoking a refresh-token family now first sets `auth_refresh_family_revoked_{familyId}`. `rotateSession` checks for that marker after it has linked and written the new session, and if the marker is set, it deletes the new session and fails with a 401. Because the revocation writes the marker before walking the chain, and the rotation writes before checking, either the walk reaches the new session or the rotation sees the marker.
+- a3205b1: `AuthenticationSessionService.rotateSession` now consumes the old session atomically with `CacheProvider.take` before it writes the replacement. Two concurrent rotations of one session (for example a double-submitted MFA step-up) previously both succeeded and left two live elevated sessions, only one of them tracked in the refresh-token family. Now the second rotation gets a 401.
+- 9c62bf3: Document what apps must enforce around `SamlFactorService` and `OidcFactorService`.
+
+  - New "Caller responsibilities" sections: bind the `requestId` (SAML) or `state` (OIDC) returned by `beginAuthorization` to the browser that started the flow and refuse a callback it did not start, check `result.actorId` against the current session on `linked` and `stepped-up` results, and allow-list `redirectAfter`, which is returned unvalidated.
+  - `SamlProfile.subject` no longer claims to be stable per end-user: under the default `emailAddress` NameID format a reassigned mailbox inherits the old factor. The README recommends the `persistent` format.
+
+- df15d43: Fix lost updates in the per-subject session index. It was a JSON array of session tokens that every `createSession`, `rotateSession`, `deleteSession` and `revokeAllForSubject` read, modified and rewrote, so two overlapping writes for one subject could drop a session from it. `getSessionsForSubject` then omitted that session and `revokeAllForSubject` (sign out everywhere, password reset, account recovery) left it alive.
+
+  The index is now a cache set at `auth_subject_sessions_{subject}`, changed only by the atomic `CacheProvider.setAdd` and `setRemove`. Its expiry only ever grows, so it no longer shrinks to fit the most recently created session. Entries whose session has gone are pruned on read. The old `auth_session_subject_{subject}` list is still read, never written, until it expires, so sessions created before the upgrade stay visible to `revokeAllForSubject`.
+
+  Requires a `CacheProvider` that implements the new set operations from `@maroonedsoftware/cache`.
+
+- Updated dependencies [4500bab]
+- Updated dependencies [691b176]
+  - @maroonedsoftware/cache@0.6.0
+
 ## 6.6.0
 
 ### Minor Changes

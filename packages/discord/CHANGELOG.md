@@ -1,5 +1,13 @@
 # @maroonedsoftware/discord
 
+## 2.1.2
+
+### Patch Changes
+
+- Updated dependencies [4500bab]
+- Updated dependencies [691b176]
+  - @maroonedsoftware/cache@0.6.0
+
 ## 2.1.1
 
 ### Patch Changes
