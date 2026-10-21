@@ -117,7 +117,7 @@ checks belong to the app:
   `beginAuthorization` returns in a cookie or session for that browser, and pass it to
   `completeAuthorization` as `expectedRequestId`, which refuses (400, before consuming anything) a
   response to any other request. The ACS post is a cross-site POST from the IdP, so a cookie needs
-  `SameSite=None; Secure`. If `expectedRequestId` is undefined, nothing is checked. Without this, an attacker can begin a `link` for their own account and send the IdP URL to a
+  `SameSite=None; Secure`. When the browser has no stored id, refuse the post rather than calling `completeAuthorization`. Without this, an attacker can begin a `link` for their own account and send the IdP URL to a
   victim: the victim's identity is linked to the attacker's account. The same gap allows login CSRF
   on `sign-in`.
 - **Match the actor.** On `stepped-up` and `linked` results, check that `result.actorId` is the

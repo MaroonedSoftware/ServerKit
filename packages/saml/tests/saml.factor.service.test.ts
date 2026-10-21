@@ -106,7 +106,12 @@ describe('SamlFactorService', () => {
     const service = makeService();
     const { requestId } = await service.beginAuthorization({ provider: 'acme', intent: 'sign-in', ...begin });
     const SAMLResponse = buildResponse({ inResponseTo: requestId, ...options });
-    return { service, requestId, SAMLResponse, result: await service.completeAuthorization({ params: { SAMLResponse } }) };
+    return {
+      service,
+      requestId,
+      SAMLResponse,
+      result: await service.completeAuthorization({ params: { SAMLResponse }, expectedRequestId: requestId }),
+    };
   };
 
   /** The HTTP error a sign-in fails with. */
@@ -313,8 +318,10 @@ describe('SamlFactorService', () => {
       });
 
       it('a response submitted twice', async () => {
-        const { service, SAMLResponse } = await signIn();
-        const error = await service.completeAuthorization({ params: { SAMLResponse } }).catch((caught: unknown) => caught);
+        const { service, SAMLResponse, requestId } = await signIn();
+        const error = await service
+          .completeAuthorization({ params: { SAMLResponse }, expectedRequestId: requestId })
+          .catch((caught: unknown) => caught);
         expect(error).toMatchObject({ statusCode: 404, details: { InResponseTo: 'not found or expired' } });
         expect(failureReasons()).toEqual(['unsolicited']);
       });
@@ -329,7 +336,9 @@ describe('SamlFactorService', () => {
 
       it('an unsolicited (IdP-initiated) response', async () => {
         const service = makeService();
-        const error = await service.completeAuthorization({ params: { SAMLResponse: buildResponse() } }).catch((caught: unknown) => caught);
+        const error = await service
+          .completeAuthorization({ params: { SAMLResponse: buildResponse() }, expectedRequestId: '_request' })
+          .catch((caught: unknown) => caught);
         expect(error).toMatchObject({ statusCode: 400, details: { SAMLResponse: 'unsolicited response' } });
         expect(failureReasons()).toEqual(['unsolicited']);
       });
@@ -365,25 +374,41 @@ describe('SamlFactorService', () => {
         });
       });
 
+      it('an empty expectedRequestId, as from a missing cookie', async () => {
+        const service = makeService();
+        const { requestId } = await service.beginAuthorization({ provider: 'acme', intent: 'sign-in' });
+        const error = await service
+          .completeAuthorization({ params: { SAMLResponse: buildResponse({ inResponseTo: requestId }) }, expectedRequestId: '' })
+          .catch((caught: unknown) => caught);
+        expect(error).toMatchObject({ statusCode: 400, details: { InResponseTo: 'not the expected request' } });
+      });
+
       it('a response to a request this service never issued', async () => {
         const service = makeService();
         const error = await service
-          .completeAuthorization({ params: { SAMLResponse: buildResponse({ inResponseTo: '_forged' }) } })
+          .completeAuthorization({ params: { SAMLResponse: buildResponse({ inResponseTo: '_forged' }) }, expectedRequestId: '_forged' })
           .catch((caught: unknown) => caught);
         expect(error).toMatchObject({ statusCode: 404 });
       });
 
       it('a missing or malformed SAMLResponse', async () => {
         const service = makeService();
-        await expect(service.completeAuthorization({ params: {} })).rejects.toMatchObject({ statusCode: 400, details: { SAMLResponse: 'missing' } });
-        await expect(service.completeAuthorization({ params: { SAMLResponse: Buffer.from('<html/>').toString('base64') } })).rejects.toMatchObject({
+        await expect(service.completeAuthorization({ params: {}, expectedRequestId: '_request' })).rejects.toMatchObject({
+          statusCode: 400,
+          details: { SAMLResponse: 'missing' },
+        });
+        await expect(
+          service.completeAuthorization({ params: { SAMLResponse: Buffer.from('<html/>').toString('base64') }, expectedRequestId: '_request' }),
+        ).rejects.toMatchObject({
           statusCode: 400,
           details: { SAMLResponse: 'not a SAML response' },
         });
         const doctype = Buffer.from('<!DOCTYPE x [<!ENTITY a "a">]><samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol"/>').toString(
           'base64',
         );
-        await expect(service.completeAuthorization({ params: { SAMLResponse: doctype } })).rejects.toMatchObject({ statusCode: 400 });
+        await expect(service.completeAuthorization({ params: { SAMLResponse: doctype }, expectedRequestId: '_request' })).rejects.toMatchObject({
+          statusCode: 400,
+        });
       });
 
       it('an authentication context the provider does not accept', async () => {

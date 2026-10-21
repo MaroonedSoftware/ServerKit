@@ -204,7 +204,7 @@ must enforce three things:
   `completeAuthorization` as `expectedRequestId`. A response to any other request is then refused
   with a 400 (`details.InResponseTo: 'not the expected request'`) and that request is left
   untouched. The ACS post arrives cross-site from the IdP, so a cookie needs `SameSite=None; Secure`.
-  Without `expectedRequestId` nothing is checked. Otherwise an attacker can begin a `link` for their own account and send the IdP URL to a victim,
+  The argument is required: when the browser has no stored id (an expired cookie, another browser), refuse the post or restart the flow. Otherwise an attacker can begin a `link` for their own account and send the IdP URL to a victim,
   whose identity then gets linked to the attacker's account. The same flow allows login CSRF on
   `sign-in`.
 - **Check the actor.** On `stepped-up` and `linked` results, confirm that `result.actorId` is the
