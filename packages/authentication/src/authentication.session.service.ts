@@ -161,7 +161,17 @@ export class AuthenticationSessionService {
     return `auth_session_${id}`;
   }
 
+  /** The per-subject session index: a cache set with one member per session token. */
   private getSubjectKey(id: string) {
+    return `auth_subject_sessions_${id}`;
+  }
+
+  /**
+   * The index as it was before it became a set: a JSON array of tokens, rewritten on every
+   * change. Only read now, so sessions it lists stay visible to `revokeAllForSubject` until it
+   * expires. Never written, because a read-modify-write of it is what lost sessions.
+   */
+  private getLegacySubjectKey(id: string) {
     return `auth_session_subject_${id}`;
   }
 
@@ -584,6 +594,7 @@ export class AuthenticationSessionService {
     const tokens = await this.getSubjectSessions(subject);
     const tasks = tokens.map(x => this.getSession(x));
     const sessions = await Promise.all(tasks);
+    await Promise.all(tokens.filter((_, i) => sessions[i] === undefined).map(x => this.removeSubjectSession(subject, x)));
     return sessions.filter(x => x !== undefined) as AuthenticationSession[];
   }
 
@@ -603,7 +614,10 @@ export class AuthenticationSessionService {
     let revoked = 0;
     for (const token of tokens) {
       const session = await this.getSession(token);
-      if (!session) continue;
+      if (!session) {
+        await this.removeSubjectSession(subject, token);
+        continue;
+      }
       await this.deleteSession(token, reason);
       revoked += 1;
     }
@@ -621,31 +635,29 @@ export class AuthenticationSessionService {
     return revoked;
   }
 
+  /**
+   * Every token indexed for a subject: the set's members plus whatever the legacy list still
+   * holds. Either may name a session that has since gone, so callers check each one.
+   */
   private async getSubjectSessions(subject: string) {
-    const response = await this.cache.get(this.getSubjectKey(subject));
-
-    if (response) {
-      return JSON.parse(response) as Array<string>;
-    }
-
-    return [];
+    const legacy = await this.cache.get(this.getLegacySubjectKey(subject));
+    const members = await this.cache.setMembers(this.getSubjectKey(subject));
+    const legacyTokens = legacy ? (JSON.parse(legacy) as Array<string>) : [];
+    return [...new Set([...legacyTokens, ...members])];
   }
 
+  /**
+   * Index a session under its subject. A single atomic add, so concurrent writers for one
+   * subject cannot drop each other's sessions. The index's expiry only ever grows, so it
+   * outlives the longest-lived session in it.
+   */
   private async ensureSubjectSession(subject: string, sessionToken: string, expiration: Duration) {
-    const subjectSessions = await this.getSubjectSessions(subject);
-    if (!subjectSessions.includes(sessionToken)) {
-      subjectSessions.push(sessionToken);
-      await this.cache.set(this.getSubjectKey(subject), JSON.stringify(subjectSessions), expiration);
-    }
+    await this.cache.setAdd(this.getSubjectKey(subject), sessionToken, { ttl: expiration });
   }
 
+  /** Drop a session from its subject's index. A single atomic remove. */
   private async removeSubjectSession(subject: string, sessionToken: string) {
-    const subjectSessions = await this.getSubjectSessions(subject);
-    const idx = subjectSessions.indexOf(sessionToken);
-    if (idx > -1) {
-      subjectSessions.splice(idx, 1);
-      await this.cache.update(this.getSubjectKey(subject), JSON.stringify(subjectSessions));
-    }
+    await this.cache.setRemove(this.getSubjectKey(subject), sessionToken);
   }
 
   /**

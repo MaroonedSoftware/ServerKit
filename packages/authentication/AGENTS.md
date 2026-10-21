@@ -81,18 +81,18 @@ by area; type aliases for provider-specific payload shapes are grouped rather th
 
 ### Sessions
 
-| Export                                                         | Kind   | Shape                                                                       | Notes                                                                                      |
-| -------------------------------------------------------------- | ------ | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `AuthenticationSessionServiceOptions`                          | class  | `(issuer, audience, expiresIn: Duration, refreshExpiresIn = 30 days)`       | A class so it is an InjectKit token.                                                       |
-| `AuthenticationSessionService`                                 | class  | `@Injectable()`                                                             | Backed by a `CacheProvider`.                                                               |
-| `#createSession` / `#updateSession` / `#createOrUpdateSession` | method | `createSession(subject, claims, factors, expiration?, device?, audience?)`  | `audience` binds every token from the session to one resource.                             |
-| `#getSession` / `#getSessionsForSubject`                       | method | —                                                                           | Read paths; `#revokeAllForSubject` does the revoking.                                      |
-| `#revokeAllForSubject`                                         | method | `(subject: string, reason?: SessionRevocationReason) => Promise<number>`    | Revokes every session for a subject; returns the count.                                    |
-| `#lookupSessionFromJwt`                                        | method | `(jwt, ignoreJwtExpiration?, expectedAudience?)`                            | `aud` must match `expectedAudience`, else the configured audience. Refuses refresh tokens. |
-| `#deleteSession`                                               | method | `(sessionToken, reason: SessionRevocationReason = 'logout')`                | —                                                                                          |
-| `#issueTokenForSession`                                        | method | `(sessionToken) => Promise<AuthenticationToken>`                            | —                                                                                          |
-| `#rotateSession`                                               | method | `(sessionToken, claimOverrides?, expiration?)`                              | For privilege changes. Carries `familyId` forward.                                         |
-| `#refreshSession`                                              | method | `(refreshToken, expectedAudience?, guard?) => Promise<AuthenticationToken>` | Rotation with replay detection. `guard` runs after the `jti` is claimed.                   |
+| Export                                                         | Kind   | Shape                                                                       | Notes                                                                                          |
+| -------------------------------------------------------------- | ------ | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `AuthenticationSessionServiceOptions`                          | class  | `(issuer, audience, expiresIn: Duration, refreshExpiresIn = 30 days)`       | A class so it is an InjectKit token.                                                           |
+| `AuthenticationSessionService`                                 | class  | `@Injectable()`                                                             | Backed by a `CacheProvider`.                                                                   |
+| `#createSession` / `#updateSession` / `#createOrUpdateSession` | method | `createSession(subject, claims, factors, expiration?, device?, audience?)`  | `audience` binds every token from the session to one resource.                                 |
+| `#getSession` / `#getSessionsForSubject`                       | method | —                                                                           | Read paths; `#revokeAllForSubject` does the revoking.                                          |
+| `#revokeAllForSubject`                                         | method | `(subject: string, reason?: SessionRevocationReason) => Promise<number>`    | Revokes every session for a subject; returns the count. Reads the per-subject index (Gotchas). |
+| `#lookupSessionFromJwt`                                        | method | `(jwt, ignoreJwtExpiration?, expectedAudience?)`                            | `aud` must match `expectedAudience`, else the configured audience. Refuses refresh tokens.     |
+| `#deleteSession`                                               | method | `(sessionToken, reason: SessionRevocationReason = 'logout')`                | —                                                                                              |
+| `#issueTokenForSession`                                        | method | `(sessionToken) => Promise<AuthenticationToken>`                            | —                                                                                              |
+| `#rotateSession`                                               | method | `(sessionToken, claimOverrides?, expiration?)`                              | For privilege changes. Carries `familyId` forward.                                             |
+| `#refreshSession`                                              | method | `(refreshToken, expectedAudience?, guard?) => Promise<AuthenticationToken>` | Rotation with replay detection. `guard` runs after the `jti` is claimed.                       |
 
 ### Factors
 
@@ -442,6 +442,13 @@ everywhere else pass nothing, and resource tokens are refused. Answer a 401 ther
 
 ## Gotchas
 
+- **The per-subject session index is a cache set, written only with atomic `setAdd` / `setRemove`.**
+  It lives at `auth_subject_sessions_{subject}`. Do not "simplify" it back to a JSON array read with
+  `get` and rewritten with `set`: that is what it used to be (`auth_session_subject_{subject}`), and
+  two overlapping writes for one subject dropped a session, which `revokeAllForSubject` then missed
+  after a password reset. The legacy key is still read, never written, so sessions indexed before
+  the change stay revocable until it expires. A `CacheProvider` whose set operations are not atomic
+  reintroduces the bug.
 - **`AuthenticationFactorMethod` has no `'oauth2'` member**, despite `OAuth2FactorService` existing.
   An OAuth2 login has to be recorded under one of the six listed methods (`'oidc'` is the usual
   choice). Do not assume the factor list and the service list line up.
