@@ -1,5 +1,17 @@
 # @maroonedsoftware/cache
 
+## 0.6.0
+
+### Minor Changes
+
+- 4500bab: Add atomic set operations to `CacheProvider`: `setAdd(key, member, { ttl? })`, `setRemove(key, member)` and `setMembers(key)`. They let several writers maintain one collection (an index of ids, say) without the lost updates a read-modify-write of a JSON array suffers. `setAdd` only ever extends the set's expiry. `IoRedisCacheProvider` implements them with `SADD` (plus the expiry, in one Lua script), `SREM` and `SMEMBERS`.
+
+  Custom `CacheProvider` subclasses must implement the three new abstract methods.
+
+- 691b176: Add `CacheProvider.take(key)`, an atomic get-and-delete for consuming single-use entries. `IoRedisCacheProvider` implements it with `GETDEL`, which needs Redis 6.2 or later.
+
+  **Breaking for custom providers:** `take` is abstract, so any class that extends or implements `CacheProvider` outside this package must add it. It is deliberately not given a default `get`-then-`delete` implementation, because that would silently lose the atomicity callers rely on. The package is pre-1.0, so this ships as a minor bump.
+
 ## 0.5.0
 
 ### Minor Changes
