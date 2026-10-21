@@ -25,7 +25,11 @@ import { isSha1Algorithm, readSamlResponse, readVerifiedAssertion } from './saml
 export type SamlProfile = {
   /** Provider name that issued the profile (e.g. `"acme.okta"`). */
   provider: string;
-  /** The assertion's `NameID`: stable per (provider, end-user). */
+  /**
+   * The assertion's `NameID`. Only as stable as its format: under the default `emailAddress`
+   * format a reassigned mailbox inherits the previous holder's factor. Configure the `persistent`
+   * format when the IdP supports it.
+   */
   subject: string;
   /** The NameID's `Format`, when the IdP sent one. */
   nameIdFormat?: string;
@@ -292,9 +296,18 @@ export class SamlFactorService {
    * The request the response answers is consumed before validation, so a response can be
    * submitted once whatever the outcome.
    *
+   * `expectedRequestId` is the `requestId` that {@link beginAuthorization} returned to this browser
+   * (kept in its cookie or session). A response to any other request is refused before that request
+   * is consumed, so a flow started in one browser cannot be finished in another: that would allow
+   * login CSRF and linking a victim's identity to an attacker's account. When the browser has no
+   * stored id, refuse the post (or restart the flow) rather than calling this.
+   *
+   * @param args.params The ACS form body.
+   * @param args.expectedRequestId The `requestId` this browser started.
    * @throws HTTP 400 when `SAMLResponse` is missing or not a SAML response, when it answers no
-   *   request (`details.SAMLResponse: 'unsolicited response'`), or when the IdP reported an error
-   *   status (`details.status`).
+   *   request (`details.SAMLResponse: 'unsolicited response'`), when it answers a request other than
+   *   `expectedRequestId` (`details.InResponseTo: 'not the expected request'`), or when the IdP
+   *   reported an error status (`details.status`).
    * @throws HTTP 401 when the assertion fails validation; `details.assertion` names the check.
    * @throws HTTP 403 when the `'auth.factor.saml.profile.allowed'` policy denies the profile, or when
    *   a `step-up` identity is not a factor of the stepping-up actor.
@@ -302,10 +315,10 @@ export class SamlFactorService {
    *   already answered.
    * @throws HTTP 409 when a `link` intent's `(provider, subject)` already belongs to another actor.
    */
-  async completeAuthorization(args: { params: SamlCallbackParams }): Promise<SamlAuthorizationResult> {
+  async completeAuthorization(args: { params: SamlCallbackParams; expectedRequestId: string }): Promise<SamlAuthorizationResult> {
     let validated: { stored: StoredAuthnRequest; config: SamlProviderConfig; profile: SamlProfile };
     try {
-      validated = await this.validateResponse(args.params.SAMLResponse);
+      validated = await this.validateResponse(args.params.SAMLResponse, args.expectedRequestId);
     } catch (error) {
       if (error instanceof SamlRefusal) {
         await this.auditAuthorizationFailed(error.reason, typeof error.internal?.provider === 'string' ? error.internal.provider : undefined);
@@ -543,7 +556,7 @@ export class SamlFactorService {
   }
 
   /** Every check on a response, in order. Throws a {@link SamlRefusal} on the first that fails. */
-  private async validateResponse(encoded: string | undefined) {
+  private async validateResponse(encoded: string | undefined, expectedRequestId: string) {
     const response = encoded ? readSamlResponse(encoded) : undefined;
     if (!encoded || !response) {
       throw new SamlRefusal(400, 'assertion_invalid', { SAMLResponse: encoded ? 'not a SAML response' : 'missing' });
@@ -551,6 +564,10 @@ export class SamlFactorService {
     if (!response.inResponseTo) {
       // IdP-initiated: nothing binds it to a browser that asked to sign in.
       throw new SamlRefusal(400, 'unsolicited', { SAMLResponse: 'unsolicited response' });
+    }
+    if (response.inResponseTo !== expectedRequestId) {
+      // Answers a request some other browser started. Leave that request for its own browser.
+      throw new SamlRefusal(400, 'unsolicited', { InResponseTo: 'not the expected request' }, { inResponseTo: response.inResponseTo });
     }
 
     const raw = await this.cache.take(this.getRequestKey(response.inResponseTo));

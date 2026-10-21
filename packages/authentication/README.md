@@ -765,6 +765,20 @@ switch (result.kind) {
 }
 ```
 
+**Caller responsibilities.** The service holds no browser state, so it cannot tell which browser started a flow. The app must enforce three things:
+
+- **Bind `state` to the browser.** `completeAuthorization` trusts whichever stored state record the callback's `state` names (the PKCE verifier and nonce live in that record, so they do not help). Keep the `state` returned by `beginAuthorization` in a cookie or session for that browser, and refuse a callback whose `state` that browser did not start. Otherwise an attacker can begin a `link` for their own account and send the IdP URL to a victim, whose identity then gets linked to the attacker's account. The same flow allows login CSRF on `sign-in`.
+- **Check the actor.** On `stepped-up` and `linked` results, confirm that `result.actorId` is the actor of the current session.
+- **Allow-list `redirectAfter`.** It is returned as given and never validated, so redirecting to it unchecked is an open redirect.
+
+```typescript
+const { url, state } = await oidc.beginAuthorization({ provider: 'google', intent: 'link', actorId });
+ctx.cookies.set('oidc_state', state, { httpOnly: true, secure: true, sameSite: 'lax' });
+
+// On the callback, before completeAuthorization:
+if (!ctx.query.state || ctx.query.state !== ctx.cookies.get('oidc_state')) throw httpError(400);
+```
+
 **Account linking.** Pass `intent: 'link'` and an existing `actorId` on `beginAuthorization` to attach an additional provider to a signed-in user. Every result carries the `intent` the flow began with. When the provider identity already belongs to a different account, `completeAuthorization` throws a 409 and records `oidc.link.rejected` with reason `subject_taken`, rather than signing the caller in as that other account. An identity already on the linking account answers `signed-in` with `intent: 'link'`.
 
 **Per-request authorize parameters.** Pass `authorizeParams` on `beginAuthorization` to send `login_hint`, `max_age`, `prompt`, or `acr_values` for this request only. They are merged over the provider's configured `authorizeParams` and win on a conflict; other keys are ignored, so the request cannot override `state`, `nonce`, PKCE, `redirect_uri`, or `scope`. When the effective request carries `max_age` (from either side), it is kept with the state record and `completeAuthorization` passes it to openid-client's code grant, which requires `auth_time` in the id_token and rejects one older than `max_age` seconds. A `max_age` that is not a non-negative integer is a 400.

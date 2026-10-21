@@ -364,6 +364,22 @@ On the resource's route, validate bearer tokens with `lookupSessionFromJwt(token
 everywhere else pass nothing, and resource tokens are refused. Answer a 401 there with
 `WWW-Authenticate: Bearer resource_metadata="${protectedResourceMetadataUrl(resource)}"`.
 
+## Caller responsibilities (OIDC)
+
+`OidcFactorService` holds no browser state, so it cannot tell which browser started a flow. Three
+checks belong to the app:
+
+- **Bind `state` to the browser.** `completeAuthorization` trusts whichever stored state record the
+  callback's `state` names; the PKCE verifier and nonce live in that record, so they do not help.
+  Store the `state` that `beginAuthorization` returns in a cookie or session for that browser, and
+  refuse a callback whose `state` that browser did not start. Without this, an attacker can begin a
+  `link` for their own account and send the IdP URL to a victim: the victim's identity is linked to
+  the attacker's account. The same gap allows login CSRF on `sign-in`.
+- **Match the actor.** On `stepped-up` and `linked` results, check that `result.actorId` is the
+  actor of the current session before acting on it.
+- **Allow-list `redirectAfter`.** It is returned exactly as `beginAuthorization` received it and is
+  not validated. Redirecting to it unchecked is an open redirect.
+
 ## Rules for generated code
 
 - **Register `AuthenticationHandlerMap` keys in lowercase.** The scheme handler lowercases the
