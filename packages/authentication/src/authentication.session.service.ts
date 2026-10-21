@@ -288,7 +288,11 @@ export class AuthenticationSessionService {
     await this.cache.set(this.getSessionKey(oldSession.sessionToken), oldRaw, remaining);
     if (oldSession.familyId && (await this.cache.get(this.getFamilyRevokedKey(oldSession.familyId)))) {
       await this.cache.delete(this.getSessionKey(oldSession.sessionToken));
+      return;
     }
+    // While the session was out of the cache a reader may have pruned its index
+    // entry as dangling. Index it again now that it is back, after the write.
+    await this.ensureSubjectSession(oldSession.subject, oldSession.sessionToken, remaining);
   }
 
   /** Session tokens listed in a family blob written by an earlier version, if one is still cached. */

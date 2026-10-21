@@ -1271,6 +1271,31 @@ describe('AuthenticationSessionService', () => {
       expect(harness.store.has(`auth_session_${old.sessionToken}`)).toBe(true);
     });
 
+    it('re-indexes the old session it puts back, in case a reader pruned it mid-rotation', async () => {
+      const harness = makeLiveHarness();
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);
+      const old = await svc.createSession('user-1', { acr: 'low' }, makeFactor());
+
+      const set = vi.mocked(harness.cache.set).getMockImplementation()!;
+      let failed = false;
+      vi.mocked(harness.cache.set).mockImplementation(async (key, value, ttl) => {
+        if (!failed && key.startsWith('auth_session_') && key !== `auth_session_${old.sessionToken}`) {
+          failed = true;
+          // The old session is out of the cache while it rotates, so a concurrent
+          // read finds its index entry dangling and prunes it.
+          await svc.getSessionsForSubject('user-1');
+          throw new Error('cache unavailable');
+        }
+        return set(key, value, ttl);
+      });
+
+      await expect(svc.rotateSession(old.sessionToken, { acr: 'high' })).rejects.toThrow('cache unavailable');
+
+      const listed = await svc.getSessionsForSubject('user-1');
+      expect(listed.map(x => x.sessionToken)).toEqual([old.sessionToken]);
+      await expect(svc.revokeAllForSubject('user-1')).resolves.toBe(1);
+    });
+
     it('does not put the old session back when its family was revoked during the failed rotation', async () => {
       const harness = makeLiveHarness();
       const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);
