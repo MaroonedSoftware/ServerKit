@@ -251,19 +251,12 @@ export class AuthenticationSessionService {
    * marker and deletes it again.
    */
   private async releaseRotation(oldSession: AuthenticationSession, oldRaw: string, newSessionToken: string) {
-    const { sessionToken, subject, familyId } = oldSession;
-    const remaining = oldSession.expiresAt.diff(DateTime.utc());
+    const { sessionToken, subject } = oldSession;
     const steps = [
       () => this.cache.delete(this.getSuccessorKey(sessionToken)),
       () => this.cache.delete(this.getSessionKey(newSessionToken)),
       () => this.removeSubjectSession(subject, newSessionToken),
-      async () => {
-        if (remaining.toMillis() <= 0) return;
-        await this.cache.set(this.getSessionKey(sessionToken), oldRaw, remaining);
-        if (familyId && (await this.cache.get(this.getFamilyRevokedKey(familyId)))) {
-          await this.cache.delete(this.getSessionKey(sessionToken));
-        }
-      },
+      () => this.restoreOldSession(oldSession, oldRaw),
     ];
     for (const step of steps) {
       try {
@@ -271,6 +264,20 @@ export class AuthenticationSessionService {
       } catch {
         // Keep going: the caller rethrows the original failure.
       }
+    }
+  }
+
+  /**
+   * Put back a session `rotateSession` consumed, with its remaining lifetime,
+   * unless it has expired or its family has been revoked. Writes before reading
+   * the revocation marker (see {@link releaseRotation}).
+   */
+  private async restoreOldSession(oldSession: AuthenticationSession, oldRaw: string) {
+    const remaining = oldSession.expiresAt.diff(DateTime.utc());
+    if (remaining.toMillis() <= 0) return;
+    await this.cache.set(this.getSessionKey(oldSession.sessionToken), oldRaw, remaining);
+    if (oldSession.familyId && (await this.cache.get(this.getFamilyRevokedKey(oldSession.familyId)))) {
+      await this.cache.delete(this.getSessionKey(oldSession.sessionToken));
     }
   }
 
@@ -753,6 +760,15 @@ export class AuthenticationSessionService {
     // the other is refused rather than left untracked.
     const linked = await this.cache.add(this.getSuccessorKey(sessionToken), newSessionToken, { ttl: this.options.refreshExpiresIn });
     if (!linked) {
+      // Unreachable for a concurrent rotation (the `take` above refused it), so
+      // this is a stale link left by a release that could not delete it. Leave
+      // the link alone and put the old session back, so a failed rotation never
+      // signs the user out.
+      try {
+        await this.restoreOldSession(oldSession, raw);
+      } catch {
+        // Best effort, as in `releaseRotation`.
+      }
       throw unauthorizedError('Bearer error="invalid_token"').withInternalDetails({ message: `session ${sessionToken} was already rotated` });
     }
 

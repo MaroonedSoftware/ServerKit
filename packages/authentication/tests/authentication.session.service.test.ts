@@ -1093,6 +1093,40 @@ describe('AuthenticationSessionService', () => {
       expect(harness.store.get(`auth_session_successor_${old.sessionToken}`)).toBe(rotated.session.sessionToken);
     });
 
+    it('keeps the session when a failed rotation could not release its successor link', async () => {
+      const harness = makeLiveHarness();
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);
+      const old = await svc.createSession('user-1', { acr: 'low' }, makeFactor());
+
+      const set = vi.mocked(harness.cache.set).getMockImplementation()!;
+      let setFailed = false;
+      vi.mocked(harness.cache.set).mockImplementation(async (key, value, ttl) => {
+        if (!setFailed && key.startsWith('auth_session_') && key !== `auth_session_${old.sessionToken}` && !key.startsWith('auth_session_subject_')) {
+          setFailed = true;
+          throw new Error('cache unavailable');
+        }
+        return set(key, value, ttl);
+      });
+      const del = vi.mocked(harness.cache.delete).getMockImplementation()!;
+      let deleteFailed = false;
+      vi.mocked(harness.cache.delete).mockImplementation(async key => {
+        if (!deleteFailed && key === `auth_session_successor_${old.sessionToken}`) {
+          deleteFailed = true;
+          throw new Error('cache unavailable');
+        }
+        return del(key);
+      });
+
+      // The release restores the session but leaves a stale successor link.
+      await expect(svc.rotateSession(old.sessionToken, { acr: 'high' })).rejects.toThrow('cache unavailable');
+      expect(harness.store.has(`auth_session_successor_${old.sessionToken}`)).toBe(true);
+      expect(harness.store.has(`auth_session_${old.sessionToken}`)).toBe(true);
+
+      // The next rotation trips over the stale link, and must not drop the session.
+      await expect(svc.rotateSession(old.sessionToken, { acr: 'high' })).rejects.toMatchObject({ statusCode: 401 });
+      expect(harness.store.has(`auth_session_${old.sessionToken}`)).toBe(true);
+    });
+
     it('does not put the old session back when its family was revoked during the failed rotation', async () => {
       const harness = makeLiveHarness();
       const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);
