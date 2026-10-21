@@ -869,8 +869,9 @@ export class AuthenticationSessionService {
   /**
    * Tear down every session in a refresh-token family that a replayed token can
    * reach: the session it was issued for, then each session rotated from it in
-   * turn. Sessions before it in the chain were already deleted by the rotations
-   * that replaced them.
+   * turn, plus the chain from each session a legacy family record still lists.
+   * Sessions before it in the chain were already deleted by the rotations that
+   * replaced them.
    *
    * @returns How many sessions were revoked, so the caller can record the
    *   aggregate alongside the per-session events.
@@ -880,18 +881,17 @@ export class AuthenticationSessionService {
     // the walk (see `rotateSession`).
     await this.cache.set(this.getFamilyRevokedKey(familyId), '1', this.options.refreshExpiresIn);
 
+    // Walk from the replayed token's session, and from every session a legacy
+    // family record lists: a session rotated after the upgrade hangs off the
+    // chain head that record held, not off the replayed token's session.
     const tokens: string[] = [];
     const seen = new Set<string>();
-    let next: string | null = sessionToken;
-    while (next !== null && !seen.has(next) && seen.size < MAX_SUCCESSOR_CHAIN) {
-      seen.add(next);
-      tokens.push(next);
-      next = await this.cache.get(this.getSuccessorKey(next));
-    }
-    for (const token of await this.readLegacyFamily(familyId)) {
-      if (!seen.has(token)) {
-        seen.add(token);
-        tokens.push(token);
+    for (const root of [sessionToken, ...(await this.readLegacyFamily(familyId))]) {
+      let next: string | null = root;
+      while (next !== null && !seen.has(next) && seen.size < MAX_SUCCESSOR_CHAIN) {
+        seen.add(next);
+        tokens.push(next);
+        next = await this.cache.get(this.getSuccessorKey(next));
       }
     }
 

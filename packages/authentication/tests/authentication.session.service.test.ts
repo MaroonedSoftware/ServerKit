@@ -974,6 +974,31 @@ describe('AuthenticationSessionService', () => {
       expect(liveSessions).toEqual([`auth_session_${session.sessionToken}`]);
     });
 
+    it('follows rotations made after the upgrade from the head a legacy family record lists', async () => {
+      const harness = makeLiveHarness();
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);
+
+      // Before the upgrade S1 -> S2 -> S3 rotated with no successor links, and the
+      // family record held only the head, S3. A refresh token for S2 is still out.
+      const s2 = await svc.createSession('user-1', {}, makeFactor());
+      const tokens = await svc.issueTokenForSession(s2.sessionToken);
+      const stolen = lastRefreshPayload(harness);
+      presenting(harness, stolen);
+      await svc.refreshSession(tokens.refreshToken!);
+      const s3 = await svc.createSession('user-1', {}, makeFactor());
+      harness.store.set(`auth_session_${s3.sessionToken}`, harness.store.get(`auth_session_${s3.sessionToken}`)!.replace(s3.familyId!, s2.familyId!));
+      harness.store.delete(`auth_session_${s2.sessionToken}`);
+      harness.store.set(`auth_refresh_family_${s2.familyId}`, JSON.stringify({ jtis: [], sessionTokens: [s3.sessionToken] }));
+
+      // After the upgrade, S3 -> S4 links normally.
+      const s4 = await svc.rotateSession(s3.sessionToken);
+
+      presenting(harness, stolen);
+      await expect(svc.refreshSession(tokens.refreshToken!)).rejects.toMatchObject({ statusCode: 401 });
+
+      expect(harness.store.has(`auth_session_${s4.session.sessionToken}`)).toBe(false);
+    });
+
     it('also revokes sessions listed in a family record written by an earlier version', async () => {
       const harness = makeLiveHarness();
       const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);
