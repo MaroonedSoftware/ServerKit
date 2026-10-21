@@ -10,6 +10,7 @@ const makeCache = (): CacheProvider => ({
   add: vi.fn().mockResolvedValue(true),
   update: vi.fn().mockResolvedValue(undefined),
   delete: vi.fn().mockResolvedValue(null),
+  take: vi.fn().mockResolvedValue(null),
 });
 
 describe('PkceProvider', () => {
