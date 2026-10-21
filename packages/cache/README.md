@@ -66,13 +66,16 @@ class SessionService {
 
 Base class to extend when implementing a custom cache backend.
 
-| Method   | Signature                                                                        | Description                                                                                                  |
-| -------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `get`    | `(key: string) => Promise<string \| null>`                                       | Returns the stored value or `null` if absent/expired.                                                        |
-| `set`    | `(key: string, value: string, ttl: Duration) => Promise<void>`                   | Stores a value with an explicit TTL.                                                                         |
-| `add`    | `(key: string, value: string, options?: { ttl?: Duration }) => Promise<boolean>` | Atomic set-if-absent claim primitive; returns `true` if the key was created, `false` if it already existed.  |
-| `update` | `(key: string, value: string, ttl?: Duration) => Promise<void>`                  | Overwrites an existing value; omit `ttl` to preserve the original expiry. Will not resurrect an expired key. |
-| `delete` | `(key: string) => Promise<string \| null>`                                       | Removes the entry and returns the key, or `null` if it didn't exist.                                         |
+| Method       | Signature                                                                         | Description                                                                                                  |
+| ------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `get`        | `(key: string) => Promise<string \| null>`                                        | Returns the stored value or `null` if absent/expired.                                                        |
+| `set`        | `(key: string, value: string, ttl: Duration) => Promise<void>`                    | Stores a value with an explicit TTL.                                                                         |
+| `add`        | `(key: string, value: string, options?: { ttl?: Duration }) => Promise<boolean>`  | Atomic set-if-absent claim primitive; returns `true` if the key was created, `false` if it already existed.  |
+| `update`     | `(key: string, value: string, ttl?: Duration) => Promise<void>`                   | Overwrites an existing value; omit `ttl` to preserve the original expiry. Will not resurrect an expired key. |
+| `delete`     | `(key: string) => Promise<string \| null>`                                        | Removes the entry and returns the key, or `null` if it didn't exist.                                         |
+| `setAdd`     | `(key: string, member: string, options?: { ttl?: Duration }) => Promise<boolean>` | Atomically adds a member to a set; `ttl` extends the set's expiry but never shortens it. `true` if added.    |
+| `setRemove`  | `(key: string, member: string) => Promise<boolean>`                               | Atomically removes a member from a set; `true` if it was present. An emptied set is removed.                 |
+| `setMembers` | `(key: string) => Promise<string[]>`                                              | Every member of a set, or `[]` if it does not exist.                                                         |
 
 ### `IoRedisCacheProvider`
 
@@ -81,6 +84,7 @@ Concrete `CacheProvider` backed by [ioredis](https://github.com/redis/ioredis). 
 - Uses Redis `EX` for TTL-bearing writes (TTLs are clamped to a minimum of 1 whole second, since `EX` is integer-only).
 - `add` uses `SET … NX` so the claim is atomic across concurrent callers.
 - `update` without a new TTL uses `SET … KEEPTTL XX`, so an entry that has since expired is not resurrected without an expiry.
+- `setAdd` runs `SADD` and the expiry extension in one Lua script, so the set is never seen with the member but without its TTL. `setRemove` is `SREM`, `setMembers` is `SMEMBERS`.
 
 ### `IdempotencyStore` (abstract) and `CacheIdempotencyStore`
 
@@ -147,6 +151,8 @@ export class InMemoryCacheProvider extends CacheProvider {
   async delete(key: string) {
     return this.store.delete(key) ? key : null;
   }
+
+  // add, setAdd, setRemove, and setMembers omitted for brevity. Each must be atomic.
 }
 ```
 

@@ -4,6 +4,25 @@ import { Redis } from 'ioredis';
 import { Duration } from 'luxon';
 
 /**
+ * Adds a member to a set and extends the set's expiry without ever shortening it, in one
+ * atomic step. `KEYS[1]` is the set; `ARGV[1]` the member; `ARGV[2]`, when present, the
+ * minimum remaining lifetime in seconds. A set this call creates has no TTL until the
+ * `EXPIRE`, so it is told apart from a pre-existing set without one (which is left alone).
+ */
+const SET_ADD_SCRIPT = `
+local existed = redis.call('EXISTS', KEYS[1])
+local added = redis.call('SADD', KEYS[1], ARGV[1])
+if ARGV[2] then
+  local ttl = tonumber(ARGV[2])
+  local current = redis.call('TTL', KEYS[1])
+  if existed == 0 or (current >= 0 and current < ttl) then
+    redis.call('EXPIRE', KEYS[1], ttl)
+  end
+end
+return added
+`;
+
+/**
  * `CacheProvider` implementation backed by ioredis.
  *
  * Register this class in your DI container and bind an `ioredis` `Redis` instance to it.
@@ -77,6 +96,33 @@ export class IoRedisCacheProvider implements CacheProvider {
     } else {
       await this.redis.set(key, value, 'KEEPTTL', 'XX');
     }
+  }
+
+  /**
+   * Adds `member` to the set at `key` with `SADD`, extending its expiry to at least `ttl`
+   * (rounded up to whole seconds, min 1). Both run in one Lua script, so the set can never be
+   * observed with the member but without the expiry.
+   *
+   * @returns `true` when the member was added, `false` when it was already present.
+   */
+  async setAdd(key: string, member: string, options?: { ttl?: Duration }): Promise<boolean> {
+    const result = options?.ttl
+      ? await this.redis.eval(SET_ADD_SCRIPT, 1, key, member, toExpirySeconds(options.ttl))
+      : await this.redis.eval(SET_ADD_SCRIPT, 1, key, member);
+    return result === 1;
+  }
+
+  /**
+   * Removes `member` from the set at `key` with `SREM`. Redis deletes a set once it is empty.
+   * @returns `true` when the member was removed, `false` when it was not present.
+   */
+  async setRemove(key: string, member: string): Promise<boolean> {
+    return (await this.redis.srem(key, member)) === 1;
+  }
+
+  /** Returns every member of the set at `key` via `SMEMBERS`; empty when the key is absent. */
+  async setMembers(key: string): Promise<string[]> {
+    return await this.redis.smembers(key);
   }
 }
 

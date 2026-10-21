@@ -32,6 +32,19 @@ class FakeCacheProvider extends CacheProvider {
   async delete(key: string): Promise<string | null> {
     return this.store.delete(key) ? key : null;
   }
+
+  // The idempotency store never touches sets.
+  async setAdd(): Promise<boolean> {
+    throw new Error('not used');
+  }
+
+  async setRemove(): Promise<boolean> {
+    throw new Error('not used');
+  }
+
+  async setMembers(): Promise<string[]> {
+    throw new Error('not used');
+  }
 }
 
 let cache: FakeCacheProvider;
