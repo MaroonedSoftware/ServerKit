@@ -267,13 +267,13 @@ The `guard` runs after the refresh token's `jti` is claimed and the session load
 
 #### Refresh-token rotation and theft detection
 
-Refresh tokens are single-use JWTs that carry `kind: 'refresh'`, `jti`, `familyId`, and `sessionToken` claims. Every issuance registers the `jti` in a family blob (`auth_refresh_family_{familyId}`). On `refreshSession`:
+Refresh tokens are single-use JWTs that carry `kind: 'refresh'`, `jti`, `familyId`, and `sessionToken` claims. On `refreshSession`:
 
 - The previous `jti` is marked consumed (`auth_refresh_consumed_{jti}` sentinel with TTL = `max(remaining-token-lifetime, 60s)`).
-- A new `jti` is minted and added to the family.
-- If a client ever presents a `jti` that is already consumed, **every session in the family is revoked** and the family entry is deleted. This is the theft signal — observe it via the `session.refresh_reuse_detected` audit event.
+- A new `jti` is minted for the same session.
+- If a client ever presents a `jti` that is already consumed, **the token's session and every session rotated from it are revoked**. This is the theft signal — observe it via the `session.refresh_reuse_detected` audit event.
 
-Family-blob TTL is reset on every rotation so it can never expire mid-chain.
+A family is a chain of sessions, one per `rotateSession`. Each rotation records its successor once, under `auth_session_successor_{sessionToken}` with a `refreshExpiresIn` TTL, and theft revocation follows those links from the replayed token's session. Nothing in the chain is ever read, modified and rewritten, so concurrent refreshes and rotations cannot drop a session from it. The successor is claimed set-if-absent, so of two concurrent rotations of one session only one succeeds. The loser gets a 401, so a client that can double-submit a step-up should not treat that 401 as being signed out. A rotation that fails before it takes effect releases the claim and puts the old session back (unless its family was revoked meanwhile), so the session can still be rotated later. A theft revocation first sets `auth_refresh_family_revoked_{familyId}`. A rotation that links its new session and then finds that marker deletes the new session and fails, so a rotation racing the revocation cannot outlive it. Family records (`auth_refresh_family_{familyId}`) written by earlier versions are still read until they expire. Revocation also follows the chain from each session they list.
 
 #### Device metadata and session lists
 
@@ -1608,7 +1608,7 @@ Abstract base class. Implement `verify(username: string, password: string): Prom
 | `issueTokenForSession(sessionToken)`                                       | `Promise<AuthenticationToken>`                         | Issue an access token AND a single-use refresh token                                      |
 | `refreshSession(refreshToken, expectedAudience?, guard?)`                  | `Promise<AuthenticationToken>`                         | Rotate the refresh token's `jti`; revokes the family on replay; `guard` can refuse        |
 | `rotateSession(token, claimOverrides?, expiration?)`                       | `Promise<{ session, accessToken, refreshToken, ... }>` | Mint a new session for a privilege change (e.g. MFA step-up)                              |
-| `deleteSession(token, reason?)`                                            | `Promise<void>`                                        | Revoke a session and clean up its refresh-token family entry                              |
+| `deleteSession(token, reason?)`                                            | `Promise<void>`                                        | Revoke a session                                                                          |
 
 ### `AuthenticationSession`
 

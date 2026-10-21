@@ -17,16 +17,20 @@ import { JwtProvider } from './providers/jwt.provider.js';
 const MIN_CONSUMED_TTL_SECONDS = 60;
 
 /**
- * Internal shape of the refresh-token family blob persisted to cache. Stored as
- * a JSON string under `auth_refresh_family_{familyId}` so the implementation
- * does not depend on Redis SET primitives — the abstract {@link CacheProvider}
- * only exposes string get/set/update/delete.
+ * Upper bound on how many rotations a theft revocation follows down a session's
+ * successor chain. A chain is one link per `rotateSession`, so this is far past
+ * any real one; it only stops a corrupt cache from looping forever.
  */
-interface RefreshFamilyBlob {
-  /** Every refresh-token `jti` ever issued in this family. */
-  jtis: string[];
-  /** Currently-active session tokens that are bound to this family. */
-  sessionTokens: string[];
+const MAX_SUCCESSOR_CHAIN = 1000;
+
+/**
+ * Shape of the family blob earlier versions kept under
+ * `auth_refresh_family_{familyId}`. Nothing writes it any more; theft revocation
+ * still reads it so sessions tracked only there are revoked until the last of
+ * those entries expires.
+ */
+interface LegacyRefreshFamilyBlob {
+  sessionTokens?: unknown;
 }
 
 /**
@@ -173,6 +177,20 @@ export class AuthenticationSessionService {
     return `auth_refresh_consumed_${jti}`;
   }
 
+  /**
+   * Where `rotateSession` records which session replaced `sessionToken`. Written
+   * once per rotation and never rewritten, so concurrent writers cannot lose an
+   * update the way a shared family list could.
+   */
+  private getSuccessorKey(sessionToken: string) {
+    return `auth_session_successor_${sessionToken}`;
+  }
+
+  /** Set when a family is revoked for theft, so a rotation still in flight cannot outlive it. */
+  private getFamilyRevokedKey(familyId: string) {
+    return `auth_refresh_family_revoked_${familyId}`;
+  }
+
   private serializeSession(session: AuthenticationSession): string {
     return JSON.stringify({
       sessionToken: session.sessionToken,
@@ -221,52 +239,58 @@ export class AuthenticationSessionService {
     };
   }
 
-  private async readFamily(familyId: string): Promise<{ blob: RefreshFamilyBlob; existed: boolean }> {
+  /**
+   * Undo a rotation that failed before it took effect: free the old session's
+   * successor slot, drop the half-written replacement, and put the old session
+   * back. Best effort, since it runs while another error is already propagating;
+   * a step that fails here is left to expire.
+   *
+   * The old session goes back before the revocation marker is read, mirroring
+   * `rotateSession`: a theft revocation writes the marker and then deletes the
+   * chain, so either it deletes the restored session or this check sees the
+   * marker and deletes it again.
+   */
+  private async releaseRotation(oldSession: AuthenticationSession, oldRaw: string, newSessionToken: string) {
+    const { sessionToken, subject } = oldSession;
+    const steps = [
+      () => this.cache.delete(this.getSuccessorKey(sessionToken)),
+      () => this.cache.delete(this.getSessionKey(newSessionToken)),
+      () => this.removeSubjectSession(subject, newSessionToken),
+      () => this.restoreOldSession(oldSession, oldRaw),
+    ];
+    for (const step of steps) {
+      try {
+        await step();
+      } catch {
+        // Keep going: the caller rethrows the original failure.
+      }
+    }
+  }
+
+  /**
+   * Put back a session `rotateSession` consumed, with its remaining lifetime,
+   * unless it has expired or its family has been revoked. Writes before reading
+   * the revocation marker (see {@link releaseRotation}).
+   */
+  private async restoreOldSession(oldSession: AuthenticationSession, oldRaw: string) {
+    const remaining = oldSession.expiresAt.diff(DateTime.utc());
+    if (remaining.toMillis() <= 0) return;
+    await this.cache.set(this.getSessionKey(oldSession.sessionToken), oldRaw, remaining);
+    if (oldSession.familyId && (await this.cache.get(this.getFamilyRevokedKey(oldSession.familyId)))) {
+      await this.cache.delete(this.getSessionKey(oldSession.sessionToken));
+    }
+  }
+
+  /** Session tokens listed in a family blob written by an earlier version, if one is still cached. */
+  private async readLegacyFamily(familyId: string): Promise<string[]> {
     const raw = await this.cache.get(this.getFamilyKey(familyId));
-    if (!raw) {
-      return { blob: { jtis: [], sessionTokens: [] }, existed: false };
-    }
-    let parsed: Partial<RefreshFamilyBlob> = {};
+    if (!raw) return [];
     try {
-      parsed = JSON.parse(raw) as Partial<RefreshFamilyBlob>;
+      const parsed = JSON.parse(raw) as LegacyRefreshFamilyBlob;
+      return Array.isArray(parsed.sessionTokens) ? parsed.sessionTokens.filter((token): token is string => typeof token === 'string') : [];
     } catch {
-      // Corrupt entry — fall through and treat as empty so we don't crash auth.
-    }
-    return {
-      blob: {
-        jtis: Array.isArray(parsed.jtis) ? parsed.jtis : [],
-        sessionTokens: Array.isArray(parsed.sessionTokens) ? parsed.sessionTokens : [],
-      },
-      existed: true,
-    };
-  }
-
-  private async writeFamily(familyId: string, blob: RefreshFamilyBlob, exists: boolean) {
-    const key = this.getFamilyKey(familyId);
-    const serialized = JSON.stringify(blob);
-    if (exists) {
-      await this.cache.update(key, serialized, this.options.refreshExpiresIn);
-    } else {
-      await this.cache.set(key, serialized, this.options.refreshExpiresIn);
-    }
-  }
-
-  private async addJtiToFamily(familyId: string, jti: string, sessionToken: string) {
-    const { blob, existed } = await this.readFamily(familyId);
-    if (!blob.jtis.includes(jti)) blob.jtis.push(jti);
-    if (!blob.sessionTokens.includes(sessionToken)) blob.sessionTokens.push(sessionToken);
-    await this.writeFamily(familyId, blob, existed);
-  }
-
-  private async removeSessionFromFamily(familyId: string, sessionToken: string) {
-    const { blob, existed } = await this.readFamily(familyId);
-    if (!existed) return;
-    const idx = blob.sessionTokens.indexOf(sessionToken);
-    if (idx > -1) blob.sessionTokens.splice(idx, 1);
-    if (blob.sessionTokens.length === 0) {
-      await this.cache.delete(this.getFamilyKey(familyId));
-    } else {
-      await this.cache.update(this.getFamilyKey(familyId), JSON.stringify(blob), this.options.refreshExpiresIn);
+      // Corrupt entry: nothing to revoke from it.
+      return [];
     }
   }
 
@@ -532,9 +556,7 @@ export class AuthenticationSessionService {
 
   /**
    * Delete a session from cache, effectively revoking all tokens issued from it.
-   * Also removes the session from its refresh-token family (if any) so the family
-   * is cleaned up when its last session is gone. Does nothing if the session does
-   * not exist.
+   * Does nothing if the session does not exist.
    *
    * @param sessionToken - The opaque session token to delete.
    * @param reason       - The reason this session is being revoked; surfaced to
@@ -546,9 +568,6 @@ export class AuthenticationSessionService {
     if (session) {
       await this.cache.delete(this.getSessionKey(sessionToken));
       await this.removeSubjectSession(session.subject, sessionToken);
-      if (session.familyId) {
-        await this.removeSessionFromFamily(session.familyId, sessionToken);
-      }
       await this.audit.record({
         type: 'session.revoked',
         category: 'session',
@@ -655,8 +674,8 @@ export class AuthenticationSessionService {
    * (as a single nested object — *not* spread to the top level) so the server can
    * look up the full session on subsequent requests without claim names colliding
    * with reserved JWT fields. The refresh token carries `kind`, `jti`, `familyId`,
-   * and `sessionToken` claims; its `jti` is registered with the session's family
-   * so it participates in single-use rotation and theft detection (see
+   * and `sessionToken` claims; its `jti` is single-use, and presenting it twice
+   * revokes the session and every session rotated from it (see
    * {@link AuthenticationSessionService.refreshSession}).
    *
    * @param sessionToken - The opaque session token to generate tokens for.
@@ -687,9 +706,9 @@ export class AuthenticationSessionService {
    * @param expiration      - Lifetime for the rotated session; defaults to
    *   {@link AuthenticationSessionServiceOptions.expiresIn}.
    * @returns The new session and a fresh access/refresh token pair bound to it.
-   * @throws 401 when the source session does not exist or was already rotated.
-   *   The old session is consumed before the new one is written, so of two
-   *   concurrent rotations only one succeeds.
+   * @throws 401 when the source session does not exist, another rotation of it
+   *   already succeeded (concurrent rotations of one session succeed once), or
+   *   its family was revoked for theft while the rotation ran.
    */
   async rotateSession(sessionToken: string, claimOverrides: Record<string, unknown> = {}, expiration?: Duration, device?: SessionDevice) {
     // Consume the old session up front, atomically, so two concurrent rotations
@@ -734,11 +753,52 @@ export class AuthenticationSessionService {
       ...(oldSession.audience === undefined ? {} : { audience: oldSession.audience }),
     };
 
-    await this.cache.set(this.getSessionKey(newSessionToken), this.serializeSession(newSession), expiration);
-    await this.ensureSubjectSession(oldSession.subject, newSessionToken, expiration);
+    // Claim the old session's successor slot before writing anything. Theft
+    // revocation follows it from a replayed token for the old session to this
+    // one, so it must outlive every refresh token issued for the old session.
+    // Set-if-absent: of two concurrent rotations only one can link itself, and
+    // the other is refused rather than left untracked.
+    const linked = await this.cache.add(this.getSuccessorKey(sessionToken), newSessionToken, { ttl: this.options.refreshExpiresIn });
+    if (!linked) {
+      // Unreachable for a concurrent rotation (the `take` above refused it), so
+      // this is a stale link left by a release that could not delete it. Leave
+      // the link alone and put the old session back, so a failed rotation never
+      // signs the user out.
+      try {
+        await this.restoreOldSession(oldSession, raw);
+      } catch {
+        // Best effort, as in `releaseRotation`.
+      }
+      throw unauthorizedError('Bearer error="invalid_token"').withInternalDetails({ message: `session ${sessionToken} was already rotated` });
+    }
 
+    // The old session was consumed above. A failure before the new one is fully
+    // in place releases the successor slot and puts the old session back, so a
+    // transient error does not sign the user out or block the next rotation.
+    let revokedDuringRotation = false;
+    try {
+      await this.cache.set(this.getSessionKey(newSessionToken), this.serializeSession(newSession), expiration);
+      await this.ensureSubjectSession(oldSession.subject, newSessionToken, expiration);
+
+      // A theft revocation of this family may be running concurrently. It writes
+      // its marker and then walks the chain; this rotation linked and wrote its
+      // session and only then reads the marker. So either the walk reaches the new
+      // session and deletes it, or this check sees the marker. Order matters: both
+      // writes above must come before this read.
+      if (await this.cache.get(this.getFamilyRevokedKey(familyId))) {
+        revokedDuringRotation = true;
+        await this.cache.delete(this.getSessionKey(newSessionToken));
+        await this.removeSubjectSession(oldSession.subject, newSessionToken);
+        throw unauthorizedError('Bearer error="invalid_token"').withInternalDetails({ message: `family ${familyId} was revoked during rotation` });
+      }
+    } catch (error) {
+      // A revoked family keeps the link and does not get the old session back.
+      if (!revokedDuringRotation) {
+        await this.releaseRotation(oldSession, raw, newSessionToken);
+      }
+      throw error;
+    }
     await this.removeSubjectSession(oldSession.subject, sessionToken);
-    await this.removeSessionFromFamily(familyId, sessionToken);
 
     const tokens = await this.issueTokensForLoadedSession(newSession);
 
@@ -758,7 +818,8 @@ export class AuthenticationSessionService {
   /**
    * Exchange a refresh token for a new access/refresh token pair, rotating
    * the refresh token's `jti`. If the presented `jti` has already been
-   * consumed, every session in the token's family is revoked (theft signal).
+   * consumed, the token's session and every session rotated from it are revoked
+   * (theft signal).
    *
    * The token's `aud` must match `expectedAudience` when given, and the service's
    * configured audience otherwise, checked before the `jti` is claimed so a token
@@ -803,7 +864,7 @@ export class AuthenticationSessionService {
     const consumedTtlSeconds = Math.max(decoded.exp ? decoded.exp - Math.floor(DateTime.now().toSeconds()) : 0, MIN_CONSUMED_TTL_SECONDS);
     const claimed = await this.cache.add(consumedKey, '1', { ttl: Duration.fromObject({ seconds: consumedTtlSeconds }) });
     if (!claimed) {
-      const revokedInFamily = await this.revokeFamily(familyId);
+      const revokedInFamily = await this.revokeFamily(familyId, sessionToken);
       await this.audit.record({
         type: 'session.family_revoked',
         category: 'session',
@@ -860,7 +921,6 @@ export class AuthenticationSessionService {
     );
 
     const refresh = this.mintRefreshToken(session);
-    await this.addJtiToFamily(refresh.familyId, refresh.jti, sessionToken);
 
     return {
       accessToken: token,
@@ -872,17 +932,36 @@ export class AuthenticationSessionService {
   }
 
   /**
-   * Tear down every session in a refresh-token family.
+   * Tear down every session in a refresh-token family that a replayed token can
+   * reach: the session it was issued for, then each session rotated from it in
+   * turn, plus the chain from each session a legacy family record still lists.
+   * Sessions before it in the chain were already deleted by the rotations that
+   * replaced them.
    *
    * @returns How many sessions were revoked, so the caller can record the
    *   aggregate alongside the per-session events.
    */
-  private async revokeFamily(familyId: string): Promise<number> {
-    const { blob, existed } = await this.readFamily(familyId);
-    if (!existed) return 0;
+  private async revokeFamily(familyId: string, sessionToken: string): Promise<number> {
+    // Before the walk, so a concurrent rotation either sees it or is reached by
+    // the walk (see `rotateSession`).
+    await this.cache.set(this.getFamilyRevokedKey(familyId), '1', this.options.refreshExpiresIn);
+
+    // Walk from the replayed token's session, and from every session a legacy
+    // family record lists: a session rotated after the upgrade hangs off the
+    // chain head that record held, not off the replayed token's session.
+    const tokens: string[] = [];
+    const seen = new Set<string>();
+    for (const root of [sessionToken, ...(await this.readLegacyFamily(familyId))]) {
+      let next: string | null = root;
+      while (next !== null && !seen.has(next) && seen.size < MAX_SUCCESSOR_CHAIN) {
+        seen.add(next);
+        tokens.push(next);
+        next = await this.cache.get(this.getSuccessorKey(next));
+      }
+    }
 
     let revoked = 0;
-    for (const token of blob.sessionTokens) {
+    for (const token of tokens) {
       const session = await this.getSession(token);
       await this.cache.delete(this.getSessionKey(token));
       if (session) {
