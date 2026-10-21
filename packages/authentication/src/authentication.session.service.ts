@@ -165,7 +165,17 @@ export class AuthenticationSessionService {
     return `auth_session_${id}`;
   }
 
+  /** The per-subject session index: a cache set with one member per session token. */
   private getSubjectKey(id: string) {
+    return `auth_subject_sessions_${id}`;
+  }
+
+  /**
+   * The index as it was before it became a set: a JSON array of tokens, rewritten on every
+   * change. Only read now, so sessions it lists stay visible to `revokeAllForSubject` until it
+   * expires. Never written, because a read-modify-write of it is what lost sessions.
+   */
+  private getLegacySubjectKey(id: string) {
     return `auth_session_subject_${id}`;
   }
 
@@ -278,7 +288,11 @@ export class AuthenticationSessionService {
     await this.cache.set(this.getSessionKey(oldSession.sessionToken), oldRaw, remaining);
     if (oldSession.familyId && (await this.cache.get(this.getFamilyRevokedKey(oldSession.familyId)))) {
       await this.cache.delete(this.getSessionKey(oldSession.sessionToken));
+      return;
     }
+    // While the session was out of the cache a reader may have pruned its index
+    // entry as dangling. Index it again now that it is back, after the write.
+    await this.ensureSubjectSession(oldSession.subject, oldSession.sessionToken, remaining);
   }
 
   /** Session tokens listed in a family blob written by an earlier version, if one is still cached. */
@@ -603,6 +617,8 @@ export class AuthenticationSessionService {
     const tokens = await this.getSubjectSessions(subject);
     const tasks = tokens.map(x => this.getSession(x));
     const sessions = await Promise.all(tasks);
+    // Safe only because writers store a session before indexing it; see ensureSubjectSession.
+    await Promise.all(tokens.filter((_, i) => sessions[i] === undefined).map(x => this.removeSubjectSession(subject, x)));
     return sessions.filter(x => x !== undefined) as AuthenticationSession[];
   }
 
@@ -622,7 +638,10 @@ export class AuthenticationSessionService {
     let revoked = 0;
     for (const token of tokens) {
       const session = await this.getSession(token);
-      if (!session) continue;
+      if (!session) {
+        await this.removeSubjectSession(subject, token);
+        continue;
+      }
       await this.deleteSession(token, reason);
       revoked += 1;
     }
@@ -640,31 +659,35 @@ export class AuthenticationSessionService {
     return revoked;
   }
 
+  /**
+   * Every token indexed for a subject: the set's members plus whatever the legacy list still
+   * holds. Either may name a session that has since gone, so callers check each one and
+   * prune the ones that are missing. That pruning is safe only because every writer stores a
+   * session's key before indexing it, and deletes the key before un-indexing it.
+   */
   private async getSubjectSessions(subject: string) {
-    const response = await this.cache.get(this.getSubjectKey(subject));
-
-    if (response) {
-      return JSON.parse(response) as Array<string>;
-    }
-
-    return [];
+    const legacy = await this.cache.get(this.getLegacySubjectKey(subject));
+    const members = await this.cache.setMembers(this.getSubjectKey(subject));
+    const legacyTokens = legacy ? (JSON.parse(legacy) as Array<string>) : [];
+    return [...new Set([...legacyTokens, ...members])];
   }
 
+  /**
+   * Index a session under its subject. A single atomic add, so concurrent writers for one
+   * subject cannot drop each other's sessions. The index's expiry only ever grows, so it
+   * outlives the longest-lived session in it.
+   *
+   * Call it only after the session key is written. Readers prune index members whose session
+   * is missing, so indexing first would let a concurrent read drop the new session from the
+   * index, and with it from `revokeAllForSubject`.
+   */
   private async ensureSubjectSession(subject: string, sessionToken: string, expiration: Duration) {
-    const subjectSessions = await this.getSubjectSessions(subject);
-    if (!subjectSessions.includes(sessionToken)) {
-      subjectSessions.push(sessionToken);
-      await this.cache.set(this.getSubjectKey(subject), JSON.stringify(subjectSessions), expiration);
-    }
+    await this.cache.setAdd(this.getSubjectKey(subject), sessionToken, { ttl: expiration });
   }
 
+  /** Drop a session from its subject's index. A single atomic remove. */
   private async removeSubjectSession(subject: string, sessionToken: string) {
-    const subjectSessions = await this.getSubjectSessions(subject);
-    const idx = subjectSessions.indexOf(sessionToken);
-    if (idx > -1) {
-      subjectSessions.splice(idx, 1);
-      await this.cache.update(this.getSubjectKey(subject), JSON.stringify(subjectSessions));
-    }
+    await this.cache.setRemove(this.getSubjectKey(subject), sessionToken);
   }
 
   /**

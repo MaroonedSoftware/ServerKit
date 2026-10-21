@@ -54,6 +54,31 @@ export abstract class CacheProvider {
   abstract delete(key: string): Promise<string | null>;
 
   /**
+   * Atomically adds `member` to the set stored at `key`, creating the set when it does not
+   * exist. Concurrent callers adding different members to one set never lose each other's
+   * writes, which a `get` / modify / `set` of a serialised list cannot promise.
+   *
+   * @param key     - Cache key of the set.
+   * @param member  - Member to add. Adding a member already present is a no-op.
+   * @param options - Optional settings. `ttl` extends the set's expiry to at least that long
+   *   from now; it never shortens an expiry that is already further out.
+   * @returns `true` if the member was added, `false` if it was already present.
+   */
+  abstract setAdd(key: string, member: string, options?: { ttl?: Duration }): Promise<boolean>;
+
+  /**
+   * Atomically removes `member` from the set stored at `key`. A set left empty is removed.
+   * @returns `true` if the member was removed, `false` if it was not present.
+   */
+  abstract setRemove(key: string, member: string): Promise<boolean>;
+
+  /**
+   * Retrieves every member of the set stored at `key`, in no particular order.
+   * @returns The members, or an empty array if the set does not exist or has expired.
+   */
+  abstract setMembers(key: string): Promise<string[]>;
+
+  /**
    * Atomically reads and removes an entry (get-and-delete). Use this to consume single-use
    * entries such as one-time tokens or pending authorizations: concurrent callers race, and at
    * most one of them receives the value. A `get` followed by a `delete` is not a substitute,

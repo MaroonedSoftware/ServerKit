@@ -25,6 +25,7 @@ import type { OAuthClient } from '../../src/oauth/oauth.types.js';
 /** A Map-backed cache with real set-if-absent semantics. */
 export const makeCache = () => {
   const store = new Map<string, string>();
+  const sets = new Map<string, Set<string>>();
   return {
     store,
     get: vi.fn(async (key: string) => store.get(key) ?? null),
@@ -32,6 +33,13 @@ export const makeCache = () => {
     add: vi.fn(async (key: string, value: string) => (store.has(key) ? false : (store.set(key, value), true))),
     update: vi.fn(async (key: string, value: string) => void store.set(key, value)),
     delete: vi.fn(async (key: string) => (store.delete(key) ? key : null)),
+    setAdd: vi.fn(async (key: string, member: string) => {
+      const set = sets.get(key) ?? new Set<string>();
+      sets.set(key, set);
+      return set.has(member) ? false : (set.add(member), true);
+    }),
+    setRemove: vi.fn(async (key: string, member: string) => sets.get(key)?.delete(member) ?? false),
+    setMembers: vi.fn(async (key: string) => [...(sets.get(key) ?? [])]),
     take: vi.fn(async (key: string) => {
       const value = store.get(key) ?? null;
       store.delete(key);

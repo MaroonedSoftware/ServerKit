@@ -19,6 +19,7 @@ const makeLogger = () => ({ error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug:
 /** A cache that actually stores, so a write and a later read go through serialise/deserialise. */
 const makeCache = () => {
   const store = new Map<string, string>();
+  const sets = new Map<string, Set<string>>();
   return {
     store,
     get: vi.fn(async (key: string) => store.get(key) ?? null),
@@ -26,6 +27,13 @@ const makeCache = () => {
     add: vi.fn(async (key: string, value: string) => (store.has(key) ? false : (store.set(key, value), true))),
     update: vi.fn(async (key: string, value: string) => void store.set(key, value)),
     delete: vi.fn(async (key: string) => (store.delete(key) ? key : null)),
+    setAdd: vi.fn(async (key: string, member: string) => {
+      const set = sets.get(key) ?? new Set<string>();
+      sets.set(key, set);
+      return set.has(member) ? false : (set.add(member), true);
+    }),
+    setRemove: vi.fn(async (key: string, member: string) => sets.get(key)?.delete(member) ?? false),
+    setMembers: vi.fn(async (key: string) => [...(sets.get(key) ?? [])]),
     take: vi.fn(async (key: string) => {
       const value = store.get(key) ?? null;
       store.delete(key);

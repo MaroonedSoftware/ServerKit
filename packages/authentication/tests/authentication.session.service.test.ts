@@ -16,6 +16,9 @@ const makeCacheProvider = () =>
     add: vi.fn().mockResolvedValue(true),
     update: vi.fn().mockResolvedValue(undefined),
     delete: vi.fn().mockResolvedValue(null),
+    setAdd: vi.fn().mockResolvedValue(true),
+    setRemove: vi.fn().mockResolvedValue(true),
+    setMembers: vi.fn().mockResolvedValue([]),
     take: vi.fn().mockResolvedValue(null),
   }) as unknown as CacheProvider;
 
@@ -128,7 +131,13 @@ describe('AuthenticationSessionService', () => {
       cache.get = vi.fn().mockResolvedValue(null);
       vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue('test-uuid' as ReturnType<typeof crypto.randomUUID>);
       await service.createSession('user-1', {}, makeFactor());
-      expect(cache.set).toHaveBeenCalledWith('auth_session_subject_user-1', JSON.stringify(['test-uuid']), expect.any(Duration));
+      expect(cache.setAdd).toHaveBeenCalledWith('auth_subject_sessions_user-1', 'test-uuid', { ttl: Duration.fromObject({ hours: 1 }) });
+    });
+
+    it('never writes the legacy subject list', async () => {
+      cache.get = vi.fn().mockResolvedValue(null);
+      await service.createSession('user-1', {}, makeFactor());
+      expect(cache.set).not.toHaveBeenCalledWith('auth_session_subject_user-1', expect.anything(), expect.anything());
     });
   });
 
@@ -331,14 +340,12 @@ describe('AuthenticationSessionService', () => {
       expect(cache.delete).toHaveBeenCalledWith('auth_session_session-token');
     });
 
-    it('removes the token from the subject session list', async () => {
+    it('removes the token from the subject session index', async () => {
       const session = makeStoredSession();
-      cache.get = vi
-        .fn()
-        .mockResolvedValueOnce(JSON.stringify(session))
-        .mockResolvedValueOnce(JSON.stringify(['session-token']));
+      cache.get = vi.fn().mockResolvedValueOnce(JSON.stringify(session));
       await service.deleteSession('session-token');
-      expect(cache.update).toHaveBeenCalledWith('auth_session_subject_user-1', JSON.stringify([]));
+      expect(cache.setRemove).toHaveBeenCalledWith('auth_subject_sessions_user-1', 'session-token');
+      expect(cache.update).not.toHaveBeenCalledWith('auth_session_subject_user-1', expect.anything());
     });
   });
 
@@ -388,22 +395,51 @@ describe('AuthenticationSessionService', () => {
       expect(result[0]!.sessionToken).toBe('session-token');
     });
 
-    it('omits sessions that no longer exist in cache', async () => {
-      cache.get = vi
-        .fn()
-        .mockResolvedValueOnce(JSON.stringify(['stale-token']))
-        .mockResolvedValueOnce(null);
+    it('omits sessions that no longer exist in cache, and drops them from the index', async () => {
+      cache.get = vi.fn().mockResolvedValue(null);
+      cache.setMembers = vi.fn().mockResolvedValue(['stale-token']);
       const result = await service.getSessionsForSubject('user-1');
       expect(result).toEqual([]);
+      expect(cache.setRemove).toHaveBeenCalledWith('auth_subject_sessions_user-1', 'stale-token');
+    });
+
+    it('reads sessions from the index set', async () => {
+      const session = makeStoredSession();
+      cache.get = vi.fn(async (key: string) => (key === 'auth_session_session-token' ? JSON.stringify(session) : null));
+      cache.setMembers = vi.fn().mockResolvedValue(['session-token']);
+      const result = await service.getSessionsForSubject('user-1');
+      expect(cache.setMembers).toHaveBeenCalledWith('auth_subject_sessions_user-1');
+      expect(result.map(x => x.sessionToken)).toEqual(['session-token']);
+    });
+
+    it('still reads the legacy list, merged with the set and without duplicates', async () => {
+      const store: Record<string, string> = {
+        'auth_session_subject_user-1': JSON.stringify(['token-a', 'token-b']),
+        'auth_session_token-a': JSON.stringify(makeStoredSession({ sessionToken: 'token-a' })),
+        'auth_session_token-b': JSON.stringify(makeStoredSession({ sessionToken: 'token-b' })),
+        'auth_session_token-c': JSON.stringify(makeStoredSession({ sessionToken: 'token-c' })),
+      };
+      cache.get = vi.fn(async (key: string) => store[key] ?? null);
+      cache.setMembers = vi.fn().mockResolvedValue(['token-b', 'token-c']);
+      const result = await service.getSessionsForSubject('user-1');
+      expect(result.map(x => x.sessionToken).sort()).toEqual(['token-a', 'token-b', 'token-c']);
     });
   });
 
   describe('revokeAllForSubject', () => {
     // A stateful cache: revocation reads the subject index, then each session, then
-    // rewrites the index as sessions are removed.
-    const makeStatefulCache = (seed: Record<string, string>) => {
+    // removes each from the index as it goes. `seed` holds plain keys, `sets` the index.
+    const makeStatefulCache = (seed: Record<string, string>, seedSets: Record<string, string[]> = {}) => {
       const store = new Map<string, string>(Object.entries(seed));
+      const sets = new Map(Object.entries(seedSets).map(([key, members]) => [key, new Set(members)]));
       return {
+        setAdd: vi.fn(async (key: string, member: string) => {
+          const set = sets.get(key) ?? new Set<string>();
+          sets.set(key, set);
+          return set.has(member) ? false : (set.add(member), true);
+        }),
+        setRemove: vi.fn(async (key: string, member: string) => sets.get(key)?.delete(member) ?? false),
+        setMembers: vi.fn(async (key: string) => [...(sets.get(key) ?? [])]),
         get: vi.fn(async (key: string) => store.get(key) ?? null),
         set: vi.fn(async (key: string, value: string) => {
           store.set(key, value);
@@ -463,6 +499,24 @@ describe('AuthenticationSessionService', () => {
       expect(events.find(e => e.type === 'session.revoked_all')).toMatchObject({ data: { reason: 'recovery', count: 2 } });
     });
 
+    it('revokes sessions listed in the index set and in the legacy list alike', async () => {
+      const statefulCache = makeStatefulCache(
+        {
+          'auth_session_subject_user-1': JSON.stringify(['token-a']),
+          'auth_session_token-a': JSON.stringify(makeStoredSession({ sessionToken: 'token-a', familyId: undefined })),
+          'auth_session_token-b': JSON.stringify(makeStoredSession({ sessionToken: 'token-b', familyId: undefined })),
+        },
+        { 'auth_subject_sessions_user-1': ['token-b'] },
+      );
+      service = new AuthenticationSessionService(makeOptions(), statefulCache, jwtProvider);
+
+      await expect(service.revokeAllForSubject('user-1')).resolves.toBe(2);
+
+      expect(await statefulCache.get('auth_session_token-a')).toBeNull();
+      expect(await statefulCache.get('auth_session_token-b')).toBeNull();
+      expect(await statefulCache.setMembers('auth_subject_sessions_user-1')).toEqual([]);
+    });
+
     it('skips index entries whose session has already expired out of cache', async () => {
       const statefulCache = makeStatefulCache({
         'auth_session_subject_user-1': JSON.stringify(['stale-token']),
@@ -470,6 +524,88 @@ describe('AuthenticationSessionService', () => {
       service = new AuthenticationSessionService(makeOptions(), statefulCache, jwtProvider);
 
       await expect(service.revokeAllForSubject('user-1')).resolves.toBe(0);
+    });
+  });
+
+  describe('subject index under concurrent writers', () => {
+    // Every operation yields before it touches the store, so concurrent calls
+    // interleave the way they do against a real cache over the network.
+    // `setTicks` makes plain writes slower than everything else, which opens the
+    // gaps a slow network write would.
+    const makeInterleavingCache = (setTicks = 1) => {
+      const store = new Map<string, string>();
+      const sets = new Map<string, Set<string>>();
+      const tick = () => new Promise(resolve => setImmediate(resolve));
+      const ticks = async (n: number) => {
+        for (let i = 0; i < n; i++) await tick();
+      };
+      return {
+        get: vi.fn(async (key: string) => (await tick(), store.get(key) ?? null)),
+        set: vi.fn(async (key: string, value: string) => (await ticks(setTicks), void store.set(key, value))),
+        add: vi.fn(async (key: string, value: string) => (await tick(), store.has(key) ? false : (store.set(key, value), true))),
+        update: vi.fn(async (key: string, value: string) => (await tick(), store.has(key) ? void store.set(key, value) : undefined)),
+        delete: vi.fn(async (key: string) => (await tick(), store.delete(key) ? key : null)),
+        setAdd: vi.fn(async (key: string, member: string) => {
+          await tick();
+          const set = sets.get(key) ?? new Set<string>();
+          sets.set(key, set);
+          return set.has(member) ? false : (set.add(member), true);
+        }),
+        setRemove: vi.fn(async (key: string, member: string) => (await tick(), sets.get(key)?.delete(member) ?? false)),
+        setMembers: vi.fn(async (key: string) => (await tick(), [...(sets.get(key) ?? [])])),
+      } as unknown as CacheProvider;
+    };
+
+    const ticks = async (n: number) => {
+      for (let i = 0; i < n; i++) await new Promise(resolve => setImmediate(resolve));
+    };
+
+    it('keeps every session created concurrently for one subject', async () => {
+      service = new AuthenticationSessionService(makeOptions(), makeInterleavingCache(), jwtProvider);
+
+      const created = await Promise.all(Array.from({ length: 8 }, () => service.createSession('user-1', {}, makeFactor())));
+
+      const listed = await service.getSessionsForSubject('user-1');
+      expect(listed.map(x => x.sessionToken).sort()).toEqual(created.map(x => x.sessionToken).sort());
+    });
+
+    it('revokes every session created concurrently for one subject', async () => {
+      service = new AuthenticationSessionService(makeOptions(), makeInterleavingCache(), jwtProvider);
+
+      const created = await Promise.all(Array.from({ length: 8 }, () => service.createSession('user-1', {}, makeFactor())));
+
+      await expect(service.revokeAllForSubject('user-1')).resolves.toBe(created.length);
+      for (const session of created) {
+        expect(await service.getSession(session.sessionToken)).toBeUndefined();
+      }
+    });
+
+    // Readers prune index members whose session is missing, which is only safe
+    // because a session is stored before it is indexed. This pins that order.
+    it('keeps a session created while the index is being read and pruned', async () => {
+      service = new AuthenticationSessionService(makeOptions(), makeInterleavingCache(4), jwtProvider);
+      await service.createSession('user-1', {}, makeFactor());
+
+      // Start the read at several offsets into the create, so it lands on each step.
+      for (let offset = 0; offset < 6; offset++) {
+        const created = service.createSession('user-1', {}, makeFactor());
+        await ticks(offset);
+        const [session] = await Promise.all([created, service.getSessionsForSubject('user-1')]);
+
+        const listed = await service.getSessionsForSubject('user-1');
+        expect(listed.map(x => x.sessionToken)).toContain(session.sessionToken);
+      }
+    });
+
+    it('keeps a session created while another for the same subject is deleted', async () => {
+      service = new AuthenticationSessionService(makeOptions(), makeInterleavingCache(), jwtProvider);
+      const doomed = await service.createSession('user-1', {}, makeFactor());
+
+      const [, survivor] = await Promise.all([service.deleteSession(doomed.sessionToken), service.createSession('user-1', {}, makeFactor())]);
+
+      const listed = await service.getSessionsForSubject('user-1');
+      expect(listed.map(x => x.sessionToken)).toEqual([survivor.sessionToken]);
+      await expect(service.revokeAllForSubject('user-1')).resolves.toBe(1);
     });
   });
 
@@ -665,6 +801,7 @@ describe('AuthenticationSessionService', () => {
    */
   function makeLiveHarness() {
     const store = new Map<string, string>();
+    const sets = new Map<string, Set<string>>();
     const cacheImpl = {
       get: vi.fn(async (k: string) => store.get(k) ?? null),
       set: vi.fn(async (k: string, v: string) => {
@@ -682,6 +819,13 @@ describe('AuthenticationSessionService', () => {
         store.delete(k);
         return null;
       }),
+      setAdd: vi.fn(async (k: string, m: string) => {
+        const set = sets.get(k) ?? new Set<string>();
+        sets.set(k, set);
+        return set.has(m) ? false : (set.add(m), true);
+      }),
+      setRemove: vi.fn(async (k: string, m: string) => sets.get(k)?.delete(m) ?? false),
+      setMembers: vi.fn(async (k: string) => [...(sets.get(k) ?? [])]),
       take: vi.fn(async (k: string) => {
         const value = store.get(k) ?? null;
         store.delete(k);
@@ -1125,6 +1269,31 @@ describe('AuthenticationSessionService', () => {
       // The next rotation trips over the stale link, and must not drop the session.
       await expect(svc.rotateSession(old.sessionToken, { acr: 'high' })).rejects.toMatchObject({ statusCode: 401 });
       expect(harness.store.has(`auth_session_${old.sessionToken}`)).toBe(true);
+    });
+
+    it('re-indexes the old session it puts back, in case a reader pruned it mid-rotation', async () => {
+      const harness = makeLiveHarness();
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);
+      const old = await svc.createSession('user-1', { acr: 'low' }, makeFactor());
+
+      const set = vi.mocked(harness.cache.set).getMockImplementation()!;
+      let failed = false;
+      vi.mocked(harness.cache.set).mockImplementation(async (key, value, ttl) => {
+        if (!failed && key.startsWith('auth_session_') && key !== `auth_session_${old.sessionToken}`) {
+          failed = true;
+          // The old session is out of the cache while it rotates, so a concurrent
+          // read finds its index entry dangling and prunes it.
+          await svc.getSessionsForSubject('user-1');
+          throw new Error('cache unavailable');
+        }
+        return set(key, value, ttl);
+      });
+
+      await expect(svc.rotateSession(old.sessionToken, { acr: 'high' })).rejects.toThrow('cache unavailable');
+
+      const listed = await svc.getSessionsForSubject('user-1');
+      expect(listed.map(x => x.sessionToken)).toEqual([old.sessionToken]);
+      await expect(svc.revokeAllForSubject('user-1')).resolves.toBe(1);
     });
 
     it('does not put the old session back when its family was revoked during the failed rotation', async () => {

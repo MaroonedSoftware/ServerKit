@@ -46,6 +46,16 @@ const makeCache = () => {
       store.delete(key);
       return value;
     },
+    // The SAML factor never touches sets.
+    setAdd: async () => {
+      throw new Error('not used');
+    },
+    setRemove: async () => {
+      throw new Error('not used');
+    },
+    setMembers: async () => {
+      throw new Error('not used');
+    },
     take: async key => {
       const value = live(key)?.value ?? null;
       store.delete(key);

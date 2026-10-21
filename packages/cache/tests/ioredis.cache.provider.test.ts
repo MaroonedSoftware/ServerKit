@@ -7,6 +7,9 @@ const mockRedis = {
   get: vi.fn(),
   set: vi.fn(),
   del: vi.fn(),
+  eval: vi.fn(),
+  srem: vi.fn(),
+  smembers: vi.fn(),
   getdel: vi.fn(),
 } as unknown as Redis;
 
@@ -157,6 +160,88 @@ describe('delete', () => {
     const result = await provider.delete('missing-key');
 
     expect(result).toBeNull();
+  });
+});
+
+describe('setAdd', () => {
+  it('runs SADD in a script with the TTL in whole seconds and returns true when the member was added', async () => {
+    vi.mocked(mockRedis.eval).mockResolvedValue(1);
+
+    const result = await provider.setAdd('my-set', 'member-a', { ttl: Duration.fromObject({ minutes: 5 }) });
+
+    expect(result).toBe(true);
+    expect(mockRedis.eval).toHaveBeenCalledWith(expect.stringContaining("redis.call('SADD', KEYS[1], ARGV[1])"), 1, 'my-set', 'member-a', 300);
+  });
+
+  it('only ever lengthens the expiry, so it never shortens an expiry another member set further out', async () => {
+    vi.mocked(mockRedis.eval).mockResolvedValue(1);
+
+    await provider.setAdd('my-set', 'member-a', { ttl: Duration.fromObject({ minutes: 5 }) });
+
+    const script = vi.mocked(mockRedis.eval).mock.calls[0]![0] as string;
+    expect(script).toContain('current < ttl');
+  });
+
+  it('rounds a sub-second TTL up to 1 second', async () => {
+    vi.mocked(mockRedis.eval).mockResolvedValue(1);
+
+    await provider.setAdd('my-set', 'member-a', { ttl: Duration.fromObject({ milliseconds: 200 }) });
+
+    expect(mockRedis.eval).toHaveBeenCalledWith(expect.any(String), 1, 'my-set', 'member-a', 1);
+  });
+
+  it('passes no TTL argument when none is given', async () => {
+    vi.mocked(mockRedis.eval).mockResolvedValue(1);
+
+    await provider.setAdd('my-set', 'member-a');
+
+    expect(mockRedis.eval).toHaveBeenCalledWith(expect.any(String), 1, 'my-set', 'member-a');
+  });
+
+  it('returns false when the member was already present', async () => {
+    vi.mocked(mockRedis.eval).mockResolvedValue(0);
+
+    const result = await provider.setAdd('my-set', 'member-a');
+
+    expect(result).toBe(false);
+  });
+});
+
+describe('setRemove', () => {
+  it('removes the member with SREM and returns true when it was present', async () => {
+    vi.mocked(mockRedis.srem).mockResolvedValue(1);
+
+    const result = await provider.setRemove('my-set', 'member-a');
+
+    expect(result).toBe(true);
+    expect(mockRedis.srem).toHaveBeenCalledWith('my-set', 'member-a');
+  });
+
+  it('returns false when the member was not present', async () => {
+    vi.mocked(mockRedis.srem).mockResolvedValue(0);
+
+    const result = await provider.setRemove('my-set', 'member-a');
+
+    expect(result).toBe(false);
+  });
+});
+
+describe('setMembers', () => {
+  it('returns every member via SMEMBERS', async () => {
+    vi.mocked(mockRedis.smembers).mockResolvedValue(['member-a', 'member-b']);
+
+    const result = await provider.setMembers('my-set');
+
+    expect(result).toEqual(['member-a', 'member-b']);
+    expect(mockRedis.smembers).toHaveBeenCalledWith('my-set');
+  });
+
+  it('returns an empty array when the set does not exist', async () => {
+    vi.mocked(mockRedis.smembers).mockResolvedValue([]);
+
+    const result = await provider.setMembers('missing-set');
+
+    expect(result).toEqual([]);
   });
 });
 

@@ -10,6 +10,9 @@ const makeCache = (): CacheProvider => ({
   add: vi.fn().mockResolvedValue(true),
   update: vi.fn().mockResolvedValue(undefined),
   delete: vi.fn().mockResolvedValue(null),
+  setAdd: vi.fn().mockResolvedValue(true),
+  setRemove: vi.fn().mockResolvedValue(true),
+  setMembers: vi.fn().mockResolvedValue([]),
   take: vi.fn().mockResolvedValue(null),
 });
 

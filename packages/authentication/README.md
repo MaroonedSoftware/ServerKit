@@ -1610,6 +1610,10 @@ Abstract base class. Implement `verify(username: string, password: string): Prom
 | `rotateSession(token, claimOverrides?, expiration?)`                       | `Promise<{ session, accessToken, refreshToken, ... }>` | Mint a new session for a privilege change (e.g. MFA step-up)                              |
 | `deleteSession(token, reason?)`                                            | `Promise<void>`                                        | Revoke a session                                                                          |
 
+`getSessionsForSubject` and `revokeAllForSubject` find a subject's sessions through a per-subject index: a cache set (`auth_subject_sessions_{subject}`) with one member per session token. Every write to it is a single atomic `setAdd` or `setRemove`, so concurrent sign-ins, rotations and sign-outs for one subject cannot drop each other's sessions from it. Its expiry only ever grows, so it outlives the longest-lived session it holds. Entries whose session has already gone are skipped and pruned on read.
+
+Earlier versions kept the index as a JSON array under `auth_session_subject_{subject}`, rewritten on every change, which could lose a session when two writes for one subject overlapped. That key is still read (never written) until it expires, so sessions created before an upgrade stay visible to `revokeAllForSubject`.
+
 ### `AuthenticationSession`
 
 Server-side session record stored in cache. Time fields are Luxon `DateTime` instances in your code; the service serializes them to Unix integers at the cache boundary.
@@ -1651,7 +1655,7 @@ OAuth 2.0-style Bearer token response returned by `issueTokenForSession`.
 
 ### `CacheProvider`
 
-Abstract base class. Implement `get`, `set`, `update`, and `delete` to plug in any cache backend (Redis, in-memory, etc.).
+From `@maroonedsoftware/cache`. Implement `get`, `set`, `add`, `update`, `delete`, `setAdd`, `setRemove`, and `setMembers` to plug in any cache backend (Redis, in-memory, etc.). `add`, `setAdd`, and `setRemove` must be atomic: refresh-token rotation and the per-subject session index depend on it.
 
 ### `JwtProvider`
 
