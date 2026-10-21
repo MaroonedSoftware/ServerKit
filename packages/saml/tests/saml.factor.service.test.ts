@@ -168,6 +168,16 @@ describe('SamlFactorService', () => {
   });
 
   describe('completeAuthorization', () => {
+    it('accepts a response to the expected request', async () => {
+      const service = makeService();
+      const { requestId } = await service.beginAuthorization({ provider: 'acme', intent: 'sign-in' });
+      const result = await service.completeAuthorization({
+        params: { SAMLResponse: buildResponse({ inResponseTo: requestId }) },
+        expectedRequestId: requestId,
+      });
+      expect(result.kind).toBe('new-user');
+    });
+
     it('builds the profile from a valid assertion and stages a new user', async () => {
       const authnInstant = DateTime.utc().minus({ minutes: 2 }).startOf('second');
       const { result } = await signIn({ authnInstant, authnContextClassRef: 'http://schemas.microsoft.com/claims/multipleauthn' });
@@ -338,6 +348,21 @@ describe('SamlFactorService', () => {
         });
         expect(error.statusCode).toBe(401);
         expect(error.details).toEqual({ assertion: 'outside validity window' });
+      });
+
+      it('a response to a request other than the expected one, leaving that request answerable', async () => {
+        const service = makeService();
+        const { requestId: attackerRequest } = await service.beginAuthorization({ provider: 'acme', intent: 'sign-in' });
+        const { requestId: ownRequest } = await service.beginAuthorization({ provider: 'acme', intent: 'sign-in' });
+        const SAMLResponse = buildResponse({ inResponseTo: attackerRequest });
+        const error = await service
+          .completeAuthorization({ params: { SAMLResponse }, expectedRequestId: ownRequest })
+          .catch((caught: unknown) => caught);
+        expect(error).toMatchObject({ statusCode: 400, details: { InResponseTo: 'not the expected request' } });
+        expect(failureReasons()).toEqual(['unsolicited']);
+        await expect(service.completeAuthorization({ params: { SAMLResponse }, expectedRequestId: attackerRequest })).resolves.toMatchObject({
+          kind: 'new-user',
+        });
       });
 
       it('a response to a request this service never issued', async () => {

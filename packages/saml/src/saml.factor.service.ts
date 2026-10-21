@@ -296,9 +296,18 @@ export class SamlFactorService {
    * The request the response answers is consumed before validation, so a response can be
    * submitted once whatever the outcome.
    *
+   * Pass `expectedRequestId`, the `requestId` that {@link beginAuthorization} returned to this
+   * browser (kept in its cookie or session), to refuse a response to a request the browser did not
+   * start. Without it any outstanding request can be answered from any browser, which allows login
+   * CSRF and linking a victim's identity to an attacker's account. A mismatch is refused before the
+   * request is consumed.
+   *
+   * @param args.params The ACS form body.
+   * @param args.expectedRequestId The `requestId` this browser started. Strongly recommended.
    * @throws HTTP 400 when `SAMLResponse` is missing or not a SAML response, when it answers no
-   *   request (`details.SAMLResponse: 'unsolicited response'`), or when the IdP reported an error
-   *   status (`details.status`).
+   *   request (`details.SAMLResponse: 'unsolicited response'`), when it answers a request other than
+   *   `expectedRequestId` (`details.InResponseTo: 'not the expected request'`), or when the IdP
+   *   reported an error status (`details.status`).
    * @throws HTTP 401 when the assertion fails validation; `details.assertion` names the check.
    * @throws HTTP 403 when the `'auth.factor.saml.profile.allowed'` policy denies the profile, or when
    *   a `step-up` identity is not a factor of the stepping-up actor.
@@ -306,10 +315,10 @@ export class SamlFactorService {
    *   already answered.
    * @throws HTTP 409 when a `link` intent's `(provider, subject)` already belongs to another actor.
    */
-  async completeAuthorization(args: { params: SamlCallbackParams }): Promise<SamlAuthorizationResult> {
+  async completeAuthorization(args: { params: SamlCallbackParams; expectedRequestId?: string }): Promise<SamlAuthorizationResult> {
     let validated: { stored: StoredAuthnRequest; config: SamlProviderConfig; profile: SamlProfile };
     try {
-      validated = await this.validateResponse(args.params.SAMLResponse);
+      validated = await this.validateResponse(args.params.SAMLResponse, args.expectedRequestId);
     } catch (error) {
       if (error instanceof SamlRefusal) {
         await this.auditAuthorizationFailed(error.reason, typeof error.internal?.provider === 'string' ? error.internal.provider : undefined);
@@ -548,7 +557,7 @@ export class SamlFactorService {
   }
 
   /** Every check on a response, in order. Throws a {@link SamlRefusal} on the first that fails. */
-  private async validateResponse(encoded: string | undefined) {
+  private async validateResponse(encoded: string | undefined, expectedRequestId: string | undefined) {
     const response = encoded ? readSamlResponse(encoded) : undefined;
     if (!encoded || !response) {
       throw new SamlRefusal(400, 'assertion_invalid', { SAMLResponse: encoded ? 'not a SAML response' : 'missing' });
@@ -556,6 +565,10 @@ export class SamlFactorService {
     if (!response.inResponseTo) {
       // IdP-initiated: nothing binds it to a browser that asked to sign in.
       throw new SamlRefusal(400, 'unsolicited', { SAMLResponse: 'unsolicited response' });
+    }
+    if (expectedRequestId !== undefined && response.inResponseTo !== expectedRequestId) {
+      // Answers a request some other browser started. Leave that request for its own browser.
+      throw new SamlRefusal(400, 'unsolicited', { InResponseTo: 'not the expected request' }, { inResponseTo: response.inResponseTo });
     }
 
     const raw = await this.cache.get(this.getRequestKey(response.inResponseTo));

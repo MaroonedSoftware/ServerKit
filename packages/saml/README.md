@@ -133,14 +133,15 @@ registry.register(SamlFactorService).useClass(SamlFactorService).asSingleton();
 Start the flow and redirect:
 
 ```ts
-const { url } = await saml.beginAuthorization({ provider: 'acme', intent: 'sign-in', redirectAfter: '/jobs' });
-// 302 to url
+const { url, requestId } = await saml.beginAuthorization({ provider: 'acme', intent: 'sign-in', redirectAfter: '/jobs' });
+// keep requestId for this browser (a SameSite=None; Secure cookie, or the session), then 302 to url
 ```
 
-On the ACS route (HTTP-POST, `application/x-www-form-urlencoded`), pass the form through:
+On the ACS route (HTTP-POST, `application/x-www-form-urlencoded`), pass the form through with the
+`requestId` this browser started:
 
 ```ts
-const result = await saml.completeAuthorization({ params: body });
+const result = await saml.completeAuthorization({ params: body, expectedRequestId: storedRequestId });
 
 switch (result.kind) {
   case 'signed-in':
@@ -199,10 +200,11 @@ must enforce three things:
 
 - **Bind each request to its browser.** `completeAuthorization` trusts whichever stored AuthnRequest
   the response's `InResponseTo` names, and ignores `RelayState`. Keep the `requestId` returned by
-  `beginAuthorization` in a cookie or session for that browser, and refuse an ACS post whose request
-  that browser did not start: compare the stored value with the `InResponseTo` of the decoded
-  `SAMLResponse` before calling `completeAuthorization` (the service still verifies the signed copy).
-  Otherwise an attacker can begin a `link` for their own account and send the IdP URL to a victim,
+  `beginAuthorization` in a cookie or session for that browser, and pass it to
+  `completeAuthorization` as `expectedRequestId`. A response to any other request is then refused
+  with a 400 (`details.InResponseTo: 'not the expected request'`) and that request is left
+  untouched. The ACS post arrives cross-site from the IdP, so a cookie needs `SameSite=None; Secure`.
+  Without `expectedRequestId` nothing is checked. Otherwise an attacker can begin a `link` for their own account and send the IdP URL to a victim,
   whose identity then gets linked to the attacker's account. The same flow allows login CSRF on
   `sign-in`.
 - **Check the actor.** On `stepped-up` and `linked` results, confirm that `result.actorId` is the
