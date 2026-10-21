@@ -687,13 +687,18 @@ export class AuthenticationSessionService {
    * @param expiration      - Lifetime for the rotated session; defaults to
    *   {@link AuthenticationSessionServiceOptions.expiresIn}.
    * @returns The new session and a fresh access/refresh token pair bound to it.
-   * @throws 401 when the source session does not exist.
+   * @throws 401 when the source session does not exist or was already rotated.
+   *   The old session is consumed before the new one is written, so of two
+   *   concurrent rotations only one succeeds.
    */
   async rotateSession(sessionToken: string, claimOverrides: Record<string, unknown> = {}, expiration?: Duration, device?: SessionDevice) {
-    const oldSession = await this.getSession(sessionToken);
-    if (!oldSession) {
+    // Consume the old session up front, atomically, so two concurrent rotations
+    // of one session cannot both mint an elevated replacement.
+    const raw = await this.cache.take(this.getSessionKey(sessionToken));
+    if (!raw) {
       throw unauthorizedError('Bearer error="invalid_token"');
     }
+    const oldSession = this.deserializeSession(raw);
 
     const deepmerge = deepmergeCustom({
       mergeArrays: values => {
@@ -732,7 +737,6 @@ export class AuthenticationSessionService {
     await this.cache.set(this.getSessionKey(newSessionToken), this.serializeSession(newSession), expiration);
     await this.ensureSubjectSession(oldSession.subject, newSessionToken, expiration);
 
-    await this.cache.delete(this.getSessionKey(sessionToken));
     await this.removeSubjectSession(oldSession.subject, sessionToken);
     await this.removeSessionFromFamily(familyId, sessionToken);
 
