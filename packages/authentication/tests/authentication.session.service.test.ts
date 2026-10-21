@@ -928,6 +928,52 @@ describe('AuthenticationSessionService', () => {
       expect(harness.store.has(`auth_session_${stepUpAgain.session.sessionToken}`)).toBe(false);
     });
 
+    it('leaves no live session when the revocation runs while a rotation is mid-flight', async () => {
+      const harness = makeLiveHarness();
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);
+
+      const session = await svc.createSession('user-1', {}, makeFactor());
+      const tokens = await svc.issueTokenForSession(session.sessionToken);
+      const stolen = lastRefreshPayload(harness);
+      presenting(harness, stolen);
+      await svc.refreshSession(tokens.refreshToken!);
+
+      // Run the whole replay revocation in the gap after the rotation has loaded
+      // the old session but before it links its successor: the walk cannot see a
+      // session that does not exist yet, so only the marker can stop it.
+      const add = vi.mocked(harness.cache.add).getMockImplementation()!;
+      let replay: Promise<unknown> | undefined;
+      vi.mocked(harness.cache.add).mockImplementation(async (key, value, options) => {
+        if (key.startsWith('auth_session_successor_') && !replay) {
+          replay = svc.refreshSession(tokens.refreshToken!);
+          await replay.catch(() => undefined);
+        }
+        return add(key, value, options);
+      });
+
+      await expect(svc.rotateSession(session.sessionToken, { acr: 'high' })).rejects.toMatchObject({ statusCode: 401 });
+      await expect(replay).rejects.toMatchObject({ statusCode: 401 });
+
+      const liveSessions = [...harness.store.keys()].filter(
+        key => key.startsWith('auth_session_') && !key.startsWith('auth_session_subject_') && !key.startsWith('auth_session_successor_'),
+      );
+      expect(liveSessions).toEqual([]);
+    });
+
+    it('refuses to rotate a session whose family was revoked', async () => {
+      const harness = makeLiveHarness();
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);
+      const session = await svc.createSession('user-1', {}, makeFactor());
+      harness.store.set(`auth_refresh_family_revoked_${session.familyId}`, '1');
+
+      await expect(svc.rotateSession(session.sessionToken)).rejects.toMatchObject({ statusCode: 401 });
+
+      const liveSessions = [...harness.store.keys()].filter(
+        key => key.startsWith('auth_session_') && !key.startsWith('auth_session_subject_') && !key.startsWith('auth_session_successor_'),
+      );
+      expect(liveSessions).toEqual([`auth_session_${session.sessionToken}`]);
+    });
+
     it('also revokes sessions listed in a family record written by an earlier version', async () => {
       const harness = makeLiveHarness();
       const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);

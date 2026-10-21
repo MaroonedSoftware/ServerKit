@@ -186,6 +186,11 @@ export class AuthenticationSessionService {
     return `auth_session_successor_${sessionToken}`;
   }
 
+  /** Set when a family is revoked for theft, so a rotation still in flight cannot outlive it. */
+  private getFamilyRevokedKey(familyId: string) {
+    return `auth_refresh_family_revoked_${familyId}`;
+  }
+
   private serializeSession(session: AuthenticationSession): string {
     return JSON.stringify({
       sessionToken: session.sessionToken,
@@ -659,8 +664,9 @@ export class AuthenticationSessionService {
    * @param expiration      - Lifetime for the rotated session; defaults to
    *   {@link AuthenticationSessionServiceOptions.expiresIn}.
    * @returns The new session and a fresh access/refresh token pair bound to it.
-   * @throws 401 when the source session does not exist, or another rotation of
-   *   it already succeeded (concurrent rotations of one session succeed once).
+   * @throws 401 when the source session does not exist, another rotation of it
+   *   already succeeded (concurrent rotations of one session succeed once), or
+   *   its family was revoked for theft while the rotation ran.
    */
   async rotateSession(sessionToken: string, claimOverrides: Record<string, unknown> = {}, expiration?: Duration, device?: SessionDevice) {
     const oldSession = await this.getSession(sessionToken);
@@ -714,6 +720,17 @@ export class AuthenticationSessionService {
 
     await this.cache.set(this.getSessionKey(newSessionToken), this.serializeSession(newSession), expiration);
     await this.ensureSubjectSession(oldSession.subject, newSessionToken, expiration);
+
+    // A theft revocation of this family may be running concurrently. It writes
+    // its marker and then walks the chain; this rotation linked and wrote its
+    // session and only then reads the marker. So either the walk reaches the new
+    // session and deletes it, or this check sees the marker. Order matters: both
+    // writes above must come before this read.
+    if (await this.cache.get(this.getFamilyRevokedKey(familyId))) {
+      await this.cache.delete(this.getSessionKey(newSessionToken));
+      await this.removeSubjectSession(oldSession.subject, newSessionToken);
+      throw unauthorizedError('Bearer error="invalid_token"').withInternalDetails({ message: `family ${familyId} was revoked during rotation` });
+    }
 
     await this.cache.delete(this.getSessionKey(sessionToken));
     await this.removeSubjectSession(oldSession.subject, sessionToken);
@@ -859,6 +876,10 @@ export class AuthenticationSessionService {
    *   aggregate alongside the per-session events.
    */
   private async revokeFamily(familyId: string, sessionToken: string): Promise<number> {
+    // Before the walk, so a concurrent rotation either sees it or is reached by
+    // the walk (see `rotateSession`).
+    await this.cache.set(this.getFamilyRevokedKey(familyId), '1', this.options.refreshExpiresIn);
+
     const tokens: string[] = [];
     const seen = new Set<string>();
     let next: string | null = sessionToken;
