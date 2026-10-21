@@ -712,18 +712,15 @@ describe('AuthenticationSessionService', () => {
       expect(typeof refreshPayload.jti).toBe('string');
     });
 
-    it('registers the issued jti in the family blob so it can be rotated/revoked later', async () => {
+    it('writes no shared family record that concurrent issuances would have to rewrite', async () => {
       const harness = makeLiveHarness();
       const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);
 
       const session = await svc.createSession('user-1', {}, makeFactor());
       await svc.issueTokenForSession(session.sessionToken);
 
-      const familyRaw = harness.store.get(`auth_refresh_family_${session.familyId}`);
-      expect(familyRaw).toBeDefined();
-      const family = JSON.parse(familyRaw!);
-      expect(family.jtis).toHaveLength(1);
-      expect(family.sessionTokens).toContain(session.sessionToken);
+      expect(harness.store.has(`auth_refresh_family_${session.familyId}`)).toBe(false);
+      expect(harness.cache.update).not.toHaveBeenCalled();
     });
   });
 
@@ -898,6 +895,62 @@ describe('AuthenticationSessionService', () => {
     });
   });
 
+  describe('refreshSession — theft revocation across rotations', () => {
+    /** The refresh-token claims minted by the most recent `create` call. */
+    const lastRefreshPayload = (harness: ReturnType<typeof makeLiveHarness>) => {
+      const calls = (harness.jwtProvider.create as ReturnType<typeof vi.fn>).mock.calls;
+      return calls[calls.length - 1]![0] as { kind: string; jti: string; familyId: string; sessionToken: string };
+    };
+    const presenting = (harness: ReturnType<typeof makeLiveHarness>, payload: object) =>
+      (harness.jwtProvider.decode as ReturnType<typeof vi.fn>).mockReturnValue({
+        ...payload,
+        aud: AUD,
+        exp: Math.floor(DateTime.now().toSeconds()) + 3600,
+      });
+
+    it('revokes every session rotated from the one a replayed token was issued for', async () => {
+      const harness = makeLiveHarness();
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);
+
+      const original = await svc.createSession('user-1', {}, makeFactor());
+      const tokens = await svc.issueTokenForSession(original.sessionToken);
+      const stolen = lastRefreshPayload(harness);
+      presenting(harness, stolen);
+      await svc.refreshSession(tokens.refreshToken!);
+
+      const stepUp = await svc.rotateSession(original.sessionToken, { acr: 'high' });
+      const stepUpAgain = await svc.rotateSession(stepUp.session.sessionToken, { acr: 'higher' });
+
+      presenting(harness, stolen);
+      await expect(svc.refreshSession(tokens.refreshToken!)).rejects.toMatchObject({ statusCode: 401 });
+
+      expect(harness.store.has(`auth_session_${stepUp.session.sessionToken}`)).toBe(false);
+      expect(harness.store.has(`auth_session_${stepUpAgain.session.sessionToken}`)).toBe(false);
+    });
+
+    it('also revokes sessions listed in a family record written by an earlier version', async () => {
+      const harness = makeLiveHarness();
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);
+
+      const session = await svc.createSession('user-1', {}, makeFactor());
+      const other = await svc.createSession('user-1', {}, makeFactor());
+      const tokens = await svc.issueTokenForSession(session.sessionToken);
+      harness.store.set(
+        `auth_refresh_family_${session.familyId}`,
+        JSON.stringify({ jtis: [], sessionTokens: [session.sessionToken, other.sessionToken] }),
+      );
+      const payload = lastRefreshPayload(harness);
+      presenting(harness, payload);
+      await svc.refreshSession(tokens.refreshToken!);
+
+      presenting(harness, payload);
+      await expect(svc.refreshSession(tokens.refreshToken!)).rejects.toMatchObject({ statusCode: 401 });
+
+      expect(harness.store.has(`auth_session_${other.sessionToken}`)).toBe(false);
+      expect(harness.store.has(`auth_refresh_family_${session.familyId}`)).toBe(false);
+    });
+  });
+
   describe('rotateSession — privilege change', () => {
     it('mints a new sessionToken, preserves familyId, deletes the old session, fires hooks', async () => {
       const harness = makeLiveHarness();
@@ -932,6 +985,28 @@ describe('AuthenticationSessionService', () => {
       const harness = makeLiveHarness();
       const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);
       await expect(svc.rotateSession('missing-token')).rejects.toMatchObject({ statusCode: 401 });
+    });
+
+    it('links exactly one replacement when the same session is rotated concurrently', async () => {
+      const harness = makeLiveHarness();
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);
+      const old = await svc.createSession('user-1', { acr: 'low' }, makeFactor());
+
+      const outcomes = await Promise.allSettled([
+        svc.rotateSession(old.sessionToken, { acr: 'high' }),
+        svc.rotateSession(old.sessionToken, { acr: 'high' }),
+      ]);
+
+      const winners = outcomes.filter(outcome => outcome.status === 'fulfilled');
+      expect(winners).toHaveLength(1);
+      expect(outcomes.filter(outcome => outcome.status === 'rejected')).toEqual([
+        expect.objectContaining({ reason: expect.objectContaining({ statusCode: 401 }) }),
+      ]);
+      const liveSessions = [...harness.store.keys()].filter(
+        key => key.startsWith('auth_session_') && !key.startsWith('auth_session_subject_') && !key.startsWith('auth_session_successor_'),
+      );
+      expect(liveSessions).toEqual([`auth_session_${winners[0]!.value.session.sessionToken}`]);
+      expect(harness.store.get(`auth_session_successor_${old.sessionToken}`)).toBe(winners[0]!.value.session.sessionToken);
     });
   });
 
