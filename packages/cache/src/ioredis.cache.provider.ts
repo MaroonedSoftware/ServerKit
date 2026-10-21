@@ -84,6 +84,14 @@ export class IoRedisCacheProvider implements CacheProvider {
   }
 
   /**
+   * Atomically reads and removes `key` with Redis `GETDEL` (Redis 6.2 or later).
+   * @returns The value that was stored, or `null` if the key was absent or already taken.
+   */
+  async take(key: string): Promise<string | null> {
+    return await this.redis.getdel(key);
+  }
+
+  /**
    * Overwrites the value at `key`.
    * When `ttl` is provided the expiry is reset to that duration (`EX`, rounded up to whole
    * seconds, min 1); otherwise the existing TTL is preserved via Redis `KEEPTTL`. The `XX`

@@ -19,6 +19,11 @@ const makeCache = () => {
       store.delete(key);
       return had ? key : null;
     }),
+    take: vi.fn(async (key: string) => {
+      const value = store.get(key) ?? null;
+      store.delete(key);
+      return value;
+    }),
   } as unknown as CacheProvider;
 };
 
@@ -63,6 +68,14 @@ describe('RecoveryChallengeService', () => {
 
     expect(await service.peek(issued.challengeId)).toBeNull();
     expect(await service.redeem(issued.challengeId)).toBeNull();
+  });
+
+  it('redeem succeeds once when called concurrently', async () => {
+    const issued = await service.issue({ actor, reason: 'password_reset', eligibleChannels: channels });
+
+    const results = await Promise.all([service.redeem(issued.challengeId), service.redeem(issued.challengeId)]);
+
+    expect(results.filter(result => result !== null)).toHaveLength(1);
   });
 
   it('peek returns null for an unknown challenge id', async () => {

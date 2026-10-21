@@ -10,6 +10,7 @@ const mockRedis = {
   eval: vi.fn(),
   srem: vi.fn(),
   smembers: vi.fn(),
+  getdel: vi.fn(),
 } as unknown as Redis;
 
 let provider: IoRedisCacheProvider;
@@ -241,5 +242,26 @@ describe('setMembers', () => {
     const result = await provider.setMembers('missing-set');
 
     expect(result).toEqual([]);
+  });
+});
+
+describe('take', () => {
+  it('reads and removes the entry in one GETDEL', async () => {
+    vi.mocked(mockRedis.getdel).mockResolvedValue('cached-value');
+
+    const result = await provider.take('my-key');
+
+    expect(result).toBe('cached-value');
+    expect(mockRedis.getdel).toHaveBeenCalledWith('my-key');
+    expect(mockRedis.get).not.toHaveBeenCalled();
+    expect(mockRedis.del).not.toHaveBeenCalled();
+  });
+
+  it('returns null when the key did not exist', async () => {
+    vi.mocked(mockRedis.getdel).mockResolvedValue(null);
+
+    const result = await provider.take('missing-key');
+
+    expect(result).toBeNull();
   });
 });

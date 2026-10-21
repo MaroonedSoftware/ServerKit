@@ -73,6 +73,7 @@ Base class to extend when implementing a custom cache backend.
 | `add`        | `(key: string, value: string, options?: { ttl?: Duration }) => Promise<boolean>`  | Atomic set-if-absent claim primitive; returns `true` if the key was created, `false` if it already existed.  |
 | `update`     | `(key: string, value: string, ttl?: Duration) => Promise<void>`                   | Overwrites an existing value; omit `ttl` to preserve the original expiry. Will not resurrect an expired key. |
 | `delete`     | `(key: string) => Promise<string \| null>`                                        | Removes the entry and returns the key, or `null` if it didn't exist.                                         |
+| `take`       | `(key: string) => Promise<string \| null>`                                        | Atomic get-and-delete for single-use entries; at most one concurrent caller receives the value.              |
 | `setAdd`     | `(key: string, member: string, options?: { ttl?: Duration }) => Promise<boolean>` | Atomically adds a member to a set; `ttl` extends the set's expiry but never shortens it. `true` if added.    |
 | `setRemove`  | `(key: string, member: string) => Promise<boolean>`                               | Atomically removes a member from a set; `true` if it was present. An emptied set is removed.                 |
 | `setMembers` | `(key: string) => Promise<string[]>`                                              | Every member of a set, or `[]` if it does not exist.                                                         |
@@ -85,6 +86,7 @@ Concrete `CacheProvider` backed by [ioredis](https://github.com/redis/ioredis). 
 - `add` uses `SET … NX` so the claim is atomic across concurrent callers.
 - `update` without a new TTL uses `SET … KEEPTTL XX`, so an entry that has since expired is not resurrected without an expiry.
 - `setAdd` runs `SADD` and the expiry extension in one Lua script, so the set is never seen with the member but without its TTL. `setRemove` is `SREM`, `setMembers` is `SMEMBERS`.
+- `take` uses `GETDEL`, which needs Redis 6.2 or later.
 
 ### `IdempotencyStore` (abstract) and `CacheIdempotencyStore`
 
@@ -142,6 +144,14 @@ export class InMemoryCacheProvider extends CacheProvider {
     this.store.set(key, { value, expiresAt: Date.now() + ttl.as('milliseconds') });
   }
 
+  // No await between the check and the write, so concurrent callers cannot both win.
+  async add(key: string, value: string, options?: { ttl?: Duration }) {
+    const existing = this.store.get(key);
+    if (existing && Date.now() <= existing.expiresAt) return false;
+    this.store.set(key, { value, expiresAt: options?.ttl ? Date.now() + options.ttl.as('milliseconds') : Infinity });
+    return true;
+  }
+
   async update(key: string, value: string, ttl?: Duration) {
     const existing = this.store.get(key);
     const expiresAt = ttl ? Date.now() + ttl.as('milliseconds') : (existing?.expiresAt ?? Date.now());
@@ -150,6 +160,13 @@ export class InMemoryCacheProvider extends CacheProvider {
 
   async delete(key: string) {
     return this.store.delete(key) ? key : null;
+  }
+
+  // Read and delete before any await, so two concurrent takes cannot both get the value.
+  async take(key: string) {
+    const entry = this.store.get(key);
+    this.store.delete(key);
+    return entry && Date.now() <= entry.expiresAt ? entry.value : null;
   }
 
   // add, setAdd, setRemove, and setMembers omitted for brevity. Each must be atomic.

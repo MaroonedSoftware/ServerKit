@@ -40,6 +40,11 @@ export const makeCache = () => {
     }),
     setRemove: vi.fn(async (key: string, member: string) => sets.get(key)?.delete(member) ?? false),
     setMembers: vi.fn(async (key: string) => [...(sets.get(key) ?? [])]),
+    take: vi.fn(async (key: string) => {
+      const value = store.get(key) ?? null;
+      store.delete(key);
+      return value;
+    }),
   } as unknown as CacheProvider & { store: Map<string, string> };
 };
 

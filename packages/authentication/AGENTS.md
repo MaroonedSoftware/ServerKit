@@ -126,7 +126,7 @@ class) and an abstract `<Name>FactorRepository` you implement.
 | `JwtProvider`                                             | class                  | —                                                                                                                                                                                                          |
 | `OtpProvider`                                             | class                  | `validate` returns a boolean; `validateWithCounter` returns the matching step. Types: `OtpType`, `OtpOptions`, `TotpOptions`, `HotpOptions`, `OtpUrlOptions`, `OtpValidationOptions`, `defaultOtpOptions`. |
 | `OtpProviderMock`                                         | class                  | `extends OtpProvider`. Tests only.                                                                                                                                                                         |
-| `PkceProvider`                                            | class                  | —                                                                                                                                                                                                          |
+| `PkceProvider`                                            | class                  | Consume with `takeVerifier` / `takeChallenge` (atomic); `get*` then `delete*` races under concurrency.                                                                                                     |
 | `OidcProviderRegistry`                                    | class                  | Async throughout: `getConfig`, `isPublicClient`, `listProviders`, `getConfiguration`. Consults the source on every lookup.                                                                                 |
 | `OidcProviderSource` / `OidcProviderRegistryConfig`       | abstract class / class | The DI token and its static implementation. Types: `OidcProviderConfig` (incl. `trustEmail`), `FederatedEmailTrust`.                                                                                       |
 | `OAuth2ProviderRegistry` / `OAuth2ProviderRegistryConfig` | class                  | Types: `OAuth2ProviderConfig`, `OAuth2ProviderClient`.                                                                                                                                                     |
@@ -363,6 +363,22 @@ registry.register(OAuthAuthorizationServer).useClass(OAuthAuthorizationServer).a
 On the resource's route, validate bearer tokens with `lookupSessionFromJwt(token, false, resource)`;
 everywhere else pass nothing, and resource tokens are refused. Answer a 401 there with
 `WWW-Authenticate: Bearer resource_metadata="${protectedResourceMetadataUrl(resource)}"`.
+
+## Caller responsibilities (OIDC)
+
+`OidcFactorService` holds no browser state, so it cannot tell which browser started a flow. Three
+checks belong to the app:
+
+- **Bind `state` to the browser.** `completeAuthorization` trusts whichever stored state record the
+  callback's `state` names; the PKCE verifier and nonce live in that record, so they do not help.
+  Store the `state` that `beginAuthorization` returns in a cookie or session for that browser, and
+  refuse a callback whose `state` that browser did not start. Without this, an attacker can begin a
+  `link` for their own account and send the IdP URL to a victim: the victim's identity is linked to
+  the attacker's account. The same gap allows login CSRF on `sign-in`.
+- **Match the actor.** On `stepped-up` and `linked` results, check that `result.actorId` is the
+  actor of the current session before acting on it.
+- **Allow-list `redirectAfter`.** It is returned exactly as `beginAuthorization` received it and is
+  not validated. Redirecting to it unchecked is an open redirect.
 
 ## Rules for generated code
 

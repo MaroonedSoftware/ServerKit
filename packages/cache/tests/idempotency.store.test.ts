@@ -45,6 +45,12 @@ class FakeCacheProvider extends CacheProvider {
   async setMembers(): Promise<string[]> {
     throw new Error('not used');
   }
+
+  async take(key: string): Promise<string | null> {
+    const value = this.store.get(key) ?? null;
+    this.store.delete(key);
+    return value;
+  }
 }
 
 let cache: FakeCacheProvider;

@@ -19,6 +19,7 @@ const makeCacheProvider = () =>
     setAdd: vi.fn().mockResolvedValue(true),
     setRemove: vi.fn().mockResolvedValue(true),
     setMembers: vi.fn().mockResolvedValue([]),
+    take: vi.fn().mockResolvedValue(null),
   }) as unknown as CacheProvider;
 
 const makeJwtProvider = () =>
@@ -452,6 +453,11 @@ describe('AuthenticationSessionService', () => {
           store.delete(key);
           return had ? key : null;
         }),
+        take: vi.fn(async (key: string) => {
+          const value = store.get(key) ?? null;
+          store.delete(key);
+          return value;
+        }),
       } as unknown as CacheProvider;
     };
 
@@ -820,6 +826,11 @@ describe('AuthenticationSessionService', () => {
       }),
       setRemove: vi.fn(async (k: string, m: string) => sets.get(k)?.delete(m) ?? false),
       setMembers: vi.fn(async (k: string) => [...(sets.get(k) ?? [])]),
+      take: vi.fn(async (k: string) => {
+        const value = store.get(k) ?? null;
+        store.delete(k);
+        return value;
+      }),
     } as unknown as CacheProvider;
 
     let nextToken = 0;
@@ -1076,6 +1087,24 @@ describe('AuthenticationSessionService', () => {
       const harness = makeLiveHarness();
       const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);
       await expect(svc.rotateSession('missing-token')).rejects.toMatchObject({ statusCode: 401 });
+    });
+
+    it('mints one replacement when the same session is rotated concurrently', async () => {
+      const harness = makeLiveHarness();
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);
+      const old = await svc.createSession('user-1', { acr: 'low' }, makeFactor());
+
+      const outcomes = await Promise.allSettled([
+        svc.rotateSession(old.sessionToken, { acr: 'high' }),
+        svc.rotateSession(old.sessionToken, { acr: 'high' }),
+      ]);
+
+      expect(outcomes.filter(outcome => outcome.status === 'fulfilled')).toHaveLength(1);
+      expect(outcomes.filter(outcome => outcome.status === 'rejected')).toEqual([
+        expect.objectContaining({ reason: expect.objectContaining({ statusCode: 401 }) }),
+      ]);
+      const liveSessions = [...harness.store.keys()].filter(key => key.startsWith('auth_session_') && !key.startsWith('auth_session_subject_'));
+      expect(liveSessions).toHaveLength(1);
     });
   });
 

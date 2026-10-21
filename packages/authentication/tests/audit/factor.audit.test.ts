@@ -26,6 +26,11 @@ const makeCache = () => {
     add: vi.fn(async (k: string, v: string) => (store.has(k) ? false : (store.set(k, v), true))),
     update: vi.fn(async (k: string, v: string) => void store.set(k, v)),
     delete: vi.fn(async (k: string) => (store.delete(k) ? k : null)),
+    take: vi.fn(async (k: string) => {
+      const value = store.get(k) ?? null;
+      store.delete(k);
+      return value;
+    }),
   } as unknown as CacheProvider & { store: Map<string, string> };
 };
 

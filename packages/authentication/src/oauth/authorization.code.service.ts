@@ -128,9 +128,8 @@ export class AuthorizationCodeService {
       throw invalidGrant('the authorization code has already been used').withInternalDetails({ code: 'replayed' });
     }
 
-    const raw = await this.cache.get(this.codeKey(code));
     // Gone whatever the outcome: it holds the consenting user's session.
-    await this.cache.delete(this.codeKey(code));
+    const raw = await this.cache.take(this.codeKey(code));
     if (raw === null) {
       throw invalidGrant('the authorization code is invalid or has expired');
     }

@@ -77,4 +77,15 @@ export abstract class CacheProvider {
    * @returns The members, or an empty array if the set does not exist or has expired.
    */
   abstract setMembers(key: string): Promise<string[]>;
+
+  /**
+   * Atomically reads and removes an entry (get-and-delete). Use this to consume single-use
+   * entries such as one-time tokens or pending authorizations: concurrent callers race, and at
+   * most one of them receives the value. A `get` followed by a `delete` is not a substitute,
+   * since two callers can both pass the `get` before either deletes.
+   *
+   * @returns The stored string, or `null` if the key does not exist, has expired, or was
+   *   already taken by another caller.
+   */
+  abstract take(key: string): Promise<string | null>;
 }

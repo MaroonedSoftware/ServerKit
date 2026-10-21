@@ -130,15 +130,12 @@ export class RecoveryChallengeService {
   }
 
   /**
-   * Look up a challenge and delete it in the same call. Returns `null` when the
-   * challenge has expired or does not exist.
+   * Look up a challenge and delete it atomically, so concurrent redeems succeed
+   * at most once. Returns `null` when the challenge has expired, does not
+   * exist, or was already redeemed.
    */
   async redeem(challengeId: string): Promise<RecoveryChallengePayload | null> {
-    const data = await this.cache.get(this.getKey(challengeId));
-    if (!data) {
-      return null;
-    }
-    await this.cache.delete(this.getKey(challengeId));
-    return this.deserialize(data);
+    const data = await this.cache.take(this.getKey(challengeId));
+    return data ? this.deserialize(data) : null;
   }
 }
