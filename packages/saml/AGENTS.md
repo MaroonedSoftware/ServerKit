@@ -106,6 +106,24 @@ if (result.kind === 'new-user') {
 }
 ```
 
+## Caller responsibilities
+
+`SamlFactorService` holds no browser state, so it cannot tell which browser started a flow. Three
+checks belong to the app:
+
+- **Bind the request to the browser.** `completeAuthorization` trusts whichever stored AuthnRequest
+  the response's `InResponseTo` names, and ignores `RelayState`. Store the `requestId` that
+  `beginAuthorization` returns in a cookie or session for that browser, and refuse an ACS post whose
+  request that browser did not start (compare it with the `InResponseTo` on the decoded
+  `SAMLResponse` before calling `completeAuthorization`; the service still checks the signed copy).
+  Without this, an attacker can begin a `link` for their own account and send the IdP URL to a
+  victim: the victim's identity is linked to the attacker's account. The same gap allows login CSRF
+  on `sign-in`.
+- **Match the actor.** On `stepped-up` and `linked` results, check that `result.actorId` is the
+  actor of the current session before acting on it.
+- **Allow-list `redirectAfter`.** It is returned exactly as `beginAuthorization` received it and is
+  not validated. Redirecting to it unchecked is an open redirect.
+
 ## Rules for generated code
 
 - Store `idpSigningCertificates` from `parseIdpMetadata`'s `signingCertificates[].pem`; never take a
@@ -116,8 +134,9 @@ if (result.kind === 'new-user') {
 - Treat `name` as permanent: it identifies the factors created through the provider.
 - Let the HTTP 400 from `parseIdpMetadata` reach the client: `details.metadata` is written for the
   admin who uploaded the document.
-- Pass the ACS form body to `completeAuthorization` untouched; do not decode or pre-validate
-  `SAMLResponse`, and never read the profile from it yourself.
+- Pass the ACS form body to `completeAuthorization` untouched; do not pre-validate `SAMLResponse`,
+  and never read the profile from it yourself. Reading its `InResponseTo` to match the browser's
+  stored `requestId` is the one exception (see Caller responsibilities).
 - Set `trustEmail` only to vouch for addresses the IdP is authoritative for (a domain the
   connection's organization verified). Without it nothing auto-links.
 - Refuse addresses outside a connection's domains in an `auth.factor.saml.profile.allowed` policy,

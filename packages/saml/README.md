@@ -192,6 +192,31 @@ status, 401 with `details.assertion` naming the failed check, 403 for a policy d
 unknown or already-answered `InResponseTo`. Each one records a `saml.authorization.failed` audit
 event with its reason.
 
+### Caller responsibilities
+
+`SamlFactorService` holds no browser state, so it cannot tell which browser started a flow. The app
+must enforce three things:
+
+- **Bind each request to its browser.** `completeAuthorization` trusts whichever stored AuthnRequest
+  the response's `InResponseTo` names, and ignores `RelayState`. Keep the `requestId` returned by
+  `beginAuthorization` in a cookie or session for that browser, and refuse an ACS post whose request
+  that browser did not start: compare the stored value with the `InResponseTo` of the decoded
+  `SAMLResponse` before calling `completeAuthorization` (the service still verifies the signed copy).
+  Otherwise an attacker can begin a `link` for their own account and send the IdP URL to a victim,
+  whose identity then gets linked to the attacker's account. The same flow allows login CSRF on
+  `sign-in`.
+- **Check the actor.** On `stepped-up` and `linked` results, confirm that `result.actorId` is the
+  actor of the current session.
+- **Allow-list `redirectAfter`.** It is returned as given and never validated, so redirecting to it
+  unchecked is an open redirect.
+
+### Choose a stable NameID
+
+`subject` is the assertion's `NameID`, and a factor is keyed on `(provider, subject)`. The default
+`emailAddress` format is only as stable as the mailbox: when an organization reassigns an address,
+the new holder signs in to the old holder's account. Prefer the `persistent` format
+(`urn:oasis:names:tc:SAML:2.0:nameid-format:persistent`) on `nameIdFormat` wherever the IdP offers it.
+
 ## Notes
 
 - Certificates are only ever taken from the provider configuration. The metadata document's own

@@ -25,7 +25,11 @@ import { isSha1Algorithm, readSamlResponse, readVerifiedAssertion } from './saml
 export type SamlProfile = {
   /** Provider name that issued the profile (e.g. `"acme.okta"`). */
   provider: string;
-  /** The assertion's `NameID`: stable per (provider, end-user). */
+  /**
+   * The assertion's `NameID`. Only as stable as its format: under the default `emailAddress`
+   * format a reassigned mailbox inherits the previous holder's factor. Configure the `persistent`
+   * format when the IdP supports it.
+   */
   subject: string;
   /** The NameID's `Format`, when the IdP sent one. */
   nameIdFormat?: string;
