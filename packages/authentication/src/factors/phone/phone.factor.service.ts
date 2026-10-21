@@ -390,7 +390,11 @@ export class PhoneFactorService {
       throw error;
     }
 
-    await this.cache.delete(this.getChallengeKey(challengeId));
+    // The take is the arbiter: of two concurrent correct submissions, only one verifies.
+    if ((await this.cache.take(this.getChallengeKey(challengeId))) === null) {
+      await this.auditChallengeFailed('challenge_not_found', payload.actorId, payload.factorId);
+      throw httpError(404).withDetails({ challengeId: 'not found' });
+    }
     await this.cache.delete(this.getChallengeKey(`${payload.actorId}_${payload.factorId}`));
 
     await this.audit.record({

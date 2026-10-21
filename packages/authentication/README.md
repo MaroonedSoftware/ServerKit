@@ -416,12 +416,13 @@ await pkce.storeChallenge(codeChallenge, JSON.stringify({ redirectUrl, scope }),
 // --- Token step (client → /token) ---
 // The client sends back the verifier (parsed request body lives on ctx.parsedBody)
 const { code_verifier } = ctx.parsedBody as { code_verifier: string };
-const stateJson = await pkce.getVerifier(code_verifier);
+const stateJson = await pkce.takeVerifier(code_verifier); // atomic read-and-delete: single-use
 if (!stateJson) throw httpError(400);
-await pkce.deleteVerifier(code_verifier); // single-use
 ```
 
-If you control both halves of the pair (e.g. issuing your own download links), use `storeVerifier` / `getVerifier` / `deleteVerifier` and skip the manual `pkceCreateChallenge` call.
+Use `takeVerifier` / `takeChallenge` to consume an entry. A `getVerifier` followed by `deleteVerifier` is not atomic, and two concurrent token requests can both pass the `get`.
+
+If you control both halves of the pair (e.g. issuing your own download links), use `storeVerifier` / `takeVerifier` and skip the manual `pkceCreateChallenge` call.
 
 ---
 
@@ -1684,6 +1685,8 @@ Cache-backed storage for PKCE state (RFC 7636). Wraps an injected `CacheProvider
 | `storeVerifier(codeVerifier, value, expiration: Duration)`   | `Promise<void>`           | Same as `storeChallenge`, but derives the challenge from the verifier        |
 | `getChallenge(codeChallenge)`                                | `Promise<string \| null>` | Look up the stored value for a challenge; `null` when missing/expired        |
 | `getVerifier(codeVerifier)`                                  | `Promise<string \| null>` | Look up the value for the verifier-derived challenge — the standard PKCE op  |
+| `takeChallenge(codeChallenge)`                               | `Promise<string \| null>` | Atomically look up and remove the value — the single-use consume             |
+| `takeVerifier(codeVerifier)`                                 | `Promise<string \| null>` | Same as `takeChallenge`, but derives the challenge from the verifier         |
 | `deleteChallenge(codeChallenge)`                             | `Promise<void>`           | Remove the entry — call after a successful exchange for single-use semantics |
 | `deleteVerifier(codeVerifier)`                               | `Promise<void>`           | Same as `deleteChallenge`, but derives the challenge from the verifier       |
 

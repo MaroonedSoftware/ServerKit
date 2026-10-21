@@ -470,15 +470,19 @@ export class FidoFactorService {
     try {
       const result = await this.fido2.attestationResult(attestationResult, payload.attestationExpectations);
 
+      // The take is the arbiter: of two concurrent completions, only one creates a factor.
+      // The loser is refused as invalid credentials by the catch below.
+      if ((await this.cache.take(this.getRegistrationKey(registrationId))) === null) {
+        throw new Error('registration already consumed');
+      }
+      await this.cache.delete(this.getRegistrationKey(actorId));
+
       const factor = await this.fidoFactorRepository.createFactor(actorId, {
         publicKey: result.authnrData.get('credentialPublicKeyPem'),
         publicKeyId: credential.id,
         counter: result.authnrData.get('counter'),
         label: payload.label,
       });
-
-      await this.cache.delete(this.getRegistrationKey(registrationId));
-      await this.cache.delete(this.getRegistrationKey(actorId));
 
       // `privilege`: a new credential raises the assurance future sessions reach.
       await this.audit.record({
@@ -660,9 +664,13 @@ export class FidoFactorService {
 
     try {
       const result = await this.fido2.assertionResult(assertionResult, expectedAssertionResult);
-      await this.fidoFactorRepository.updateFactorCounter(payload.actorId, factor.id, result.authnrData.get('counter'));
-      await this.cache.delete(this.getChallengeKey(challengeId));
+      // The take is the arbiter: of two concurrent assertions, only one verifies.
+      // The loser is refused as invalid credentials by the catch below.
+      if ((await this.cache.take(this.getChallengeKey(challengeId))) === null) {
+        throw new Error('challenge already consumed');
+      }
       await this.cache.delete(this.getChallengeKey(`${payload.actorId}_${payload.factorId}`));
+      await this.fidoFactorRepository.updateFactorCounter(payload.actorId, factor.id, result.authnrData.get('counter'));
       await this.audit.record({
         type: 'fido.verified',
         category: 'login',

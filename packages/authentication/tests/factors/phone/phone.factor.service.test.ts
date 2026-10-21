@@ -13,6 +13,7 @@ const makeCacheProvider = () =>
     set: vi.fn().mockResolvedValue(undefined),
     update: vi.fn().mockResolvedValue(undefined),
     delete: vi.fn().mockResolvedValue(null),
+    take: vi.fn().mockResolvedValue(null),
   }) as unknown as CacheProvider;
 
 // A stateful in-memory cache, needed to exercise attempt counting that persists across verify calls.
@@ -30,6 +31,11 @@ const makeStatefulCache = (initial: Record<string, string> = {}) => {
       const existed = store.has(key);
       store.delete(key);
       return existed ? key : null;
+    }),
+    take: vi.fn(async (key: string) => {
+      const value = store.get(key) ?? null;
+      store.delete(key);
+      return value;
     }),
   } as unknown as CacheProvider;
 };
@@ -355,6 +361,7 @@ describe('PhoneFactorService', () => {
       const factor = makePhoneFactor();
       const payload = makeChallengePayload();
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
+      cache.take = vi.fn().mockResolvedValue('taken');
       repo.getFactor = vi.fn().mockResolvedValue(factor);
       vi.mocked(otpProvider.validate).mockReturnValue(true);
 
@@ -366,12 +373,13 @@ describe('PhoneFactorService', () => {
     it('deletes the cached challenge entries after a successful verification', async () => {
       const payload = makeChallengePayload();
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
+      cache.take = vi.fn().mockResolvedValue('taken');
       repo.getFactor = vi.fn().mockResolvedValue(makePhoneFactor());
       vi.mocked(otpProvider.validate).mockReturnValue(true);
 
       await service.verifyPhoneChallenge('chal-id-1', '123456');
 
-      expect(cache.delete).toHaveBeenCalledWith('phone_factor_challenge_chal-id-1');
+      expect(cache.take).toHaveBeenCalledWith('phone_factor_challenge_chal-id-1');
       expect(cache.delete).toHaveBeenCalledWith('phone_factor_challenge_actor-1_factor-1');
     });
 
@@ -408,6 +416,24 @@ describe('PhoneFactorService', () => {
       // Once invalidated, even the correct code no longer verifies — the challenge is gone.
       vi.mocked(otpProvider.validate).mockReturnValue(true);
       await expect(service.verifyPhoneChallenge('chal-id-1', '123456')).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it('verifies once when the correct code is submitted concurrently', async () => {
+      const payload = makeChallengePayload();
+      const statefulCache = makeStatefulCache({ 'phone_factor_challenge_chal-id-1': JSON.stringify(payload) });
+      service = new PhoneFactorService(makeOptions(), repo, otpProvider, statefulCache, policyService);
+      repo.getFactor = vi.fn().mockResolvedValue(makePhoneFactor());
+      vi.mocked(otpProvider.validate).mockReturnValue(true);
+
+      const outcomes = await Promise.allSettled([
+        service.verifyPhoneChallenge('chal-id-1', '123456'),
+        service.verifyPhoneChallenge('chal-id-1', '123456'),
+      ]);
+
+      expect(outcomes.filter(outcome => outcome.status === 'fulfilled')).toHaveLength(1);
+      expect(outcomes.filter(outcome => outcome.status === 'rejected')).toEqual([
+        expect.objectContaining({ reason: expect.objectContaining({ statusCode: 404 }) }),
+      ]);
     });
   });
 

@@ -21,6 +21,11 @@ const makeCache = () => {
       store.delete(key);
       return had ? key : null;
     }),
+    take: vi.fn(async (key: string) => {
+      const value = store.get(key) ?? null;
+      store.delete(key);
+      return value;
+    }),
   } as unknown as CacheProvider & { store: Map<string, string> };
 };
 
@@ -63,6 +68,19 @@ describe('RecoverySessionService', () => {
 
     expect(await service.peek(session.recoverySessionToken)).toBeNull();
     expect(await service.redeem(session.recoverySessionToken)).toBeNull();
+  });
+
+  it('redeem succeeds once when called concurrently', async () => {
+    const session = await service.issue({
+      actor,
+      reason: 'password_reset',
+      verifiedVia: { channel: 'email', methodId: 'email-1' },
+      grantedActions: ['resetPassword'],
+    });
+
+    const results = await Promise.all([service.redeem(session.recoverySessionToken), service.redeem(session.recoverySessionToken)]);
+
+    expect(results.filter(result => result !== null)).toHaveLength(1);
   });
 
   it('peek returns null for an unknown token', async () => {
