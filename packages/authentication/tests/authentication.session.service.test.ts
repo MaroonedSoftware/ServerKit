@@ -524,13 +524,18 @@ describe('AuthenticationSessionService', () => {
   describe('subject index under concurrent writers', () => {
     // Every operation yields before it touches the store, so concurrent calls
     // interleave the way they do against a real cache over the network.
-    const makeInterleavingCache = () => {
+    // `setTicks` makes plain writes slower than everything else, which opens the
+    // gaps a slow network write would.
+    const makeInterleavingCache = (setTicks = 1) => {
       const store = new Map<string, string>();
       const sets = new Map<string, Set<string>>();
       const tick = () => new Promise(resolve => setImmediate(resolve));
+      const ticks = async (n: number) => {
+        for (let i = 0; i < n; i++) await tick();
+      };
       return {
         get: vi.fn(async (key: string) => (await tick(), store.get(key) ?? null)),
-        set: vi.fn(async (key: string, value: string) => (await tick(), void store.set(key, value))),
+        set: vi.fn(async (key: string, value: string) => (await ticks(setTicks), void store.set(key, value))),
         add: vi.fn(async (key: string, value: string) => (await tick(), store.has(key) ? false : (store.set(key, value), true))),
         update: vi.fn(async (key: string, value: string) => (await tick(), store.has(key) ? void store.set(key, value) : undefined)),
         delete: vi.fn(async (key: string) => (await tick(), store.delete(key) ? key : null)),
@@ -543,6 +548,10 @@ describe('AuthenticationSessionService', () => {
         setRemove: vi.fn(async (key: string, member: string) => (await tick(), sets.get(key)?.delete(member) ?? false)),
         setMembers: vi.fn(async (key: string) => (await tick(), [...(sets.get(key) ?? [])])),
       } as unknown as CacheProvider;
+    };
+
+    const ticks = async (n: number) => {
+      for (let i = 0; i < n; i++) await new Promise(resolve => setImmediate(resolve));
     };
 
     it('keeps every session created concurrently for one subject', async () => {
@@ -562,6 +571,23 @@ describe('AuthenticationSessionService', () => {
       await expect(service.revokeAllForSubject('user-1')).resolves.toBe(created.length);
       for (const session of created) {
         expect(await service.getSession(session.sessionToken)).toBeUndefined();
+      }
+    });
+
+    // Readers prune index members whose session is missing, which is only safe
+    // because a session is stored before it is indexed. This pins that order.
+    it('keeps a session created while the index is being read and pruned', async () => {
+      service = new AuthenticationSessionService(makeOptions(), makeInterleavingCache(4), jwtProvider);
+      await service.createSession('user-1', {}, makeFactor());
+
+      // Start the read at several offsets into the create, so it lands on each step.
+      for (let offset = 0; offset < 6; offset++) {
+        const created = service.createSession('user-1', {}, makeFactor());
+        await ticks(offset);
+        const [session] = await Promise.all([created, service.getSessionsForSubject('user-1')]);
+
+        const listed = await service.getSessionsForSubject('user-1');
+        expect(listed.map(x => x.sessionToken)).toContain(session.sessionToken);
       }
     });
 
