@@ -209,12 +209,11 @@ export class OAuth2FactorService {
       throw httpError(400).withDetails({ code: 'missing from callback' });
     }
 
-    const stored = await this.lookupState(params.state);
+    const stored = await this.takeState(params.state);
     if (!stored) {
       await this.auditAuthorizationFailed('state_invalid');
       throw httpError(404).withDetails({ state: 'not found or expired' });
     }
-    await this.cache.delete(this.getStateKey(params.state));
 
     const config = this.registry.getConfig(stored.provider);
     const tokens = await config.client.validateAuthorizationCode(params.code, stored.codeVerifier);
@@ -343,11 +342,10 @@ export class OAuth2FactorService {
    * created actor.
    */
   async createFactorFromAuthorization(actorId: string, authorizationId: string): Promise<OAuth2Factor> {
-    const pending = await this.lookupPendingAuthorization(authorizationId);
+    const pending = await this.takePendingAuthorization(authorizationId);
     if (!pending) {
       throw httpError(404).withDetails({ authorizationId: 'not found or expired' });
     }
-    await this.cache.delete(this.getAuthorizationKey(authorizationId));
 
     const refreshTokenExpiresAt = pending.refreshTokenExpiresAt !== undefined ? DateTime.fromSeconds(pending.refreshTokenExpiresAt) : undefined;
 
@@ -435,13 +433,20 @@ export class OAuth2FactorService {
     });
   }
 
-  private async lookupState(state: string): Promise<StoredAuthorizationState | undefined> {
-    const raw = await this.cache.get(this.getStateKey(state));
+  /** Atomically read and consume the state record, so a callback can only redeem it once. */
+  private async takeState(state: string): Promise<StoredAuthorizationState | undefined> {
+    const raw = await this.cache.take(this.getStateKey(state));
     return raw ? (JSON.parse(raw) as StoredAuthorizationState) : undefined;
   }
 
   private async lookupPendingAuthorization(authorizationId: string): Promise<StoredPendingAuthorization | undefined> {
     const raw = await this.cache.get(this.getAuthorizationKey(authorizationId));
+    return raw ? (JSON.parse(raw) as StoredPendingAuthorization) : undefined;
+  }
+
+  /** Atomically read and consume the pending authorization, so it can only create one factor. */
+  private async takePendingAuthorization(authorizationId: string): Promise<StoredPendingAuthorization | undefined> {
+    const raw = await this.cache.take(this.getAuthorizationKey(authorizationId));
     return raw ? (JSON.parse(raw) as StoredPendingAuthorization) : undefined;
   }
 

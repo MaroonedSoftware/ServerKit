@@ -52,4 +52,15 @@ export abstract class CacheProvider {
    * @returns The key that was deleted, or `null` if it did not exist.
    */
   abstract delete(key: string): Promise<string | null>;
+
+  /**
+   * Atomically reads and removes an entry (get-and-delete). Use this to consume single-use
+   * entries such as one-time tokens or pending authorizations: concurrent callers race, and at
+   * most one of them receives the value. A `get` followed by a `delete` is not a substitute,
+   * since two callers can both pass the `get` before either deletes.
+   *
+   * @returns The stored string, or `null` if the key does not exist, has expired, or was
+   *   already taken by another caller.
+   */
+  abstract take(key: string): Promise<string | null>;
 }

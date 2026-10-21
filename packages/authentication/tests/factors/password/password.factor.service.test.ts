@@ -61,6 +61,7 @@ const makeCacheProvider = () =>
     set: vi.fn().mockResolvedValue(undefined),
     update: vi.fn().mockResolvedValue(undefined),
     delete: vi.fn().mockResolvedValue(null),
+    take: vi.fn().mockResolvedValue(null),
   }) as unknown as CacheProvider;
 
 const makeRegistrationPayload = (overrides: Record<string, unknown> = {}) => ({
@@ -217,7 +218,7 @@ describe('PasswordFactorService', () => {
 
   describe('createPasswordFactorFromRegistration', () => {
     it('throws 404 when the registration does not exist', async () => {
-      cache.get = vi.fn().mockResolvedValue(null);
+      cache.take = vi.fn().mockResolvedValue(null);
       await expect(service.createPasswordFactorFromRegistration('actor-1', 'missing-reg')).rejects.toMatchObject({
         statusCode: 404,
         details: { registrationId: 'not found' },
@@ -228,7 +229,7 @@ describe('PasswordFactorService', () => {
     it('persists the cached hash/salt against the actor and returns the factor', async () => {
       const payload = makeRegistrationPayload({ hash: 'cached-hash', salt: 'cached-salt' });
       const factor = makePasswordFactor({ id: 'new-factor' });
-      cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
+      cache.take = vi.fn().mockResolvedValue(JSON.stringify(payload));
       repo.createFactor = vi.fn().mockResolvedValue(factor);
 
       const result = await service.createPasswordFactorFromRegistration('actor-1', 'reg-id-1');
@@ -237,15 +238,29 @@ describe('PasswordFactorService', () => {
       expect(repo.createFactor).toHaveBeenCalledWith('actor-1', { hash: 'cached-hash', salt: 'cached-salt', needsReset: false });
     });
 
-    it('deletes the cached registration entries after persisting', async () => {
+    it('consumes the cached registration entries before persisting', async () => {
       const payload = makeRegistrationPayload({ hash: 'cached-hash', salt: 'cached-salt' });
-      cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
+      cache.take = vi.fn().mockResolvedValue(JSON.stringify(payload));
       repo.createFactor = vi.fn().mockResolvedValue(makePasswordFactor());
 
       await service.createPasswordFactorFromRegistration('actor-1', 'reg-id-1');
 
-      expect(cache.delete).toHaveBeenCalledWith('password_factor_registration_reg-id-1');
+      expect(cache.take).toHaveBeenCalledWith('password_factor_registration_reg-id-1');
       expect(cache.delete).toHaveBeenCalledWith('password_factor_registration_cached-hash:cached-salt');
+    });
+
+    it('creates one factor when the same registration is redeemed concurrently', async () => {
+      // The cache hands the entry to exactly one taker, as an atomic GETDEL would.
+      cache.take = vi.fn().mockResolvedValueOnce(JSON.stringify(makeRegistrationPayload())).mockResolvedValue(null);
+      repo.createFactor = vi.fn().mockResolvedValue(makePasswordFactor());
+
+      const outcomes = await Promise.allSettled([
+        service.createPasswordFactorFromRegistration('actor-1', 'reg-id-1'),
+        service.createPasswordFactorFromRegistration('actor-1', 'reg-id-1'),
+      ]);
+
+      expect(outcomes.filter(outcome => outcome.status === 'fulfilled')).toHaveLength(1);
+      expect(repo.createFactor).toHaveBeenCalledTimes(1);
     });
   });
 

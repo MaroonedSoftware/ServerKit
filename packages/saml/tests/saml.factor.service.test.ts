@@ -46,6 +46,11 @@ const makeCache = () => {
       store.delete(key);
       return value;
     },
+    take: async key => {
+      const value = live(key)?.value ?? null;
+      store.delete(key);
+      return value;
+    },
   };
   return { cache, store };
 };
@@ -461,6 +466,22 @@ describe('SamlFactorService', () => {
       expect(factor).toMatchObject({ actorId: 'actor-5', provider: 'acme', subject: '00u1ada', email: 'ada@acme.test' });
       await expect(service.createFactorFromAuthorization('actor-5', authorizationId)).rejects.toMatchObject({ statusCode: 404 });
     });
+
+    it('attaches a staged identity once when redeemed concurrently', async () => {
+      const { service, result } = await signIn();
+      const { authorizationId } = result as Extract<SamlAuthorizationResult, { kind: 'new-user' }>;
+
+      const outcomes = await Promise.allSettled([
+        service.createFactorFromAuthorization('actor-5', authorizationId),
+        service.createFactorFromAuthorization('actor-6', authorizationId),
+      ]);
+
+      expect(outcomes.filter(outcome => outcome.status === 'fulfilled')).toHaveLength(1);
+      expect(outcomes.filter(outcome => outcome.status === 'rejected')).toEqual([
+        expect.objectContaining({ reason: expect.objectContaining({ statusCode: 404 }) }),
+      ]);
+      expect(repo.repo.createFactor).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('authenticated exchange', () => {
@@ -470,6 +491,15 @@ describe('SamlFactorService', () => {
 
       expect(await service.redeemAuthenticatedExchange(exchangeId)).toEqual({ actorId: 'actor-1', factorId: 'factor-1', isNewUser: true });
       expect(await service.redeemAuthenticatedExchange(exchangeId)).toBeUndefined();
+    });
+
+    it('redeems a stash once when redeemed concurrently', async () => {
+      const service = makeService();
+      const exchangeId = await service.stashAuthenticatedExchange({ actorId: 'actor-1', factorId: 'factor-1' });
+
+      const results = await Promise.all([service.redeemAuthenticatedExchange(exchangeId), service.redeemAuthenticatedExchange(exchangeId)]);
+
+      expect(results.filter(redeemed => redeemed !== undefined)).toEqual([{ actorId: 'actor-1', factorId: 'factor-1' }]);
     });
   });
 });

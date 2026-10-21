@@ -465,11 +465,10 @@ export class SamlFactorService {
    * @throws HTTP 404 when `authorizationId` has expired or does not exist.
    */
   async createFactorFromAuthorization(actorId: string, authorizationId: string): Promise<SamlFactor> {
-    const raw = await this.cache.get(this.getAuthorizationKey(authorizationId));
+    const raw = await this.cache.take(this.getAuthorizationKey(authorizationId));
     if (!raw) {
       throw httpError(404).withDetails({ authorizationId: 'not found or expired' });
     }
-    await this.cache.delete(this.getAuthorizationKey(authorizationId));
     const pending = JSON.parse(raw) as StoredPendingAuthorization;
 
     const factor = await this.createFactor(actorId, { provider: pending.provider, subject: pending.subject, email: pending.email });
@@ -510,14 +509,14 @@ export class SamlFactorService {
 
   /**
    * Redeem a stash created by {@link stashAuthenticatedExchange}. Single-use: the entry is
-   * deleted on a successful read. Returns `undefined` when `exchangeId` has expired or does not exist.
+   * read and deleted atomically, so concurrent redeems of one `exchangeId` succeed at most
+   * once. Returns `undefined` when `exchangeId` has expired or does not exist.
    */
   async redeemAuthenticatedExchange(exchangeId: string): Promise<SamlAuthenticatedExchange | undefined> {
-    const raw = await this.cache.get(this.getAuthenticatedExchangeKey(exchangeId));
+    const raw = await this.cache.take(this.getAuthenticatedExchangeKey(exchangeId));
     if (!raw) {
       return undefined;
     }
-    await this.cache.delete(this.getAuthenticatedExchangeKey(exchangeId));
     const stored = JSON.parse(raw) as StoredAuthenticatedExchange;
     return { actorId: stored.actorId, factorId: stored.factorId, ...(stored.isNewUser === undefined ? {} : { isNewUser: stored.isNewUser }) };
   }
@@ -554,11 +553,10 @@ export class SamlFactorService {
       throw new SamlRefusal(400, 'unsolicited', { SAMLResponse: 'unsolicited response' });
     }
 
-    const raw = await this.cache.get(this.getRequestKey(response.inResponseTo));
+    const raw = await this.cache.take(this.getRequestKey(response.inResponseTo));
     if (!raw) {
       throw new SamlRefusal(404, 'unsolicited', { InResponseTo: 'not found or expired' });
     }
-    await this.cache.delete(this.getRequestKey(response.inResponseTo));
     const stored = JSON.parse(raw) as StoredAuthnRequest;
     const provider = stored.provider;
     const config = await this.registry.getConfig(provider);

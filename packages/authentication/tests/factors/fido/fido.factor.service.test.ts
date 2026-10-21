@@ -195,6 +195,11 @@ const makeStatefulCache = () => {
       const had = store.delete(key);
       return had ? 'deleted' : null;
     }),
+    take: vi.fn(async (key: string) => {
+      const value = store.get(key) ?? null;
+      store.delete(key);
+      return value;
+    }),
     _store: store,
   } as unknown as CacheProvider & { _store: Map<string, string> };
 };
@@ -423,6 +428,20 @@ describe('FidoFactorService', () => {
 
       expect(cache._store.has(`fido_factor_registration_${registration.registrationId}`)).toBe(false);
       expect(cache._store.has('fido_factor_registration_actor-1')).toBe(false);
+    });
+
+    it('creates one factor when the same registration is completed concurrently', async () => {
+      const registration = await service.registerFidoFactor('actor-1', makeRegisterOptions());
+      const authenticator = createAuthenticator();
+      const credential = buildAttestationCredential({ authenticator, rpId: RP_ID, origin: RP_ORIGIN, challenge: registration.attestation.challenge });
+
+      const outcomes = await Promise.allSettled([
+        service.createFidoFactorFromRegistration('actor-1', registration.registrationId, credential),
+        service.createFidoFactorFromRegistration('actor-1', registration.registrationId, credential),
+      ]);
+
+      expect(outcomes.filter(outcome => outcome.status === 'fulfilled')).toHaveLength(1);
+      expect(repo._factors.size).toBe(1);
     });
   });
 
@@ -663,6 +682,28 @@ describe('FidoFactorService', () => {
 
       expect(cache._store.has(`fido_factor_challenge_${challenge.challengeId}`)).toBe(false);
       expect(cache._store.has(`fido_factor_challenge_actor-1_${factorId}`)).toBe(false);
+    });
+
+    it('verifies once when the same assertion is submitted concurrently', async () => {
+      const { authenticator, factorId } = await seedFactor('actor-1');
+      const challenge = await service.createFidoAuthorizationChallenge('actor-1', factorId, makeAuthorizeOptions());
+      const credential = buildAssertionCredential({
+        authenticator,
+        rpId: RP_ID,
+        origin: RP_ORIGIN,
+        challenge: challenge.assertion.challenge,
+        signCount: 3,
+      });
+
+      const outcomes = await Promise.allSettled([
+        service.verifyFidoAuthorizationChallenge(challenge.challengeId, credential),
+        service.verifyFidoAuthorizationChallenge(challenge.challengeId, credential),
+      ]);
+
+      expect(outcomes.filter(outcome => outcome.status === 'fulfilled')).toHaveLength(1);
+      expect(outcomes.filter(outcome => outcome.status === 'rejected')).toEqual([
+        expect.objectContaining({ reason: expect.objectContaining({ statusCode: 401 }) }),
+      ]);
     });
 
     it('rejects an assertion whose signCount is not strictly greater than the stored counter', async () => {

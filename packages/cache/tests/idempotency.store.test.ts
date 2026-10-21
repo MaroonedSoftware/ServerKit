@@ -32,6 +32,12 @@ class FakeCacheProvider extends CacheProvider {
   async delete(key: string): Promise<string | null> {
     return this.store.delete(key) ? key : null;
   }
+
+  async take(key: string): Promise<string | null> {
+    const value = this.store.get(key) ?? null;
+    this.store.delete(key);
+    return value;
+  }
 }
 
 let cache: FakeCacheProvider;

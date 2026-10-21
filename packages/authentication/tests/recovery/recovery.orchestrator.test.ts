@@ -26,6 +26,11 @@ const makeCache = () => {
       store.delete(key);
       return had ? key : null;
     }),
+    take: vi.fn(async (key: string) => {
+      const value = store.get(key) ?? null;
+      store.delete(key);
+      return value;
+    }),
   } as unknown as CacheProvider;
 };
 

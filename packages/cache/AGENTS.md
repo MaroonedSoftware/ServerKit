@@ -39,24 +39,25 @@ Runtime dependencies: `injectkit`, `luxon`. Optional peer: `ioredis`.
 
 ### `.` — core
 
-| Export                  | Kind           | Shape                                                                                                      | Notes                                                                                                    |
-| ----------------------- | -------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `CacheProvider`         | abstract class | `@Injectable()`. `get`, `set`, `add`, `update`, `delete`                                                   | The DI token. Values are `string`.                                                                       |
-| `CacheProvider#get`     | method         | `(key: string) => Promise<string \| null>`                                                                 | `null` when missing or expired.                                                                          |
-| `CacheProvider#set`     | method         | `(key: string, value: string, ttl: Duration) => Promise<void>`                                             | TTL is **required**. Unconditional write.                                                                |
-| `CacheProvider#add`     | method         | `(key: string, value: string, options?: { ttl?: Duration }) => Promise<boolean>`                           | **Atomic set-if-absent.** `true` when created, `false` when the key already existed. The lock primitive. |
-| `CacheProvider#update`  | method         | `(key: string, value: string, ttl?: Duration) => Promise<void>`                                            | Overwrites an existing entry. Without `ttl`, preserves the original expiry.                              |
-| `CacheProvider#delete`  | method         | `(key: string) => Promise<string \| null>`                                                                 | Returns the key, or `null` if absent.                                                                    |
-| `IdempotencyStore`      | abstract class | `@Injectable()`. `deduplicate<T>(key, work, options?) => Promise<IdempotencyOutcome<T>>`                   | The DI token.                                                                                            |
-| `CacheIdempotencyStore` | class          | `@Injectable({ deps: [CacheProvider] }) new CacheIdempotencyStore(cache: CacheProvider)`                   | The default implementation. Keys are namespaced `idempotency:`.                                          |
-| `IdempotencyOutcome<T>` | type           | `{ status: 'processed'; result: T } \| { status: 'duplicate' } \| { status: 'dropped'; attempts: number }` | —                                                                                                        |
-| `IdempotencyOptions`    | interface      | `{ inFlightTtl?: Duration; retentionTtl?: Duration; maxAttempts?: number }`                                | Defaults: 5 minutes, 24 hours, 5.                                                                        |
+| Export                  | Kind           | Shape                                                                                                      | Notes                                                                                                      |
+| ----------------------- | -------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `CacheProvider`         | abstract class | `@Injectable()`. `get`, `set`, `add`, `update`, `delete`, `take`                                           | The DI token. Values are `string`.                                                                         |
+| `CacheProvider#get`     | method         | `(key: string) => Promise<string \| null>`                                                                 | `null` when missing or expired.                                                                            |
+| `CacheProvider#set`     | method         | `(key: string, value: string, ttl: Duration) => Promise<void>`                                             | TTL is **required**. Unconditional write.                                                                  |
+| `CacheProvider#add`     | method         | `(key: string, value: string, options?: { ttl?: Duration }) => Promise<boolean>`                           | **Atomic set-if-absent.** `true` when created, `false` when the key already existed. The lock primitive.   |
+| `CacheProvider#update`  | method         | `(key: string, value: string, ttl?: Duration) => Promise<void>`                                            | Overwrites an existing entry. Without `ttl`, preserves the original expiry.                                |
+| `CacheProvider#delete`  | method         | `(key: string) => Promise<string \| null>`                                                                 | Returns the key, or `null` if absent.                                                                      |
+| `CacheProvider#take`    | method         | `(key: string) => Promise<string \| null>`                                                                 | **Atomic get-and-delete.** Returns the value, or `null` if absent or already taken. The consume primitive. |
+| `IdempotencyStore`      | abstract class | `@Injectable()`. `deduplicate<T>(key, work, options?) => Promise<IdempotencyOutcome<T>>`                   | The DI token.                                                                                              |
+| `CacheIdempotencyStore` | class          | `@Injectable({ deps: [CacheProvider] }) new CacheIdempotencyStore(cache: CacheProvider)`                   | The default implementation. Keys are namespaced `idempotency:`.                                            |
+| `IdempotencyOutcome<T>` | type           | `{ status: 'processed'; result: T } \| { status: 'duplicate' } \| { status: 'dropped'; attempts: number }` | —                                                                                                          |
+| `IdempotencyOptions`    | interface      | `{ inFlightTtl?: Duration; retentionTtl?: Duration; maxAttempts?: number }`                                | Defaults: 5 minutes, 24 hours, 5.                                                                          |
 
 ### `./ioredis`
 
-| Export                 | Kind  | Shape                                                  | Notes                                                                      |
-| ---------------------- | ----- | ------------------------------------------------------ | -------------------------------------------------------------------------- |
-| `IoRedisCacheProvider` | class | `@Injectable() new IoRedisCacheProvider(redis: Redis)` | Implements `CacheProvider` over `SET` with `EX` / `NX` / `XX` / `KEEPTTL`. |
+| Export                 | Kind  | Shape                                                  | Notes                                                                                                             |
+| ---------------------- | ----- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| `IoRedisCacheProvider` | class | `@Injectable() new IoRedisCacheProvider(redis: Redis)` | Implements `CacheProvider` over `SET` with `EX` / `NX` / `XX` / `KEEPTTL`, and `take` over `GETDEL` (Redis 6.2+). |
 
 TTLs are converted with `Math.max(1, Math.ceil(ttl.as('seconds')))` — rounded up and clamped to at
 least 1, because Redis rejects `EX 0`.
@@ -101,6 +102,8 @@ ctx.status = 200; // ack in every case
 - Register and inject the abstract `CacheProvider` / `IdempotencyStore`, not the concrete classes.
 - Use `add()` for claims and locks. `get()` followed by `set()` is not atomic and two concurrent
   callers will both win.
+- Use `take()` to consume single-use entries (one-time tokens, pending authorizations, exchange
+  ids). `get()` followed by `delete()` is not atomic and two concurrent callers will both redeem.
 - Give `set()` a TTL you actually want — it is required, and there is no "no expiry" option through
   this interface.
 - Serialise before storing. Values are `string`; `JSON.stringify` on the way in and parse on the
@@ -156,6 +159,8 @@ Invariants a change must not break:
   `errors` or `utilities` would be a real arrow in the graph, not a formality.
 - `add()` must be atomic in every backend. `CacheIdempotencyStore` is built entirely on that
   guarantee; a non-atomic implementation silently breaks de-duplication under concurrency.
+- `take()` must be atomic in every backend. Single-use consumes in `authentication` and `saml` rely
+  on it to stop a one-time entry being redeemed twice.
 - The attempt counter must outlive claim releases, or the poison-event cap stops working across
   redeliveries.
 - A new backend goes in its own `src/<backend>.ts` entry with a matching `exports` entry, a tsup

@@ -32,6 +32,11 @@ const makeCache = () => {
       store.delete(key);
       return key;
     }),
+    take: vi.fn(async (key: string) => {
+      const value = store.get(key) ?? null;
+      store.delete(key);
+      return value;
+    }),
     _store: store,
   } as unknown as CacheProvider & { _store: Map<string, string> };
 };
@@ -383,6 +388,24 @@ describe('OAuth2FactorService', () => {
 
       expect(factor.actorId).toBe('actor-fresh');
       expect(cache._store.has(`oauth2_authorization_${result.authorizationId}`)).toBe(false);
+    });
+
+    it('creates one factor when the same authorization is redeemed concurrently', async () => {
+      providerConfig = makeProviderConfig({
+        fetchProfile: vi.fn(async () => ({ subject: 'gh-99', email: 'fresh@example.com', emailVerified: true, rawProfile: {} })),
+      });
+      ({ service } = makeService(providerConfig, repo, emailLookup, cache));
+      const { state } = await service.beginAuthorization({ provider: 'github', intent: 'sign-in' });
+      const result = await service.completeAuthorization({ params: { code: 'abc', state } });
+      if (result.kind !== 'new-user') throw new Error('expected new-user');
+
+      const outcomes = await Promise.allSettled([
+        service.createFactorFromAuthorization('actor-a', result.authorizationId),
+        service.createFactorFromAuthorization('actor-b', result.authorizationId),
+      ]);
+
+      expect(outcomes.filter(outcome => outcome.status === 'fulfilled')).toHaveLength(1);
+      expect(repo.createFactor).toHaveBeenCalledTimes(1);
     });
   });
 
