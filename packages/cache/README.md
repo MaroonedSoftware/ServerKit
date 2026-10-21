@@ -140,6 +140,14 @@ export class InMemoryCacheProvider extends CacheProvider {
     this.store.set(key, { value, expiresAt: Date.now() + ttl.as('milliseconds') });
   }
 
+  // No await between the check and the write, so concurrent callers cannot both win.
+  async add(key: string, value: string, options?: { ttl?: Duration }) {
+    const existing = this.store.get(key);
+    if (existing && Date.now() <= existing.expiresAt) return false;
+    this.store.set(key, { value, expiresAt: options?.ttl ? Date.now() + options.ttl.as('milliseconds') : Infinity });
+    return true;
+  }
+
   async update(key: string, value: string, ttl?: Duration) {
     const existing = this.store.get(key);
     const expiresAt = ttl ? Date.now() + ttl.as('milliseconds') : (existing?.expiresAt ?? Date.now());
@@ -150,10 +158,11 @@ export class InMemoryCacheProvider extends CacheProvider {
     return this.store.delete(key) ? key : null;
   }
 
+  // Read and delete before any await, so two concurrent takes cannot both get the value.
   async take(key: string) {
-    const value = await this.get(key);
+    const entry = this.store.get(key);
     this.store.delete(key);
-    return value;
+    return entry && Date.now() <= entry.expiresAt ? entry.value : null;
   }
 }
 ```

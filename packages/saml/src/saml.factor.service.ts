@@ -509,7 +509,8 @@ export class SamlFactorService {
 
   /**
    * Redeem a stash created by {@link stashAuthenticatedExchange}. Single-use: the entry is
-   * read and deleted atomically, so concurrent redeems of one `exchangeId` succeed at most once. Returns `undefined` when `exchangeId` has expired or does not exist.
+   * read and deleted atomically, so concurrent redeems of one `exchangeId` succeed at most
+   * once. Returns `undefined` when `exchangeId` has expired or does not exist.
    */
   async redeemAuthenticatedExchange(exchangeId: string): Promise<SamlAuthenticatedExchange | undefined> {
     const raw = await this.cache.take(this.getAuthenticatedExchangeKey(exchangeId));
