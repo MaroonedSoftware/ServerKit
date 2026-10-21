@@ -239,6 +239,27 @@ export class AuthenticationSessionService {
     };
   }
 
+  /**
+   * Undo a rotation that failed before it took effect: free the old session's
+   * successor slot and drop the half-written replacement. Best effort, since it
+   * runs while another error is already propagating; a step that fails here is
+   * left to expire.
+   */
+  private async releaseRotation(sessionToken: string, subject: string, newSessionToken: string) {
+    const steps = [
+      () => this.cache.delete(this.getSuccessorKey(sessionToken)),
+      () => this.cache.delete(this.getSessionKey(newSessionToken)),
+      () => this.removeSubjectSession(subject, newSessionToken),
+    ];
+    for (const step of steps) {
+      try {
+        await step();
+      } catch {
+        // Keep going: the caller rethrows the original failure.
+      }
+    }
+  }
+
   /** Session tokens listed in a family blob written by an earlier version, if one is still cached. */
   private async readLegacyFamily(familyId: string): Promise<string[]> {
     const raw = await this.cache.get(this.getFamilyKey(familyId));
@@ -718,21 +739,35 @@ export class AuthenticationSessionService {
       throw unauthorizedError('Bearer error="invalid_token"').withInternalDetails({ message: `session ${sessionToken} was already rotated` });
     }
 
-    await this.cache.set(this.getSessionKey(newSessionToken), this.serializeSession(newSession), expiration);
-    await this.ensureSubjectSession(oldSession.subject, newSessionToken, expiration);
+    // The rotation takes effect when the old session is deleted. A failure before
+    // that releases the successor slot, or the old session could never rotate
+    // again until the link expired.
+    let revokedDuringRotation = false;
+    try {
+      await this.cache.set(this.getSessionKey(newSessionToken), this.serializeSession(newSession), expiration);
+      await this.ensureSubjectSession(oldSession.subject, newSessionToken, expiration);
 
-    // A theft revocation of this family may be running concurrently. It writes
-    // its marker and then walks the chain; this rotation linked and wrote its
-    // session and only then reads the marker. So either the walk reaches the new
-    // session and deletes it, or this check sees the marker. Order matters: both
-    // writes above must come before this read.
-    if (await this.cache.get(this.getFamilyRevokedKey(familyId))) {
-      await this.cache.delete(this.getSessionKey(newSessionToken));
-      await this.removeSubjectSession(oldSession.subject, newSessionToken);
-      throw unauthorizedError('Bearer error="invalid_token"').withInternalDetails({ message: `family ${familyId} was revoked during rotation` });
+      // A theft revocation of this family may be running concurrently. It writes
+      // its marker and then walks the chain; this rotation linked and wrote its
+      // session and only then reads the marker. So either the walk reaches the new
+      // session and deletes it, or this check sees the marker. Order matters: both
+      // writes above must come before this read.
+      if (await this.cache.get(this.getFamilyRevokedKey(familyId))) {
+        revokedDuringRotation = true;
+        await this.cache.delete(this.getSessionKey(newSessionToken));
+        await this.removeSubjectSession(oldSession.subject, newSessionToken);
+        throw unauthorizedError('Bearer error="invalid_token"').withInternalDetails({ message: `family ${familyId} was revoked during rotation` });
+      }
+
+      await this.cache.delete(this.getSessionKey(sessionToken));
+    } catch (error) {
+      // A revoked family keeps the link: the revocation deletes the old session
+      // itself, and nothing should rotate it again.
+      if (!revokedDuringRotation) {
+        await this.releaseRotation(sessionToken, oldSession.subject, newSessionToken);
+      }
+      throw error;
     }
-
-    await this.cache.delete(this.getSessionKey(sessionToken));
     await this.removeSubjectSession(oldSession.subject, sessionToken);
 
     const tokens = await this.issueTokensForLoadedSession(newSession);

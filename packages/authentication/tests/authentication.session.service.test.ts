@@ -1058,6 +1058,29 @@ describe('AuthenticationSessionService', () => {
       await expect(svc.rotateSession('missing-token')).rejects.toMatchObject({ statusCode: 401 });
     });
 
+    it('releases the successor slot when a rotation fails before it takes effect', async () => {
+      const harness = makeLiveHarness();
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);
+      const old = await svc.createSession('user-1', { acr: 'low' }, makeFactor());
+
+      const set = vi.mocked(harness.cache.set).getMockImplementation()!;
+      let failed = false;
+      vi.mocked(harness.cache.set).mockImplementation(async (key, value, ttl) => {
+        if (!failed && key.startsWith('auth_session_') && key !== `auth_session_${old.sessionToken}` && !key.startsWith('auth_session_subject_')) {
+          failed = true;
+          throw new Error('cache unavailable');
+        }
+        return set(key, value, ttl);
+      });
+
+      await expect(svc.rotateSession(old.sessionToken, { acr: 'high' })).rejects.toThrow('cache unavailable');
+      expect(harness.store.has(`auth_session_successor_${old.sessionToken}`)).toBe(false);
+      expect(harness.store.has(`auth_session_${old.sessionToken}`)).toBe(true);
+
+      const rotated = await svc.rotateSession(old.sessionToken, { acr: 'high' });
+      expect(harness.store.get(`auth_session_successor_${old.sessionToken}`)).toBe(rotated.session.sessionToken);
+    });
+
     it('links exactly one replacement when the same session is rotated concurrently', async () => {
       const harness = makeLiveHarness();
       const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);
