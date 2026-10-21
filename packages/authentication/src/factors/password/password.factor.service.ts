@@ -183,15 +183,14 @@ export class PasswordFactorService {
    * @throws HTTP 404 when the registration has expired or does not exist.
    */
   async createPasswordFactorFromRegistration(actorId: string, registrationId: string) {
-    const registration = await this.lookupRegistration(registrationId);
-    if (!registration) {
+    const raw = await this.cache.take(this.getRegistrationKey(registrationId));
+    if (!raw) {
       throw httpError(404).withDetails({ registrationId: 'not found' });
     }
+    const registration = JSON.parse(raw) as RegistrationPayload;
+    await this.cache.delete(this.getRegistrationKey(`${registration.hash}:${registration.salt}`));
 
     const factor = await this.passwordFactorRepository.createFactor(actorId, { hash: registration.hash, salt: registration.salt, needsReset: false });
-
-    await this.cache.delete(this.getRegistrationKey(registrationId));
-    await this.cache.delete(this.getRegistrationKey(`${registration.hash}:${registration.salt}`));
 
     return factor;
   }

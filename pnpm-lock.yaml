@@ -525,9 +525,6 @@ importers:
       '@maroonedsoftware/appconfig':
         specifier: workspace:*
         version: link:../appconfig
-      '@maroonedsoftware/authentication':
-        specifier: workspace:^
-        version: link:../authentication
       '@maroonedsoftware/errors':
         specifier: workspace:*
         version: link:../errors
@@ -553,6 +550,9 @@ importers:
       '@koa/router':
         specifier: ^15.7.0
         version: 15.7.0(koa@3.2.1)
+      '@maroonedsoftware/authentication':
+        specifier: workspace:^
+        version: link:../authentication
       '@maroonedsoftware/serverfeed':
         specifier: workspace:*
         version: link:../serverfeed

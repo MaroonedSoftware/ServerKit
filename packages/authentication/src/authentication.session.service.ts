@@ -241,15 +241,29 @@ export class AuthenticationSessionService {
 
   /**
    * Undo a rotation that failed before it took effect: free the old session's
-   * successor slot and drop the half-written replacement. Best effort, since it
-   * runs while another error is already propagating; a step that fails here is
-   * left to expire.
+   * successor slot, drop the half-written replacement, and put the old session
+   * back. Best effort, since it runs while another error is already propagating;
+   * a step that fails here is left to expire.
+   *
+   * The old session goes back before the revocation marker is read, mirroring
+   * `rotateSession`: a theft revocation writes the marker and then deletes the
+   * chain, so either it deletes the restored session or this check sees the
+   * marker and deletes it again.
    */
-  private async releaseRotation(sessionToken: string, subject: string, newSessionToken: string) {
+  private async releaseRotation(oldSession: AuthenticationSession, oldRaw: string, newSessionToken: string) {
+    const { sessionToken, subject, familyId } = oldSession;
+    const remaining = oldSession.expiresAt.diff(DateTime.utc());
     const steps = [
       () => this.cache.delete(this.getSuccessorKey(sessionToken)),
       () => this.cache.delete(this.getSessionKey(newSessionToken)),
       () => this.removeSubjectSession(subject, newSessionToken),
+      async () => {
+        if (remaining.toMillis() <= 0) return;
+        await this.cache.set(this.getSessionKey(sessionToken), oldRaw, remaining);
+        if (familyId && (await this.cache.get(this.getFamilyRevokedKey(familyId)))) {
+          await this.cache.delete(this.getSessionKey(sessionToken));
+        }
+      },
     ];
     for (const step of steps) {
       try {
@@ -690,10 +704,13 @@ export class AuthenticationSessionService {
    *   its family was revoked for theft while the rotation ran.
    */
   async rotateSession(sessionToken: string, claimOverrides: Record<string, unknown> = {}, expiration?: Duration, device?: SessionDevice) {
-    const oldSession = await this.getSession(sessionToken);
-    if (!oldSession) {
+    // Consume the old session up front, atomically, so two concurrent rotations
+    // of one session cannot both mint an elevated replacement.
+    const raw = await this.cache.take(this.getSessionKey(sessionToken));
+    if (!raw) {
       throw unauthorizedError('Bearer error="invalid_token"');
     }
+    const oldSession = this.deserializeSession(raw);
 
     const deepmerge = deepmergeCustom({
       mergeArrays: values => {
@@ -739,9 +756,9 @@ export class AuthenticationSessionService {
       throw unauthorizedError('Bearer error="invalid_token"').withInternalDetails({ message: `session ${sessionToken} was already rotated` });
     }
 
-    // The rotation takes effect when the old session is deleted. A failure before
-    // that releases the successor slot, or the old session could never rotate
-    // again until the link expired.
+    // The old session was consumed above. A failure before the new one is fully
+    // in place releases the successor slot and puts the old session back, so a
+    // transient error does not sign the user out or block the next rotation.
     let revokedDuringRotation = false;
     try {
       await this.cache.set(this.getSessionKey(newSessionToken), this.serializeSession(newSession), expiration);
@@ -758,13 +775,10 @@ export class AuthenticationSessionService {
         await this.removeSubjectSession(oldSession.subject, newSessionToken);
         throw unauthorizedError('Bearer error="invalid_token"').withInternalDetails({ message: `family ${familyId} was revoked during rotation` });
       }
-
-      await this.cache.delete(this.getSessionKey(sessionToken));
     } catch (error) {
-      // A revoked family keeps the link: the revocation deletes the old session
-      // itself, and nothing should rotate it again.
+      // A revoked family keeps the link and does not get the old session back.
       if (!revokedDuringRotation) {
-        await this.releaseRotation(sessionToken, oldSession.subject, newSessionToken);
+        await this.releaseRotation(oldSession, raw, newSessionToken);
       }
       throw error;
     }

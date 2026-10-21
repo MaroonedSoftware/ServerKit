@@ -78,6 +78,30 @@ export class PkceProvider {
   }
 
   /**
+   * Atomically look up and remove the value stored under `codeChallenge`, so
+   * concurrent exchanges of one challenge succeed at most once. Prefer this over
+   * {@link getChallenge} followed by {@link deleteChallenge}, which two callers
+   * can both pass.
+   *
+   * @returns The stored string, or `null` if no entry exists, it has expired, or
+   *   it was already taken.
+   */
+  async takeChallenge(codeChallenge: string) {
+    return await this.cache.take(this.getCacheKey(codeChallenge));
+  }
+
+  /**
+   * Atomically look up and remove the value stored for `codeVerifier`'s
+   * challenge: the single-use PKCE token-endpoint operation.
+   *
+   * @returns The stored string, or `null` when the verifier does not match any
+   *   cached challenge (wrong verifier, expired entry, or already consumed).
+   */
+  async takeVerifier(codeVerifier: string) {
+    return await this.takeChallenge(pkceCreateChallenge(codeVerifier));
+  }
+
+  /**
    * Remove the entry for `codeChallenge`. Call after a successful exchange to
    * enforce single-use semantics.
    */

@@ -16,6 +16,7 @@ const makeCacheProvider = () =>
     add: vi.fn().mockResolvedValue(true),
     update: vi.fn().mockResolvedValue(undefined),
     delete: vi.fn().mockResolvedValue(null),
+    take: vi.fn().mockResolvedValue(null),
   }) as unknown as CacheProvider;
 
 const makeJwtProvider = () =>
@@ -416,6 +417,11 @@ describe('AuthenticationSessionService', () => {
           store.delete(key);
           return had ? key : null;
         }),
+        take: vi.fn(async (key: string) => {
+          const value = store.get(key) ?? null;
+          store.delete(key);
+          return value;
+        }),
       } as unknown as CacheProvider;
     };
 
@@ -675,6 +681,11 @@ describe('AuthenticationSessionService', () => {
       delete: vi.fn(async (k: string) => {
         store.delete(k);
         return null;
+      }),
+      take: vi.fn(async (k: string) => {
+        const value = store.get(k) ?? null;
+        store.delete(k);
+        return value;
       }),
     } as unknown as CacheProvider;
 
@@ -971,7 +982,8 @@ describe('AuthenticationSessionService', () => {
       const liveSessions = [...harness.store.keys()].filter(
         key => key.startsWith('auth_session_') && !key.startsWith('auth_session_subject_') && !key.startsWith('auth_session_successor_'),
       );
-      expect(liveSessions).toEqual([`auth_session_${session.sessionToken}`]);
+      // Consumed by the attempt and not put back: the family is revoked.
+      expect(liveSessions).toEqual([]);
     });
 
     it('follows rotations made after the upgrade from the head a legacy family record lists', async () => {
@@ -1079,6 +1091,27 @@ describe('AuthenticationSessionService', () => {
 
       const rotated = await svc.rotateSession(old.sessionToken, { acr: 'high' });
       expect(harness.store.get(`auth_session_successor_${old.sessionToken}`)).toBe(rotated.session.sessionToken);
+    });
+
+    it('does not put the old session back when its family was revoked during the failed rotation', async () => {
+      const harness = makeLiveHarness();
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider);
+      const old = await svc.createSession('user-1', { acr: 'low' }, makeFactor());
+
+      const set = vi.mocked(harness.cache.set).getMockImplementation()!;
+      let failed = false;
+      vi.mocked(harness.cache.set).mockImplementation(async (key, value, ttl) => {
+        if (!failed && key.startsWith('auth_session_') && key !== `auth_session_${old.sessionToken}` && !key.startsWith('auth_session_subject_')) {
+          failed = true;
+          // A theft revocation lands while this rotation is mid-flight.
+          await set(`auth_refresh_family_revoked_${old.familyId}`, '1', ttl);
+          throw new Error('cache unavailable');
+        }
+        return set(key, value, ttl);
+      });
+
+      await expect(svc.rotateSession(old.sessionToken, { acr: 'high' })).rejects.toThrow('cache unavailable');
+      expect(harness.store.has(`auth_session_${old.sessionToken}`)).toBe(false);
     });
 
     it('links exactly one replacement when the same session is rotated concurrently', async () => {

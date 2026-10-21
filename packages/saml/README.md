@@ -133,14 +133,15 @@ registry.register(SamlFactorService).useClass(SamlFactorService).asSingleton();
 Start the flow and redirect:
 
 ```ts
-const { url } = await saml.beginAuthorization({ provider: 'acme', intent: 'sign-in', redirectAfter: '/jobs' });
-// 302 to url
+const { url, requestId } = await saml.beginAuthorization({ provider: 'acme', intent: 'sign-in', redirectAfter: '/jobs' });
+// keep requestId for this browser (a SameSite=None; Secure cookie, or the session), then 302 to url
 ```
 
-On the ACS route (HTTP-POST, `application/x-www-form-urlencoded`), pass the form through:
+On the ACS route (HTTP-POST, `application/x-www-form-urlencoded`), pass the form through with the
+`requestId` this browser started:
 
 ```ts
-const result = await saml.completeAuthorization({ params: body });
+const result = await saml.completeAuthorization({ params: body, expectedRequestId: storedRequestId });
 
 switch (result.kind) {
   case 'signed-in':
@@ -191,6 +192,36 @@ Refusals are HTTP errors: 400 for a missing, malformed or unsolicited response a
 status, 401 with `details.assertion` naming the failed check, 403 for a policy denial, 404 for an
 unknown or already-answered `InResponseTo`. Each one records a `saml.authorization.failed` audit
 event with its reason.
+
+### Caller responsibilities
+
+`SamlFactorService` holds no browser state, so it cannot tell which browser started a flow. The app
+must enforce three things:
+
+- **Bind each request to its browser.** `completeAuthorization` trusts whichever stored AuthnRequest
+  the response's `InResponseTo` names, and ignores `RelayState`. Keep the `requestId` returned by
+  `beginAuthorization` in a cookie or session for that browser, and pass it to
+  `completeAuthorization` as `expectedRequestId`. A response to any other request is then refused
+  with a 400 (`details.InResponseTo: 'not the expected request'`) and that request is left
+  untouched. The ACS post arrives cross-site from the IdP, so a cookie needs `SameSite=None; Secure`.
+  The argument is required: when the browser has no stored id (an expired cookie, another
+  browser), refuse the post or restart the flow. A single cookie holding one `requestId` is
+  overwritten by a second flow started in another tab, so the first tab's ACS post is refused with
+  a 400. Key the cookie per provider (or keep a short list of outstanding ids) and clear it once
+  the flow completes. Without this binding, an attacker can begin a `link` for their own account and
+  send the IdP URL to a victim, whose identity then gets linked to the attacker's account. The same
+  flow allows login CSRF on `sign-in`.
+- **Check the actor.** On `stepped-up` and `linked` results, confirm that `result.actorId` is the
+  actor of the current session.
+- **Allow-list `redirectAfter`.** It is returned as given and never validated, so redirecting to it
+  unchecked is an open redirect.
+
+### Choose a stable NameID
+
+`subject` is the assertion's `NameID`, and a factor is keyed on `(provider, subject)`. The default
+`emailAddress` format is only as stable as the mailbox: when an organization reassigns an address,
+the new holder signs in to the old holder's account. Prefer the `persistent` format
+(`urn:oasis:names:tc:SAML:2.0:nameid-format:persistent`) on `nameIdFormat` wherever the IdP offers it.
 
 ## Notes
 

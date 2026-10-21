@@ -44,6 +44,11 @@ const makeCache = () => {
       store.delete(key);
       return key;
     }),
+    take: vi.fn(async (key: string) => {
+      const value = store.get(key) ?? null;
+      store.delete(key);
+      return value;
+    }),
     _store: store,
   } as unknown as CacheProvider & { _store: Map<string, string> };
 };
@@ -918,6 +923,31 @@ describe('OidcFactorService', () => {
       );
       expect(cache._store.has(`oidc_authorization_${result.authorizationId}`)).toBe(false);
     });
+
+    it('creates one factor when the same authorization is redeemed concurrently', async () => {
+      await service.beginAuthorization({ provider: 'google', intent: 'sign-in' });
+      vi.mocked(openidClient.authorizationCodeGrant).mockResolvedValue({
+        access_token: 'access',
+        token_type: 'Bearer',
+        expires_in: 3600,
+        scope: 'openid profile email',
+        claims: () => ({ sub: 'subject-1', email: 'fresh@example.com', email_verified: true }),
+      } as unknown as Awaited<ReturnType<typeof openidClient.authorizationCodeGrant>>);
+      vi.mocked(openidClient.fetchUserInfo).mockResolvedValue({ sub: 'subject-1' } as openidClient.UserInfoResponse);
+      const result = await service.completeAuthorization({ params: { code: 'xyz', state: 'state-token' } });
+      if (result.kind !== 'new-user') throw new Error('expected new-user');
+
+      const outcomes = await Promise.allSettled([
+        service.createFactorFromAuthorization('actor-a', result.authorizationId),
+        service.createFactorFromAuthorization('actor-b', result.authorizationId),
+      ]);
+
+      expect(outcomes.filter(outcome => outcome.status === 'fulfilled')).toHaveLength(1);
+      expect(outcomes.filter(outcome => outcome.status === 'rejected')).toEqual([
+        expect.objectContaining({ reason: expect.objectContaining({ statusCode: 404 }) }),
+      ]);
+      expect(repo.createFactor).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('refreshAccessToken', () => {
@@ -1026,6 +1056,14 @@ describe('OidcFactorService', () => {
 
       await expect(service.redeemAuthenticatedExchange(exchangeId)).resolves.not.toBeNull();
       await expect(service.redeemAuthenticatedExchange(exchangeId)).resolves.toBeNull();
+    });
+
+    it('is single-use under concurrency: exactly one of two parallel redeems succeeds', async () => {
+      const exchangeId = await service.stashAuthenticatedExchange({ actorId: 'actor-1', factorId: 'factor-1' });
+
+      const results = await Promise.all([service.redeemAuthenticatedExchange(exchangeId), service.redeemAuthenticatedExchange(exchangeId)]);
+
+      expect(results.filter(result => result !== null)).toEqual([{ actorId: 'actor-1', factorId: 'factor-1' }]);
     });
 
     it('returns null for an unknown exchange id', async () => {

@@ -109,15 +109,13 @@ export class RecoverySessionService {
   }
 
   /**
-   * Look up and delete a recovery session in the same call. Returns `null`
-   * when the session has expired or does not exist. Recovery sessions are
-   * single-use; the orchestrator always redeems on
-   * {@link RecoveryOrchestrator.completeRecovery}.
+   * Look up and delete a recovery session atomically, so concurrent redeems
+   * succeed at most once. Returns `null` when the session has expired, does
+   * not exist, or was already redeemed. Recovery sessions are single-use; the
+   * orchestrator always redeems on {@link RecoveryOrchestrator.completeRecovery}.
    */
   async redeem(token: string): Promise<RecoverySessionPayload | null> {
-    const data = await this.cache.get(this.getKey(token));
-    if (!data) return null;
-    await this.cache.delete(this.getKey(token));
-    return this.deserialize(data);
+    const data = await this.cache.take(this.getKey(token));
+    return data ? this.deserialize(data) : null;
   }
 }

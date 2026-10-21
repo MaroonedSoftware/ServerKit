@@ -29,6 +29,12 @@ const makeCache = () => {
     add: vi.fn(async () => true),
     update: vi.fn(async (k: string, v: string) => void store.set(k, v)),
     delete: vi.fn(async (k: string) => (store.delete(k) ? k : null)),
+    take: vi.fn(async (k: string) => {
+      if (k.startsWith('oauth2_state_')) return storedState ? JSON.stringify(storedState) : null;
+      const value = store.get(k) ?? null;
+      store.delete(k);
+      return value;
+    }),
   } as unknown as CacheProvider;
 };
 

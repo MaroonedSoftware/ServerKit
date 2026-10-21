@@ -273,7 +273,7 @@ Refresh tokens are single-use JWTs that carry `kind: 'refresh'`, `jti`, `familyI
 - A new `jti` is minted for the same session.
 - If a client ever presents a `jti` that is already consumed, **the token's session and every session rotated from it are revoked**. This is the theft signal — observe it via the `session.refresh_reuse_detected` audit event.
 
-A family is a chain of sessions, one per `rotateSession`. Each rotation records its successor once, under `auth_session_successor_{sessionToken}` with a `refreshExpiresIn` TTL, and theft revocation follows those links from the replayed token's session. Nothing in the chain is ever read, modified and rewritten, so concurrent refreshes and rotations cannot drop a session from it. The successor is claimed set-if-absent, so of two concurrent rotations of one session only one succeeds. The loser gets a 401, so a client that can double-submit a step-up should not treat that 401 as being signed out. A rotation that fails before it takes effect releases the claim, so the session can still be rotated later. A theft revocation first sets `auth_refresh_family_revoked_{familyId}`. A rotation that links its new session and then finds that marker deletes the new session and fails, so a rotation racing the revocation cannot outlive it. Family records (`auth_refresh_family_{familyId}`) written by earlier versions are still read until they expire. Revocation also follows the chain from each session they list.
+A family is a chain of sessions, one per `rotateSession`. Each rotation records its successor once, under `auth_session_successor_{sessionToken}` with a `refreshExpiresIn` TTL, and theft revocation follows those links from the replayed token's session. Nothing in the chain is ever read, modified and rewritten, so concurrent refreshes and rotations cannot drop a session from it. The successor is claimed set-if-absent, so of two concurrent rotations of one session only one succeeds. The loser gets a 401, so a client that can double-submit a step-up should not treat that 401 as being signed out. A rotation that fails before it takes effect releases the claim and puts the old session back (unless its family was revoked meanwhile), so the session can still be rotated later. A theft revocation first sets `auth_refresh_family_revoked_{familyId}`. A rotation that links its new session and then finds that marker deletes the new session and fails, so a rotation racing the revocation cannot outlive it. Family records (`auth_refresh_family_{familyId}`) written by earlier versions are still read until they expire. Revocation also follows the chain from each session they list.
 
 #### Device metadata and session lists
 
@@ -416,12 +416,13 @@ await pkce.storeChallenge(codeChallenge, JSON.stringify({ redirectUrl, scope }),
 // --- Token step (client → /token) ---
 // The client sends back the verifier (parsed request body lives on ctx.parsedBody)
 const { code_verifier } = ctx.parsedBody as { code_verifier: string };
-const stateJson = await pkce.getVerifier(code_verifier);
+const stateJson = await pkce.takeVerifier(code_verifier); // atomic read-and-delete: single-use
 if (!stateJson) throw httpError(400);
-await pkce.deleteVerifier(code_verifier); // single-use
 ```
 
-If you control both halves of the pair (e.g. issuing your own download links), use `storeVerifier` / `getVerifier` / `deleteVerifier` and skip the manual `pkceCreateChallenge` call.
+Use `takeVerifier` / `takeChallenge` to consume an entry. A `getVerifier` followed by `deleteVerifier` is not atomic, and two concurrent token requests can both pass the `get`.
+
+If you control both halves of the pair (e.g. issuing your own download links), use `storeVerifier` / `takeVerifier` and skip the manual `pkceCreateChallenge` call.
 
 ---
 
@@ -762,6 +763,20 @@ switch (result.kind) {
     await oidc.createFactorFromAuthorization(newActorId, result.authorizationId);
     break;
 }
+```
+
+**Caller responsibilities.** The service holds no browser state, so it cannot tell which browser started a flow. The app must enforce three things:
+
+- **Bind `state` to the browser.** `completeAuthorization` trusts whichever stored state record the callback's `state` names (the PKCE verifier and nonce live in that record, so they do not help). Keep the `state` returned by `beginAuthorization` in a cookie or session for that browser, and refuse a callback whose `state` that browser did not start. Otherwise an attacker can begin a `link` for their own account and send the IdP URL to a victim, whose identity then gets linked to the attacker's account. The same flow allows login CSRF on `sign-in`.
+- **Check the actor.** On `stepped-up` and `linked` results, confirm that `result.actorId` is the actor of the current session.
+- **Allow-list `redirectAfter`.** It is returned as given and never validated, so redirecting to it unchecked is an open redirect.
+
+```typescript
+const { url, state } = await oidc.beginAuthorization({ provider: 'google', intent: 'link', actorId });
+ctx.cookies.set('oidc_state', state, { httpOnly: true, secure: true, sameSite: 'lax' });
+
+// On the callback, before completeAuthorization:
+if (!ctx.query.state || ctx.query.state !== ctx.cookies.get('oidc_state')) throw httpError(400);
 ```
 
 **Account linking.** Pass `intent: 'link'` and an existing `actorId` on `beginAuthorization` to attach an additional provider to a signed-in user. Every result carries the `intent` the flow began with. When the provider identity already belongs to a different account, `completeAuthorization` throws a 409 and records `oidc.link.rejected` with reason `subject_taken`, rather than signing the caller in as that other account. An identity already on the linking account answers `signed-in` with `intent: 'link'`.
@@ -1684,6 +1699,8 @@ Cache-backed storage for PKCE state (RFC 7636). Wraps an injected `CacheProvider
 | `storeVerifier(codeVerifier, value, expiration: Duration)`   | `Promise<void>`           | Same as `storeChallenge`, but derives the challenge from the verifier        |
 | `getChallenge(codeChallenge)`                                | `Promise<string \| null>` | Look up the stored value for a challenge; `null` when missing/expired        |
 | `getVerifier(codeVerifier)`                                  | `Promise<string \| null>` | Look up the value for the verifier-derived challenge — the standard PKCE op  |
+| `takeChallenge(codeChallenge)`                               | `Promise<string \| null>` | Atomically look up and remove the value — the single-use consume             |
+| `takeVerifier(codeVerifier)`                                 | `Promise<string \| null>` | Same as `takeChallenge`, but derives the challenge from the verifier         |
 | `deleteChallenge(codeChallenge)`                             | `Promise<void>`           | Remove the entry — call after a successful exchange for single-use semantics |
 | `deleteVerifier(codeVerifier)`                               | `Promise<void>`           | Same as `deleteChallenge`, but derives the challenge from the verifier       |
 

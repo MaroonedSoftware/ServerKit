@@ -13,6 +13,7 @@ const makeCacheProvider = () =>
     set: vi.fn().mockResolvedValue(undefined),
     update: vi.fn().mockResolvedValue(undefined),
     delete: vi.fn().mockResolvedValue(null),
+    take: vi.fn().mockResolvedValue(null),
   }) as unknown as CacheProvider;
 
 // A stateful in-memory cache, needed to exercise attempt counting that persists across verify calls.
@@ -30,6 +31,11 @@ const makeStatefulCache = (initial: Record<string, string> = {}) => {
       const existed = store.has(key);
       store.delete(key);
       return existed ? key : null;
+    }),
+    take: vi.fn(async (key: string) => {
+      const value = store.get(key) ?? null;
+      store.delete(key);
+      return value;
     }),
   } as unknown as CacheProvider;
 };
@@ -473,6 +479,7 @@ describe('EmailFactorService', () => {
       const factor = makeEmailFactor();
       const payload = makeChallengePayload({ verificationMethod: 'code' });
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
+      cache.take = vi.fn().mockResolvedValue('taken');
       repo.getFactor = vi.fn().mockResolvedValue(factor);
       vi.mocked(otpProvider.validate).mockReturnValue(true);
 
@@ -485,6 +492,7 @@ describe('EmailFactorService', () => {
       const factor = makeEmailFactor();
       const payload = makeChallengePayload({ verificationMethod: 'magiclink', code: 'the-magic-token' });
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
+      cache.take = vi.fn().mockResolvedValue('taken');
       repo.getFactor = vi.fn().mockResolvedValue(factor);
 
       const result = await service.verifyEmailChallenge('chal-id-1', 'the-magic-token');
@@ -495,12 +503,13 @@ describe('EmailFactorService', () => {
     it('deletes the cached challenge entries after a successful verification', async () => {
       const payload = makeChallengePayload({ verificationMethod: 'code' });
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(payload));
+      cache.take = vi.fn().mockResolvedValue('taken');
       repo.getFactor = vi.fn().mockResolvedValue(makeEmailFactor());
       vi.mocked(otpProvider.validate).mockReturnValue(true);
 
       await service.verifyEmailChallenge('chal-id-1', '123456');
 
-      expect(cache.delete).toHaveBeenCalledWith('email_factor_challenge_chal-id-1');
+      expect(cache.take).toHaveBeenCalledWith('email_factor_challenge_chal-id-1');
       expect(cache.delete).toHaveBeenCalledWith('email_factor_challenge_actor-1_factor-1_code');
     });
 
@@ -580,9 +589,11 @@ describe('EmailFactorService', () => {
       vi.mocked(otpProvider.validate).mockReturnValue(true);
 
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(makeChallengePayload({ verificationMethod: 'code' })));
+      cache.take = vi.fn().mockResolvedValue('taken');
       expect(await service.verifyEmailChallenge('chal-id-1', '123456', 'code')).toBe(factor);
 
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(makeChallengePayload({ verificationMethod: 'magiclink', code: 'the-magic-token' })));
+      cache.take = vi.fn().mockResolvedValue('taken');
       expect(await service.verifyEmailChallenge('chal-id-1', 'the-magic-token', 'magiclink')).toBe(factor);
     });
 
@@ -592,10 +603,31 @@ describe('EmailFactorService', () => {
       vi.mocked(otpProvider.validate).mockReturnValue(true);
 
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(makeChallengePayload({ verificationMethod: 'code' })));
+      cache.take = vi.fn().mockResolvedValue('taken');
       expect(await service.verifyEmailChallenge('chal-id-1', '123456')).toBe(factor);
 
       cache.get = vi.fn().mockResolvedValue(JSON.stringify(makeChallengePayload({ verificationMethod: 'magiclink', code: 'the-magic-token' })));
+      cache.take = vi.fn().mockResolvedValue('taken');
       expect(await service.verifyEmailChallenge('chal-id-1', 'the-magic-token')).toBe(factor);
+    });
+
+    it('verifies once when the correct code is submitted concurrently', async () => {
+      const statefulCache = makeStatefulCache();
+      service = new EmailFactorService(makeOptions(), repo, otpProvider, statefulCache, policyService);
+      repo.getFactor = vi.fn().mockResolvedValue(makeEmailFactor());
+      vi.mocked(otpProvider.validate).mockReturnValue(true);
+
+      const otp = await service.issueEmailChallenge('actor-1', 'factor-1', 'code');
+
+      const outcomes = await Promise.allSettled([
+        service.verifyEmailChallenge(otp.challengeId, otp.code, 'code'),
+        service.verifyEmailChallenge(otp.challengeId, otp.code, 'code'),
+      ]);
+
+      expect(outcomes.filter(outcome => outcome.status === 'fulfilled')).toHaveLength(1);
+      expect(outcomes.filter(outcome => outcome.status === 'rejected')).toEqual([
+        expect.objectContaining({ reason: expect.objectContaining({ statusCode: 404 }) }),
+      ]);
     });
 
     it("leaves the other method's slot intact after a successful verification", async () => {

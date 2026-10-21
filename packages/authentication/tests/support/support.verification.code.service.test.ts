@@ -216,7 +216,7 @@ describe('SupportVerificationCodeService', () => {
 
       const results = await Promise.allSettled([service.verifyCode(actor, code), service.verifyCode(actor, code)]);
 
-      const fulfilled = results.filter((r) => r.status === 'fulfilled');
+      const fulfilled = results.filter(r => r.status === 'fulfilled');
       const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
 
       expect(fulfilled).toHaveLength(1);

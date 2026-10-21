@@ -10,6 +10,7 @@ const makeCache = (): CacheProvider => ({
   add: vi.fn().mockResolvedValue(true),
   update: vi.fn().mockResolvedValue(undefined),
   delete: vi.fn().mockResolvedValue(null),
+  take: vi.fn().mockResolvedValue(null),
 });
 
 describe('PkceProvider', () => {
@@ -77,6 +78,29 @@ describe('PkceProvider', () => {
       const verifier = pkceCreateVerifier();
       await provider.storeVerifier(verifier, 'redirect-url', ttl);
       expect(await provider.getVerifier(verifier)).toBe('redirect-url');
+    });
+  });
+
+  describe('takeChallenge', () => {
+    it('reads and removes the entry under the namespaced cache key', async () => {
+      vi.mocked(cache.take).mockResolvedValue('state-payload');
+      expect(await provider.takeChallenge('challenge-1')).toBe('state-payload');
+      expect(cache.take).toHaveBeenCalledWith('pkce_challenge-1');
+      expect(cache.get).not.toHaveBeenCalled();
+    });
+
+    it('returns null when the entry is missing or already taken', async () => {
+      expect(await provider.takeChallenge('challenge-1')).toBeNull();
+    });
+  });
+
+  describe('takeVerifier', () => {
+    it('takes the entry under the verifier-derived challenge', async () => {
+      const verifier = pkceCreateVerifier();
+      const expectedChallenge = pkceCreateChallenge(verifier);
+      vi.mocked(cache.take).mockResolvedValue('redirect-url');
+      expect(await provider.takeVerifier(verifier)).toBe('redirect-url');
+      expect(cache.take).toHaveBeenCalledWith(`pkce_${expectedChallenge}`);
     });
   });
 
