@@ -20,12 +20,13 @@ const textOf = (result: CallToolResult): string => {
 const call = async (help: McpHelpToolHandler, context = makeContext()) => textOf(await help.handle({}, context.forTool(help.definition.name)));
 
 describe('McpHelpToolHandler', () => {
-  it('advertises a default name, description and an empty input schema', () => {
+  it('advertises a default name, description, an empty input schema and a read-only hint', () => {
     const help = new McpHelpToolHandler({ tools: new McpToolHandlerMap() });
     expect(help.definition).toEqual({
       name: MCP_DEFAULT_HELP_TOOL_NAME,
       description: MCP_DEFAULT_HELP_TOOL_DESCRIPTION,
       inputSchema: { type: 'object', properties: {} },
+      annotations: { readOnlyHint: true },
     });
   });
 
