@@ -75,6 +75,8 @@ export class McpHelpToolHandler implements McpToolHandler {
       name: options.name ?? MCP_DEFAULT_HELP_TOOL_NAME,
       description: options.description ?? MCP_DEFAULT_HELP_TOOL_DESCRIPTION,
       inputSchema: { type: 'object', properties: {} },
+      // Answering only reads the catalog and the overview, so clients can call it without asking.
+      annotations: { readOnlyHint: true },
     };
   }
 
