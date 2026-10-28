@@ -1,5 +1,11 @@
 # @maroonedsoftware/mcp
 
+## 0.7.7
+
+### Patch Changes
+
+- 022e1f3: `McpHelpToolHandler` now advertises `annotations: { readOnlyHint: true }`, so clients treat calling the help tool as a read rather than a write.
+
 ## 0.7.6
 
 ### Patch Changes
