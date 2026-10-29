@@ -93,6 +93,13 @@ export type SessionAuditEvent =
    */
   | AuditEvent<'session.refresh_reuse_detected', { familyId: string; jti: string; sessionToken?: string }>
   /**
+   * A refresh token was presented again inside `refreshReuseGrace` and answered
+   * with the pair its first exchange issued. Nothing was revoked. Expected from
+   * clients that refresh in parallel or retry; a steady stream of them from one
+   * family is worth a look.
+   */
+  | AuditEvent<'session.refresh_reuse_within_grace', { familyId: string; jti: string }>
+  /**
    * A presented token did not resolve to a usable session.
    *
    * `actorId` is set whenever the service knows it, which is every case except a

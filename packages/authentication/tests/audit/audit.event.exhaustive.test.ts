@@ -16,6 +16,7 @@ const categoryFor = (type: AuthenticationAuditEvent['type']): AuditEventCategory
     case 'session.revoked':
     case 'session.revoked_all':
     case 'session.family_revoked':
+    case 'session.refresh_reuse_within_grace':
       return 'session';
     case 'session.updated':
     case 'session.rotated':

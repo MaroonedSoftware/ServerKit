@@ -17,6 +17,19 @@ import { JwtProvider } from './providers/jwt.provider.js';
 const MIN_CONSUMED_TTL_SECONDS = 60;
 
 /**
+ * What a consumed-jti sentinel held before it recorded the claim time. Read as
+ * "claimed at an unknown time", which is never inside the reuse grace.
+ */
+const LEGACY_CONSUMED_VALUE = '1';
+
+/**
+ * How long a reuse inside the grace waits for a refresh still in flight to
+ * publish its result, and how often it looks.
+ */
+const REUSE_GRACE_WAIT = Duration.fromObject({ seconds: 2 });
+const REUSE_GRACE_POLL = Duration.fromObject({ milliseconds: 50 });
+
+/**
  * Upper bound on how many rotations a theft revocation follows down a session's
  * successor chain. A chain is one link per `rotateSession`, so this is far past
  * any real one; it only stops a corrupt cache from looping forever.
@@ -80,6 +93,15 @@ export class AuthenticationSessionServiceOptions {
      * entries inherit this TTL, refreshed on every rotation.
      */
     public readonly refreshExpiresIn: Duration = Duration.fromObject({ days: 30 }),
+    /**
+     * How long after a refresh token is first exchanged a second presentation of
+     * it gets the same token pair back instead of revoking the family. Unset by
+     * default, so any reuse revokes. Set it for clients that refresh in parallel
+     * or retry a refresh whose response was lost, such as MCP hosts. A reuse
+     * after the window still revokes. Keep it short: a stolen token replayed
+     * inside it gets the pair too.
+     */
+    public readonly refreshReuseGrace?: Duration,
   ) {}
 }
 
@@ -185,6 +207,11 @@ export class AuthenticationSessionService {
 
   private getConsumedKey(jti: string) {
     return `auth_refresh_consumed_${jti}`;
+  }
+
+  /** The token pair a refresh issued for `jti`, kept for `refreshReuseGrace` so a reuse can be answered with it. */
+  private getRefreshResultKey(jti: string) {
+    return `auth_refresh_result_${jti}`;
   }
 
   /**
@@ -842,7 +869,9 @@ export class AuthenticationSessionService {
    * Exchange a refresh token for a new access/refresh token pair, rotating
    * the refresh token's `jti`. If the presented `jti` has already been
    * consumed, the token's session and every session rotated from it are revoked
-   * (theft signal).
+   * (theft signal), unless {@link AuthenticationSessionServiceOptions.refreshReuseGrace}
+   * is set and the reuse falls inside it, in which case the pair the first
+   * exchange issued is returned again.
    *
    * The token's `aud` must match `expectedAudience` when given, and the service's
    * configured audience otherwise, checked before the `jti` is claimed so a token
@@ -885,8 +914,19 @@ export class AuthenticationSessionService {
     // consumed (a replay / theft signal).
     const consumedKey = this.getConsumedKey(jti);
     const consumedTtlSeconds = Math.max(decoded.exp ? decoded.exp - Math.floor(DateTime.now().toSeconds()) : 0, MIN_CONSUMED_TTL_SECONDS);
-    const claimed = await this.cache.add(consumedKey, '1', { ttl: Duration.fromObject({ seconds: consumedTtlSeconds }) });
+    const claimed = await this.cache.add(consumedKey, DateTime.now().toISO(), { ttl: Duration.fromObject({ seconds: consumedTtlSeconds }) });
     if (!claimed) {
+      const reused = await this.resultWithinReuseGrace(consumedKey, jti, sessionToken, guard);
+      if (reused) {
+        await this.audit.record({
+          type: 'session.refresh_reuse_within_grace',
+          category: 'session',
+          outcome: 'success',
+          data: { familyId, jti },
+        });
+        return reused;
+      }
+
       const revokedInFamily = await this.revokeFamily(familyId, sessionToken);
       await this.audit.record({
         type: 'session.family_revoked',
@@ -917,6 +957,10 @@ export class AuthenticationSessionService {
 
     const tokens = await this.issueTokensForLoadedSession(session);
 
+    if (this.options.refreshReuseGrace) {
+      await this.cache.set(this.getRefreshResultKey(jti), JSON.stringify(tokens), this.options.refreshReuseGrace);
+    }
+
     await this.audit.record({
       type: 'session.refreshed',
       category: 'session',
@@ -926,6 +970,59 @@ export class AuthenticationSessionService {
     });
 
     return tokens;
+  }
+
+  /**
+   * The token pair to answer a reuse of `jti` with, when `refreshReuseGrace` is
+   * set and the reuse falls inside it; `undefined` means treat it as a replay.
+   *
+   * A refresh still in flight has claimed the jti but not yet published its
+   * result, so while the claim is younger than the grace this waits briefly for
+   * it. A claim of unknown age, written before claims recorded their time, is
+   * outside the grace. The session must still be live and `guard` must accept
+   * it, so a token presented by the wrong client is a replay even inside the
+   * grace.
+   */
+  private async resultWithinReuseGrace(
+    consumedKey: string,
+    jti: string,
+    sessionToken: string,
+    guard?: (session: AuthenticationSession) => void | Promise<void>,
+  ): Promise<AuthenticationToken | undefined> {
+    const grace = this.options.refreshReuseGrace;
+    if (!grace) return undefined;
+
+    const result = await this.awaitRefreshResult(consumedKey, jti, grace);
+    if (!result) return undefined;
+
+    const session = await this.getSession(sessionToken);
+    if (!session) return undefined;
+    if (guard) {
+      try {
+        await guard(session);
+      } catch {
+        return undefined;
+      }
+    }
+    return result;
+  }
+
+  private async awaitRefreshResult(consumedKey: string, jti: string, grace: Duration): Promise<AuthenticationToken | undefined> {
+    const resultKey = this.getRefreshResultKey(jti);
+    const result = await this.cache.get(resultKey);
+    if (result) return JSON.parse(result) as AuthenticationToken;
+
+    const claim = await this.cache.get(consumedKey);
+    const claimedAt = claim && claim !== LEGACY_CONSUMED_VALUE ? DateTime.fromISO(claim) : undefined;
+    if (!claimedAt?.isValid || claimedAt.plus(grace) <= DateTime.now()) return undefined;
+
+    const waitUntil = DateTime.now().plus(REUSE_GRACE_WAIT);
+    while (DateTime.now() < waitUntil) {
+      await new Promise(resolve => setTimeout(resolve, REUSE_GRACE_POLL.as('milliseconds')));
+      const published = await this.cache.get(resultKey);
+      if (published) return JSON.parse(published) as AuthenticationToken;
+    }
+    return undefined;
   }
 
   private async issueTokensForLoadedSession(session: AuthenticationSession): Promise<AuthenticationToken> {
