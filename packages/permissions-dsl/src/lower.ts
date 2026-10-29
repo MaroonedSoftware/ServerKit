@@ -55,11 +55,11 @@ const lowerExpr = (node: ExprNode): UsersetExpr => {
 // reference resolves correctly via the model). This pass is a no-op for now —
 // ContextModel.resolve() handles the implicit `direct` for relations at check time.
 const lowerNamespace = (ns: NamespaceNode): NamespaceDef => {
-  const relations: Record<string, { subjects: SubjectType[] }> = {};
+  const relations: Record<string, { subjects: SubjectType[]; objectWildcard?: boolean }> = {};
   const permissions: Record<string, UsersetExpr> = {};
   for (const m of ns.members) {
     if (m.kind === 'relation') {
-      relations[m.name] = { subjects: m.subjects.map(subjectToString) };
+      relations[m.name] = { subjects: m.subjects.map(subjectToString), ...(m.objectWildcard ? { objectWildcard: true } : {}) };
     } else {
       permissions[m.name] = lowerExpr(m.expr);
     }

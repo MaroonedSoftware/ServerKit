@@ -34,13 +34,14 @@ semantics.addOperation<unknown>('ast', {
   Member(child) {
     return child.ast();
   },
-  Relation(_kw, name, _colon, subjects) {
+  Relation(_kw, name, _colon, subjects, objectWildcard) {
     return {
       kind: 'relation',
       loc: span(this),
       name: name.sourceString,
       nameLoc: span(name),
       subjects: subjects.asIteration().children.map(c => callAst<SubjectTypeNode>(c)),
+      objectWildcard: objectWildcard.numChildren > 0,
     } satisfies RelationNode;
   },
   SubjectType_userset(ns, _dot, rel) {

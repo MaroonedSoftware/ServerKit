@@ -41,6 +41,25 @@ Each `relation` declares which kinds of subjects may receive it. Three forms:
 Listing `user` and `user.*` in the same subject list is normal — they
 authorize two different _kinds_ of tuples (per-user and public).
 
+## Every-object relations
+
+A trailing `on *` lets a relation hold tuples whose object is `<namespace>:*`,
+which grant the relation on **every** object of the namespace:
+
+```
+namespace document {
+  relation platform_admin: user on *
+  relation viewer: user
+  permission view = platform_admin | viewer
+}
+```
+
+`document:*.platform_admin@user:alice` then gives alice `view` on every
+document with one tuple. `user.*` widens the subject side; `on *` widens the
+object side. Relations without `on *` reject `*` tuples on write and never
+read them on Check. The flag compiles to `objectWildcard: true` on the
+relation.
+
 ## Permission expressions
 
 Permissions are computed sets, defined with set-algebra over relation

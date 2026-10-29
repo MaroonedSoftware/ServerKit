@@ -58,7 +58,8 @@ const renderExpr = (e: ExprNode): string => {
 
 const renderRelation = (r: RelationNode): string => {
   const subjects = r.subjects.map(subjectLiteral).join(', ');
-  return `        ${r.name}: { subjects: [${subjects}] },`;
+  const objectWildcard = r.objectWildcard ? ', objectWildcard: true' : '';
+  return `        ${r.name}: { subjects: [${subjects}]${objectWildcard} },`;
 };
 
 const renderPermission = (p: PermissionNode): string => {

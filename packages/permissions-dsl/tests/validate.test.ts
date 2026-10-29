@@ -57,6 +57,31 @@ assertions:
     expect(report.results.every(r => r.pass)).toBe(true);
   });
 
+  it('evaluates every-object tuples declared with `on *`', async () => {
+    const p = path.join(dir, 'platform.perm.yaml');
+    await writeFile(
+      p,
+      `schema: |-
+  namespace user {}
+  namespace doc {
+    relation platform_admin: user on *
+    relation viewer: user
+    permission view = platform_admin | viewer
+  }
+relationships: |-
+  doc:*.platform_admin@user:alice
+assertions:
+  assertTrue:
+    - doc:d1.view@user:alice
+    - doc:d2.view@user:alice
+  assertFalse:
+    - doc:d1.view@user:bob
+`,
+    );
+    const report = await runFixture(await loadFixture(p));
+    expect(report.summary).toEqual({ passed: 3, failed: 0 });
+  });
+
   it('fails an assertTrue when the model denies, with a useful message', async () => {
     const p = await writeFixture(
       dir,

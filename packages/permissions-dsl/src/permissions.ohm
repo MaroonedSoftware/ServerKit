@@ -4,6 +4,7 @@
 //   &   intersection     — highest, n-ary
 //   ->  tupleToUserset   — postfix on an identifier (parent->viewer)
 // Subject lists use commas (a list of allowed types, not a union expression).
+// A trailing `on *` lets a relation hold every-object tuples (`doc:*.admin@user:alice`).
 Permissions {
   File             = Namespace+
 
@@ -11,7 +12,8 @@ Permissions {
 
   Member           = Relation | Permission
 
-  Relation         = "relation" identifier ":" NonemptyListOf<SubjectType, ",">
+  Relation         = "relation" identifier ":" NonemptyListOf<SubjectType, ","> ObjectWildcard?
+  ObjectWildcard   = "on" "*"
   SubjectType      = identifier "." identifier   -- userset
                    | identifier "." "*"          -- wildcard
                    | identifier                  -- bare

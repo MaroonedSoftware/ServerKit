@@ -34,12 +34,17 @@ export interface NamespaceNode extends Located {
 /** A namespace body member — either a `relation` or a `permission` declaration. */
 export type MemberNode = RelationNode | PermissionNode;
 
-/** `relation name: subject, …` declaration listing the subject types allowed on this relation. */
+/**
+ * `relation name: subject, … [on *]` declaration listing the subject types allowed on this
+ * relation. `on *` sets `objectWildcard`, which lets the relation hold every-object tuples
+ * (`doc:*.admin@user:alice`).
+ */
 export interface RelationNode extends Located {
   kind: 'relation';
   name: string;
   nameLoc: SourceSpan;
   subjects: SubjectTypeNode[];
+  objectWildcard: boolean;
 }
 
 /**
