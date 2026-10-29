@@ -153,7 +153,11 @@ import { check } from '@maroonedsoftware/permissions';
 const allowed = await check(model, repo, { namespace: 'doc', id: 'doc-42' }, 'view', { kind: 'concrete', namespace: 'user', id: 'alice' });
 ```
 
-`check` walks the userset rewrite for `view`, short-circuiting on the first allow, and returns `true`/`false`. Each call has its own per-request memo and cycle guard; recursion is capped at depth 32.
+`check` walks the userset rewrite for `view`, short-circuiting on the first allow, and returns `true`/`false`. Each call has its own per-request memo and cycle guard; recursion is capped at depth 32 by default. Raise the cap for models with long chains (a reporting line walked through `manager->...`):
+
+```ts
+await check(model, repo, object, 'view', subject, sink, { maxDepth: 128 });
+```
 
 ### Metrics
 
@@ -223,11 +227,11 @@ Allowed subjects on a relation are declared as strings:
 | `listByObjectRelation(namespace, objectId, rel)` | All tuples for a `(object, relation)` pair — feeds the `direct` step |
 | `listObjectsRelatedBy(namespace, objectId, rel)` | Concrete-subject parents for a `tupleToUserset` walk                 |
 
-### `check(model, repo, object, relationOrPermission, subject, sink?)`
+### `check(model, repo, object, relationOrPermission, subject, sink?, options?)`
 
-Returns `Promise<boolean>`. Throws if the namespace or relation/permission is unknown.
+Returns `Promise<boolean>`. Throws if the namespace or relation/permission is unknown. `options.maxDepth` sets the recursion cap (default 32); a non-positive or fractional value throws `RangeError`.
 
-### `explain(model, repo, object, relationOrPermission, subject)`
+### `explain(model, repo, object, relationOrPermission, subject, options?)`
 
 Sibling of `check` that returns an `ExplainResult` containing both the
 boolean outcome and a hierarchical `CheckTrace`. Unlike `check`, the
@@ -271,14 +275,14 @@ string form. Useful for logs, fixtures, and serialising over the wire.
 
 ### `CheckMetrics`
 
-| Field           | Description                                        |
-| --------------- | -------------------------------------------------- |
-| `durationMs`    | Total wall-clock time of the Check                 |
-| `tupleReads`    | Count of `repo.listByObjectRelation` calls         |
-| `parentLookups` | Count of `repo.listObjectsRelatedBy` calls         |
-| `cacheHits`     | Per-request memo hits                              |
-| `maxDepth`      | Greatest recursion depth reached                   |
-| `hitMaxDepth`   | True if the evaluator hit the max-depth guard (32) |
+| Field           | Description                                   |
+| --------------- | --------------------------------------------- |
+| `durationMs`    | Total wall-clock time of the Check            |
+| `tupleReads`    | Count of `repo.listByObjectRelation` calls    |
+| `parentLookups` | Count of `repo.listObjectsRelatedBy` calls    |
+| `cacheHits`     | Per-request memo hits                         |
+| `maxDepth`      | Greatest recursion depth reached              |
+| `hitMaxDepth`   | True if the evaluator hit the max-depth guard |
 
 ## Doctor checks
 

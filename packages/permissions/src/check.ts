@@ -1,13 +1,15 @@
 import type { AuthorizationModel, UsersetExpr } from './dsl.js';
 import type { PermissionsTupleRepository } from './tuples.repository.js';
 import { type ObjectRef, type SubjectRef, formatSubject } from './tuple.js';
+import { type CheckOptions, DEFAULT_MAX_DEPTH, resolveMaxDepth } from './check.options.js';
 import { type CheckMetrics, type CheckMetricsSink, newCheckMetrics, noopMetricsSink } from './check.metrics.js';
 
-const MAX_DEPTH = 32;
+export type { CheckOptions } from './check.options.js';
 
 interface CheckCtx {
   model: AuthorizationModel;
   repo: PermissionsTupleRepository;
+  maxDepth: number;
   memo: Map<string, boolean>; // per-request cache
   visiting: Set<string>; // cycle guard
   metrics: CheckMetrics;
@@ -23,7 +25,7 @@ const memoKey = (object: ObjectRef, relation: string, subject: SubjectRef): stri
  * parents, and short-circuits on the first allow.
  *
  * Each call gets a fresh per-request memo and cycle guard. Recursion is
- * capped at a fixed `MAX_DEPTH` (32) — exceeding it returns `false` and
+ * capped at {@link CheckOptions.maxDepth} (default 32). Exceeding it returns `false` and
  * sets {@link CheckMetrics.hitMaxDepth}. That `false` is indistinguishable from
  * a genuine denial here; use {@link checkDetailed} when the difference matters.
  *
@@ -34,10 +36,12 @@ const memoKey = (object: ObjectRef, relation: string, subject: SubjectRef): stri
  *   `object.namespace`.
  * @param subject - Subject whose access is being checked.
  * @param sink - Optional telemetry sink; defaults to {@link noopMetricsSink}.
+ * @param options - Evaluator options, such as {@link CheckOptions.maxDepth}.
  * @returns `true` if access is granted, `false` otherwise.
  * @throws {PermissionsError} If `object.namespace` or `relationOrPermission` is
  *   not declared on the model. This is a modelling bug, not a denial — do not
  *   catch it and return a 403.
+ * @throws {RangeError} If `options.maxDepth` is not a positive integer.
  */
 export const check = async (
   model: AuthorizationModel,
@@ -46,8 +50,9 @@ export const check = async (
   relationOrPermission: string,
   subject: SubjectRef,
   sink: CheckMetricsSink = noopMetricsSink,
+  options: CheckOptions = {},
 ): Promise<boolean> => {
-  const { allowed } = await checkDetailed(model, repo, object, relationOrPermission, subject, sink);
+  const { allowed } = await checkDetailed(model, repo, object, relationOrPermission, subject, sink, options);
   return allowed;
 };
 
@@ -82,8 +87,10 @@ export interface CheckResult {
  * @param relationOrPermission - Relation or permission name on `object.namespace`.
  * @param subject - Subject whose access is being checked.
  * @param sink - Optional telemetry sink; defaults to {@link noopMetricsSink}.
+ * @param options - Evaluator options, such as {@link CheckOptions.maxDepth}.
  * @throws {PermissionsError} If `object.namespace` or `relationOrPermission` is
  *   not declared on the model.
+ * @throws {RangeError} If `options.maxDepth` is not a positive integer.
  */
 export const checkDetailed = async (
   model: AuthorizationModel,
@@ -92,10 +99,12 @@ export const checkDetailed = async (
   relationOrPermission: string,
   subject: SubjectRef,
   sink: CheckMetricsSink = noopMetricsSink,
+  options: CheckOptions = {},
 ): Promise<CheckResult> => {
   const ctx: CheckCtx = {
     model,
     repo,
+    maxDepth: resolveMaxDepth(options),
     memo: new Map(),
     visiting: new Set(),
     metrics: newCheckMetrics(),
@@ -113,7 +122,7 @@ export const checkDetailed = async (
 
 const checkInner = async (ctx: CheckCtx, object: ObjectRef, relOrPerm: string, subject: SubjectRef, depth: number): Promise<boolean> => {
   if (depth > ctx.metrics.maxDepth) ctx.metrics.maxDepth = depth;
-  if (depth > MAX_DEPTH) {
+  if (depth > ctx.maxDepth) {
     ctx.metrics.hitMaxDepth = true;
     return false;
   }
@@ -210,4 +219,4 @@ const hasDirectTuple = async (ctx: CheckCtx, object: ObjectRef, relation: string
  * Internal hook exposing module-private constants to tests. Not part of the
  * public API — use only for assertions about the Check evaluator's bounds.
  */
-export const __testing = { MAX_DEPTH };
+export const __testing = { MAX_DEPTH: DEFAULT_MAX_DEPTH };

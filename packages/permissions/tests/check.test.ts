@@ -362,6 +362,64 @@ describe('checkDetailed', () => {
     expect(result.maxDepthExceeded).toBe(true);
   });
 
+  const deepChain = (depth: number): RelationTuple[] => {
+    const tuples: RelationTuple[] = [];
+    for (let i = 0; i < depth; i++) {
+      tuples.push({
+        object: { namespace: 'folder', id: `f${i}` },
+        relation: 'parent',
+        subject: { kind: 'concrete', namespace: 'folder', id: `f${i + 1}` },
+      });
+    }
+    tuples.push({
+      object: { namespace: 'folder', id: `f${depth}` },
+      relation: 'viewer',
+      subject: { kind: 'concrete', namespace: 'user', id: 'alice' },
+    });
+    return tuples;
+  };
+
+  it('resolves a chain past the default cap when maxDepth is raised', async () => {
+    const repo = new InMemoryRepo(deepChain(__testing.MAX_DEPTH + 10));
+
+    const result = await checkDetailed(
+      model,
+      repo,
+      { namespace: 'folder', id: 'f0' },
+      'view',
+      { kind: 'concrete', namespace: 'user', id: 'alice' },
+      undefined,
+      { maxDepth: 128 },
+    );
+
+    expect(result.allowed).toBe(true);
+    expect(result.maxDepthExceeded).toBe(false);
+  });
+
+  it('honours a maxDepth lower than the default', async () => {
+    const repo = new InMemoryRepo(deepChain(5));
+
+    const allowed = await check(
+      model,
+      repo,
+      { namespace: 'folder', id: 'f0' },
+      'view',
+      { kind: 'concrete', namespace: 'user', id: 'alice' },
+      undefined,
+      { maxDepth: 4 },
+    );
+
+    expect(allowed).toBe(false);
+  });
+
+  it.each([0, -1, 1.5, Number.NaN])('rejects maxDepth %s', async maxDepth => {
+    await expect(
+      check(model, new InMemoryRepo(), { namespace: 'folder', id: 'f0' }, 'view', { kind: 'concrete', namespace: 'user', id: 'alice' }, undefined, {
+        maxDepth,
+      }),
+    ).rejects.toThrow(RangeError);
+  });
+
   it('returns the per-call metrics without a sink', async () => {
     const repo = new InMemoryRepo([
       { object: { namespace: 'folder', id: 'f1' }, relation: 'viewer', subject: { kind: 'concrete', namespace: 'user', id: 'alice' } },

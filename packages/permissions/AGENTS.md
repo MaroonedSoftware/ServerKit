@@ -89,9 +89,10 @@ meaningful as parent objects.
 
 | Export          | Kind      | Shape                                                                                                                                                             | Notes                                                                                             |
 | --------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `check`         | function  | `(model, repo, object: ObjectRef, relationOrPermission: string, subject: SubjectRef, sink?: CheckMetricsSink) => Promise<boolean>`                                | Short-circuits on the first allow. Throws `PermissionsError` on an unknown namespace or relation. |
+| `check`         | function  | `(model, repo, object: ObjectRef, relationOrPermission: string, subject: SubjectRef, sink?: CheckMetricsSink, options?: CheckOptions) => Promise<boolean>`        | Short-circuits on the first allow. Throws `PermissionsError` on an unknown namespace or relation. |
 | `checkDetailed` | function  | Same arguments, `=> Promise<CheckResult>`                                                                                                                         | `{ allowed, maxDepthExceeded, metrics }`. Use it to tell a denial from a depth-capped answer.     |
-| `explain`       | function  | `(model, repo, object, relationOrPermission, subject) => Promise<ExplainResult>`                                                                                  | Does **not** short-circuit — evaluates every branch so the trace is complete.                     |
+| `CheckOptions`  | interface | `{ maxDepth?: number }`                                                                                                                                           | Recursion cap, default 32. Not a positive integer → `RangeError`.                                 |
+| `explain`       | function  | `(model, repo, object, relationOrPermission, subject, options?: CheckOptions) => Promise<ExplainResult>`                                                          | Does **not** short-circuit — evaluates every branch so the trace is complete.                     |
 | `formatTrace`   | function  | `(trace: CheckTrace, indent = 0) => string`                                                                                                                       | Indented multi-line rendering with `✓`/`✗` markers.                                               |
 | `ExplainResult` | interface | `{ object, relation, subject, allowed, trace }`                                                                                                                   | —                                                                                                 |
 | `CheckTrace`    | type      | Union of `DirectTrace`, `ComputedTrace`, `TupleToUsersetTrace`, `UnionTrace`, `IntersectionTrace`, `ExclusionTrace`, `CycleTrace`, `MaxDepthTrace`, `CachedTrace` | Each is exported individually too.                                                                |
@@ -182,10 +183,11 @@ console.log(formatTrace(result.trace));
   call `model.assertTuplesAllowed` yourself) or a tuple with a disallowed subject type will still
   grant access — a relation deliberately declared without `user.*` is otherwise still
   world-grantable by writing the tuple directly.
-- **Recursion is capped at `MAX_DEPTH = 32`.** Exceeding it makes `check()` return `false` and sets
+- **Recursion is capped at `maxDepth`, 32 unless `CheckOptions.maxDepth` says otherwise.** Exceeding it makes `check()` return `false` and sets
   `metrics.hitMaxDepth`. Through `check()` that is a silent deny: a deep hierarchy looks like "no
   permission", not like an error. Use `checkDetailed()` when the difference matters — its
-  `maxDepthExceeded` flag separates "denied" from "could not determine".
+  `maxDepthExceeded` flag separates "denied" from "could not determine". Pass the same options to
+  `explain()` or it will not reproduce a depth-capped answer.
 - **The memo is per call, not per request.** Every `check()` allocates a fresh memo and cycle guard.
   Two `check()` calls in one request share nothing. Batch related questions into one call where
   you can, or add a caching layer above.
@@ -216,7 +218,8 @@ src/
   tuple.ts                  Zod schemas and parse/format helpers for objects, subjects, tuples
   tuples.repository.ts      PermissionsTupleRepository abstract class
   in.memory.repository.ts   InMemoryTupleRepository
-  check.ts                  The Check evaluator, MAX_DEPTH, __testing hook
+  check.ts                  The Check evaluator, __testing hook
+  check.options.ts          CheckOptions, default depth, option validation (internal, not in the barrel)
   explain.ts                Trace types, explain(), formatTrace()
   check.metrics.ts          CheckMetrics, tags, sink token, noop sink
   check.metrics.logging.ts  LoggingMetricsSink
