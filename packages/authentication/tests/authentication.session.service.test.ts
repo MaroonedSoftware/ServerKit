@@ -1050,6 +1050,118 @@ describe('AuthenticationSessionService', () => {
     });
   });
 
+  describe('refreshSession reuse grace', () => {
+    const GRACE = Duration.fromObject({ seconds: 30 });
+    const makeGraceOptions = () => ({ ...makeOptions(), refreshReuseGrace: GRACE });
+
+    /** Issue a first token pair and stub decode to hand back its refresh payload. */
+    const prime = async (svc: AuthenticationSessionService, harness: ReturnType<typeof makeLiveHarness>) => {
+      const session = await svc.createSession('user-1', {}, makeFactor());
+      const tokens = await svc.issueTokenForSession(session.sessionToken);
+      const payload = (harness.jwtProvider.create as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0] as { jti: string; familyId: string };
+      (harness.jwtProvider.decode as ReturnType<typeof vi.fn>).mockReturnValue({
+        ...payload,
+        aud: AUD,
+        exp: Math.floor(DateTime.now().toSeconds()) + 3600,
+      });
+      return { session, tokens, jti: payload.jti, familyId: payload.familyId };
+    };
+
+    it('gives two concurrent refreshes of one token the same pair', async () => {
+      const harness = makeLiveHarness();
+      const { events, recorder } = makeCapturingRecorder();
+      const svc = new AuthenticationSessionService(makeGraceOptions(), harness.cache, harness.jwtProvider, recorder);
+      const { session, tokens, jti } = await prime(svc, harness);
+
+      const [a, b] = await Promise.all([svc.refreshSession(tokens.refreshToken!), svc.refreshSession(tokens.refreshToken!)]);
+
+      expect(a).toEqual(b);
+      expect(harness.store.has(`auth_session_${session.sessionToken}`)).toBe(true);
+      expect(events.some(e => e.type === 'session.refresh_reuse_detected')).toBe(false);
+      expect(events.filter(e => e.type === 'session.refresh_reuse_within_grace')).toMatchObject([
+        { category: 'session', outcome: 'success', data: { familyId: session.familyId, jti } },
+      ]);
+    });
+
+    it('answers a replay inside the window with the pair the first refresh issued', async () => {
+      const harness = makeLiveHarness();
+      const { events, recorder } = makeCapturingRecorder();
+      const svc = new AuthenticationSessionService(makeGraceOptions(), harness.cache, harness.jwtProvider, recorder);
+      const { session, tokens, jti } = await prime(svc, harness);
+
+      const first = await svc.refreshSession(tokens.refreshToken!);
+      const replayed = await svc.refreshSession(tokens.refreshToken!);
+
+      expect(replayed).toEqual(first);
+      expect(harness.store.get(`auth_refresh_result_${jti}`)).toBe(JSON.stringify(first));
+      expect(harness.store.has(`auth_session_${session.sessionToken}`)).toBe(true);
+      expect(events.some(e => e.type === 'session.family_revoked')).toBe(false);
+    });
+
+    it('revokes the family on a replay after the window', async () => {
+      const harness = makeLiveHarness();
+      const { events, recorder } = makeCapturingRecorder();
+      const svc = new AuthenticationSessionService(makeGraceOptions(), harness.cache, harness.jwtProvider, recorder);
+      const { session, tokens, jti } = await prime(svc, harness);
+
+      await svc.refreshSession(tokens.refreshToken!);
+      // The window has passed: the result has expired and the claim is older than the grace.
+      harness.store.delete(`auth_refresh_result_${jti}`);
+      harness.store.set(`auth_refresh_consumed_${jti}`, DateTime.now().minus(GRACE).minus({ seconds: 1 }).toISO()!);
+
+      await expect(svc.refreshSession(tokens.refreshToken!)).rejects.toMatchObject({ statusCode: 401 });
+
+      expect(harness.store.has(`auth_session_${session.sessionToken}`)).toBe(false);
+      expect(events.some(e => e.type === 'session.refresh_reuse_detected')).toBe(true);
+      expect(events.some(e => e.type === 'session.refresh_reuse_within_grace')).toBe(false);
+    });
+
+    it('revokes the family on a replay when no grace is set, and caches no result', async () => {
+      const harness = makeLiveHarness();
+      const { events, recorder } = makeCapturingRecorder();
+      const svc = new AuthenticationSessionService(makeOptions(), harness.cache, harness.jwtProvider, recorder);
+      const { session, tokens, jti } = await prime(svc, harness);
+
+      await svc.refreshSession(tokens.refreshToken!);
+      expect(harness.store.has(`auth_refresh_result_${jti}`)).toBe(false);
+
+      await expect(svc.refreshSession(tokens.refreshToken!)).rejects.toMatchObject({ statusCode: 401 });
+
+      expect(harness.store.has(`auth_session_${session.sessionToken}`)).toBe(false);
+      expect(events.find(e => e.type === 'session.refresh_reuse_detected')).toMatchObject({ outcome: 'failure', data: { jti } });
+      expect(events.some(e => e.type === 'session.refresh_reuse_within_grace')).toBe(false);
+    });
+
+    it('revokes the family on a replay of a token consumed with the legacy sentinel', async () => {
+      const harness = makeLiveHarness();
+      const { events, recorder } = makeCapturingRecorder();
+      const svc = new AuthenticationSessionService(makeGraceOptions(), harness.cache, harness.jwtProvider, recorder);
+      const { session, tokens, jti } = await prime(svc, harness);
+      // Consumed by an earlier version, which recorded no claim time.
+      harness.store.set(`auth_refresh_consumed_${jti}`, '1');
+
+      await expect(svc.refreshSession(tokens.refreshToken!)).rejects.toMatchObject({ statusCode: 401 });
+
+      expect(harness.store.has(`auth_session_${session.sessionToken}`)).toBe(false);
+      expect(events.some(e => e.type === 'session.refresh_reuse_detected')).toBe(true);
+    });
+
+    it('treats a replay inside the window as theft when the guard refuses it', async () => {
+      const harness = makeLiveHarness();
+      const svc = new AuthenticationSessionService(makeGraceOptions(), harness.cache, harness.jwtProvider);
+      const { session, tokens } = await prime(svc, harness);
+
+      await svc.refreshSession(tokens.refreshToken!);
+      await expect(
+        svc.refreshSession(tokens.refreshToken!, undefined, () => {
+          throw new Error('wrong client');
+        }),
+      ).rejects.toMatchObject({ statusCode: 401 });
+
+      expect(harness.store.has(`auth_session_${session.sessionToken}`)).toBe(false);
+    });
+  });
+
   describe('refreshSession — theft revocation across rotations', () => {
     /** The refresh-token claims minted by the most recent `create` call. */
     const lastRefreshPayload = (harness: ReturnType<typeof makeLiveHarness>) => {

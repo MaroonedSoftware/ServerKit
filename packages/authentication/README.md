@@ -269,9 +269,25 @@ The `guard` runs after the refresh token's `jti` is claimed and the session load
 
 Refresh tokens are single-use JWTs that carry `kind: 'refresh'`, `jti`, `familyId`, and `sessionToken` claims. On `refreshSession`:
 
-- The previous `jti` is marked consumed (`auth_refresh_consumed_{jti}` sentinel with TTL = `max(remaining-token-lifetime, 60s)`).
+- The previous `jti` is marked consumed (`auth_refresh_consumed_{jti}` sentinel holding the claim time, with TTL = `max(remaining-token-lifetime, 60s)`).
 - A new `jti` is minted for the same session.
 - If a client ever presents a `jti` that is already consumed, **the token's session and every session rotated from it are revoked**. This is the theft signal — observe it via the `session.refresh_reuse_detected` audit event.
+
+##### Reuse grace
+
+Some clients present one refresh token twice without being compromised: MCP hosts that refresh in parallel, or a client retrying a refresh whose response it never received. Without a grace, that second presentation revokes the client's own session. Set `refreshReuseGrace` on `AuthenticationSessionServiceOptions` to allow it:
+
+```typescript
+new AuthenticationSessionServiceOptions(
+  'https://auth.example.com',
+  'https://api.example.com',
+  Duration.fromObject({ hours: 1 }),
+  Duration.fromObject({ days: 30 }),
+  Duration.fromObject({ seconds: 30 }), // refreshReuseGrace
+);
+```
+
+With it set, each refresh keeps the pair it issued under `auth_refresh_result_{jti}` for the length of the grace. A reuse inside the window gets that same pair back and records `session.refresh_reuse_within_grace` instead of revoking. A reuse that arrives while the first refresh is still in flight waits up to about 2 seconds for its result. A reuse after the window, of a token consumed by an earlier version (whose sentinel holds no claim time), or one the session is gone for or the `guard` refuses, revokes the family as before. Unset, which is the default, every reuse revokes. Keep the window short: a stolen token replayed inside it gets the pair too.
 
 A family is a chain of sessions, one per `rotateSession`. Each rotation records its successor once, under `auth_session_successor_{sessionToken}` with a `refreshExpiresIn` TTL, and theft revocation follows those links from the replayed token's session. Nothing in the chain is ever read, modified and rewritten, so concurrent refreshes and rotations cannot drop a session from it. The successor is claimed set-if-absent, so of two concurrent rotations of one session only one succeeds. The loser gets a 401, so a client that can double-submit a step-up should not treat that 401 as being signed out. A rotation that fails before it takes effect releases the claim and puts the old session back (unless its family was revoked meanwhile), so the session can still be rotated later. A theft revocation first sets `auth_refresh_family_revoked_{familyId}`. A rotation that links its new session and then finds that marker deletes the new session and fails, so a rotation racing the revocation cannot outlive it. Family records (`auth_refresh_family_{familyId}`) written by earlier versions are still read until they expire. Revocation also follows the chain from each session they list.
 
@@ -1347,6 +1363,7 @@ Most events are ordinary traffic. These are not:
 | Event                                                  | Why it matters                                                     |
 | ------------------------------------------------------ | ------------------------------------------------------------------ |
 | `session.refresh_reuse_detected`                       | A refresh token was presented twice; the family is already revoked |
+| `session.refresh_reuse_within_grace` (a steady stream) | Reuse answered inside `refreshReuseGrace`; expected occasionally   |
 | `password.verify.rate_limited`                         | The lockout signal. Alert on the rate, not on one occurrence       |
 | `authenticator.validation.replayed`                    | A correct code reused. Interception rather than a typo             |
 | `recovery.channel.rejected` (`sub_challenge_mismatch`) | A proof from one account used on another's challenge               |

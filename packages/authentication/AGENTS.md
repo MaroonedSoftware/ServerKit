@@ -81,18 +81,18 @@ by area; type aliases for provider-specific payload shapes are grouped rather th
 
 ### Sessions
 
-| Export                                                         | Kind   | Shape                                                                       | Notes                                                                                                                                                     |
-| -------------------------------------------------------------- | ------ | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AuthenticationSessionServiceOptions`                          | class  | `(issuer, audience, expiresIn: Duration, refreshExpiresIn = 30 days)`       | A class so it is an InjectKit token.                                                                                                                      |
-| `AuthenticationSessionService`                                 | class  | `@Injectable()`                                                             | Backed by a `CacheProvider`.                                                                                                                              |
-| `#createSession` / `#updateSession` / `#createOrUpdateSession` | method | `createSession(subject, claims, factors, expiration?, device?, audience?)`  | `audience` binds every token from the session to one resource.                                                                                            |
-| `#getSession` / `#getSessionsForSubject`                       | method | —                                                                           | Read paths; `#revokeAllForSubject` does the revoking.                                                                                                     |
-| `#revokeAllForSubject`                                         | method | `(subject: string, reason?: SessionRevocationReason) => Promise<number>`    | Revokes every session for a subject; returns the count. Reads the per-subject index (Gotchas).                                                            |
-| `#lookupSessionFromJwt`                                        | method | `(jwt, ignoreJwtExpiration?, expectedAudience?)`                            | `aud` must match `expectedAudience`, else the configured audience. Refuses refresh tokens.                                                                |
-| `#deleteSession`                                               | method | `(sessionToken, reason: SessionRevocationReason = 'logout')`                | —                                                                                                                                                         |
-| `#issueTokenForSession`                                        | method | `(sessionToken) => Promise<AuthenticationToken>`                            | —                                                                                                                                                         |
-| `#rotateSession`                                               | method | `(sessionToken, claimOverrides?, expiration?)`                              | For privilege changes. Carries `familyId` forward and links the new session as the old one's successor; concurrent rotations of one session succeed once. |
-| `#refreshSession`                                              | method | `(refreshToken, expectedAudience?, guard?) => Promise<AuthenticationToken>` | Rotation with replay detection. `guard` runs after the `jti` is claimed.                                                                                  |
+| Export                                                         | Kind   | Shape                                                                                               | Notes                                                                                                                                                     |
+| -------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AuthenticationSessionServiceOptions`                          | class  | `(issuer, audience, expiresIn: Duration, refreshExpiresIn = 30 days, refreshReuseGrace?: Duration)` | A class so it is an InjectKit token. `refreshReuseGrace` is unset by default (every reuse revokes).                                                       |
+| `AuthenticationSessionService`                                 | class  | `@Injectable()`                                                                                     | Backed by a `CacheProvider`.                                                                                                                              |
+| `#createSession` / `#updateSession` / `#createOrUpdateSession` | method | `createSession(subject, claims, factors, expiration?, device?, audience?)`                          | `audience` binds every token from the session to one resource.                                                                                            |
+| `#getSession` / `#getSessionsForSubject`                       | method | —                                                                                                   | Read paths; `#revokeAllForSubject` does the revoking.                                                                                                     |
+| `#revokeAllForSubject`                                         | method | `(subject: string, reason?: SessionRevocationReason) => Promise<number>`                            | Revokes every session for a subject; returns the count. Reads the per-subject index (Gotchas).                                                            |
+| `#lookupSessionFromJwt`                                        | method | `(jwt, ignoreJwtExpiration?, expectedAudience?)`                                                    | `aud` must match `expectedAudience`, else the configured audience. Refuses refresh tokens.                                                                |
+| `#deleteSession`                                               | method | `(sessionToken, reason: SessionRevocationReason = 'logout')`                                        | —                                                                                                                                                         |
+| `#issueTokenForSession`                                        | method | `(sessionToken) => Promise<AuthenticationToken>`                                                    | —                                                                                                                                                         |
+| `#rotateSession`                                               | method | `(sessionToken, claimOverrides?, expiration?)`                                                      | For privilege changes. Carries `familyId` forward and links the new session as the old one's successor; concurrent rotations of one session succeed once. |
+| `#refreshSession`                                              | method | `(refreshToken, expectedAudience?, guard?) => Promise<AuthenticationToken>`                         | Rotation with replay detection. `guard` runs after the `jti` is claimed. Inside `refreshReuseGrace` a reuse gets the first exchange's pair back.          |
 
 ### Factors
 
@@ -426,6 +426,12 @@ checks belong to the app:
 - **Bind an `AuditSink` for audit.** It covers the whole package, carries a common envelope, and
   attributes an `actorId` on validation failures. It replaces `AuthenticationSessionHooks`, which is
   gone. Alert on `session.refresh_reuse_detected` — it is a token-theft signal.
+- **Set `refreshReuseGrace` for clients that refresh concurrently or retry.** MCP hosts do both, and
+  without a grace their second presentation of a refresh token revokes their own session. Inside
+  the window a reuse gets the pair the first exchange issued and records
+  `session.refresh_reuse_within_grace`; after it, or when the `guard` refuses or the session is
+  gone, the family is revoked as before. Keep it to seconds, since a stolen token replayed inside
+  the window gets the pair too.
 - Spread `AuthenticationPolicyMappings` into your `PolicyRegistryMap` rather than listing eleven
   bindings, and intersect `AuthenticationPolicyContexts` into your `Policies` type.
 - Use `requirePolicy()` from `@maroonedsoftware/koa` on routes rather than reading
@@ -649,7 +655,10 @@ Invariants a change must not break:
 - Sessions are authoritative and JWTs are references. Any validation path must consult the session
   store, or revocation stops working.
 - Refresh-token family tracking is a security control: replaying a consumed token must revoke the
-  whole family before `session.refresh_reuse_detected` is recorded.
+  whole family before `session.refresh_reuse_detected` is recorded. The one exception is a reuse
+  inside `refreshReuseGrace`, which returns the pair the first exchange cached and revokes nothing.
+  With the option unset, behavior must stay exactly as without it. The consumed sentinel holds the
+  claim time as ISO 8601; a legacy `'1'` value means unknown age and is outside the grace.
 - Hook failures must stay non-propagating.
 - `AuthenticationPolicyMappings` and `AuthenticationPolicyContexts` must stay in sync with
   `AuthenticationPolicyNames`. All three live in `policy.mappings.ts` for exactly that reason.
