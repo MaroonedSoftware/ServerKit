@@ -131,8 +131,8 @@ class KyselyTupleRepository extends PermissionsTupleRepository {
     // upsert each tuple; treat duplicates as no-ops
   }
 
-  async delete(tuples: RelationTuple[]): Promise<void> {
-    // delete by exact (object, relation, subject) shape
+  async delete(tuples: RelationTuple[], deletedBy?: string): Promise<void> {
+    // delete by exact (object, relation, subject) shape, or soft-delete and record deletedBy
   }
 
   async listByObjectRelation(namespace: string, objectId: string, relation: string) {
@@ -223,7 +223,7 @@ Allowed subjects on a relation are declared as strings:
 | Method                                           | Description                                                          |
 | ------------------------------------------------ | -------------------------------------------------------------------- |
 | `write(tuples, createdBy?)`                      | Insert idempotently                                                  |
-| `delete(tuples)`                                 | Remove by exact shape; missing rows are a no-op                      |
+| `delete(tuples, deletedBy?)`                     | Remove by exact shape; missing rows are a no-op. May soft-delete     |
 | `listByObjectRelation(namespace, objectId, rel)` | All tuples for a `(object, relation)` pair — feeds the `direct` step |
 | `listObjectsRelatedBy(namespace, objectId, rel)` | Concrete-subject parents for a `tupleToUserset` walk                 |
 

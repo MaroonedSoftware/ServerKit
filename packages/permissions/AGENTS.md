@@ -75,11 +75,11 @@ Each of these is a Zod schema **and** a type of the same name.
 
 ### Storage
 
-| Export                           | Kind           | Shape                                                                                                                                                                                                                                                               | Notes                                                                                                                                             |
-| -------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PermissionsTupleRepository`     | abstract class | `write(tuples, createdBy?)`, `delete(tuples)`, `listByObjectRelation(namespace, objectId, relation)`, `listObjectsRelatedBy(namespace, objectId, relation)`, optional `listSubjects(namespace, objectId, relation)` and `listObjects(namespace, relation, subject)` | An abstract class, not an interface, so it survives as an InjectKit token. The two listings are optional so existing repositories keep compiling. |
-| `ModelValidatingTupleRepository` | class          | `new ModelValidatingTupleRepository(inner, model)`                                                                                                                                                                                                                  | Decorator enforcing `RelationDef.subjects` on write. Reads pass through.                                                                          |
-| `InMemoryTupleRepository`        | class          | `new InMemoryTupleRepository(seed: RelationTuple[] = [])`, plus `all()` and `clear()`                                                                                                                                                                               | For fixtures, `pdsl validate`, the VS Code playground, and tests. Not for production.                                                             |
+| Export                           | Kind           | Shape                                                                                                                                                                                                                                                                           | Notes                                                                                                                                             |
+| -------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PermissionsTupleRepository`     | abstract class | `write(tuples, createdBy?)`, `delete(tuples, deletedBy?)`, `listByObjectRelation(namespace, objectId, relation)`, `listObjectsRelatedBy(namespace, objectId, relation)`, optional `listSubjects(namespace, objectId, relation)` and `listObjects(namespace, relation, subject)` | An abstract class, not an interface, so it survives as an InjectKit token. The two listings are optional so existing repositories keep compiling. |
+| `ModelValidatingTupleRepository` | class          | `new ModelValidatingTupleRepository(inner, model)`                                                                                                                                                                                                                              | Decorator enforcing `RelationDef.subjects` on write. Reads pass through.                                                                          |
+| `InMemoryTupleRepository`        | class          | `new InMemoryTupleRepository(seed: RelationTuple[] = [])`, plus `all()` and `clear()`                                                                                                                                                                                           | For fixtures, `pdsl validate`, the VS Code playground, and tests. Not for production.                                                             |
 
 `write` must be idempotent — duplicate `(object, relation, subject)` triples are no-ops.
 `listObjectsRelatedBy` returns only **concrete** subjects; wildcard and userset subjects are not
@@ -197,8 +197,11 @@ console.log(formatTrace(result.trace));
   in `explain()`; `check()` just denies.
 - **`ObjectRef.id` cannot contain `.`, `@`, `:`, or `*`.** Those are the delimiters in the
   canonical tuple string. An id sourced from user input must be validated or encoded.
-- **`InMemoryTupleRepository` ignores `createdBy`.** It is accepted for interface compatibility
-  and dropped.
+- **`InMemoryTupleRepository` ignores `createdBy` and `deletedBy`.** They are accepted for
+  interface compatibility and dropped.
+- **Revocation history is the repository's job.** `delete(tuples, deletedBy?)` may soft-delete
+  (mark the row revoked, record `deletedBy`) as long as every read then leaves the row out. A
+  revoked row that still comes back from `listByObjectRelation` keeps granting access.
 - **`listSubjects` and `listObjects` are optional on the repository contract**, so existing
   implementations keep compiling. Check for the method before calling it. `listObjects` is a
   direct-tuple reverse index, not a Check: a subject who only has access through a

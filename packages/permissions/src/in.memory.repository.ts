@@ -7,7 +7,8 @@ import { PermissionsTupleRepository } from './tuples.repository.js';
  * and unit tests — anywhere a real database backend would be overkill.
  *
  * `write` and `delete` deduplicate by canonical tuple string
- * ({@link stringifyTuple}). Order is not preserved beyond that.
+ * ({@link stringifyTuple}). Order is not preserved beyond that. `createdBy` and
+ * `deletedBy` are accepted and dropped: this repository keeps no history.
  */
 export class InMemoryTupleRepository extends PermissionsTupleRepository {
   private readonly tuples: Map<string, RelationTuple>;

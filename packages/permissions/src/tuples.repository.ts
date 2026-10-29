@@ -23,8 +23,18 @@ export abstract class PermissionsTupleRepository {
 
   /**
    * Remove tuples by exact shape. Tuples that don't exist are a no-op.
+   *
+   * A backend that keeps revocation history can soft-delete instead: mark the
+   * row revoked, record `deletedBy` and the time, and leave it out of every
+   * read below. The evaluator only requires that a deleted tuple stops
+   * granting access.
+   *
+   * @param tuples - Tuples to remove.
+   * @param deletedBy - Opaque actor identifier for the revocation, the
+   *   counterpart of `write`'s `createdBy`. Recorded when the backend keeps
+   *   revoked rows, otherwise ignored.
    */
-  abstract delete(tuples: RelationTuple[]): Promise<void>;
+  abstract delete(tuples: RelationTuple[], deletedBy?: string): Promise<void>;
 
   /**
    * All direct tuples for a `(object, relation)` pair. Feeds the Check
