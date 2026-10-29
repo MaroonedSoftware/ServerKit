@@ -89,15 +89,17 @@ meaningful as parent objects.
 
 ### Evaluation
 
-| Export          | Kind      | Shape                                                                                                                                                             | Notes                                                                                             |
-| --------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `check`         | function  | `(model, repo, object: ObjectRef, relationOrPermission: string, subject: SubjectRef, sink?: CheckMetricsSink, options?: CheckOptions) => Promise<boolean>`        | Short-circuits on the first allow. Throws `PermissionsError` on an unknown namespace or relation. |
-| `checkDetailed` | function  | Same arguments, `=> Promise<CheckResult>`                                                                                                                         | `{ allowed, maxDepthExceeded, metrics }`. Use it to tell a denial from a depth-capped answer.     |
-| `CheckOptions`  | interface | `{ maxDepth?: number }`                                                                                                                                           | Recursion cap, default 32. Not a positive integer → `RangeError`.                                 |
-| `explain`       | function  | `(model, repo, object, relationOrPermission, subject, options?: CheckOptions) => Promise<ExplainResult>`                                                          | Does **not** short-circuit — evaluates every branch so the trace is complete.                     |
-| `formatTrace`   | function  | `(trace: CheckTrace, indent = 0) => string`                                                                                                                       | Indented multi-line rendering with `✓`/`✗` markers.                                               |
-| `ExplainResult` | interface | `{ object, relation, subject, allowed, trace }`                                                                                                                   | —                                                                                                 |
-| `CheckTrace`    | type      | Union of `DirectTrace`, `ComputedTrace`, `TupleToUsersetTrace`, `UnionTrace`, `IntersectionTrace`, `ExclusionTrace`, `CycleTrace`, `MaxDepthTrace`, `CachedTrace` | Each is exported individually too.                                                                |
+| Export                | Kind      | Shape                                                                                                                                                             | Notes                                                                                                                          |
+| --------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `check`               | function  | `(model, repo, object: ObjectRef, relationOrPermission: string, subject: SubjectRef, sink?: CheckMetricsSink, options?: CheckOptions) => Promise<boolean>`        | Short-circuits on the first allow. Throws `PermissionsError` on an unknown namespace or relation.                              |
+| `checkDetailed`       | function  | Same arguments, `=> Promise<CheckResult>`                                                                                                                         | `{ allowed, maxDepthExceeded, metrics }`. Use it to tell a denial from a depth-capped answer.                                  |
+| `CheckOptions`        | interface | `{ maxDepth?: number }`                                                                                                                                           | Recursion cap, default 32. Not a positive integer → `RangeError`.                                                              |
+| `explain`             | function  | `(model, repo, object, relationOrPermission, subject, options?: CheckOptions) => Promise<ExplainResult>`                                                          | Does **not** short-circuit — evaluates every branch so the trace is complete.                                                  |
+| `lookupObjects`       | function  | `(model, repo, namespace, permission, subject: SubjectRef, options?: CheckOptions) => Promise<LookupObjectsResult>`                                               | Effective lookup-resources: reverse walk, then `checkDetailed` per candidate. Needs `repo.listObjects` and a concrete subject. |
+| `LookupObjectsResult` | interface | `{ objects, everyObject, maxDepthExceeded, candidates }`                                                                                                          | `everyObject`: a `*` grant reached the permission; not confirmed per object.                                                   |
+| `formatTrace`         | function  | `(trace: CheckTrace, indent = 0) => string`                                                                                                                       | Indented multi-line rendering with `✓`/`✗` markers.                                                                            |
+| `ExplainResult`       | interface | `{ object, relation, subject, allowed, trace }`                                                                                                                   | —                                                                                                                              |
+| `CheckTrace`          | type      | Union of `DirectTrace`, `ComputedTrace`, `TupleToUsersetTrace`, `UnionTrace`, `IntersectionTrace`, `ExclusionTrace`, `CycleTrace`, `MaxDepthTrace`, `CachedTrace` | Each is exported individually too.                                                                                             |
 
 ### Metrics
 
@@ -212,7 +214,15 @@ console.log(formatTrace(result.trace));
 - **`listSubjects` and `listObjects` are optional on the repository contract**, so existing
   implementations keep compiling. Check for the method before calling it. `listObjects` is a
   direct-tuple reverse index, not a Check: a subject who only has access through a
-  `tupleToUserset` parent does not appear in its results.
+  `tupleToUserset` parent does not appear in its results. Use `lookupObjects()` for the effective
+  answer; it is built on `listObjects` and throws `TypeError` when the repository lacks it.
+- **`lookupObjects()` does not enumerate `*` grants.** An every-object tuple surfaces as
+  `everyObject: true`, not as a list of objects, because no tuple names the objects it covers.
+  Treat that flag as "check the object directly", not as "allowed everywhere": an exclusion can
+  still deny a given object.
+- **`lookupObjects()` is a listing tool, not a request-path check.** It issues a `listObjects`
+  per reached `(object, relation)` and a full Check per candidate. Index the tuple table on
+  `(namespace, relation, subject)` before relying on it.
 - **An unknown namespace or relation throws, it does not deny.** `check()` raises a
   `PermissionsError` with `code: 'unknown_namespace'` or `'unknown_relation'`. Catching that and
   returning a 403 turns a typo into a silent lockout; let it surface.
@@ -232,6 +242,7 @@ src/
   check.reads.ts            Tuple and parent reads that add every-object rows (internal)
   check.options.ts          CheckOptions, default depth, option validation (internal, not in the barrel)
   explain.ts                Trace types, explain(), formatTrace()
+  lookup.objects.ts         lookupObjects(): reverse index walk plus confirming Checks
   check.metrics.ts          CheckMetrics, tags, sink token, noop sink
   check.metrics.logging.ts  LoggingMetricsSink
   index.ts                  Barrel

@@ -19,6 +19,7 @@ pnpm add @maroonedsoftware/permissions
 - **Write-time subject validation** — `ModelValidatingTupleRepository` wraps any repository and enforces each relation's declared `subjects`, so a relation without `user.*` cannot be made world-grantable by writing the tuple directly
 - **Typed errors** — an unknown namespace or relation raises a `PermissionsError` with a `code`, never a silent denial
 - **Reverse listings** — optional `listSubjects` and `listObjects` on the repository contract answer "who is on this object?" and "what is this subject on?"
+- **Effective object lookup** — `lookupObjects` lists every object a subject holds a permission on, expanding groups, `computed` chains, and `tupleToUserset` hierarchies, then confirms each with a Check
 - **Trace explainer** — `explain` returns a hierarchical `CheckTrace` showing exactly which evaluator branches fired; drives `pdsl explain` and the VSCode playground
 - **In-memory repository** — `InMemoryTupleRepository` for fixtures, tests, and ad-hoc tooling without a database
 - **Pluggable metrics** — `CheckMetricsSink` lets you forward per-Check observations to whatever telemetry backend is in use; ships with a `LoggingMetricsSink` for log-based metrics
@@ -258,6 +259,28 @@ lets the relation hold every-object tuples (`doc:*.admin@user:alice`).
 ### `check(model, repo, object, relationOrPermission, subject, sink?, options?)`
 
 Returns `Promise<boolean>`. Throws if the namespace or relation/permission is unknown. `options.maxDepth` sets the recursion cap (default 32); a non-positive or fractional value throws `RangeError`.
+
+### `lookupObjects(model, repo, namespace, permission, subject, options?)`
+
+"Which docs can alice view?" Returns
+`{ objects, everyObject, maxDepthExceeded, candidates }`. Needs a repository
+that implements `listObjects`, and a concrete subject.
+
+It walks the model backwards from the tuples that name the subject (group to
+members, parent folder to children, relation to the permissions built on it),
+then confirms every candidate with `checkDetailed`. Exclusions and
+intersections therefore come out exactly as `check` would answer them.
+`everyObject: true` means a `doc:*` tuple reached the permission, so the
+subject may hold it on objects no tuple names; `check` a specific object to be
+sure.
+
+```ts
+const { objects } = await lookupObjects(model, repo, 'doc', 'view', { kind: 'concrete', namespace: 'user', id: 'alice' });
+```
+
+It costs one `listObjects` call per reached `(object, relation)` pair plus one
+Check per candidate, so use it for listing screens and jobs rather than per
+request.
 
 ### `explain(model, repo, object, relationOrPermission, subject, options?)`
 
