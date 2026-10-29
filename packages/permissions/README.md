@@ -21,6 +21,7 @@ pnpm add @maroonedsoftware/permissions
 - **Reverse listings** — optional `listSubjects` and `listObjects` on the repository contract answer "who is on this object?" and "what is this subject on?"
 - **Effective object lookup** — `lookupObjects` lists every object a subject holds a permission on, expanding groups, `computed` chains, and `tupleToUserset` hierarchies, then confirms each with a Check
 - **Trace explainer** — `explain` returns a hierarchical `CheckTrace` showing exactly which evaluator branches fired; drives `pdsl explain` and the VSCode playground
+- **Repository conformance check** — `verifyTupleRepository` from `@maroonedsoftware/permissions/conformance` runs your repository against the contract the evaluator relies on, including that a revoked tuple is gone from every read
 - **In-memory repository** — `InMemoryTupleRepository` for fixtures, tests, and ad-hoc tooling without a database
 - **Pluggable metrics** — `CheckMetricsSink` lets you forward per-Check observations to whatever telemetry backend is in use; ships with a `LoggingMetricsSink` for log-based metrics
 
@@ -157,7 +158,7 @@ class KyselyTupleRepository extends PermissionsTupleRepository {
   }
 
   async delete(tuples: RelationTuple[], deletedBy?: string): Promise<void> {
-    // delete by exact (object, relation, subject) shape, or soft-delete and record deletedBy
+    // delete by exact (object, relation, subject) shape; to keep history, move the row (see below)
   }
 
   async listByObjectRelation(namespace: string, objectId: string, relation: string) {
@@ -169,6 +170,53 @@ class KyselyTupleRepository extends PermissionsTupleRepository {
   }
 }
 ```
+
+### Keep revocation history without leaking revoked grants
+
+Every read Check makes trusts the store. A soft delete that flags a row
+`revoked_at` but misses the filter in one read keeps that grant alive. So
+instead of flagging, **move** the row on revoke: delete it from the live table
+and record it in a history table in the same transaction.
+
+```sql
+WITH revoked AS (
+  DELETE FROM relation_tuples
+  WHERE object_namespace = $1 AND object_id = $2 AND relation = $3
+    AND subject_kind = $4 AND subject_namespace = $5 AND subject_id = $6 AND subject_relation IS NOT DISTINCT FROM $7
+  RETURNING *
+)
+INSERT INTO relation_tuple_revocations
+SELECT revoked.*, $8 AS deleted_by, now() AS deleted_at FROM revoked;
+```
+
+`relation_tuples` then only ever holds live grants, the reads need no filter,
+and `relation_tuple_revocations` keeps who granted, who revoked, and when. A
+re-grant after a revoke is an ordinary insert.
+
+### Verify your repository
+
+`verifyTupleRepository` runs the repository contract (idempotent writes,
+deletes that vanish from every read, re-grants after a revoke, concrete-only
+parent edges, literal `*` object ids, exact-subject listings) and returns a
+report. It does not depend on a test runner:
+
+```ts
+import { verifyTupleRepository } from '@maroonedsoftware/permissions/conformance';
+
+it('conforms to the tuple repository contract', async () => {
+  const report = await verifyTupleRepository(() => new KyselyTupleRepository(testDb), {
+    teardown: () => testDb.deleteFrom('relation_tuples').execute(),
+  });
+  expect(report.failures).toEqual([]);
+});
+```
+
+Each rule gets a fresh repository from the factory and ids suffixed per rule,
+so a shared store gives independent results. Rules for the optional
+`listSubjects` and `listObjects` are reported under `skipped` when the
+repository lacks them. If your backend rejects unknown namespaces, wrap it with
+`ModelValidatingTupleRepository` and the exported `conformanceModel`. Run it
+against a disposable database: it writes and deletes rows.
 
 ### Run a Check
 
@@ -252,7 +300,7 @@ lets the relation hold every-object tuples (`doc:*.admin@user:alice`).
 | Method                                           | Description                                                          |
 | ------------------------------------------------ | -------------------------------------------------------------------- |
 | `write(tuples, createdBy?)`                      | Insert idempotently                                                  |
-| `delete(tuples, deletedBy?)`                     | Remove by exact shape; missing rows are a no-op. May soft-delete     |
+| `delete(tuples, deletedBy?)`                     | Remove by exact shape; missing rows are a no-op. Gone from all reads |
 | `listByObjectRelation(namespace, objectId, rel)` | All tuples for a `(object, relation)` pair — feeds the `direct` step |
 | `listObjectsRelatedBy(namespace, objectId, rel)` | Concrete-subject parents for a `tupleToUserset` walk                 |
 

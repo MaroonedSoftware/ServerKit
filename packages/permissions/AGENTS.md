@@ -30,7 +30,8 @@ Runtime dependencies: `zod` (tuple schemas), `injectkit` (DI tokens). No interna
 
 - **Depends on:** nothing internal.
 - **Depended on by:** `permissions-dsl`, `johnny5`.
-- **Subpath exports:** none. The package has no `exports` map at all.
+- **Subpath exports:** `@maroonedsoftware/permissions/conformance` (repository conformance check).
+  It has no extra dependencies; it is a subpath only so test tooling stays out of the runtime import.
 
 The evaluator has no storage of its own — you implement `PermissionsTupleRepository` over your
 database. That is what keeps this package free of a `kysely` dependency.
@@ -100,6 +101,16 @@ meaningful as parent objects.
 | `formatTrace`         | function  | `(trace: CheckTrace, indent = 0) => string`                                                                                                                       | Indented multi-line rendering with `✓`/`✗` markers.                                                                            |
 | `ExplainResult`       | interface | `{ object, relation, subject, allowed, trace }`                                                                                                                   | —                                                                                                                              |
 | `CheckTrace`          | type      | Union of `DirectTrace`, `ComputedTrace`, `TupleToUsersetTrace`, `UnionTrace`, `IntersectionTrace`, `ExclusionTrace`, `CycleTrace`, `MaxDepthTrace`, `CachedTrace` | Each is exported individually too.                                                                                             |
+
+### Conformance (`@maroonedsoftware/permissions/conformance`, `src/conformance.ts`)
+
+| Export                  | Kind      | Shape                                                                                                                   | Notes                                                                                              |
+| ----------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `verifyTupleRepository` | function  | `(factory: () => PermissionsTupleRepository \| Promise<…>, options?: ConformanceOptions) => Promise<ConformanceReport>` | Runner-agnostic contract check. Calls `factory` once per rule; ids are suffixed per rule.          |
+| `ConformanceReport`     | interface | `{ passed: string[]; failures: ConformanceFailure[]; skipped: string[] }`                                               | `skipped` lists rules for optional methods the repository lacks.                                   |
+| `ConformanceFailure`    | interface | `{ rule: string; message: string }`                                                                                     | `rule` is a stable dot-named id such as `delete.hides.from.every.read`.                            |
+| `ConformanceOptions`    | interface | `{ teardown?: (repo) => void \| Promise<void> }`                                                                        | Runs after every rule, pass or fail.                                                               |
+| `conformanceModel`      | constant  | `AuthorizationModel`                                                                                                    | Declares every namespace and relation the rules write, for backends that validate against a model. |
 
 ### Metrics
 
@@ -175,6 +186,8 @@ console.log(formatTrace(result.trace));
 - Implement `PermissionsTupleRepository` by extending the abstract class, not by satisfying the
   shape structurally, or it will not resolve as an InjectKit token.
 - Make `write` idempotent and `delete` tolerant of missing tuples. The evaluator assumes both.
+- Give every repository implementation a test that runs `verifyTupleRepository` and expects no
+  failures.
 - Pass a `CheckMetricsSink` in production. Without one, every Check is unobservable, and Check cost
   is the thing that goes wrong at scale.
 - Prefer authoring models as `.perm` files compiled by `@maroonedsoftware/permissions-dsl` over
@@ -208,9 +221,12 @@ console.log(formatTrace(result.trace));
   canonical tuple string. An id sourced from user input must be validated or encoded.
 - **`InMemoryTupleRepository` ignores `createdBy` and `deletedBy`.** They are accepted for
   interface compatibility and dropped.
-- **Revocation history is the repository's job.** `delete(tuples, deletedBy?)` may soft-delete
-  (mark the row revoked, record `deletedBy`) as long as every read then leaves the row out. A
-  revoked row that still comes back from `listByObjectRelation` keeps granting access.
+- **Keep revocation history by moving the row, not flagging it.** A row a read still returns keeps
+  granting access, and a `revoked_at` flag has to be filtered in four reads, so one gets missed.
+  `delete(tuples, deletedBy?)` should, in one transaction, delete from the live table and insert
+  into a history table with `deletedBy` and the time. The README has the SQL. Whatever the backend
+  does, run `verifyTupleRepository` against it: `delete.hides.from.every.read` names the read that
+  leaks, and `rewrite.after.delete.is.visible` catches a unique key that swallows a re-grant.
 - **`listSubjects` and `listObjects` are optional on the repository contract**, so existing
   implementations keep compiling. Check for the method before calling it. `listObjects` is a
   direct-tuple reverse index, not a Check: a subject who only has access through a
@@ -242,6 +258,7 @@ src/
   check.reads.ts            Tuple and parent reads that add every-object rows (internal)
   check.options.ts          CheckOptions, default depth, option validation (internal, not in the barrel)
   explain.ts                Trace types, explain(), formatTrace()
+  conformance.ts            verifyTupleRepository(), conformanceModel (the /conformance subpath)
   lookup.objects.ts         lookupObjects(): reverse index walk plus confirming Checks
   check.metrics.ts          CheckMetrics, tags, sink token, noop sink
   check.metrics.logging.ts  LoggingMetricsSink

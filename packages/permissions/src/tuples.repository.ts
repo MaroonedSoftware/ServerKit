@@ -24,10 +24,14 @@ export abstract class PermissionsTupleRepository {
   /**
    * Remove tuples by exact shape. Tuples that don't exist are a no-op.
    *
-   * A backend that keeps revocation history can soft-delete instead: mark the
-   * row revoked, record `deletedBy` and the time, and leave it out of every
-   * read below. The evaluator only requires that a deleted tuple stops
-   * granting access.
+   * A deleted tuple must disappear from **every** read below, since any read that
+   * still returns it keeps granting access. To keep revocation history, move the
+   * row rather than flagging it: in one transaction, delete it from the live
+   * table and insert it, with `deletedBy` and the time, into a separate history
+   * table. The live table then holds only live grants and no read needs a
+   * filter. A `revoked_at` flag on the live table works only if every read
+   * filters on it; `verifyTupleRepository` from
+   * `@maroonedsoftware/permissions/conformance` checks that.
    *
    * @param tuples - Tuples to remove.
    * @param deletedBy - Opaque actor identifier for the revocation, the
