@@ -1,5 +1,18 @@
 # @maroonedsoftware/johnny5
 
+## 8.1.10
+
+### Patch Changes
+
+- Updated dependencies [a080028]
+- Updated dependencies [f0ed3e5]
+- Updated dependencies [3ff953b]
+- Updated dependencies [85a23d9]
+- Updated dependencies [dc79b53]
+- Updated dependencies [c3237ce]
+  - @maroonedsoftware/permissions-dsl@0.6.0
+  - @maroonedsoftware/permissions@0.4.0
+
 ## 8.1.9
 
 ### Patch Changes
