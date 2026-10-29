@@ -362,6 +362,60 @@ describe('checkDetailed', () => {
     expect(result.maxDepthExceeded).toBe(true);
   });
 
+  const deepChain = (depth: number): RelationTuple[] => {
+    const tuples: RelationTuple[] = [];
+    for (let i = 0; i < depth; i++) {
+      tuples.push({
+        object: { namespace: 'folder', id: `f${i}` },
+        relation: 'parent',
+        subject: { kind: 'concrete', namespace: 'folder', id: `f${i + 1}` },
+      });
+    }
+    tuples.push({
+      object: { namespace: 'folder', id: `f${depth}` },
+      relation: 'viewer',
+      subject: { kind: 'concrete', namespace: 'user', id: 'alice' },
+    });
+    return tuples;
+  };
+
+  it('resolves a chain past the default cap when maxDepth is raised', async () => {
+    const repo = new InMemoryRepo(deepChain(__testing.MAX_DEPTH + 10));
+
+    const result = await checkDetailed(
+      model,
+      repo,
+      { namespace: 'folder', id: 'f0' },
+      'view',
+      { kind: 'concrete', namespace: 'user', id: 'alice' },
+      { maxDepth: 128 },
+    );
+
+    expect(result.allowed).toBe(true);
+    expect(result.maxDepthExceeded).toBe(false);
+  });
+
+  it('honours a maxDepth lower than the default', async () => {
+    const repo = new InMemoryRepo(deepChain(5));
+
+    const allowed = await check(
+      model,
+      repo,
+      { namespace: 'folder', id: 'f0' },
+      'view',
+      { kind: 'concrete', namespace: 'user', id: 'alice' },
+      { maxDepth: 4 },
+    );
+
+    expect(allowed).toBe(false);
+  });
+
+  it.each([0, -1, 1.5, Number.NaN])('rejects maxDepth %s', async maxDepth => {
+    await expect(
+      check(model, new InMemoryRepo(), { namespace: 'folder', id: 'f0' }, 'view', { kind: 'concrete', namespace: 'user', id: 'alice' }, { maxDepth }),
+    ).rejects.toThrow(RangeError);
+  });
+
   it('returns the per-call metrics without a sink', async () => {
     const repo = new InMemoryRepo([
       { object: { namespace: 'folder', id: 'f1' }, relation: 'viewer', subject: { kind: 'concrete', namespace: 'user', id: 'alice' } },
@@ -424,6 +478,36 @@ describe('check — metrics sink', () => {
     }),
   ]);
 
+  it('records one observation per Check when the sink is passed as options.sink', async () => {
+    const sink = new CapturingSink();
+    const repo = new InMemoryRepo([
+      { object: { namespace: 'doc', id: 'd1' }, relation: 'viewer', subject: { kind: 'concrete', namespace: 'user', id: 'alice' } },
+    ]);
+
+    const result = await checkDetailed(
+      model,
+      repo,
+      { namespace: 'doc', id: 'd1' },
+      'view',
+      { kind: 'concrete', namespace: 'user', id: 'alice' },
+      { sink, maxDepth: 8 },
+    );
+
+    expect(result.allowed).toBe(true);
+    expect(sink.observations).toHaveLength(1);
+    expect(sink.observations[0]!.tags).toEqual({ namespace: 'doc', permission: 'view', allowed: true });
+  });
+
+  it('still accepts a structurally typed sink in the 0.3.0 position', async () => {
+    const seen: CheckMetricsTags[] = [];
+    const structural = { record: (_m: CheckMetrics, tags: CheckMetricsTags) => void seen.push(tags) } as unknown as CheckMetricsSink;
+
+    await check(model, new InMemoryRepo(), { namespace: 'doc', id: 'd1' }, 'view', { kind: 'concrete', namespace: 'user', id: 'alice' }, structural);
+
+    expect(seen).toEqual([{ namespace: 'doc', permission: 'view', allowed: false }]);
+  });
+
+  // The 0.3.0 call shape: a bare sink as the 6th argument. Deprecated, kept working.
   it('records one observation per Check with namespace/permission/allowed tags', async () => {
     const sink = new CapturingSink();
     const repo = new InMemoryRepo([

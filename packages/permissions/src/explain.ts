@@ -1,8 +1,8 @@
 import type { AuthorizationModel, UsersetExpr } from './dsl.js';
 import { type ObjectRef, type RelationTuple, type SubjectRef, formatSubject } from './tuple.js';
 import type { PermissionsTupleRepository } from './tuples.repository.js';
-
-const MAX_DEPTH = 32;
+import { type CheckOptions, resolveMaxDepth } from './check.options.js';
+import { readDirect, readParentEdges } from './check.reads.js';
 
 /**
  * Hierarchical result of evaluating a permission check — one node per step
@@ -82,7 +82,7 @@ export interface CycleTrace {
   allowed: false;
 }
 
-/** Trace node emitted when recursion exceeded the evaluator's hard depth cap. */
+/** Trace node emitted when recursion exceeded {@link CheckOptions.maxDepth}. */
 export interface MaxDepthTrace {
   kind: 'maxDepth';
   depth: number;
@@ -108,6 +108,7 @@ export interface ExplainResult {
 interface ExplainCtx {
   model: AuthorizationModel;
   repo: PermissionsTupleRepository;
+  maxDepth: number;
   memo: Map<string, boolean>;
   visiting: Set<string>;
 }
@@ -125,6 +126,12 @@ const memoKey = (object: ObjectRef, relation: string, subject: SubjectRef): stri
  * Use this from CLIs (`pdsl explain`), the VSCode playground, or any
  * tooling that needs to surface *why* a permission decision came out the
  * way it did. Do not use on a hot request path — call {@link check} there.
+ *
+ * Pass the same `options` the production {@link check} uses, so a depth-capped
+ * answer reproduces under explain. `options.sink` is ignored: explain does not
+ * record metrics.
+ *
+ * @throws {RangeError} If `options.maxDepth` is not a positive integer.
  */
 export const explain = async (
   model: AuthorizationModel,
@@ -132,14 +139,15 @@ export const explain = async (
   object: ObjectRef,
   relationOrPermission: string,
   subject: SubjectRef,
+  options: CheckOptions = {},
 ): Promise<ExplainResult> => {
-  const ctx: ExplainCtx = { model, repo, memo: new Map(), visiting: new Set() };
+  const ctx: ExplainCtx = { model, repo, maxDepth: resolveMaxDepth(options), memo: new Map(), visiting: new Set() };
   const trace = await traceCheck(ctx, object, relationOrPermission, subject, 0);
   return { object, relation: relationOrPermission, subject, allowed: trace.allowed, trace };
 };
 
 const traceCheck = async (ctx: ExplainCtx, object: ObjectRef, relOrPerm: string, subject: SubjectRef, depth: number): Promise<CheckTrace> => {
-  if (depth > MAX_DEPTH) return { kind: 'maxDepth', depth, allowed: false };
+  if (depth > ctx.maxDepth) return { kind: 'maxDepth', depth, allowed: false };
 
   const key = memoKey(object, relOrPerm, subject);
   const cached = ctx.memo.get(key);
@@ -176,7 +184,7 @@ const traceExpr = async (
     }
 
     case 'tupleToUserset': {
-      const parents = await ctx.repo.listObjectsRelatedBy(object.namespace, object.id, expr.tupleRelation);
+      const parents = await readParentEdges(ctx.model, ctx.repo, object, expr.tupleRelation);
       const results: Array<{ parent: ObjectRef; trace: CheckTrace }> = [];
       for (const p of parents) {
         const t = await traceCheck(ctx, p, expr.computedRelation, subject, depth + 1);
@@ -212,7 +220,7 @@ const traceExpr = async (
 };
 
 const traceDirect = async (ctx: ExplainCtx, object: ObjectRef, relation: string, subject: SubjectRef, depth: number): Promise<DirectTrace> => {
-  const stored = await ctx.repo.listByObjectRelation(object.namespace, object.id, relation);
+  const stored = await readDirect(ctx.model, ctx.repo, object, relation);
   let matched: RelationTuple | undefined;
   let usersetChild: CheckTrace | undefined;
   let allowed = false;

@@ -8,3 +8,4 @@ export * from './check.js';
 export * from './check.metrics.js';
 export * from './check.metrics.logging.js';
 export * from './explain.js';
+export * from './lookup.objects.js';

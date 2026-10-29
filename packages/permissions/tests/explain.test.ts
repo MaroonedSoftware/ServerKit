@@ -103,3 +103,18 @@ describe('explain — operators', () => {
     expect(out).toContain('direct doc:d1.owner');
   });
 });
+
+describe('explain — maxDepth option', () => {
+  it('emits a maxDepth node at the configured cap', async () => {
+    const repo = new InMemoryTupleRepository([parseTuple('doc:d1.owner@user:alice')]);
+    // view -> edit -> owner is two computed hops, so a cap of 1 stops inside it.
+    const result = await explain(model, repo, obj, 'view', alice, { maxDepth: 1 });
+
+    expect(result.allowed).toBe(false);
+    expect(formatTrace(result.trace)).toContain('max depth (2) exceeded');
+  });
+
+  it('rejects a non-positive maxDepth', async () => {
+    await expect(explain(model, new InMemoryTupleRepository(), obj, 'view', alice, { maxDepth: 0 })).rejects.toThrow(RangeError);
+  });
+});

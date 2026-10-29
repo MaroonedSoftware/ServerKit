@@ -30,7 +30,8 @@ Runtime dependencies: `zod` (tuple schemas), `injectkit` (DI tokens). No interna
 
 - **Depends on:** nothing internal.
 - **Depended on by:** `permissions-dsl`, `johnny5`.
-- **Subpath exports:** none. The package has no `exports` map at all.
+- **Subpath exports:** `@maroonedsoftware/permissions/conformance` (repository conformance check).
+  It has no extra dependencies; it is a subpath only so test tooling stays out of the runtime import.
 
 The evaluator has no storage of its own — you implement `PermissionsTupleRepository` over your
 database. That is what keeps this package free of a `kysely` dependency.
@@ -39,21 +40,21 @@ database. That is what keeps this package free of a `kysely` dependency.
 
 ### Model DSL (`src/dsl.ts`)
 
-| Export               | Kind      | Shape                                                                                                       | Notes                                                                                                                      |
-| -------------------- | --------- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `UsersetExpr`        | type      | Discriminated union on `kind`: `direct`, `computed`, `tupleToUserset`, `union`, `intersection`, `exclusion` | The rewrite language.                                                                                                      |
-| `direct`             | builder   | `() => UsersetExpr`                                                                                         | Matches stored tuples on this relation.                                                                                    |
-| `computed`           | builder   | `(relation: string) => UsersetExpr`                                                                         | Delegates to another relation/permission on the **same** object.                                                           |
-| `tupleToUserset`     | builder   | `(tupleRelation: string, computedRelation: string) => UsersetExpr`                                          | Walk `tupleRelation` to a parent object, then evaluate `computedRelation` there.                                           |
-| `union`              | builder   | `(...children: UsersetExpr[]) => UsersetExpr`                                                               | Any child allows.                                                                                                          |
-| `intersection`       | builder   | `(...children: UsersetExpr[]) => UsersetExpr`                                                               | Every child must allow.                                                                                                    |
-| `exclusion`          | builder   | `(base: UsersetExpr, subtract: UsersetExpr) => UsersetExpr`                                                 | `base && !subtract`.                                                                                                       |
-| `SubjectType`        | type      | `string`                                                                                                    | `'user'`, `'user.*'` (wildcard), or `'org.member'` (userset).                                                              |
-| `RelationDef`        | interface | `{ subjects: SubjectType[] }`                                                                               | Allowed direct-tuple subject types. **Enforced at write time, not at Check time** — see `ModelValidatingTupleRepository`.  |
-| `PermissionsError`   | class     | `extends Error`, with `code`, `namespace?`, `relation?`                                                     | `code` is `'unknown_namespace'`, `'unknown_relation'`, or `'subject_not_allowed'`. Guard: `IsPermissionsError`.            |
-| `NamespaceDef<R, P>` | interface | `{ name: string; relations: Record<R, RelationDef>; permissions: Record<P, UsersetExpr> }`                  | —                                                                                                                          |
-| `defineNamespace`    | function  | `<R, P>(name: string, def: { relations; permissions }) => NamespaceDef<R, P>`                               | Preserves literal types for relation and permission names.                                                                 |
-| `AuthorizationModel` | class     | `new AuthorizationModel(namespaces: NamespaceDef[])`                                                        | **Validates on construction** and throws on a bad model. Methods: `namespaces()`, `get(name)`, `resolve(namespace, name)`. |
+| Export               | Kind      | Shape                                                                                                       | Notes                                                                                                                                                                   |
+| -------------------- | --------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `UsersetExpr`        | type      | Discriminated union on `kind`: `direct`, `computed`, `tupleToUserset`, `union`, `intersection`, `exclusion` | The rewrite language.                                                                                                                                                   |
+| `direct`             | builder   | `() => UsersetExpr`                                                                                         | Matches stored tuples on this relation.                                                                                                                                 |
+| `computed`           | builder   | `(relation: string) => UsersetExpr`                                                                         | Delegates to another relation/permission on the **same** object.                                                                                                        |
+| `tupleToUserset`     | builder   | `(tupleRelation: string, computedRelation: string) => UsersetExpr`                                          | Walk `tupleRelation` to a parent object, then evaluate `computedRelation` there.                                                                                        |
+| `union`              | builder   | `(...children: UsersetExpr[]) => UsersetExpr`                                                               | Any child allows.                                                                                                                                                       |
+| `intersection`       | builder   | `(...children: UsersetExpr[]) => UsersetExpr`                                                               | Every child must allow.                                                                                                                                                 |
+| `exclusion`          | builder   | `(base: UsersetExpr, subtract: UsersetExpr) => UsersetExpr`                                                 | `base && !subtract`.                                                                                                                                                    |
+| `SubjectType`        | type      | `string`                                                                                                    | `'user'`, `'user.*'` (wildcard), or `'org.member'` (userset).                                                                                                           |
+| `RelationDef`        | interface | `{ subjects: SubjectType[]; objectWildcard?: boolean }`                                                     | Allowed direct-tuple subject types. **Enforced at write time, not at Check time** — see `ModelValidatingTupleRepository`. `objectWildcard: true` accepts `ns:*` tuples. |
+| `PermissionsError`   | class     | `extends Error`, with `code`, `namespace?`, `relation?`                                                     | `code` is `'unknown_namespace'`, `'unknown_relation'`, `'subject_not_allowed'`, or `'object_wildcard_not_allowed'`. Guard: `IsPermissionsError`.                        |
+| `NamespaceDef<R, P>` | interface | `{ name: string; relations: Record<R, RelationDef>; permissions: Record<P, UsersetExpr> }`                  | —                                                                                                                                                                       |
+| `defineNamespace`    | function  | `<R, P>(name: string, def: { relations; permissions }) => NamespaceDef<R, P>`                               | Preserves literal types for relation and permission names.                                                                                                              |
+| `AuthorizationModel` | class     | `new AuthorizationModel(namespaces: NamespaceDef[])`                                                        | **Validates on construction** and throws on a bad model. Methods: `namespaces()`, `get(name)`, `resolve(namespace, name)`, `allowsObjectWildcard(namespace, relation)`. |
 
 Names must match `/^[a-z][a-z0-9_]*$/` — lower snake_case. Duplicate namespaces, unknown subject
 namespaces, unknown computed relations, and unwalkable `tupleToUserset` references all throw at
@@ -63,23 +64,25 @@ construction.
 
 Each of these is a Zod schema **and** a type of the same name.
 
-| Export           | Kind          | Shape                                                            | Notes                                                |
-| ---------------- | ------------- | ---------------------------------------------------------------- | ---------------------------------------------------- |
-| `ObjectRef`      | schema + type | `{ namespace, id }`                                              | `id` must not contain `.`, `@`, `:`, or `*`.         |
-| `SubjectRef`     | schema + type | Discriminated union on `kind`: `concrete`, `wildcard`, `userset` | `user:alice`, `user.*`, `org:42.admin`.              |
-| `RelationTuple`  | schema + type | `{ object, relation, subject }`                                  | The unit of write and the input the evaluator walks. |
-| `formatSubject`  | function      | `(s: SubjectRef) => string`                                      | Canonical string form.                               |
-| `stringifyTuple` | function      | `(t: RelationTuple) => string`                                   | `ns:id.relation@subject`. Also the dedupe key.       |
-| `parseSubject`   | function      | `(input: string) => SubjectRef`                                  | Inverse of `formatSubject`.                          |
-| `parseTuple`     | function      | `(input: string) => RelationTuple`                               | Inverse of `stringifyTuple`.                         |
+| Export            | Kind          | Shape                                                            | Notes                                                |
+| ----------------- | ------------- | ---------------------------------------------------------------- | ---------------------------------------------------- |
+| `ObjectRef`       | schema + type | `{ namespace, id }`                                              | `id` must not contain `.`, `@`, `:`, or `*`.         |
+| `TupleObjectRef`  | schema + type | `{ namespace, id }`                                              | A tuple's object: an `ObjectRef` id, or exactly `*`. |
+| `OBJECT_WILDCARD` | constant      | `'*'`                                                            | The every-object id.                                 |
+| `SubjectRef`      | schema + type | Discriminated union on `kind`: `concrete`, `wildcard`, `userset` | `user:alice`, `user.*`, `org:42.admin`.              |
+| `RelationTuple`   | schema + type | `{ object: TupleObjectRef, relation, subject }`                  | The unit of write and the input the evaluator walks. |
+| `formatSubject`   | function      | `(s: SubjectRef) => string`                                      | Canonical string form.                               |
+| `stringifyTuple`  | function      | `(t: RelationTuple) => string`                                   | `ns:id.relation@subject`. Also the dedupe key.       |
+| `parseSubject`    | function      | `(input: string) => SubjectRef`                                  | Inverse of `formatSubject`.                          |
+| `parseTuple`      | function      | `(input: string) => RelationTuple`                               | Inverse of `stringifyTuple`.                         |
 
 ### Storage
 
-| Export                           | Kind           | Shape                                                                                                                                                                                                                                                               | Notes                                                                                                                                             |
-| -------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PermissionsTupleRepository`     | abstract class | `write(tuples, createdBy?)`, `delete(tuples)`, `listByObjectRelation(namespace, objectId, relation)`, `listObjectsRelatedBy(namespace, objectId, relation)`, optional `listSubjects(namespace, objectId, relation)` and `listObjects(namespace, relation, subject)` | An abstract class, not an interface, so it survives as an InjectKit token. The two listings are optional so existing repositories keep compiling. |
-| `ModelValidatingTupleRepository` | class          | `new ModelValidatingTupleRepository(inner, model)`                                                                                                                                                                                                                  | Decorator enforcing `RelationDef.subjects` on write. Reads pass through.                                                                          |
-| `InMemoryTupleRepository`        | class          | `new InMemoryTupleRepository(seed: RelationTuple[] = [])`, plus `all()` and `clear()`                                                                                                                                                                               | For fixtures, `pdsl validate`, the VS Code playground, and tests. Not for production.                                                             |
+| Export                           | Kind           | Shape                                                                                                                                                                                                                                                                           | Notes                                                                                                                                             |
+| -------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PermissionsTupleRepository`     | abstract class | `write(tuples, createdBy?)`, `delete(tuples, deletedBy?)`, `listByObjectRelation(namespace, objectId, relation)`, `listObjectsRelatedBy(namespace, objectId, relation)`, optional `listSubjects(namespace, objectId, relation)` and `listObjects(namespace, relation, subject)` | An abstract class, not an interface, so it survives as an InjectKit token. The two listings are optional so existing repositories keep compiling. |
+| `ModelValidatingTupleRepository` | class          | `new ModelValidatingTupleRepository(inner, model)`                                                                                                                                                                                                                              | Decorator enforcing `RelationDef.subjects` and `objectWildcard` on write. Reads pass through.                                                     |
+| `InMemoryTupleRepository`        | class          | `new InMemoryTupleRepository(seed: RelationTuple[] = [])`, plus `all()` and `clear()`                                                                                                                                                                                           | For fixtures, `pdsl validate`, the VS Code playground, and tests. Not for production.                                                             |
 
 `write` must be idempotent — duplicate `(object, relation, subject)` triples are no-ops.
 `listObjectsRelatedBy` returns only **concrete** subjects; wildcard and userset subjects are not
@@ -87,14 +90,27 @@ meaningful as parent objects.
 
 ### Evaluation
 
-| Export          | Kind      | Shape                                                                                                                                                             | Notes                                                                                             |
-| --------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `check`         | function  | `(model, repo, object: ObjectRef, relationOrPermission: string, subject: SubjectRef, sink?: CheckMetricsSink) => Promise<boolean>`                                | Short-circuits on the first allow. Throws `PermissionsError` on an unknown namespace or relation. |
-| `checkDetailed` | function  | Same arguments, `=> Promise<CheckResult>`                                                                                                                         | `{ allowed, maxDepthExceeded, metrics }`. Use it to tell a denial from a depth-capped answer.     |
-| `explain`       | function  | `(model, repo, object, relationOrPermission, subject) => Promise<ExplainResult>`                                                                                  | Does **not** short-circuit — evaluates every branch so the trace is complete.                     |
-| `formatTrace`   | function  | `(trace: CheckTrace, indent = 0) => string`                                                                                                                       | Indented multi-line rendering with `✓`/`✗` markers.                                               |
-| `ExplainResult` | interface | `{ object, relation, subject, allowed, trace }`                                                                                                                   | —                                                                                                 |
-| `CheckTrace`    | type      | Union of `DirectTrace`, `ComputedTrace`, `TupleToUsersetTrace`, `UnionTrace`, `IntersectionTrace`, `ExclusionTrace`, `CycleTrace`, `MaxDepthTrace`, `CachedTrace` | Each is exported individually too.                                                                |
+| Export                | Kind      | Shape                                                                                                                                                             | Notes                                                                                                                                                                                          |
+| --------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `check`               | function  | `(model, repo, object: ObjectRef, relationOrPermission: string, subject: SubjectRef, options?: CheckOptions) => Promise<boolean>`                                 | Short-circuits on the first allow. Throws `PermissionsError` on an unknown namespace or relation. A bare sink as the 6th argument is the deprecated 0.3.0 form.                                |
+| `checkDetailed`       | function  | Same arguments, `=> Promise<CheckResult>`                                                                                                                         | `{ allowed, maxDepthExceeded, metrics }`. Use it to tell a denial from a depth-capped answer.                                                                                                  |
+| `CheckOptions`        | interface | `{ sink?: CheckMetricsSink; maxDepth?: number }`                                                                                                                  | Shared by `check`, `checkDetailed`, `explain` (ignores `sink`), and `lookupObjects` (hands `sink` to each confirming Check). `maxDepth` defaults to 32; not a positive integer → `RangeError`. |
+| `explain`             | function  | `(model, repo, object, relationOrPermission, subject, options?: CheckOptions) => Promise<ExplainResult>`                                                          | Does **not** short-circuit — evaluates every branch so the trace is complete.                                                                                                                  |
+| `lookupObjects`       | function  | `(model, repo, namespace, permission, subject: SubjectRef, options?: CheckOptions) => Promise<LookupObjectsResult>`                                               | Effective lookup-resources: reverse walk, then `checkDetailed` per candidate. Needs `repo.listObjects` and a concrete subject.                                                                 |
+| `LookupObjectsResult` | interface | `{ objects, everyObject, maxDepthExceeded, candidates }`                                                                                                          | `everyObject`: a `*` grant reached the permission; not confirmed per object.                                                                                                                   |
+| `formatTrace`         | function  | `(trace: CheckTrace, indent = 0) => string`                                                                                                                       | Indented multi-line rendering with `✓`/`✗` markers.                                                                                                                                            |
+| `ExplainResult`       | interface | `{ object, relation, subject, allowed, trace }`                                                                                                                   | —                                                                                                                                                                                              |
+| `CheckTrace`          | type      | Union of `DirectTrace`, `ComputedTrace`, `TupleToUsersetTrace`, `UnionTrace`, `IntersectionTrace`, `ExclusionTrace`, `CycleTrace`, `MaxDepthTrace`, `CachedTrace` | Each is exported individually too.                                                                                                                                                             |
+
+### Conformance (`@maroonedsoftware/permissions/conformance`, `src/conformance.ts`)
+
+| Export                  | Kind      | Shape                                                                                                                   | Notes                                                                                              |
+| ----------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `verifyTupleRepository` | function  | `(factory: () => PermissionsTupleRepository \| Promise<…>, options?: ConformanceOptions) => Promise<ConformanceReport>` | Runner-agnostic contract check. Calls `factory` once per rule; ids are suffixed per rule.          |
+| `ConformanceReport`     | interface | `{ passed: string[]; failures: ConformanceFailure[]; skipped: string[] }`                                               | `skipped` lists rules for optional methods the repository lacks.                                   |
+| `ConformanceFailure`    | interface | `{ rule: string; message: string }`                                                                                     | `rule` is a stable dot-named id such as `delete.hides.from.every.read`.                            |
+| `ConformanceOptions`    | interface | `{ teardown?: (repo) => void \| Promise<void> }`                                                                        | Runs after every rule, pass or fail.                                                               |
+| `conformanceModel`      | constant  | `AuthorizationModel`                                                                                                    | Declares every namespace and relation the rules write, for backends that validate against a model. |
 
 ### Metrics
 
@@ -170,7 +186,10 @@ console.log(formatTrace(result.trace));
 - Implement `PermissionsTupleRepository` by extending the abstract class, not by satisfying the
   shape structurally, or it will not resolve as an InjectKit token.
 - Make `write` idempotent and `delete` tolerant of missing tuples. The evaluator assumes both.
-- Pass a `CheckMetricsSink` in production. Without one, every Check is unobservable, and Check cost
+- Give every repository implementation a test that runs `verifyTupleRepository` and expects no
+  failures.
+- Pass a `CheckMetricsSink` in production, as `{ sink }` in the options. The bare 6th-argument sink is
+  deprecated. Without one, every Check is unobservable, and Check cost
   is the thing that goes wrong at scale.
 - Prefer authoring models as `.perm` files compiled by `@maroonedsoftware/permissions-dsl` over
   hand-written builder calls once a model gets past a handful of namespaces.
@@ -182,10 +201,11 @@ console.log(formatTrace(result.trace));
   call `model.assertTuplesAllowed` yourself) or a tuple with a disallowed subject type will still
   grant access — a relation deliberately declared without `user.*` is otherwise still
   world-grantable by writing the tuple directly.
-- **Recursion is capped at `MAX_DEPTH = 32`.** Exceeding it makes `check()` return `false` and sets
+- **Recursion is capped at `maxDepth`, 32 unless `CheckOptions.maxDepth` says otherwise.** Exceeding it makes `check()` return `false` and sets
   `metrics.hitMaxDepth`. Through `check()` that is a silent deny: a deep hierarchy looks like "no
   permission", not like an error. Use `checkDetailed()` when the difference matters — its
-  `maxDepthExceeded` flag separates "denied" from "could not determine".
+  `maxDepthExceeded` flag separates "denied" from "could not determine". Pass the same options to
+  `explain()` or it will not reproduce a depth-capped answer.
 - **The memo is per call, not per request.** Every `check()` allocates a fresh memo and cycle guard.
   Two `check()` calls in one request share nothing. Batch related questions into one call where
   you can, or add a caching layer above.
@@ -193,14 +213,33 @@ console.log(formatTrace(result.trace));
   short-circuit unions or intersections. The top-level `allowed` matches, but the cost does not.
 - **Cycles return `false`, not an error.** The visiting set detects them and emits a `CycleTrace`
   in `explain()`; `check()` just denies.
+- **`doc:*` tuples need `objectWildcard: true` on the relation, and Check enforces it.** Unlike
+  `subjects`, this is not only a write-time rule: Check reads the `*` row only for opted-in
+  relations, so a stray `doc:*.viewer@…` row on another relation grants nothing. Each opted-in
+  relation costs one extra `listByObjectRelation` (or `listObjectsRelatedBy`) per Check. A
+  repository must store and return the literal id `*`; do not special-case it in SQL.
 - **`ObjectRef.id` cannot contain `.`, `@`, `:`, or `*`.** Those are the delimiters in the
   canonical tuple string. An id sourced from user input must be validated or encoded.
-- **`InMemoryTupleRepository` ignores `createdBy`.** It is accepted for interface compatibility
-  and dropped.
+- **`InMemoryTupleRepository` ignores `createdBy` and `deletedBy`.** They are accepted for
+  interface compatibility and dropped.
+- **Keep revocation history by moving the row, not flagging it.** A row a read still returns keeps
+  granting access, and a `revoked_at` flag has to be filtered in four reads, so one gets missed.
+  `delete(tuples, deletedBy?)` should, in one transaction, delete from the live table and insert
+  into a history table with `deletedBy` and the time. The README has the SQL. Whatever the backend
+  does, run `verifyTupleRepository` against it: `delete.hides.from.every.read` names the read that
+  leaks, and `rewrite.after.delete.is.visible` catches a unique key that swallows a re-grant.
 - **`listSubjects` and `listObjects` are optional on the repository contract**, so existing
   implementations keep compiling. Check for the method before calling it. `listObjects` is a
   direct-tuple reverse index, not a Check: a subject who only has access through a
-  `tupleToUserset` parent does not appear in its results.
+  `tupleToUserset` parent does not appear in its results. Use `lookupObjects()` for the effective
+  answer; it is built on `listObjects` and throws `TypeError` when the repository lacks it.
+- **`lookupObjects()` does not enumerate `*` grants.** An every-object tuple surfaces as
+  `everyObject: true`, not as a list of objects, because no tuple names the objects it covers.
+  Treat that flag as "check the object directly", not as "allowed everywhere": an exclusion can
+  still deny a given object.
+- **`lookupObjects()` is a listing tool, not a request-path check.** It issues a `listObjects`
+  per reached `(object, relation)` and a full Check per candidate. Index the tuple table on
+  `(namespace, relation, subject)` before relying on it.
 - **An unknown namespace or relation throws, it does not deny.** `check()` raises a
   `PermissionsError` with `code: 'unknown_namespace'` or `'unknown_relation'`. Catching that and
   returning a 403 turns a typo into a silent lockout; let it surface.
@@ -216,8 +255,12 @@ src/
   tuple.ts                  Zod schemas and parse/format helpers for objects, subjects, tuples
   tuples.repository.ts      PermissionsTupleRepository abstract class
   in.memory.repository.ts   InMemoryTupleRepository
-  check.ts                  The Check evaluator, MAX_DEPTH, __testing hook
+  check.ts                  The Check evaluator, __testing hook
+  check.reads.ts            Tuple and parent reads that add every-object rows (internal)
+  check.options.ts          CheckOptions, default depth, option validation (internal, not in the barrel)
   explain.ts                Trace types, explain(), formatTrace()
+  conformance.ts            verifyTupleRepository(), conformanceModel (the /conformance subpath)
+  lookup.objects.ts         lookupObjects(): reverse index walk plus confirming Checks
   check.metrics.ts          CheckMetrics, tags, sink token, noop sink
   check.metrics.logging.ts  LoggingMetricsSink
   index.ts                  Barrel

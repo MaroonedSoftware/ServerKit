@@ -150,4 +150,21 @@ describe('ModelValidatingTupleRepository', () => {
 
     expect(seen).toEqual(['admin-1']);
   });
+
+  it('forwards deletedBy to the inner repository', async () => {
+    const inner = new InMemoryTupleRepository([parseTuple('document:readme.viewer@user:alice')]);
+    const seen: Array<string | undefined> = [];
+    const spy = Object.assign(Object.create(Object.getPrototypeOf(inner) as object) as InMemoryTupleRepository, inner, {
+      delete: async (tuples: Parameters<InMemoryTupleRepository['delete']>[0], deletedBy?: string) => {
+        seen.push(deletedBy);
+        await InMemoryTupleRepository.prototype.delete.call(inner, tuples);
+      },
+    });
+    const repo = new ModelValidatingTupleRepository(spy, model);
+
+    await repo.delete([parseTuple('document:readme.viewer@user:alice')], 'admin-2');
+
+    expect(seen).toEqual(['admin-2']);
+    expect(inner.all()).toEqual([]);
+  });
 });

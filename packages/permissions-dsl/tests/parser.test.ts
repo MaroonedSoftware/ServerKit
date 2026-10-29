@@ -115,4 +115,19 @@ namespace doc { // inline
       if (e instanceof ParseError) expect(e.message).toMatch(/inline\.perm:2:\d+ error:/);
     }
   });
+
+  it('parses a trailing `on *` as objectWildcard', () => {
+    const file = p(`namespace doc {
+  relation admin: user, org.admin on *
+  relation viewer: user
+}`);
+    const [admin, viewer] = file.namespaces[0]!.members;
+    expect(admin).toMatchObject({ kind: 'relation', name: 'admin', objectWildcard: true });
+    if (admin?.kind === 'relation') expect(admin.subjects).toHaveLength(2);
+    expect(viewer).toMatchObject({ kind: 'relation', name: 'viewer', objectWildcard: false });
+  });
+
+  it('rejects `on` without `*`', () => {
+    expect(() => p(`namespace doc { relation admin: user on }`)).toThrow(ParseError);
+  });
 });

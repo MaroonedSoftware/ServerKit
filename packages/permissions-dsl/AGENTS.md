@@ -137,6 +137,7 @@ namespace document {
   relation editor: user, document.owner
   relation viewer: user, user.*, document.editor
   relation banned: user
+  relation platform_admin: user on *
 
   permission edit   = owner | editor
   permission view   = edit | viewer | parent->viewer
@@ -147,7 +148,9 @@ namespace document {
 Identifiers are `[a-z][a-z0-9_]*`. `//` line comments. A subject list is the set of **allowed
 subject types** for that relation, not a union: `user` permits per-user grants, `user.*` permits the
 public all-of-them grant, and `document.editor` permits a userset (group) grant. Listing `user` and
-`user.*` together is normal — they authorise two different kinds of tuple.
+`user.*` together is normal — they authorise two different kinds of tuple. A trailing `on *`
+compiles to `objectWildcard: true`: the relation then accepts every-object tuples
+(`document:*.platform_admin@user:alice`).
 
 Operator precedence, low to high: `-`, `|`, `&`, atom (`( … )` / `a->b` / `name`). `-` is binary and
 left-associated; `|` and `&` are n-ary. `parent->viewer` walks the `parent` relation to the related
@@ -239,6 +242,8 @@ try {
   does not mean "user or all users" as an expression.
 - **`user.*` makes a relation world-grantable.** Omitting it from the subject list is what prevents
   a world-readable tuple. This is easy to add by reflex and hard to notice in review.
+- **`on *` is the object-side counterpart and just as broad.** One `document:*` tuple grants the
+  relation on every document, including ones created later. Keep it to platform roles.
 - **The grammar ships as a runtime asset.** `src/permissions.ohm` is copied to `dist/` by the build
   script, not bundled by tsup. A build that skips the `cp` produces a package that throws at import.
 - **`prettier` is a runtime dependency, not a dev one**, because generated output is formatted with

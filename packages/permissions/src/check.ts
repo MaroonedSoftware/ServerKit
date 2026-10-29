@@ -1,13 +1,16 @@
 import type { AuthorizationModel, UsersetExpr } from './dsl.js';
 import type { PermissionsTupleRepository } from './tuples.repository.js';
 import { type ObjectRef, type SubjectRef, formatSubject } from './tuple.js';
+import { readDirect, readParentEdges } from './check.reads.js';
+import { type CheckOptions, DEFAULT_MAX_DEPTH, resolveMaxDepth, toCheckOptions } from './check.options.js';
 import { type CheckMetrics, type CheckMetricsSink, newCheckMetrics, noopMetricsSink } from './check.metrics.js';
 
-const MAX_DEPTH = 32;
+export type { CheckOptions } from './check.options.js';
 
 interface CheckCtx {
   model: AuthorizationModel;
   repo: PermissionsTupleRepository;
+  maxDepth: number;
   memo: Map<string, boolean>; // per-request cache
   visiting: Set<string>; // cycle guard
   metrics: CheckMetrics;
@@ -23,7 +26,7 @@ const memoKey = (object: ObjectRef, relation: string, subject: SubjectRef): stri
  * parents, and short-circuits on the first allow.
  *
  * Each call gets a fresh per-request memo and cycle guard. Recursion is
- * capped at a fixed `MAX_DEPTH` (32) — exceeding it returns `false` and
+ * capped at {@link CheckOptions.maxDepth} (default 32). Exceeding it returns `false` and
  * sets {@link CheckMetrics.hitMaxDepth}. That `false` is indistinguishable from
  * a genuine denial here; use {@link checkDetailed} when the difference matters.
  *
@@ -33,23 +36,42 @@ const memoKey = (object: ObjectRef, relation: string, subject: SubjectRef): stri
  * @param relationOrPermission - Relation or permission name on
  *   `object.namespace`.
  * @param subject - Subject whose access is being checked.
- * @param sink - Optional telemetry sink; defaults to {@link noopMetricsSink}.
+ * @param options - {@link CheckOptions}: `sink` for telemetry (defaults to
+ *   {@link noopMetricsSink}) and `maxDepth`.
  * @returns `true` if access is granted, `false` otherwise.
  * @throws {PermissionsError} If `object.namespace` or `relationOrPermission` is
  *   not declared on the model. This is a modelling bug, not a denial — do not
  *   catch it and return a 403.
+ * @throws {RangeError} If `options.maxDepth` is not a positive integer.
  */
-export const check = async (
+export function check(
   model: AuthorizationModel,
   repo: PermissionsTupleRepository,
   object: ObjectRef,
   relationOrPermission: string,
   subject: SubjectRef,
-  sink: CheckMetricsSink = noopMetricsSink,
-): Promise<boolean> => {
-  const { allowed } = await checkDetailed(model, repo, object, relationOrPermission, subject, sink);
+  options?: CheckOptions,
+): Promise<boolean>;
+/** @deprecated Pass the sink as `{ sink }` in {@link CheckOptions}. */
+export function check(
+  model: AuthorizationModel,
+  repo: PermissionsTupleRepository,
+  object: ObjectRef,
+  relationOrPermission: string,
+  subject: SubjectRef,
+  sink: CheckMetricsSink,
+): Promise<boolean>;
+export async function check(
+  model: AuthorizationModel,
+  repo: PermissionsTupleRepository,
+  object: ObjectRef,
+  relationOrPermission: string,
+  subject: SubjectRef,
+  options?: CheckOptions | CheckMetricsSink,
+): Promise<boolean> {
+  const { allowed } = await checkDetailed(model, repo, object, relationOrPermission, subject, toCheckOptions(options));
   return allowed;
-};
+}
 
 /**
  * The outcome of a Check, with enough context to tell a real denial from one
@@ -81,21 +103,41 @@ export interface CheckResult {
  * @param object - Object the access question is about.
  * @param relationOrPermission - Relation or permission name on `object.namespace`.
  * @param subject - Subject whose access is being checked.
- * @param sink - Optional telemetry sink; defaults to {@link noopMetricsSink}.
+ * @param options - {@link CheckOptions}: `sink` and `maxDepth`.
  * @throws {PermissionsError} If `object.namespace` or `relationOrPermission` is
  *   not declared on the model.
+ * @throws {RangeError} If `options.maxDepth` is not a positive integer.
  */
-export const checkDetailed = async (
+export function checkDetailed(
   model: AuthorizationModel,
   repo: PermissionsTupleRepository,
   object: ObjectRef,
   relationOrPermission: string,
   subject: SubjectRef,
-  sink: CheckMetricsSink = noopMetricsSink,
-): Promise<CheckResult> => {
+  options?: CheckOptions,
+): Promise<CheckResult>;
+/** @deprecated Pass the sink as `{ sink }` in {@link CheckOptions}. */
+export function checkDetailed(
+  model: AuthorizationModel,
+  repo: PermissionsTupleRepository,
+  object: ObjectRef,
+  relationOrPermission: string,
+  subject: SubjectRef,
+  sink: CheckMetricsSink,
+): Promise<CheckResult>;
+export async function checkDetailed(
+  model: AuthorizationModel,
+  repo: PermissionsTupleRepository,
+  object: ObjectRef,
+  relationOrPermission: string,
+  subject: SubjectRef,
+  options?: CheckOptions | CheckMetricsSink,
+): Promise<CheckResult> {
+  const { sink = noopMetricsSink, ...rest } = toCheckOptions(options);
   const ctx: CheckCtx = {
     model,
     repo,
+    maxDepth: resolveMaxDepth(rest),
     memo: new Map(),
     visiting: new Set(),
     metrics: newCheckMetrics(),
@@ -109,11 +151,11 @@ export const checkDetailed = async (
     allowed,
   });
   return { allowed, maxDepthExceeded: ctx.metrics.hitMaxDepth, metrics: ctx.metrics };
-};
+}
 
 const checkInner = async (ctx: CheckCtx, object: ObjectRef, relOrPerm: string, subject: SubjectRef, depth: number): Promise<boolean> => {
   if (depth > ctx.metrics.maxDepth) ctx.metrics.maxDepth = depth;
-  if (depth > MAX_DEPTH) {
+  if (depth > ctx.maxDepth) {
     ctx.metrics.hitMaxDepth = true;
     return false;
   }
@@ -154,8 +196,7 @@ const evaluate = async (
       return checkInner(ctx, object, expr.relation, subject, depth + 1);
 
     case 'tupleToUserset': {
-      ctx.metrics.parentLookups++;
-      const parents = await ctx.repo.listObjectsRelatedBy(object.namespace, object.id, expr.tupleRelation);
+      const parents = await readParents(ctx, object, expr.tupleRelation);
       for (const p of parents) {
         if (await checkInner(ctx, p, expr.computedRelation, subject, depth + 1)) return true;
       }
@@ -181,9 +222,11 @@ const evaluate = async (
   }
 };
 
+const readParents = (ctx: CheckCtx, object: ObjectRef, tupleRelation: string): Promise<ObjectRef[]> =>
+  readParentEdges(ctx.model, ctx.repo, object, tupleRelation, ctx.metrics);
+
 const hasDirectTuple = async (ctx: CheckCtx, object: ObjectRef, relation: string, subject: SubjectRef, depth: number): Promise<boolean> => {
-  ctx.metrics.tupleReads++;
-  const stored = await ctx.repo.listByObjectRelation(object.namespace, object.id, relation);
+  const stored = await readDirect(ctx.model, ctx.repo, object, relation, ctx.metrics);
 
   for (const t of stored) {
     // 1) exact match on a concrete subject
@@ -210,4 +253,4 @@ const hasDirectTuple = async (ctx: CheckCtx, object: ObjectRef, relation: string
  * Internal hook exposing module-private constants to tests. Not part of the
  * public API — use only for assertions about the Check evaluator's bounds.
  */
-export const __testing = { MAX_DEPTH };
+export const __testing = { MAX_DEPTH: DEFAULT_MAX_DEPTH };

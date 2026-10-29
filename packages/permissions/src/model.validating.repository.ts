@@ -49,8 +49,8 @@ export class ModelValidatingTupleRepository extends PermissionsTupleRepository {
   }
 
   /** Deletes are not validated: removing a tuple the model would reject is always safe. */
-  async delete(tuples: RelationTuple[]): Promise<void> {
-    await this.inner.delete(tuples);
+  async delete(tuples: RelationTuple[], deletedBy?: string): Promise<void> {
+    await this.inner.delete(tuples, deletedBy);
   }
 
   async listByObjectRelation(namespace: string, objectId: string, relation: string): Promise<RelationTuple[]> {

@@ -90,4 +90,15 @@ describe('codegen', () => {
     expect(docIdx).toBeLessThan(folderIdx);
     expect(folderIdx).toBeLessThan(userIdx);
   });
+
+  it('renders objectWildcard only for `on *` relations', () => {
+    const file = renderNamespace(
+      ns(`namespace doc {
+  relation admin: user on *
+  relation viewer: user
+}`),
+    );
+    expect(file.source).toContain(`admin: { subjects: ['user'], objectWildcard: true },`);
+    expect(file.source).toContain(`viewer: { subjects: ['user'] },`);
+  });
 });

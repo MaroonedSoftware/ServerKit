@@ -115,4 +115,17 @@ namespace doc {
       }
     }
   });
+
+  it('lowers `on *` to objectWildcard on the relation', () => {
+    const r = compile(`
+namespace user {}
+namespace doc {
+  relation admin: user on *
+  relation viewer: user
+  permission view = admin | viewer
+}`);
+    expect(r.model.allowsObjectWildcard('doc', 'admin')).toBe(true);
+    expect(r.model.allowsObjectWildcard('doc', 'viewer')).toBe(false);
+    expect(r.model.get('doc')?.relations).toEqual({ admin: { subjects: ['user'], objectWildcard: true }, viewer: { subjects: ['user'] } });
+  });
 });

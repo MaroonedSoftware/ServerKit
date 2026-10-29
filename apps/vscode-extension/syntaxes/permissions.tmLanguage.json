@@ -31,6 +31,13 @@
       "end": "(?=$|//)",
       "patterns": [
         { "include": "#comment" },
+        {
+          "match": "\\b(on)\\s*(\\*)",
+          "captures": {
+            "1": { "name": "keyword.other.on.permissions" },
+            "2": { "name": "constant.language.wildcard.permissions" }
+          }
+        },
         { "include": "#subject" },
         {
           "match": ",",

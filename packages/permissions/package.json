@@ -1,7 +1,7 @@
 {
   "name": "@maroonedsoftware/permissions",
   "version": "0.3.0",
-  "description": "A Zanzibar-style relationship-based access control library — an authorization model DSL, a relation-tuple repository contract, and a Check evaluator with per-request metrics.",
+  "description": "A Zanzibar-style relationship-based access control library \u2014 an authorization model DSL, a relation-tuple repository contract, and a Check evaluator with per-request metrics.",
   "author": {
     "name": "Marooned Software",
     "url": "https://github.com/MaroonedSoftware/serverkit"
@@ -29,13 +29,24 @@
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./conformance": {
+      "types": "./dist/conformance.d.ts",
+      "import": "./dist/conformance.js"
+    },
+    "./package.json": "./package.json"
+  },
   "license": "MIT",
   "files": [
     "AGENTS.md",
     "dist/**"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm --sourcemap && tsc --emitDeclarationOnly --declaration",
+    "build": "tsup src/index.ts src/conformance.ts --format esm --sourcemap && tsc --emitDeclarationOnly --declaration",
     "build:ci": "eslint --max-warnings=0 && pnpm run build",
     "lint": "eslint --fix",
     "format": "prettier --write .",

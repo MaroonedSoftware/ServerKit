@@ -23,8 +23,22 @@ export abstract class PermissionsTupleRepository {
 
   /**
    * Remove tuples by exact shape. Tuples that don't exist are a no-op.
+   *
+   * A deleted tuple must disappear from **every** read below, since any read that
+   * still returns it keeps granting access. To keep revocation history, move the
+   * row rather than flagging it: in one transaction, delete it from the live
+   * table and insert it, with `deletedBy` and the time, into a separate history
+   * table. The live table then holds only live grants and no read needs a
+   * filter. A `revoked_at` flag on the live table works only if every read
+   * filters on it; `verifyTupleRepository` from
+   * `@maroonedsoftware/permissions/conformance` checks that.
+   *
+   * @param tuples - Tuples to remove.
+   * @param deletedBy - Opaque actor identifier for the revocation, the
+   *   counterpart of `write`'s `createdBy`. Recorded when the backend keeps
+   *   revoked rows, otherwise ignored.
    */
-  abstract delete(tuples: RelationTuple[]): Promise<void>;
+  abstract delete(tuples: RelationTuple[], deletedBy?: string): Promise<void>;
 
   /**
    * All direct tuples for a `(object, relation)` pair. Feeds the Check
