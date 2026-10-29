@@ -1,5 +1,12 @@
 # @maroonedsoftware/saml
 
+## 0.3.1
+
+### Patch Changes
+
+- Updated dependencies [0345392]
+  - @maroonedsoftware/authentication@6.8.0
+
 ## 0.3.0
 
 ### Minor Changes
