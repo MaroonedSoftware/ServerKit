@@ -388,7 +388,6 @@ describe('checkDetailed', () => {
       { namespace: 'folder', id: 'f0' },
       'view',
       { kind: 'concrete', namespace: 'user', id: 'alice' },
-      undefined,
       { maxDepth: 128 },
     );
 
@@ -405,7 +404,6 @@ describe('checkDetailed', () => {
       { namespace: 'folder', id: 'f0' },
       'view',
       { kind: 'concrete', namespace: 'user', id: 'alice' },
-      undefined,
       { maxDepth: 4 },
     );
 
@@ -414,9 +412,7 @@ describe('checkDetailed', () => {
 
   it.each([0, -1, 1.5, Number.NaN])('rejects maxDepth %s', async maxDepth => {
     await expect(
-      check(model, new InMemoryRepo(), { namespace: 'folder', id: 'f0' }, 'view', { kind: 'concrete', namespace: 'user', id: 'alice' }, undefined, {
-        maxDepth,
-      }),
+      check(model, new InMemoryRepo(), { namespace: 'folder', id: 'f0' }, 'view', { kind: 'concrete', namespace: 'user', id: 'alice' }, { maxDepth }),
     ).rejects.toThrow(RangeError);
   });
 
@@ -482,6 +478,36 @@ describe('check — metrics sink', () => {
     }),
   ]);
 
+  it('records one observation per Check when the sink is passed as options.sink', async () => {
+    const sink = new CapturingSink();
+    const repo = new InMemoryRepo([
+      { object: { namespace: 'doc', id: 'd1' }, relation: 'viewer', subject: { kind: 'concrete', namespace: 'user', id: 'alice' } },
+    ]);
+
+    const result = await checkDetailed(
+      model,
+      repo,
+      { namespace: 'doc', id: 'd1' },
+      'view',
+      { kind: 'concrete', namespace: 'user', id: 'alice' },
+      { sink, maxDepth: 8 },
+    );
+
+    expect(result.allowed).toBe(true);
+    expect(sink.observations).toHaveLength(1);
+    expect(sink.observations[0]!.tags).toEqual({ namespace: 'doc', permission: 'view', allowed: true });
+  });
+
+  it('still accepts a structurally typed sink in the 0.3.0 position', async () => {
+    const seen: CheckMetricsTags[] = [];
+    const structural = { record: (_m: CheckMetrics, tags: CheckMetricsTags) => void seen.push(tags) } as unknown as CheckMetricsSink;
+
+    await check(model, new InMemoryRepo(), { namespace: 'doc', id: 'd1' }, 'view', { kind: 'concrete', namespace: 'user', id: 'alice' }, structural);
+
+    expect(seen).toEqual([{ namespace: 'doc', permission: 'view', allowed: false }]);
+  });
+
+  // The 0.3.0 call shape: a bare sink as the 6th argument. Deprecated, kept working.
   it('records one observation per Check with namespace/permission/allowed tags', async () => {
     const sink = new CapturingSink();
     const repo = new InMemoryRepo([

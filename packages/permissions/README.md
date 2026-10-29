@@ -229,7 +229,7 @@ const allowed = await check(model, repo, { namespace: 'doc', id: 'doc-42' }, 'vi
 `check` walks the userset rewrite for `view`, short-circuiting on the first allow, and returns `true`/`false`. Each call has its own per-request memo and cycle guard; recursion is capped at depth 32 by default. Raise the cap for models with long chains (a reporting line walked through `manager->...`):
 
 ```ts
-await check(model, repo, object, 'view', subject, sink, { maxDepth: 128 });
+await check(model, repo, object, 'view', subject, { maxDepth: 128 });
 ```
 
 ### Metrics
@@ -241,7 +241,7 @@ import { check, LoggingMetricsSink } from '@maroonedsoftware/permissions';
 
 const sink = new LoggingMetricsSink();
 
-await check(model, repo, object, 'view', subject, sink);
+await check(model, repo, object, 'view', subject, { sink });
 // → console.log({ event: 'permissions.check', namespace, permission, allowed,
 //                  duration_ms, tuple_reads, parent_lookups, cache_hits,
 //                  max_depth, hit_max_depth })
@@ -304,9 +304,11 @@ lets the relation hold every-object tuples (`doc:*.admin@user:alice`).
 | `listByObjectRelation(namespace, objectId, rel)` | All tuples for a `(object, relation)` pair — feeds the `direct` step |
 | `listObjectsRelatedBy(namespace, objectId, rel)` | Concrete-subject parents for a `tupleToUserset` walk                 |
 
-### `check(model, repo, object, relationOrPermission, subject, sink?, options?)`
+### `check(model, repo, object, relationOrPermission, subject, options?)`
 
-Returns `Promise<boolean>`. Throws if the namespace or relation/permission is unknown. `options.maxDepth` sets the recursion cap (default 32); a non-positive or fractional value throws `RangeError`.
+Returns `Promise<boolean>`. Throws if the namespace or relation/permission is unknown. `options` is `{ sink?, maxDepth? }`: `sink` receives one `CheckMetrics` observation per call, and `maxDepth` sets the recursion cap (default 32; a non-positive or fractional value throws `RangeError`). `checkDetailed` takes the same arguments.
+
+Passing a bare `CheckMetricsSink` as the 6th argument, the 0.3.0 form, still works but is deprecated; wrap it as `{ sink }`.
 
 ### `lookupObjects(model, repo, namespace, permission, subject, options?)`
 

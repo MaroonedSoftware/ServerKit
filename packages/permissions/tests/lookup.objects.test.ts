@@ -4,6 +4,7 @@ import { lookupObjects } from '../src/lookup.objects.js';
 import { InMemoryTupleRepository } from '../src/in.memory.repository.js';
 import { PermissionsTupleRepository } from '../src/tuples.repository.js';
 import { IsPermissionsError } from '../src/errors.js';
+import type { CheckMetricsSink } from '../src/check.metrics.js';
 import { parseTuple, type RelationTuple } from '../src/tuple.js';
 
 const model = new AuthorizationModel([
@@ -142,5 +143,17 @@ describe('lookupObjects', () => {
       }
     }
     await expect(lookupObjects(model, new NoListing(), 'doc', 'view', alice)).rejects.toThrow(/listObjects/);
+  });
+});
+
+describe('lookupObjects — sink', () => {
+  it('hands options.sink to every confirming check', async () => {
+    const tags: string[] = [];
+    const sink = { record: (_m: unknown, t: { namespace: string; permission: string }) => void tags.push(`${t.namespace}.${t.permission}`) };
+    const repo = repoOf('doc:d1.owner@user:alice', 'doc:d2.viewer@user:alice');
+
+    await lookupObjects(model, repo, 'doc', 'view', alice, { sink: sink as unknown as CheckMetricsSink });
+
+    expect(tags).toEqual(['doc.view', 'doc.view']);
   });
 });

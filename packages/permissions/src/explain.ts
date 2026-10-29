@@ -128,7 +128,8 @@ const memoKey = (object: ObjectRef, relation: string, subject: SubjectRef): stri
  * way it did. Do not use on a hot request path — call {@link check} there.
  *
  * Pass the same `options` the production {@link check} uses, so a depth-capped
- * answer reproduces under explain.
+ * answer reproduces under explain. `options.sink` is ignored: explain does not
+ * record metrics.
  *
  * @throws {RangeError} If `options.maxDepth` is not a positive integer.
  */

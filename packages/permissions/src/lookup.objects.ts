@@ -163,7 +163,8 @@ interface Node {
  * @param namespace - Namespace of the objects to list.
  * @param permission - Relation or permission on `namespace`.
  * @param subject - Concrete subject (`user:alice`) whose access is listed.
- * @param options - {@link CheckOptions.maxDepth} bounds both the walk and each Check.
+ * @param options - {@link CheckOptions.maxDepth} bounds both the walk and each Check;
+ *   `sink` receives one observation per confirming Check.
  * @throws {PermissionsError} If `namespace` or `permission` is not declared on the model.
  * @throws {TypeError} If `subject` is not concrete, or `repo` does not implement `listObjects`.
  * @throws {RangeError} If `options.maxDepth` is not a positive integer.
@@ -262,7 +263,7 @@ export const lookupObjects = async (
     }
     candidates++;
     const object = { namespace: node.namespace, id: node.id };
-    const result = await checkDetailed(model, repo, object, permission, subject, undefined, { maxDepth });
+    const result = await checkDetailed(model, repo, object, permission, subject, { maxDepth, sink: options.sink });
     if (result.maxDepthExceeded) maxDepthExceeded = true;
     if (result.allowed) objects.push(object);
   }

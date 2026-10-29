@@ -2,7 +2,7 @@ import type { AuthorizationModel, UsersetExpr } from './dsl.js';
 import type { PermissionsTupleRepository } from './tuples.repository.js';
 import { type ObjectRef, type SubjectRef, formatSubject } from './tuple.js';
 import { readDirect, readParentEdges } from './check.reads.js';
-import { type CheckOptions, DEFAULT_MAX_DEPTH, resolveMaxDepth } from './check.options.js';
+import { type CheckOptions, DEFAULT_MAX_DEPTH, resolveMaxDepth, toCheckOptions } from './check.options.js';
 import { type CheckMetrics, type CheckMetricsSink, newCheckMetrics, noopMetricsSink } from './check.metrics.js';
 
 export type { CheckOptions } from './check.options.js';
@@ -36,26 +36,42 @@ const memoKey = (object: ObjectRef, relation: string, subject: SubjectRef): stri
  * @param relationOrPermission - Relation or permission name on
  *   `object.namespace`.
  * @param subject - Subject whose access is being checked.
- * @param sink - Optional telemetry sink; defaults to {@link noopMetricsSink}.
- * @param options - Evaluator options, such as {@link CheckOptions.maxDepth}.
+ * @param options - {@link CheckOptions}: `sink` for telemetry (defaults to
+ *   {@link noopMetricsSink}) and `maxDepth`.
  * @returns `true` if access is granted, `false` otherwise.
  * @throws {PermissionsError} If `object.namespace` or `relationOrPermission` is
  *   not declared on the model. This is a modelling bug, not a denial — do not
  *   catch it and return a 403.
  * @throws {RangeError} If `options.maxDepth` is not a positive integer.
  */
-export const check = async (
+export function check(
   model: AuthorizationModel,
   repo: PermissionsTupleRepository,
   object: ObjectRef,
   relationOrPermission: string,
   subject: SubjectRef,
-  sink: CheckMetricsSink = noopMetricsSink,
-  options: CheckOptions = {},
-): Promise<boolean> => {
-  const { allowed } = await checkDetailed(model, repo, object, relationOrPermission, subject, sink, options);
+  options?: CheckOptions,
+): Promise<boolean>;
+/** @deprecated Pass the sink as `{ sink }` in {@link CheckOptions}. */
+export function check(
+  model: AuthorizationModel,
+  repo: PermissionsTupleRepository,
+  object: ObjectRef,
+  relationOrPermission: string,
+  subject: SubjectRef,
+  sink: CheckMetricsSink,
+): Promise<boolean>;
+export async function check(
+  model: AuthorizationModel,
+  repo: PermissionsTupleRepository,
+  object: ObjectRef,
+  relationOrPermission: string,
+  subject: SubjectRef,
+  options?: CheckOptions | CheckMetricsSink,
+): Promise<boolean> {
+  const { allowed } = await checkDetailed(model, repo, object, relationOrPermission, subject, toCheckOptions(options));
   return allowed;
-};
+}
 
 /**
  * The outcome of a Check, with enough context to tell a real denial from one
@@ -87,25 +103,41 @@ export interface CheckResult {
  * @param object - Object the access question is about.
  * @param relationOrPermission - Relation or permission name on `object.namespace`.
  * @param subject - Subject whose access is being checked.
- * @param sink - Optional telemetry sink; defaults to {@link noopMetricsSink}.
- * @param options - Evaluator options, such as {@link CheckOptions.maxDepth}.
+ * @param options - {@link CheckOptions}: `sink` and `maxDepth`.
  * @throws {PermissionsError} If `object.namespace` or `relationOrPermission` is
  *   not declared on the model.
  * @throws {RangeError} If `options.maxDepth` is not a positive integer.
  */
-export const checkDetailed = async (
+export function checkDetailed(
   model: AuthorizationModel,
   repo: PermissionsTupleRepository,
   object: ObjectRef,
   relationOrPermission: string,
   subject: SubjectRef,
-  sink: CheckMetricsSink = noopMetricsSink,
-  options: CheckOptions = {},
-): Promise<CheckResult> => {
+  options?: CheckOptions,
+): Promise<CheckResult>;
+/** @deprecated Pass the sink as `{ sink }` in {@link CheckOptions}. */
+export function checkDetailed(
+  model: AuthorizationModel,
+  repo: PermissionsTupleRepository,
+  object: ObjectRef,
+  relationOrPermission: string,
+  subject: SubjectRef,
+  sink: CheckMetricsSink,
+): Promise<CheckResult>;
+export async function checkDetailed(
+  model: AuthorizationModel,
+  repo: PermissionsTupleRepository,
+  object: ObjectRef,
+  relationOrPermission: string,
+  subject: SubjectRef,
+  options?: CheckOptions | CheckMetricsSink,
+): Promise<CheckResult> {
+  const { sink = noopMetricsSink, ...rest } = toCheckOptions(options);
   const ctx: CheckCtx = {
     model,
     repo,
-    maxDepth: resolveMaxDepth(options),
+    maxDepth: resolveMaxDepth(rest),
     memo: new Map(),
     visiting: new Set(),
     metrics: newCheckMetrics(),
@@ -119,7 +151,7 @@ export const checkDetailed = async (
     allowed,
   });
   return { allowed, maxDepthExceeded: ctx.metrics.hitMaxDepth, metrics: ctx.metrics };
-};
+}
 
 const checkInner = async (ctx: CheckCtx, object: ObjectRef, relOrPerm: string, subject: SubjectRef, depth: number): Promise<boolean> => {
   if (depth > ctx.metrics.maxDepth) ctx.metrics.maxDepth = depth;

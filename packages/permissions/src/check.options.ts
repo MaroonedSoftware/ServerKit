@@ -1,4 +1,5 @@
 // Internal: not re-exported from the barrel. `CheckOptions` is re-exported from check.ts.
+import { CheckMetricsSink } from './check.metrics.js';
 
 /** Recursion cap used when {@link CheckOptions.maxDepth} is not set. */
 export const DEFAULT_MAX_DEPTH = 32;
@@ -16,7 +17,24 @@ export interface CheckOptions {
    * line walked through `manager->...`.
    */
   maxDepth?: number;
+  /**
+   * Telemetry sink that receives one observation per Check. Defaults to
+   * `noopMetricsSink`. `explain` ignores it; `lookupObjects` hands it to each
+   * confirming Check.
+   */
+  sink?: CheckMetricsSink;
 }
+
+/**
+ * Accept the options bag or, for callers written against 0.3.0, a bare sink in
+ * the same position. A sink is recognised by its `record` method so a
+ * structurally typed sink keeps working too.
+ */
+export const toCheckOptions = (arg: CheckOptions | CheckMetricsSink | undefined): CheckOptions => {
+  if (arg === undefined) return {};
+  if (arg instanceof CheckMetricsSink || typeof (arg as { record?: unknown }).record === 'function') return { sink: arg as CheckMetricsSink };
+  return arg as CheckOptions;
+};
 
 /**
  * Resolve {@link CheckOptions.maxDepth} to a number, rejecting values that would
