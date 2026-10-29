@@ -1,5 +1,20 @@
 # @maroonedsoftware/permissions-dsl
 
+## 0.6.0
+
+### Minor Changes
+
+- a080028: `.perm` relations accept a trailing `on *` (`relation platform_admin: user on *`), which compiles to `objectWildcard: true` so the relation can hold every-object tuples such as `doc:*.platform_admin@user:alice`. `RelationNode` gains `objectWildcard`, and codegen emits the flag. The VS Code grammar highlights `on *`.
+
+### Patch Changes
+
+- Updated dependencies [f0ed3e5]
+- Updated dependencies [3ff953b]
+- Updated dependencies [85a23d9]
+- Updated dependencies [dc79b53]
+- Updated dependencies [c3237ce]
+  - @maroonedsoftware/permissions@0.4.0
+
 ## 0.5.7
 
 ### Patch Changes

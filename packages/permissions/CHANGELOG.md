@@ -1,5 +1,15 @@
 # @maroonedsoftware/permissions
 
+## 0.4.0
+
+### Minor Changes
+
+- f0ed3e5: New `lookupObjects(model, repo, namespace, permission, subject, options?)` lists every object a concrete subject holds a permission on. It expands groups, `computed` chains, and recursive `tupleToUserset` hierarchies by walking the model backwards from the subject's tuples, then confirms each candidate with `checkDetailed` so that exclusions and intersections are honoured. An every-object `*` grant is reported as `everyObject: true` rather than enumerated. It requires a repository that implements `listObjects`.
+- 3ff953b: `check`, `checkDetailed`, `explain`, and `lookupObjects` take an optional `CheckOptions` bag as their last argument: `{ sink?, maxDepth? }`. `maxDepth` replaces the fixed recursion cap of 32 (still the default), so a model with long chains such as a reporting line can raise it; a value that is not a positive integer throws `RangeError`. `sink` moves the metrics sink into the bag. Passing a bare `CheckMetricsSink` as the 6th argument of `check` or `checkDetailed`, the 0.3.0 form, still works but is deprecated.
+- 85a23d9: Every-object grants. A relation declared with `objectWildcard: true` accepts tuples whose object id is `*` (`doc:*.platform_admin@user:alice`), which grant the relation on every object of the namespace. Use them for platform-wide roles. `check` and `explain` read the `*` row only for opted-in relations. A `*` parent edge makes that parent apply to every object. `ModelValidatingTupleRepository` rejects `*` tuples on other relations with the new `object_wildcard_not_allowed` code. New exports: `OBJECT_WILDCARD`, `TupleObjectRef`, and `AuthorizationModel.allowsObjectWildcard`. `RelationTuple.object` is now a `TupleObjectRef`, which has the same shape as `ObjectRef`.
+- dc79b53: New `@maroonedsoftware/permissions/conformance` subpath with `verifyTupleRepository`, a test-runner-agnostic check of a `PermissionsTupleRepository` against the contract the evaluator relies on. It checks idempotent writes, that deleted tuples vanish from every read (with or without `deletedBy`), that a re-grant after a revoke is visible, that parent edges are concrete only, that `*` object ids come back literally, and that listings match the exact subject. The `delete` contract now recommends keeping revocation history by moving the row to a history table in the same transaction, rather than flagging it in the live table. The package gains an `exports` map; the root import is unchanged.
+- c3237ce: `PermissionsTupleRepository.delete` takes an optional `deletedBy`, the counterpart of `write`'s `createdBy`, and its contract now allows a soft delete. A backend can keep the revoked row and who revoked it, provided every read leaves the row out. `ModelValidatingTupleRepository` forwards it.
+
 ## 0.3.0
 
 ### Minor Changes
