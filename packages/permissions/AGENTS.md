@@ -39,21 +39,21 @@ database. That is what keeps this package free of a `kysely` dependency.
 
 ### Model DSL (`src/dsl.ts`)
 
-| Export               | Kind      | Shape                                                                                                       | Notes                                                                                                                      |
-| -------------------- | --------- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `UsersetExpr`        | type      | Discriminated union on `kind`: `direct`, `computed`, `tupleToUserset`, `union`, `intersection`, `exclusion` | The rewrite language.                                                                                                      |
-| `direct`             | builder   | `() => UsersetExpr`                                                                                         | Matches stored tuples on this relation.                                                                                    |
-| `computed`           | builder   | `(relation: string) => UsersetExpr`                                                                         | Delegates to another relation/permission on the **same** object.                                                           |
-| `tupleToUserset`     | builder   | `(tupleRelation: string, computedRelation: string) => UsersetExpr`                                          | Walk `tupleRelation` to a parent object, then evaluate `computedRelation` there.                                           |
-| `union`              | builder   | `(...children: UsersetExpr[]) => UsersetExpr`                                                               | Any child allows.                                                                                                          |
-| `intersection`       | builder   | `(...children: UsersetExpr[]) => UsersetExpr`                                                               | Every child must allow.                                                                                                    |
-| `exclusion`          | builder   | `(base: UsersetExpr, subtract: UsersetExpr) => UsersetExpr`                                                 | `base && !subtract`.                                                                                                       |
-| `SubjectType`        | type      | `string`                                                                                                    | `'user'`, `'user.*'` (wildcard), or `'org.member'` (userset).                                                              |
-| `RelationDef`        | interface | `{ subjects: SubjectType[] }`                                                                               | Allowed direct-tuple subject types. **Enforced at write time, not at Check time** — see `ModelValidatingTupleRepository`.  |
-| `PermissionsError`   | class     | `extends Error`, with `code`, `namespace?`, `relation?`                                                     | `code` is `'unknown_namespace'`, `'unknown_relation'`, or `'subject_not_allowed'`. Guard: `IsPermissionsError`.            |
-| `NamespaceDef<R, P>` | interface | `{ name: string; relations: Record<R, RelationDef>; permissions: Record<P, UsersetExpr> }`                  | —                                                                                                                          |
-| `defineNamespace`    | function  | `<R, P>(name: string, def: { relations; permissions }) => NamespaceDef<R, P>`                               | Preserves literal types for relation and permission names.                                                                 |
-| `AuthorizationModel` | class     | `new AuthorizationModel(namespaces: NamespaceDef[])`                                                        | **Validates on construction** and throws on a bad model. Methods: `namespaces()`, `get(name)`, `resolve(namespace, name)`. |
+| Export               | Kind      | Shape                                                                                                       | Notes                                                                                                                                                                   |
+| -------------------- | --------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `UsersetExpr`        | type      | Discriminated union on `kind`: `direct`, `computed`, `tupleToUserset`, `union`, `intersection`, `exclusion` | The rewrite language.                                                                                                                                                   |
+| `direct`             | builder   | `() => UsersetExpr`                                                                                         | Matches stored tuples on this relation.                                                                                                                                 |
+| `computed`           | builder   | `(relation: string) => UsersetExpr`                                                                         | Delegates to another relation/permission on the **same** object.                                                                                                        |
+| `tupleToUserset`     | builder   | `(tupleRelation: string, computedRelation: string) => UsersetExpr`                                          | Walk `tupleRelation` to a parent object, then evaluate `computedRelation` there.                                                                                        |
+| `union`              | builder   | `(...children: UsersetExpr[]) => UsersetExpr`                                                               | Any child allows.                                                                                                                                                       |
+| `intersection`       | builder   | `(...children: UsersetExpr[]) => UsersetExpr`                                                               | Every child must allow.                                                                                                                                                 |
+| `exclusion`          | builder   | `(base: UsersetExpr, subtract: UsersetExpr) => UsersetExpr`                                                 | `base && !subtract`.                                                                                                                                                    |
+| `SubjectType`        | type      | `string`                                                                                                    | `'user'`, `'user.*'` (wildcard), or `'org.member'` (userset).                                                                                                           |
+| `RelationDef`        | interface | `{ subjects: SubjectType[]; objectWildcard?: boolean }`                                                     | Allowed direct-tuple subject types. **Enforced at write time, not at Check time** — see `ModelValidatingTupleRepository`. `objectWildcard: true` accepts `ns:*` tuples. |
+| `PermissionsError`   | class     | `extends Error`, with `code`, `namespace?`, `relation?`                                                     | `code` is `'unknown_namespace'`, `'unknown_relation'`, `'subject_not_allowed'`, or `'object_wildcard_not_allowed'`. Guard: `IsPermissionsError`.                        |
+| `NamespaceDef<R, P>` | interface | `{ name: string; relations: Record<R, RelationDef>; permissions: Record<P, UsersetExpr> }`                  | —                                                                                                                                                                       |
+| `defineNamespace`    | function  | `<R, P>(name: string, def: { relations; permissions }) => NamespaceDef<R, P>`                               | Preserves literal types for relation and permission names.                                                                                                              |
+| `AuthorizationModel` | class     | `new AuthorizationModel(namespaces: NamespaceDef[])`                                                        | **Validates on construction** and throws on a bad model. Methods: `namespaces()`, `get(name)`, `resolve(namespace, name)`, `allowsObjectWildcard(namespace, relation)`. |
 
 Names must match `/^[a-z][a-z0-9_]*$/` — lower snake_case. Duplicate namespaces, unknown subject
 namespaces, unknown computed relations, and unwalkable `tupleToUserset` references all throw at
@@ -63,22 +63,24 @@ construction.
 
 Each of these is a Zod schema **and** a type of the same name.
 
-| Export           | Kind          | Shape                                                            | Notes                                                |
-| ---------------- | ------------- | ---------------------------------------------------------------- | ---------------------------------------------------- |
-| `ObjectRef`      | schema + type | `{ namespace, id }`                                              | `id` must not contain `.`, `@`, `:`, or `*`.         |
-| `SubjectRef`     | schema + type | Discriminated union on `kind`: `concrete`, `wildcard`, `userset` | `user:alice`, `user.*`, `org:42.admin`.              |
-| `RelationTuple`  | schema + type | `{ object, relation, subject }`                                  | The unit of write and the input the evaluator walks. |
-| `formatSubject`  | function      | `(s: SubjectRef) => string`                                      | Canonical string form.                               |
-| `stringifyTuple` | function      | `(t: RelationTuple) => string`                                   | `ns:id.relation@subject`. Also the dedupe key.       |
-| `parseSubject`   | function      | `(input: string) => SubjectRef`                                  | Inverse of `formatSubject`.                          |
-| `parseTuple`     | function      | `(input: string) => RelationTuple`                               | Inverse of `stringifyTuple`.                         |
+| Export            | Kind          | Shape                                                            | Notes                                                |
+| ----------------- | ------------- | ---------------------------------------------------------------- | ---------------------------------------------------- |
+| `ObjectRef`       | schema + type | `{ namespace, id }`                                              | `id` must not contain `.`, `@`, `:`, or `*`.         |
+| `TupleObjectRef`  | schema + type | `{ namespace, id }`                                              | A tuple's object: an `ObjectRef` id, or exactly `*`. |
+| `OBJECT_WILDCARD` | constant      | `'*'`                                                            | The every-object id.                                 |
+| `SubjectRef`      | schema + type | Discriminated union on `kind`: `concrete`, `wildcard`, `userset` | `user:alice`, `user.*`, `org:42.admin`.              |
+| `RelationTuple`   | schema + type | `{ object: TupleObjectRef, relation, subject }`                  | The unit of write and the input the evaluator walks. |
+| `formatSubject`   | function      | `(s: SubjectRef) => string`                                      | Canonical string form.                               |
+| `stringifyTuple`  | function      | `(t: RelationTuple) => string`                                   | `ns:id.relation@subject`. Also the dedupe key.       |
+| `parseSubject`    | function      | `(input: string) => SubjectRef`                                  | Inverse of `formatSubject`.                          |
+| `parseTuple`      | function      | `(input: string) => RelationTuple`                               | Inverse of `stringifyTuple`.                         |
 
 ### Storage
 
 | Export                           | Kind           | Shape                                                                                                                                                                                                                                                                           | Notes                                                                                                                                             |
 | -------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `PermissionsTupleRepository`     | abstract class | `write(tuples, createdBy?)`, `delete(tuples, deletedBy?)`, `listByObjectRelation(namespace, objectId, relation)`, `listObjectsRelatedBy(namespace, objectId, relation)`, optional `listSubjects(namespace, objectId, relation)` and `listObjects(namespace, relation, subject)` | An abstract class, not an interface, so it survives as an InjectKit token. The two listings are optional so existing repositories keep compiling. |
-| `ModelValidatingTupleRepository` | class          | `new ModelValidatingTupleRepository(inner, model)`                                                                                                                                                                                                                              | Decorator enforcing `RelationDef.subjects` on write. Reads pass through.                                                                          |
+| `ModelValidatingTupleRepository` | class          | `new ModelValidatingTupleRepository(inner, model)`                                                                                                                                                                                                                              | Decorator enforcing `RelationDef.subjects` and `objectWildcard` on write. Reads pass through.                                                     |
 | `InMemoryTupleRepository`        | class          | `new InMemoryTupleRepository(seed: RelationTuple[] = [])`, plus `all()` and `clear()`                                                                                                                                                                                           | For fixtures, `pdsl validate`, the VS Code playground, and tests. Not for production.                                                             |
 
 `write` must be idempotent — duplicate `(object, relation, subject)` triples are no-ops.
@@ -195,6 +197,11 @@ console.log(formatTrace(result.trace));
   short-circuit unions or intersections. The top-level `allowed` matches, but the cost does not.
 - **Cycles return `false`, not an error.** The visiting set detects them and emits a `CycleTrace`
   in `explain()`; `check()` just denies.
+- **`doc:*` tuples need `objectWildcard: true` on the relation, and Check enforces it.** Unlike
+  `subjects`, this is not only a write-time rule: Check reads the `*` row only for opted-in
+  relations, so a stray `doc:*.viewer@…` row on another relation grants nothing. Each opted-in
+  relation costs one extra `listByObjectRelation` (or `listObjectsRelatedBy`) per Check. A
+  repository must store and return the literal id `*`; do not special-case it in SQL.
 - **`ObjectRef.id` cannot contain `.`, `@`, `:`, or `*`.** Those are the delimiters in the
   canonical tuple string. An id sourced from user input must be validated or encoded.
 - **`InMemoryTupleRepository` ignores `createdBy` and `deletedBy`.** They are accepted for
@@ -222,6 +229,7 @@ src/
   tuples.repository.ts      PermissionsTupleRepository abstract class
   in.memory.repository.ts   InMemoryTupleRepository
   check.ts                  The Check evaluator, __testing hook
+  check.reads.ts            Tuple and parent reads that add every-object rows (internal)
   check.options.ts          CheckOptions, default depth, option validation (internal, not in the barrel)
   explain.ts                Trace types, explain(), formatTrace()
   check.metrics.ts          CheckMetrics, tags, sink token, noop sink

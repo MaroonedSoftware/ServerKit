@@ -1,6 +1,7 @@
 import type { AuthorizationModel, UsersetExpr } from './dsl.js';
 import type { PermissionsTupleRepository } from './tuples.repository.js';
 import { type ObjectRef, type SubjectRef, formatSubject } from './tuple.js';
+import { readDirect, readParentEdges } from './check.reads.js';
 import { type CheckOptions, DEFAULT_MAX_DEPTH, resolveMaxDepth } from './check.options.js';
 import { type CheckMetrics, type CheckMetricsSink, newCheckMetrics, noopMetricsSink } from './check.metrics.js';
 
@@ -163,8 +164,7 @@ const evaluate = async (
       return checkInner(ctx, object, expr.relation, subject, depth + 1);
 
     case 'tupleToUserset': {
-      ctx.metrics.parentLookups++;
-      const parents = await ctx.repo.listObjectsRelatedBy(object.namespace, object.id, expr.tupleRelation);
+      const parents = await readParents(ctx, object, expr.tupleRelation);
       for (const p of parents) {
         if (await checkInner(ctx, p, expr.computedRelation, subject, depth + 1)) return true;
       }
@@ -190,9 +190,11 @@ const evaluate = async (
   }
 };
 
+const readParents = (ctx: CheckCtx, object: ObjectRef, tupleRelation: string): Promise<ObjectRef[]> =>
+  readParentEdges(ctx.model, ctx.repo, object, tupleRelation, ctx.metrics);
+
 const hasDirectTuple = async (ctx: CheckCtx, object: ObjectRef, relation: string, subject: SubjectRef, depth: number): Promise<boolean> => {
-  ctx.metrics.tupleReads++;
-  const stored = await ctx.repo.listByObjectRelation(object.namespace, object.id, relation);
+  const stored = await readDirect(ctx.model, ctx.repo, object, relation, ctx.metrics);
 
   for (const t of stored) {
     // 1) exact match on a concrete subject

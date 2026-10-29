@@ -2,6 +2,7 @@ import type { AuthorizationModel, UsersetExpr } from './dsl.js';
 import { type ObjectRef, type RelationTuple, type SubjectRef, formatSubject } from './tuple.js';
 import type { PermissionsTupleRepository } from './tuples.repository.js';
 import { type CheckOptions, resolveMaxDepth } from './check.options.js';
+import { readDirect, readParentEdges } from './check.reads.js';
 
 /**
  * Hierarchical result of evaluating a permission check — one node per step
@@ -182,7 +183,7 @@ const traceExpr = async (
     }
 
     case 'tupleToUserset': {
-      const parents = await ctx.repo.listObjectsRelatedBy(object.namespace, object.id, expr.tupleRelation);
+      const parents = await readParentEdges(ctx.model, ctx.repo, object, expr.tupleRelation);
       const results: Array<{ parent: ObjectRef; trace: CheckTrace }> = [];
       for (const p of parents) {
         const t = await traceCheck(ctx, p, expr.computedRelation, subject, depth + 1);
@@ -218,7 +219,7 @@ const traceExpr = async (
 };
 
 const traceDirect = async (ctx: ExplainCtx, object: ObjectRef, relation: string, subject: SubjectRef, depth: number): Promise<DirectTrace> => {
-  const stored = await ctx.repo.listByObjectRelation(object.namespace, object.id, relation);
+  const stored = await readDirect(ctx.model, ctx.repo, object, relation);
   let matched: RelationTuple | undefined;
   let usersetChild: CheckTrace | undefined;
   let allowed = false;

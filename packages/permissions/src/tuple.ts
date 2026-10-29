@@ -21,6 +21,26 @@ export const ObjectRef = z.object({
 });
 export type ObjectRef = z.infer<typeof ObjectRef>;
 
+/**
+ * The object id that stands for every object of a namespace in a stored tuple:
+ * `doc:*.viewer@user:alice` grants alice `viewer` on every `doc`.
+ *
+ * Only a relation declared with `objectWildcard: true` accepts it, and only in
+ * a tuple. A Check is always about one concrete object, so {@link ObjectRef}
+ * still rejects it.
+ */
+export const OBJECT_WILDCARD = '*';
+
+/**
+ * The object side of a stored tuple: a concrete {@link ObjectRef}, or
+ * `<namespace>:*` for an every-object grant (see {@link OBJECT_WILDCARD}).
+ */
+export const TupleObjectRef = z.object({
+  namespace: NamespaceSchema,
+  id: z.union([IdSchema, z.literal(OBJECT_WILDCARD)]),
+});
+export type TupleObjectRef = z.infer<typeof TupleObjectRef>;
+
 const ConcreteSubject = z.object({
   kind: z.literal('concrete'),
   namespace: NamespaceSchema,
@@ -50,10 +70,11 @@ export type SubjectRef = z.infer<typeof SubjectRef>;
 
 /**
  * Stored relation tuple: `<object>.<relation>@<subject>`. The unit of write
- * and the input shape the Check evaluator walks.
+ * and the input shape the Check evaluator walks. The object id may be
+ * {@link OBJECT_WILDCARD} for an every-object grant.
  */
 export const RelationTuple = z.object({
-  object: ObjectRef,
+  object: TupleObjectRef,
   relation: RelationNameSchema,
   subject: SubjectRef,
 });

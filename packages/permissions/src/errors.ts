@@ -5,8 +5,10 @@
  * - `unknown_namespace` — the model has no namespace by that name.
  * - `unknown_relation` — the namespace has no relation or permission by that name.
  * - `subject_not_allowed` — a tuple names a subject type the relation does not declare.
+ * - `object_wildcard_not_allowed` — a `<namespace>:*` tuple targets a relation not declared
+ *   with `objectWildcard: true`.
  */
-export type PermissionsErrorCode = 'unknown_namespace' | 'unknown_relation' | 'subject_not_allowed';
+export type PermissionsErrorCode = 'unknown_namespace' | 'unknown_relation' | 'subject_not_allowed' | 'object_wildcard_not_allowed';
 
 /**
  * Error raised by the authorization model and the model-validating repository.

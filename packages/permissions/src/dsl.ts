@@ -1,5 +1,5 @@
 import { PermissionsError } from './errors.js';
-import { formatSubject, type RelationTuple, type SubjectRef } from './tuple.js';
+import { formatSubject, OBJECT_WILDCARD, type RelationTuple, type SubjectRef } from './tuple.js';
 /**
  * Userset expression tree. Mirrors the Zanzibar paper's userset rewrite
  * primitives.
@@ -87,6 +87,17 @@ export interface RelationDef {
    * write time (when persisting tuples), not at Check time.
    */
   subjects: SubjectType[];
+  /**
+   * Accept every-object tuples (`doc:*.viewer@user:alice`), which grant the
+   * subject this relation on every object of the namespace. Use it for
+   * platform-wide roles instead of writing one tuple per object.
+   *
+   * Opt-in because it costs the evaluator one extra tuple read for this
+   * relation on every Check. Like `subjects`, the write side is enforced by
+   * {@link ModelValidatingTupleRepository}. Unlike `subjects`, Check also
+   * honours it: a `*` row on a relation without the flag is never read.
+   */
+  objectWildcard?: boolean;
 }
 
 /**
@@ -185,6 +196,16 @@ export class AuthorizationModel {
   }
 
   /**
+   * Whether `namespace.relation` is a relation declared with
+   * `objectWildcard: true`. Returns `false` for permissions and for names the
+   * model does not define, so the evaluator can ask about any rewrite target.
+   */
+  allowsObjectWildcard(namespace: string, relation: string): boolean {
+    const def = (this.byName.get(namespace)?.relations as Record<string, RelationDef | undefined> | undefined)?.[relation];
+    return def?.objectWildcard === true;
+  }
+
+  /**
    * Whether `subject` is an allowed subject type for `namespace.relation`,
    * according to the relation's declared `subjects`.
    *
@@ -220,16 +241,25 @@ export class AuthorizationModel {
   }
 
   /**
-   * Assert that every tuple names a subject type its relation declares.
+   * Assert that every tuple names a subject type its relation declares, and
+   * that an every-object tuple targets a relation that opted in.
    *
    * @param tuples - Tuples about to be written.
-   * @throws {PermissionsError} `subject_not_allowed` on the first tuple that fails,
-   *   or `unknown_namespace` / `unknown_relation` when a tuple names something the
-   *   model does not define.
+   * @throws {PermissionsError} `subject_not_allowed` or `object_wildcard_not_allowed`
+   *   on the first tuple that fails, or `unknown_namespace` / `unknown_relation`
+   *   when a tuple names something the model does not define.
    */
   assertTuplesAllowed(tuples: readonly RelationTuple[]): void {
     for (const tuple of tuples) {
-      if (this.isSubjectAllowed(tuple.object.namespace, tuple.relation, tuple.subject)) continue;
+      const subjectAllowed = this.isSubjectAllowed(tuple.object.namespace, tuple.relation, tuple.subject);
+      if (tuple.object.id === OBJECT_WILDCARD && !this.allowsObjectWildcard(tuple.object.namespace, tuple.relation)) {
+        throw new PermissionsError(
+          'object_wildcard_not_allowed',
+          `${tuple.object.namespace}.${tuple.relation} does not allow every-object tuples (${tuple.object.namespace}:${OBJECT_WILDCARD})`,
+          { namespace: tuple.object.namespace, relation: tuple.relation },
+        );
+      }
+      if (subjectAllowed) continue;
       throw new PermissionsError(
         'subject_not_allowed',
         `${tuple.object.namespace}.${tuple.relation} does not allow subject ${formatSubject(tuple.subject)}`,

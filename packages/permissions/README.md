@@ -13,6 +13,7 @@ pnpm add @maroonedsoftware/permissions
 - **Authorization model DSL** — declare namespaces, relations, and permissions as userset rewrite expressions (`direct`, `computed`, `tupleToUserset`, `union`, `intersection`, `exclusion`)
 - **Validated model** — `AuthorizationModel` checks name shapes and cross-references at construction so a bad model fails at startup, not at Check time
 - **Relation tuples** — Zod-validated `RelationTuple` shape with concrete, wildcard, and userset subjects
+- **Every-object grants** — a relation declared with `objectWildcard: true` accepts `doc:*.admin@user:alice`, which grants the relation on every `doc` at once, for platform-wide roles
 - **Pluggable storage** — implement the abstract `PermissionsTupleRepository` against your database of choice (typically Kysely/Postgres)
 - **Check evaluator** — recursive evaluator with per-request memo, cycle guard, and a configurable max-depth bound; `checkDetailed` also reports whether the depth cap was hit, so a denial is distinguishable from an answer the evaluator could not reach
 - **Write-time subject validation** — `ModelValidatingTupleRepository` wraps any repository and enforces each relation's declared `subjects`, so a relation without `user.*` cannot be made world-grantable by writing the tuple directly
@@ -39,6 +40,7 @@ Relationships are stored and serialised as strings with this grammar:
 ```
 tuple   = object "." relation "@" subject
 object  = type ":" id
+        | type ":*"              // every object of that type (opt-in per relation)
 subject = type ":" id            // concrete subject
         | type ".*"              // wildcard subject (everyone of that type)
         | object "." relation    // userset subject (a group)
@@ -51,6 +53,7 @@ Examples:
 | concrete | `doc:readme.viewer@user:alice`   | alice can `viewer` the `readme` doc                     |
 | wildcard | `doc:readme.viewer@user.*`       | every user can `viewer` the `readme` doc (public grant) |
 | userset  | `doc:readme.viewer@org:42.admin` | every admin of org 42 can `viewer` the `readme` doc     |
+| object * | `doc:*.admin@user:alice`         | alice can `admin` every doc                             |
 
 The two separators do conceptually different jobs:
 
@@ -82,6 +85,27 @@ or both via its subject-type list:
 Omitting `user.*` from a relation's subject types makes it impossible to
 write a public tuple for that relation — useful when you want to be sure
 nothing on a resource can be made world-readable.
+
+### `doc:*` (every object)
+
+`user.*` widens the **subject** side. `doc:*` widens the **object** side:
+`doc:*.admin@user:alice` gives alice `admin` on every `doc`, present and
+future, with one row. It is how platform roles fit the model without a
+tuple per object.
+
+A relation has to opt in, because Check then reads one extra row for it:
+
+```ts
+relations: {
+  platform_admin: { subjects: ['user'], objectWildcard: true },
+}
+```
+
+`ModelValidatingTupleRepository` rejects a `*` tuple on any other relation
+with `object_wildcard_not_allowed`, and Check never reads one there. A `*`
+row on a `tupleToUserset` relation works too: `doc:*.parent@folder:root`
+makes `root` a parent of every doc. `*` is only valid in a stored tuple; a
+Check is always about one concrete object.
 
 ## Usage
 
@@ -209,14 +233,18 @@ Allowed subjects on a relation are declared as strings:
 | `user.*`    | Wildcard — every subject of that namespace allowed      |
 | `org.admin` | Userset — every subject satisfying `admin` on any `org` |
 
+A `RelationDef` is `{ subjects, objectWildcard? }`. `objectWildcard: true`
+lets the relation hold every-object tuples (`doc:*.admin@user:alice`).
+
 ### `AuthorizationModel`
 
-| Method              | Description                                                         |
-| ------------------- | ------------------------------------------------------------------- |
-| `new (namespaces)`  | Validates names and cross-references; throws on any inconsistency   |
-| `namespaces()`      | All registered namespaces, in insertion order                       |
-| `get(name)`         | Look up a namespace by name; `undefined` for unknown                |
-| `resolve(ns, name)` | Returns the userset expression to evaluate (relations are `direct`) |
+| Method                          | Description                                                         |
+| ------------------------------- | ------------------------------------------------------------------- |
+| `new (namespaces)`              | Validates names and cross-references; throws on any inconsistency   |
+| `namespaces()`                  | All registered namespaces, in insertion order                       |
+| `get(name)`                     | Look up a namespace by name; `undefined` for unknown                |
+| `resolve(ns, name)`             | Returns the userset expression to evaluate (relations are `direct`) |
+| `allowsObjectWildcard(ns, rel)` | Whether the relation declared `objectWildcard: true`                |
 
 ### `PermissionsTupleRepository`
 
