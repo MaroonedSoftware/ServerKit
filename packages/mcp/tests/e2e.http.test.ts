@@ -121,6 +121,8 @@ describe('MCP e2e over real HTTP', () => {
       expect(result).toMatchObject({ id: 1, result: { serverInfo: { name: 'e2e-server' }, capabilities: { tools: {} } } });
       expect(result).not.toHaveProperty('result.capabilities.prompts');
       expect(result).not.toHaveProperty('result.capabilities.extensions');
+      expect(result).not.toHaveProperty('result.serverInfo.icons');
+      expect(result).not.toHaveProperty('result.serverInfo.websiteUrl');
     });
 
     it('omits instructions from initialize when none are configured', async () => {
@@ -183,6 +185,18 @@ describe('MCP e2e over real HTTP', () => {
 
     it('tells handlers the client does not support MCP UI when it left the extension out', async () => {
       expect(await uiSupportFor(new Client({ name: 'plain-client', version: '1.0.0' }))).toEqual([{ type: 'text', text: 'unsupported' }]);
+    });
+  });
+
+  describe('server identity', () => {
+    const icons = [{ src: 'https://example.com/logo.png', mimeType: 'image/png', sizes: ['512x512'] }];
+    const websiteUrl = 'https://example.com';
+
+    it('returns McpConfig.icons and websiteUrl in serverInfo', async () => {
+      const dispatcher = buildDispatcher('stateless', { icons, websiteUrl });
+      const context = createMcpRequestContext({ requestId: 'req-e2e', logger: makeLogger() });
+      const response = await dispatcher.dispatch(initialize(1), context);
+      expect(response).toMatchObject({ id: 1, result: { serverInfo: { name: 'e2e-server', icons, websiteUrl } } });
     });
   });
 
