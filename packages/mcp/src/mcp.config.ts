@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-declaration-merging */
+import type { Implementation } from '@modelcontextprotocol/sdk/types.js';
 import { Injectable } from 'injectkit';
 
 /**
@@ -41,6 +42,14 @@ export interface McpConfig {
   serverName: string;
   /** Server version advertised to clients during `initialize` (MCP `serverInfo.version`). */
   version: string;
+  /**
+   * Icons advertised as `serverInfo.icons` during `initialize`, for a client to show
+   * beside the server. Prefer an `https` URL to a `data:` URI. Omitted from
+   * `initialize` when unset.
+   */
+  icons?: Implementation['icons'];
+  /** Where to read about the server, advertised as `serverInfo.websiteUrl`. Omitted from `initialize` when unset. */
+  websiteUrl?: string;
   /**
    * Guidance for the model, returned as `instructions` in the `initialize` result.
    * Clients that honour it (Claude among them) put it in the model's context as

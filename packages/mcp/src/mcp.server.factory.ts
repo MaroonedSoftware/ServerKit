@@ -175,7 +175,12 @@ export class McpServerFactory {
    */
   create(instructions: string | undefined = this.config.instructions): Server {
     const server = new Server(
-      { name: this.config.serverName, version: this.config.version },
+      {
+        name: this.config.serverName,
+        version: this.config.version,
+        ...(this.config.icons ? { icons: this.config.icons } : {}),
+        ...(this.config.websiteUrl ? { websiteUrl: this.config.websiteUrl } : {}),
+      },
       {
         capabilities: {
           ...(this.tools.size > 0 ? { tools: {} } : {}),
