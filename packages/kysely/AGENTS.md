@@ -7,7 +7,7 @@ Repo-wide conventions live in the [root AGENTS.md](../../AGENTS.md).
 
 The wiring that makes Kysely behave the way the rest of ServerKit expects against PostgreSQL:
 `pg` type parsers that yield Luxon `DateTime` / `Interval` and native `BigInt` instead of strings,
-a plugin preset that camelCases columns and converts `null` to `undefined`, a repository base class
+a plugin preset that camelCases columns, converts `null` to `undefined` and serializes `DateTime` parameters, a repository base class
 with transaction propagation, a `NoResultError` → 404 mapper, and a dialect that stops an empty
 `UPDATE ... SET` from becoming a Postgres syntax error.
 
@@ -31,21 +31,22 @@ Runtime dependencies: `@maroonedsoftware/errors`, `@maroonedsoftware/utilities`,
 
 ## API surface
 
-| Export                       | Kind            | Shape                                                                                                                        | Notes                                                                                             |
-| ---------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `KyselyPool`                 | class           | `@Injectable() class KyselyPool extends pg.Pool {}`                                                                          | A `pg.Pool` that is a valid InjectKit token. No behaviour added.                                  |
-| `KyselyPgTypeOverrides`      | constant        | `pg.TypeOverrides` instance                                                                                                  | Pass to the `types` option of a pool. Table below.                                                |
-| `KyselyDefaultPlugins`       | constant        | `KyselyPlugin[]` — `[new CamelCasePlugin(), new NullToUndefinedPlugin()]`                                                    | The recommended preset. A **shared array of shared plugin instances**.                            |
-| `NullToUndefinedPlugin`      | class           | `implements KyselyPlugin`                                                                                                    | **Shallow** `null` → `undefined` on result rows. Already in the preset.                           |
-| `KyselyRepository<DB>`       | abstract class  | `@Injectable() constructor(protected readonly db: Kysely<DB>)`                                                               | Base class for repositories.                                                                      |
-| `#withTransaction`           | method          | `<R>(method: (trx: Transaction<DB>) => Promise<R>, transaction?: Transaction<DB>) => Promise<R>`                             | Reuses `transaction` when given, otherwise starts one. Transaction propagation.                   |
-| `#withSerializedTransaction` | method          | Same signature                                                                                                               | Sets isolation level `serializable` — **only when starting a new transaction**.                   |
-| `isKyselyNoResultError`      | type guard      | `(error: Error) => error is NoResultError`                                                                                   | `NoResultError` comes from `.executeTakeFirstOrThrow()`.                                          |
-| `KyselyErrorHandler`         | function        | `(error: Error) => never`                                                                                                    | `NoResultError` → `httpError(404).withDetails({ message })`; everything else re-thrown unchanged. |
-| `OnKyselyError`              | class decorator | `() => ClassDecorator`                                                                                                       | Sugar for `OnError(KyselyErrorHandler)` from `@maroonedsoftware/errors`.                          |
-| `EmptyUpdateRewriteDialect`  | class           | `extends PostgresDialect`. `new EmptyUpdateRewriteDialect(config: PostgresDialectConfig, logger?: EmptyUpdateRewriteLogger)` | Rewrites an empty single-table `UPDATE` into a no-op `SELECT`.                                    |
-| `EmptyUpdateRewriteCompiler` | class           | `extends PostgresQueryCompiler`                                                                                              | Exported for advanced composition; most callers use the dialect.                                  |
-| `EmptyUpdateRewriteLogger`   | interface       | `{ debug(message: string): void }`                                                                                           | Structural, so `@maroonedsoftware/logger`'s `Logger` satisfies it without a dependency.           |
+| Export                       | Kind            | Shape                                                                                                                        | Notes                                                                                                                                                                              |
+| ---------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `KyselyPool`                 | class           | `@Injectable() class KyselyPool extends pg.Pool {}`                                                                          | A `pg.Pool` that is a valid InjectKit token. No behaviour added.                                                                                                                   |
+| `KyselyPgTypeOverrides`      | constant        | `pg.TypeOverrides` instance                                                                                                  | Pass to the `types` option of a pool. Table below.                                                                                                                                 |
+| `KyselyDefaultPlugins`       | constant        | `KyselyPlugin[]` — `[new CamelCasePlugin(), new NullToUndefinedPlugin(), new DateTimeParameterPlugin()]`                     | The recommended preset. A **shared array of shared plugin instances**.                                                                                                             |
+| `NullToUndefinedPlugin`      | class           | `implements KyselyPlugin`                                                                                                    | **Shallow** `null` → `undefined` on result rows. Already in the preset.                                                                                                            |
+| `DateTimeParameterPlugin`    | class           | `implements KyselyPlugin`                                                                                                    | Sends Luxon `DateTime` parameters as ISO strings instead of `pg`'s `JSON.stringify` fallback. Throws on an invalid `DateTime` at compile time. Included in `KyselyDefaultPlugins`. |
+| `KyselyRepository<DB>`       | abstract class  | `@Injectable() constructor(protected readonly db: Kysely<DB>)`                                                               | Base class for repositories.                                                                                                                                                       |
+| `#withTransaction`           | method          | `<R>(method: (trx: Transaction<DB>) => Promise<R>, transaction?: Transaction<DB>) => Promise<R>`                             | Reuses `transaction` when given, otherwise starts one. Transaction propagation.                                                                                                    |
+| `#withSerializedTransaction` | method          | Same signature                                                                                                               | Sets isolation level `serializable` — **only when starting a new transaction**.                                                                                                    |
+| `isKyselyNoResultError`      | type guard      | `(error: Error) => error is NoResultError`                                                                                   | `NoResultError` comes from `.executeTakeFirstOrThrow()`.                                                                                                                           |
+| `KyselyErrorHandler`         | function        | `(error: Error) => never`                                                                                                    | `NoResultError` → `httpError(404).withDetails({ message })`; everything else re-thrown unchanged.                                                                                  |
+| `OnKyselyError`              | class decorator | `() => ClassDecorator`                                                                                                       | Sugar for `OnError(KyselyErrorHandler)` from `@maroonedsoftware/errors`.                                                                                                           |
+| `EmptyUpdateRewriteDialect`  | class           | `extends PostgresDialect`. `new EmptyUpdateRewriteDialect(config: PostgresDialectConfig, logger?: EmptyUpdateRewriteLogger)` | Rewrites an empty single-table `UPDATE` into a no-op `SELECT`.                                                                                                                     |
+| `EmptyUpdateRewriteCompiler` | class           | `extends PostgresQueryCompiler`                                                                                              | Exported for advanced composition; most callers use the dialect.                                                                                                                   |
+| `EmptyUpdateRewriteLogger`   | interface       | `{ debug(message: string): void }`                                                                                           | Structural, so `@maroonedsoftware/logger`'s `Logger` satisfies it without a dependency.                                                                                            |
 
 ### `KyselyPgTypeOverrides`
 
@@ -132,7 +133,7 @@ export class UserRepository extends KyselyRepository<Database> {
 
 - **`KyselyDefaultPlugins` is a shared array of shared plugin instances.** It is a module-level
   constant, so every `Kysely` instance in the process gets the same `CamelCasePlugin` and
-  `NullToUndefinedPlugin` objects. Fine as written (both are stateless), but do not mutate the array
+  `NullToUndefinedPlugin` and `DateTimeParameterPlugin` objects. Fine as written (all are stateless), but do not mutate the array
   and do not add a stateful plugin to it.
 - **`NullToUndefinedPlugin` is shallow.** Only top-level row properties are converted. A `jsonb`
   column deserialises to an object whose nested `null`s survive, so a type declaring
@@ -168,6 +169,7 @@ src/
   kysely.default.plugins.ts        KyselyDefaultPlugins
   plugins/
     null.to.undefined.plugin.ts    NullToUndefinedPlugin
+    datetime.parameter.plugin.ts DateTimeParameterPlugin
   kysely.repository.ts             KyselyRepository
   kysely.error.handler.ts          isKyselyNoResultError, KyselyErrorHandler
   kysely.error.decorator.ts        OnKyselyError
