@@ -17,9 +17,10 @@ pnpm add @maroonedsoftware/kysely reflect-metadata
 - **`KyselyPool`** — Injectable `pg.Pool` wrapper for use with InjectKit DI
 - **`KyselyRepository`** — Abstract base class with transaction propagation helpers
 - **`OnKyselyError`** — Class decorator that maps `NoResultError` to HTTP 404
-- **`KyselyDefaultPlugins`** — Pre-configured plugin set (camelCase + null→undefined)
+- **`KyselyDefaultPlugins`** — Pre-configured plugin set (camelCase + null→undefined + `DateTime` parameters)
 - **`KyselyPgTypeOverrides`** — PostgreSQL type parsers for timestamps and bigints
 - **`NullToUndefinedPlugin`** — Converts `null` result values to `undefined`
+- **`DateTimeParameterPlugin`** — Sends Luxon `DateTime` query parameters as ISO strings
 - **`EmptyUpdateRewriteDialect`** — Turns an empty `UPDATE` into a no-op `SELECT` of the current row instead of a `42601` syntax error
 
 ## Empty updates
@@ -221,6 +222,7 @@ const pool = new KyselyPool({
 
 - **`CamelCasePlugin`** — Maps `snake_case` column names to `camelCase` in TypeScript (`created_at` → `createdAt`)
 - **`NullToUndefinedPlugin`** — Replaces `null` values in query results with `undefined`
+- **`DateTimeParameterPlugin`** — Sends Luxon `DateTime` query parameters as ISO strings, and throws on an invalid one
 
 ```typescript
 const db = new Kysely<Database>({
@@ -258,7 +260,7 @@ Type guard that returns `true` when `error` is a Kysely `NoResultError`.
 
 ### `KyselyDefaultPlugins`
 
-`KyselyPlugin[]` — `[CamelCasePlugin, NullToUndefinedPlugin]`
+`KyselyPlugin[]` — `[CamelCasePlugin, NullToUndefinedPlugin, DateTimeParameterPlugin]`
 
 ### `KyselyPgTypeOverrides`
 
@@ -267,6 +269,10 @@ Type guard that returns `true` when `error` is a Kysely `NoResultError`.
 ### `NullToUndefinedPlugin`
 
 Kysely plugin that shallowly converts `null` values to `undefined` in every query result row.
+
+### `DateTimeParameterPlugin`
+
+Kysely plugin that sends Luxon `DateTime` query parameters as ISO strings. `pg` would otherwise `JSON.stringify` them. An invalid `DateTime` throws when the query is compiled.
 
 ## Dependencies
 
