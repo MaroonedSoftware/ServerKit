@@ -1,5 +1,11 @@
 # @maroonedsoftware/mcp
 
+## 0.8.0
+
+### Minor Changes
+
+- 11ae01e: Add optional `icons` and `websiteUrl` to `McpConfig`, advertised in `serverInfo` during `initialize`. Omitted when unset.
+
 ## 0.7.8
 
 ### Patch Changes
