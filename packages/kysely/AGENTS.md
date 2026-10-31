@@ -27,7 +27,7 @@ Runtime dependencies: `@maroonedsoftware/errors`, `@maroonedsoftware/utilities`,
 
 - **Depends on:** `errors`, `utilities`.
 - **Depended on by:** `johnny5` (via its `./kysely` subpath).
-- **Subpath exports:** none. The package has no `exports` map at all.
+- **Subpath exports:** `./testing`, `TestDatabaseCluster`: per-file databases cloned from a per-run template. Needs a Postgres that can create databases.
 
 ## API surface
 
