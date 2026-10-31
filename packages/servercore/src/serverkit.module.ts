@@ -51,6 +51,15 @@ export interface ServerKitModule<ConfigT extends AppConfig = AppConfig> {
   shutdown?: (container: Container) => Promise<void>;
 
   /**
+   * Treat a failed `ready` hook as fatal. By default it is logged and the server carries on, which
+   * suits a cache warm. Set this where the server is not whole without the hook, so an instance does
+   * not pass its health check and take traffic with the work missing: the failure closes the server
+   * and it exits with code 1. A hook should retry what is merely not up yet, and reject only on what
+   * a restart should surface, such as a wrong password or a missing grant.
+   */
+  readyRequired?: boolean;
+
+  /**
    * Called once the socket is listening, before the server reports ready.
    * Use this for wiring and subscriptions that must exist before the first
    * request is served (e.g. registering event subscribers, attaching listeners).

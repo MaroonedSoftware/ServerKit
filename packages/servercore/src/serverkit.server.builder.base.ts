@@ -15,6 +15,9 @@ import { ServerKitBodyParser, ServerKitParserMappings } from './serverkit.bodypa
  */
 export const DEFAULT_SHUTDOWN_GRACE_MS = 10_000;
 
+/** How far past the budget the last-resort exit waits, so a hook's own limit can report first. */
+const SHUTDOWN_BACKSTOP_SLACK_MS = 250;
+
 /** Options for {@link ServerKitServerBuilderBase.start}. */
 export interface ServerKitStartOptions {
   /**
@@ -25,7 +28,23 @@ export interface ServerKitStartOptions {
    * shutdown can never hang regardless of this value.
    */
   shutdownGraceMs?: number;
+  /**
+   * The most the whole shutdown may take, in milliseconds, from the moment it begins to
+   * `process.exit()`: one budget for the drain and every hook, not one per hook, because a platform's
+   * kill deadline covers them all. A hook that overruns is abandoned so the next can run, hooks left
+   * with nothing are skipped, and a last-resort timer exits regardless. Unset means no limit.
+   */
+  shutdownBudgetMs?: number;
+  /**
+   * Turn an `uncaughtException` or `unhandledRejection` into a logged, orderly close that exits with
+   * code 1, instead of Node's immediate exit with connections open and buffers unflushed.
+   * Off by default, because an app may have its own handlers.
+   */
+  gracefulCrash?: boolean;
 }
+
+/** What took a server down through {@link ServerKitServerBuilderBase.crash}. */
+export type ServerKitCrashKind = 'uncaughtException' | 'unhandledRejection' | 'requiredReadyFailed';
 
 /**
  * The framework-neutral server lifecycle every ServerKit adapter runs: dependency registration,
@@ -63,6 +82,18 @@ export abstract class ServerKitServerBuilderBase {
 
   /** Grace period for both the socket drain and the ready-phase wait; set by {@link start}. */
   private shutdownGraceMs = DEFAULT_SHUTDOWN_GRACE_MS;
+
+  /** The limit on the whole shutdown; set by {@link start}. */
+  private shutdownBudgetMs: number | undefined;
+
+  /** When the shutdown budget runs out. Set as shutdown begins, and only under a budget. */
+  private shutdownDeadline: number | undefined;
+
+  /** The last-resort exit, cancelled when the orderly one gets there first. */
+  private shutdownBackstop: NodeJS.Timeout | undefined;
+
+  /** Starts the graceful close; set by {@link start}, once there is a socket to close. */
+  private closeServer: (() => void) | undefined;
 
   // Declared before `readyPromise` on purpose: the executor below runs synchronously
   // during field initialization, so this is assigned by the time the promise exists.
@@ -188,6 +219,7 @@ export abstract class ServerKitServerBuilderBase {
     this.assertInitialized();
 
     this.shutdownGraceMs = options.shutdownGraceMs ?? DEFAULT_SHUTDOWN_GRACE_MS;
+    this.shutdownBudgetMs = options.shutdownBudgetMs;
 
     const controller = new AbortController();
     const serverInstance = await this.listen(port, controller.signal);
@@ -196,15 +228,23 @@ export abstract class ServerKitServerBuilderBase {
       void this.shutdown();
     });
 
+    this.closeServer = () => this.gracefulClose(serverInstance, controller, this.shutdownGraceMs);
+
     process
       .once('SIGINT', () => {
         this.logger.info('SIGINT received');
-        this.gracefulClose(serverInstance, controller, this.shutdownGraceMs);
+        this.closeServer?.();
       })
       .once('SIGTERM', () => {
         this.logger.info('SIGTERM received');
-        this.gracefulClose(serverInstance, controller, this.shutdownGraceMs);
+        this.closeServer?.();
       });
+
+    if (options.gracefulCrash) {
+      process
+        .on('uncaughtException', error => this.crash('uncaughtException', error))
+        .on('unhandledRejection', reason => this.crash('unhandledRejection', reason));
+    }
 
     for (const module of this.modules) {
       if (module.start) {
@@ -255,7 +295,43 @@ export abstract class ServerKitServerBuilderBase {
    * both entry points — a signal handler via {@link gracefulClose}, or {@link shutdown} directly.
    */
   private beginShutdown(): void {
-    if (!this.lifecycle.signal.aborted) this.lifecycle.abort();
+    if (this.lifecycle.signal.aborted) return;
+    this.lifecycle.abort();
+    if (this.shutdownBudgetMs === undefined) return;
+
+    const budgetMs = this.shutdownBudgetMs;
+    this.shutdownDeadline = Date.now() + budgetMs;
+    // What the per-hook limit cannot reach: a socket that never closes, a `ready` hook ignoring the
+    // signal. Unref'd, so it never holds up an exit that is already happening.
+    this.shutdownBackstop = setTimeout(() => {
+      this.logger.warn(`Shutdown budget of ${budgetMs}ms spent; exiting`);
+      process.exit();
+    }, budgetMs + SHUTDOWN_BACKSTOP_SLACK_MS).unref();
+  }
+
+  /**
+   * Starts an orderly close, as `SIGTERM` does: stop listening, drain requests, run the `shutdown`
+   * hooks in reverse order, exit. Unlike {@link shutdown}, which runs the hooks with requests still
+   * arriving, this is safe to call from application code. A no-op before {@link start} has bound the
+   * socket and once shutdown has begun.
+   */
+  public close(): void {
+    if (this.lifecycle.signal.aborted) return;
+    this.closeServer?.();
+  }
+
+  /**
+   * Records why the process is going down, marks the exit as failing, and starts one {@link close}.
+   * A failure on the way down is logged and changes nothing: the close is already running, and this
+   * may be the same fault surfacing again.
+   *
+   * @param kind - What failed.
+   * @param reason - The error or rejection reason.
+   */
+  protected crash(kind: ServerKitCrashKind, reason: unknown): void {
+    this.logger.error(reason instanceof Error ? reason : new Error(String(reason)), { crash: kind });
+    process.exitCode = 1;
+    this.close();
   }
 
   /**
@@ -279,7 +355,8 @@ export abstract class ServerKitServerBuilderBase {
         try {
           await module.ready(this.container, this.lifecycle.signal);
         } catch (err) {
-          this.onErrorListener(err);
+          if (module.readyRequired) this.crash('requiredReadyFailed', err);
+          else this.onErrorListener(err);
         }
       }
 
@@ -305,12 +382,13 @@ export abstract class ServerKitServerBuilderBase {
     if (!this.readyRunning) return;
 
     const abandoned = Symbol('abandoned');
+    const waitMs = Math.min(this.shutdownGraceMs, this.budgetRemainingMs() ?? this.shutdownGraceMs);
     const deadline = new Promise<typeof abandoned>(resolve => {
-      setTimeout(() => resolve(abandoned), this.shutdownGraceMs).unref();
+      setTimeout(() => resolve(abandoned), waitMs).unref();
     });
 
     if ((await Promise.race([this.readyPromise, deadline])) === abandoned) {
-      this.logger.warn(`Ready phase did not unwind within ${this.shutdownGraceMs}ms; shutting down anyway`);
+      this.logger.warn(`Ready phase did not unwind within ${waitMs}ms; shutting down anyway`);
       // Don't wait again on a subsequent shutdown: we have already given up on this hook.
       this.readyRunning = false;
     }
@@ -359,6 +437,10 @@ export abstract class ServerKitServerBuilderBase {
    * registered earlier (a job runner on its database client, say), so it has to release its
    * resources first, while what it depends on is still alive.
    *
+   * A hook that throws is logged and the remaining hooks still run, since they have connections to
+   * close and buffers to flush of their own. Under a `shutdownBudgetMs`, a hook still running when
+   * the budget is spent is abandoned, and any after it are skipped.
+   *
    * Invoked automatically when the server socket closes; can also be called directly. Calls
    * `process.exit()` once all hooks complete.
    *
@@ -388,14 +470,45 @@ export abstract class ServerKitServerBuilderBase {
 
     for (const module of modulesInReverseOrder) {
       if (module.shutdown) {
-        this.logger.info(`Shutting down ${module.name}`);
-        await module.shutdown(this.container);
+        await this.runShutdownHook(module);
       }
     }
 
     this.logger.info('Server closed');
 
+    clearTimeout(this.shutdownBackstop);
     process.exit();
+  }
+
+  /** Milliseconds left of the shutdown budget, or `undefined` when there is no budget. */
+  private budgetRemainingMs(): number | undefined {
+    return this.shutdownDeadline === undefined ? undefined : this.shutdownDeadline - Date.now();
+  }
+
+  /** Runs one `shutdown` hook, isolating its failure and holding it to what is left of the budget. */
+  private async runShutdownHook(module: ServerKitModule): Promise<void> {
+    const remainingMs = this.budgetRemainingMs();
+    if (remainingMs !== undefined && remainingMs <= 0) {
+      this.logger.warn(`Skipping shutdown of ${module.name}: the budget is spent`);
+      return;
+    }
+
+    this.logger.info(`Shutting down ${module.name}`);
+    let timer: NodeJS.Timeout | undefined;
+    const limit = new Promise<void>(resolve => {
+      if (remainingMs === undefined) return;
+      timer = setTimeout(() => {
+        this.logger.warn(`Shutdown of ${module.name} was still running when the budget ran out`);
+        resolve();
+      }, remainingMs);
+    });
+    try {
+      await Promise.race([module.shutdown!(this.container), limit]);
+    } catch (err) {
+      this.onErrorListener(err);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /**

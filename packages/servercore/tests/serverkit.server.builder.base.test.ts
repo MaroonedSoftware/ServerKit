@@ -393,6 +393,111 @@ describe('ServerKitServerBuilderBase', () => {
       expect(logger.info).toHaveBeenCalledWith('Server closed');
     });
 
+    it('runs the remaining shutdown hooks when one throws', async () => {
+      const first = vi.fn().mockResolvedValue(undefined);
+      const failing = vi.fn().mockRejectedValue(new Error('boom'));
+      const logger = createLogger();
+      const builder = new TestServerBuilder();
+      await builder.setup(config, logger, [createModule({ shutdown: first }), createModule({ shutdown: failing })]);
+
+      await builder.internals.shutdown();
+
+      expect(failing).toHaveBeenCalled();
+      expect(first).toHaveBeenCalled();
+      expect(logger.error).toHaveBeenCalled();
+      expect(exitSpy).toHaveBeenCalled();
+    });
+
+    it('abandons a hanging shutdown hook at the budget, and skips the hooks after it', async () => {
+      const after = vi.fn().mockResolvedValue(undefined);
+      const hanging = vi.fn(() => new Promise<void>(() => {}));
+      const logger = createLogger();
+      const builder = new TestServerBuilder();
+      await builder.setup(config, logger, [createModule({ name: 'after', shutdown: after }), createModule({ name: 'hanging', shutdown: hanging })]);
+      server = await builder.start(0, { shutdownBudgetMs: 30 });
+
+      await builder.internals.shutdown();
+
+      expect(hanging).toHaveBeenCalled();
+      expect(after).not.toHaveBeenCalled();
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('hanging'));
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('after'));
+      expect(exitSpy).toHaveBeenCalled();
+    });
+
+    it('cancels the budget backstop once shutdown has finished', async () => {
+      const builder = new TestServerBuilder();
+      await builder.setup(config, createLogger(), [createModule()]);
+      server = await builder.start(0, { shutdownBudgetMs: 10 });
+
+      await builder.internals.shutdown();
+      expect(exitSpy).toHaveBeenCalledTimes(1);
+
+      await new Promise(resolve => setTimeout(resolve, 300));
+      expect(exitSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('closes the server and marks the exit failing when a required ready hook fails', async () => {
+      const shutdown = vi.fn().mockResolvedValue(undefined);
+      const builder = new TestServerBuilder();
+      await builder.setup(config, createLogger(), [
+        createModule({ readyRequired: true, ready: vi.fn().mockRejectedValue(new Error('bad password')), shutdown }),
+      ]);
+      server = await builder.start(0);
+      await builder.whenReady();
+
+      expect(builder.lifecycleSignal.aborted).toBe(true);
+      expect(process.exitCode).toBe(1);
+      await vi.waitFor(() => expect(shutdown).toHaveBeenCalled());
+      process.exitCode = undefined;
+    });
+
+    it('leaves the server up when an ordinary ready hook fails', async () => {
+      const builder = new TestServerBuilder();
+      await builder.setup(config, createLogger(), [createModule({ ready: vi.fn().mockRejectedValue(new Error('cache')) })]);
+      server = await builder.start(0);
+      await builder.whenReady();
+
+      expect(builder.lifecycleSignal.aborted).toBe(false);
+    });
+
+    it('close starts the same orderly close as SIGTERM', async () => {
+      const shutdown = vi.fn().mockResolvedValue(undefined);
+      const builder = new TestServerBuilder();
+      await builder.setup(config, createLogger(), [createModule({ shutdown })]);
+      server = await builder.start(0);
+
+      builder.close();
+      builder.close();
+
+      expect(builder.lifecycleSignal.aborted).toBe(true);
+      await vi.waitFor(() => expect(shutdown).toHaveBeenCalledTimes(1));
+    });
+
+    it('installs crash handlers only with gracefulCrash', async () => {
+      const on = vi.spyOn(process, 'on').mockImplementation(() => process);
+      const plain = new TestServerBuilder();
+      await plain.setup(config, createLogger(), []);
+      server = await plain.start(0);
+      expect(on).not.toHaveBeenCalledWith('uncaughtException', expect.anything());
+
+      const logger = createLogger();
+      const graceful = new TestServerBuilder();
+      await graceful.setup(config, logger, []);
+      const gracefulServer = await graceful.start(0, { gracefulCrash: true });
+      const handler = on.mock.calls.find(([event]) => event === 'uncaughtException')?.[1] as (error: Error) => void;
+      on.mockRestore();
+
+      handler(new Error('boom'));
+
+      expect(logger.error).toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+      expect(graceful.lifecycleSignal.aborted).toBe(true);
+      process.exitCode = undefined;
+      gracefulServer.closeAllConnections();
+      await vi.waitFor(() => expect(gracefulServer.listening).toBe(false));
+    });
+
     it('force-closes a lingering connection after the grace period so shutdown runs', async () => {
       const module = createModule();
       const builder = new TestServerBuilder();
