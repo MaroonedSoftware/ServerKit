@@ -1,5 +1,12 @@
 # @maroonedsoftware/scim
 
+## 1.1.6
+
+### Patch Changes
+
+- @maroonedsoftware/fastify@0.4.13
+  - @maroonedsoftware/koa@4.1.4
+
 ## 1.1.5
 
 ### Patch Changes

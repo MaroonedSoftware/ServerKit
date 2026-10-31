@@ -1,5 +1,14 @@
 # @maroonedsoftware/johnny5
 
+## 8.1.11
+
+### Patch Changes
+
+- Updated dependencies [fd37d3b]
+- Updated dependencies [81482c7]
+  - @maroonedsoftware/appconfig@2.7.0
+  - @maroonedsoftware/servercore@0.5.0
+
 ## 8.1.10
 
 ### Patch Changes
