@@ -35,7 +35,9 @@ export interface RunTypescriptBinOptions extends RegisterTypescriptLoaderOptions
  *   warning is suppressed narrowly, only around the `register` call.
  *
  * `@swc-node/register` is resolved from the package that owns the bin file, so
- * it must be installed there (johnny5 declares it as an optional peer).
+ * it must be installed there (johnny5 declares it as an optional peer). That
+ * package must stay on `typescript` 6.x: `@swc-node/register` needs the classic
+ * compiler API, which TypeScript 7 no longer ships.
  *
  * @param binUrl - `import.meta.url` of the calling bin file.
  */

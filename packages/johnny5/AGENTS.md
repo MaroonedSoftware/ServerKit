@@ -182,6 +182,11 @@ A workspace plugin declares itself in its own `package.json`:
 - **`./bin` fixes real bugs in `@swc-node/register`'s stock shim**, notably that `esm-register`
   resolves the loader hook relative to `process.cwd()` and breaks when the bin runs from elsewhere.
   Use `runTypescriptBin` rather than importing the shim directly.
+- **`./bin` does not work on TypeScript 7.** `@swc-node/register` 1.11.1 needs the classic compiler
+  API, which TypeScript 7 no longer ships, and crashes at startup with a `TypeError` reading `Js`.
+  Its peer range still allows 7, so nothing warns at install time, and `@typescript/typescript6`
+  does not help. The package that owns the bin must stay on `typescript` 6.x. The other `johnny5`
+  entry points are unaffected.
 - **Eight optional peers is a lot of ways to get a module-resolution error at startup.** A missing
   peer fails at import time, not at first use.
 
