@@ -1,5 +1,11 @@
 # @maroonedsoftware/kysely
 
+## 0.9.0
+
+### Minor Changes
+
+- b985492: Add `StripSysPeriodPlugin`, an opt-in plugin that keeps a system-versioned table's `sys_period` out of query results. A query that touches a history table keeps the column, wherever that table appears, and so does a raw query. `columns` and `historySuffix` change what it removes and which tables count as history.
+
 ## 0.8.0
 
 ### Minor Changes
