@@ -425,6 +425,18 @@ describe('ServerKitServerBuilderBase', () => {
       expect(exitSpy).toHaveBeenCalled();
     });
 
+    it('cancels the budget backstop once shutdown has finished', async () => {
+      const builder = new TestServerBuilder();
+      await builder.setup(config, createLogger(), [createModule()]);
+      server = await builder.start(0, { shutdownBudgetMs: 10 });
+
+      await builder.internals.shutdown();
+      expect(exitSpy).toHaveBeenCalledTimes(1);
+
+      await new Promise(resolve => setTimeout(resolve, 300));
+      expect(exitSpy).toHaveBeenCalledTimes(1);
+    });
+
     it('closes the server and marks the exit failing when a required ready hook fails', async () => {
       const shutdown = vi.fn().mockResolvedValue(undefined);
       const builder = new TestServerBuilder();

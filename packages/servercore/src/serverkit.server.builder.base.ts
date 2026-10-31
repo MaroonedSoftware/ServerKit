@@ -89,6 +89,9 @@ export abstract class ServerKitServerBuilderBase {
   /** When the shutdown budget runs out. Set as shutdown begins, and only under a budget. */
   private shutdownDeadline: number | undefined;
 
+  /** The last-resort exit, cancelled when the orderly one gets there first. */
+  private shutdownBackstop: NodeJS.Timeout | undefined;
+
   /** Starts the graceful close; set by {@link start}, once there is a socket to close. */
   private closeServer: (() => void) | undefined;
 
@@ -300,7 +303,7 @@ export abstract class ServerKitServerBuilderBase {
     this.shutdownDeadline = Date.now() + budgetMs;
     // What the per-hook limit cannot reach: a socket that never closes, a `ready` hook ignoring the
     // signal. Unref'd, so it never holds up an exit that is already happening.
-    setTimeout(() => {
+    this.shutdownBackstop = setTimeout(() => {
       this.logger.warn(`Shutdown budget of ${budgetMs}ms spent; exiting`);
       process.exit();
     }, budgetMs + SHUTDOWN_BACKSTOP_SLACK_MS).unref();
@@ -473,6 +476,7 @@ export abstract class ServerKitServerBuilderBase {
 
     this.logger.info('Server closed');
 
+    clearTimeout(this.shutdownBackstop);
     process.exit();
   }
 
