@@ -1,5 +1,6 @@
 export { AppConfig } from './app.config.js';
 export { AppConfigBuilder } from './app.config.builder.js';
+export { configBoolean, configNumber, optionalConfigString, requireConfigString } from './app.config.readers.js';
 export { buildConfigObject } from './pipeline.js';
 
 export type { AppConfigResolver } from './app.config.resolver.js';

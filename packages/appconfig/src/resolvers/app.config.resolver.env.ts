@@ -2,6 +2,12 @@ import { AppConfigResolver } from '../app.config.resolver.js';
 import { ObjectVisitorMeta } from '../object.visitor.js';
 import { tryParseJson } from '../helpers.js';
 
+/** Parses `text`, unless that would change a number: `1.50`, `007` and long digit runs stay text. */
+const parsedValue = (text: string): unknown => {
+  const parsed = tryParseJson(text);
+  return typeof parsed === 'number' && String(parsed) !== text ? text : parsed;
+};
+
 /**
  * Resolver that resolves environment variable references in configuration values.
  *
@@ -9,7 +15,9 @@ import { tryParseJson } from '../helpers.js';
  * corresponding value from `process.env`. The default pattern matches `${env:KEY}` and
  * extracts `KEY`. Unlike the secret resolvers, this one *interpolates within the string*:
  * `${env:HOST}:${env:PORT}` composes into one value, with each reference spliced in. After
- * substitution the result is JSON-parsed where possible (so `${env:PORT}` can yield a number).
+ * substitution the result is JSON-parsed where possible (so `${env:PORT}` can yield a number),
+ * except a number that would not read back the same, which stays text: a password of `1.50` is not
+ * the number 1.5.
  *
  * @example
  * ```typescript
@@ -79,13 +87,14 @@ export class AppConfigResolverEnv implements AppConfigResolver {
 
     let result = value;
     for (const [found, key] of matches) {
-      result = result.replaceAll(found, process.env[key!] ?? '');
+      // A function, because a replacement string gives `$&` and `$$` in the value their pattern meaning.
+      result = result.replaceAll(found, () => process.env[key!] ?? '');
     }
 
     if (meta.arrayIndex !== undefined && Array.isArray(meta.owner)) {
-      meta.owner[meta.arrayIndex] = tryParseJson(result ?? '');
+      meta.owner[meta.arrayIndex] = parsedValue(result ?? '');
     } else {
-      (meta.owner as Record<string, unknown>)[meta.propertyPath] = tryParseJson(result ?? '');
+      (meta.owner as Record<string, unknown>)[meta.propertyPath] = parsedValue(result ?? '');
     }
   }
 }
