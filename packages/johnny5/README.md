@@ -66,6 +66,8 @@ await runTypescriptBin(import.meta.url); // registers swc, then imports ../src/i
 
 `registerTypescriptLoader(import.meta.url, { tsconfig? })` is also exported if you want the loader without the entry-point import. `@swc-node/register` is resolved from the package that owns the bin file, so install it there (it's declared as an optional peer).
 
+> **TypeScript 7:** `@swc-node/register` 1.11.1 needs the classic TypeScript compiler API, which TypeScript 7 no longer ships, so the loader crashes at startup with `TypeError: Cannot read properties of undefined (reading 'Js')`. Its peer range allows TypeScript 7, so the install itself won't warn you. Keep `typescript` on 6.x in the package that owns the bin. Installing `@typescript/typescript6` alongside TypeScript 7 does not fix it. The rest of johnny5 is unaffected.
+
 ## Defining commands
 
 `defineCommand` is an identity helper that lets TypeScript infer the option object from the literal:

@@ -92,6 +92,10 @@ React packages substitute `@repo/config-eslint/react-internal.js`.
 - **`tests/**` is ignored.** Test files are not linted at all, only type-checked by Vitest's
   transform. Do not expect lint feedback there.
 - **`bin/**` is ignored** too, which matters for `johnny5`.
+- **`typescript` stays on 6.x here while the repo root is on 7.** `typescript-eslint` needs the
+  classic compiler API and its peer range stops at `<6.1.0`. pnpm keeps this package's copy separate
+  from the root's, so linting works without an alias. Do not bump it to 7 until `typescript-eslint`
+  supports it.
 - **`react-internal.js` re-applies three configs already in `base.js`.** Harmless in flat config
   (later entries win) but it means a rule set twice is resolved by order, not by merge.
 - **This is a dev dependency, not a peer.** Each consuming package installs it, and the versions
