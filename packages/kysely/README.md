@@ -20,6 +20,7 @@ pnpm add @maroonedsoftware/kysely reflect-metadata
 - **`KyselyDefaultPlugins`** — Pre-configured plugin set (camelCase + null→undefined + `DateTime` parameters)
 - **`KyselyPgTypeOverrides`** — PostgreSQL type parsers for timestamps and bigints
 - **`NullToUndefinedPlugin`** — Converts `null` result values to `undefined`
+- **`StripSysPeriodPlugin`** — Keeps a versioned table's `sys_period` out of query results, except from its history
 - **`DateTimeParameterPlugin`** — Sends Luxon `DateTime` query parameters as ISO strings
 - **`EmptyUpdateRewriteDialect`** — Turns an empty `UPDATE` into a no-op `SELECT` of the current row instead of a `42601` syntax error
 
@@ -230,6 +231,19 @@ const db = new Kysely<Database>({
   plugins: KyselyDefaultPlugins,
 });
 ```
+
+## Versioned Tables
+
+`StripSysPeriodPlugin` is opt-in, because only an app with system-versioned tables needs it. It removes `sys_period` from the rows of built queries. A query that touches a table ending in `_history` keeps the column, wherever that table appears (`FROM`, a join, `WITH` or a union), and so does a raw `sql` query. Register it after `CamelCasePlugin`:
+
+```typescript
+const db = new Kysely<Database>({
+  dialect,
+  plugins: [...KyselyDefaultPlugins, new StripSysPeriodPlugin()],
+});
+```
+
+`columns` and `historySuffix` change what it removes and which tables count as history.
 
 ## API Reference
 
