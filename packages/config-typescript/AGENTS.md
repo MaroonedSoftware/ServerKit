@@ -51,7 +51,6 @@ The compiler options that define what "strict TypeScript" means in this repo:
 | `resolveJsonModule`              | `true`                  |
 | `skipLibCheck`                   | `true`                  |
 | `incremental`                    | `false`                 |
-| `ignoreDeprecations`             | `"6.0"`                 |
 
 ### `react.json`
 
