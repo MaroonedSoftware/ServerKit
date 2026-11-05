@@ -96,6 +96,50 @@ Everything under `./postgres` through `./permissions` returns a `Check` for the 
 | `prompts` / `unwrap` / `PromptCancelledError`                                      | —                    | Over `@clack/prompts`. `unwrap` turns a cancel into a throw.            |
 | `wizard` / `WizardOptions` / `WizardSession`                                       | function / types     | Multi-step interactive flows.                                           |
 
+### Integration subpaths
+
+| Export                             | Kind      | Shape                                                                                                                              | Subpath         |
+| ---------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| `registerTypescriptLoader`         | function  | `(binUrl: string, options?: RegisterTypescriptLoaderOptions) => void`                                                              | `./bin`         |
+| `runTypescriptBin`                 | function  | `(binUrl: string, options?: RunTypescriptBinOptions) => Promise<unknown>`                                                          | `./bin`         |
+| `RegisterTypescriptLoaderOptions`  | interface | `{ tsconfig? }`                                                                                                                    | `./bin`         |
+| `RunTypescriptBinOptions`          | interface | `extends RegisterTypescriptLoaderOptions` with `entry?`                                                                            | `./bin`         |
+| `bootstrapForCli`                  | function  | `<ConfigT>(options: BootstrapForCliOptions<ConfigT>) => Promise<CliContainer>`                                                     | `./serverkit`   |
+| `configureServerKitModules`        | function  | `(ctx: CliContext, modules: ServerKitModule<ConfigT>[]) => void`                                                                   | `./serverkit`   |
+| `getOrBootstrapContainer`          | function  | `(ctx: CliContext) => Promise<CliContainer>`                                                                                       | `./serverkit`   |
+| `requireContainer`                 | function  | `<Opts>(handler: (opts: Opts, ctx: RequireContainerCtx, args: string[]) => Promise<number \| void>) => CommandModule<Opts>['run']` | `./serverkit`   |
+| `BootstrapForCliOptions<ConfigT>`  | interface | `{ modules, config, logger? }`                                                                                                     | `./serverkit`   |
+| `CliContainer`                     | interface | `{ container: Container; shutdown: () => Promise<void> }`                                                                          | `./serverkit`   |
+| `RequireContainerCtx`              | interface | `extends CliContext` with `container: ScopedContainer`                                                                             | `./serverkit`   |
+| `postgresReachable`                | function  | `(options?: PostgresReachableOptions) => Check`                                                                                    | `./postgres`    |
+| `PostgresReachableOptions`         | interface | `{ configKey?, connectionString?, timeoutMs? }`                                                                                    | `./postgres`    |
+| `redisReachable`                   | function  | `(options?: RedisReachableOptions) => Check`                                                                                       | `./redis`       |
+| `RedisReachableOptions`            | interface | `{ host?, port?, hostConfigKey?, portConfigKey?, timeoutMs? }`                                                                     | `./redis`       |
+| `dockerServicesUp`                 | function  | `(options?: DockerServicesOptions) => Check`                                                                                       | `./docker`      |
+| `DockerServicesOptions`            | interface | `{ composeFile?, skipIfMissing?, autoStart? }`                                                                                     | `./docker`      |
+| `nodeVersion`                      | function  | `(options: NodeVersionOptions) => Check`                                                                                           | `./versions`    |
+| `NodeVersionOptions`               | interface | `{ min: number }`, a major version                                                                                                 | `./versions`    |
+| `pnpmVersion`                      | function  | `(options?: PnpmVersionOptions) => Check`                                                                                          | `./versions`    |
+| `PnpmVersionOptions`               | interface | `{ expected?: string }`, an exact match; unset checks presence only                                                                | `./versions`    |
+| `envFile`                          | function  | `(options: EnvFileOptions) => Check`                                                                                               | `./filesystem`  |
+| `EnvFileOptions`                   | interface | `{ path, required? }`                                                                                                              | `./filesystem`  |
+| `portsFree`                        | function  | `(options: PortsFreeOptions) => Check`                                                                                             | `./filesystem`  |
+| `PortsFreeOptions`                 | interface | `{ ports: Array<{ port, label? } \| number> }`                                                                                     | `./filesystem`  |
+| `kyselyTableExists`                | function  | `(options: KyselyTableExistsOptions) => Check`                                                                                     | `./kysely`      |
+| `KyselyTableExistsOptions`         | interface | `{ db, table, schema? }`                                                                                                           | `./kysely`      |
+| `permissionsSchemaCompiled`        | function  | `(options?: PermissionsSchemaCompiledOptions) => Check`                                                                            | `./permissions` |
+| `PermissionsSchemaCompiledOptions` | interface | `{ configPath? }`                                                                                                                  | `./permissions` |
+| `permissionsFixturesPass`          | function  | `(options: PermissionsFixturesPassOptions) => Check`                                                                               | `./permissions` |
+| `PermissionsFixturesPassOptions`   | interface | `{ patterns: string[] }`                                                                                                           | `./permissions` |
+| `permissionsModelLoads`            | function  | `(options: PermissionsModelLoadsOptions) => Check`                                                                                 | `./permissions` |
+| `PermissionsModelLoadsOptions`     | interface | `{ loadModel: (ctx: CliContext) => Promise<AuthorizationModel> }`                                                                  | `./permissions` |
+| `keyringEntry`                     | function  | `(ctx: CliContext, options: KeyringEntryOptions) => KeyringEntry`                                                                  | `./keyring`     |
+| `KeyringEntry`                     | interface | `{ read, write, delete }`                                                                                                          | `./keyring`     |
+| `KeyringEntryOptions`              | interface | `{ service, account }`                                                                                                             | `./keyring`     |
+| `resolveSecret`                    | function  | `(ctx: CliContext, options: ResolveSecretOptions) => Promise<string \| null>`                                                      | `./keyring`     |
+| `ResolveSecretOptions`             | interface | `{ override?, envKeys?, keyring?, prompt?, promptStore?, label? }`                                                                 | `./keyring`     |
+| `PromptStorePolicy`                | type      | `'ask' \| 'always' \| 'never'`                                                                                                     | `./keyring`     |
+
 ## Canonical usage
 
 ```typescript
@@ -104,15 +148,14 @@ import { postgresReachable } from '@maroonedsoftware/johnny5/postgres';
 import { nodeVersion, pnpmVersion } from '@maroonedsoftware/johnny5/versions';
 import { requireContainer } from '@maroonedsoftware/johnny5/serverkit';
 
-const seed = defineCommand({
+const seed = defineCommand<{ count: number }>({
   description: 'Seed the development database',
   options: [{ flags: '--count <n>', description: 'Rows to create', type: 'number', default: 10 }],
   dangerous: { confirm: 'typed', phrase: 'seed' },
   allowedEnvironments: ['development', 'test'],
-  async run(opts, ctx) {
-    const container = await requireContainer(ctx);
-    await container.get(SeedService).run(opts.count);
-  },
+  run: requireContainer(async (opts, ctx) => {
+    await ctx.container.get(SeedService).run(opts.count);
+  }),
 });
 
 const app = await createCliApp({
@@ -120,7 +163,7 @@ const app = await createCliApp({
   description: 'Acme operator CLI',
   version: '1.0.0',
   commands: [{ path: ['db', 'seed'], module: seed }],
-  checks: [nodeVersion({ min: '22' }), pnpmVersion({ min: '11' }), postgresReachable({ url: process.env.DATABASE_URL! })],
+  checks: [nodeVersion({ min: 22 }), pnpmVersion(), postgresReachable({ connectionString: process.env.DATABASE_URL })],
   modules: [appModule], // enables ./serverkit lazy bootstrap
   plugins: { workspace: {} },
 });

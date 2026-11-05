@@ -129,7 +129,7 @@ Transactional enqueue — the job row commits with the business writes or not at
 import { PgBossConnectionProvider, KyselyTransactionConnectionProvider } from '@maroonedsoftware/jobbroker/pgboss';
 
 await db.transaction().execute(async trx => {
-  const scope = container.createScope();
+  const scope = container.createScopedContainer();
   scope.override(PgBossConnectionProvider, new KyselyTransactionConnectionProvider(trx));
 
   await orders.create(trx, order);

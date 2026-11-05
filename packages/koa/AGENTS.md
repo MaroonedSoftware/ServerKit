@@ -228,6 +228,9 @@ See [.claude/skills/koa-route](../../.claude/skills/koa-route) and
   and `details` plus its headers; a bare `ServerkitError` yields a **500 with its `details`**; a
   plain `Error` yields a generic 500 with **no** details. Throwing `new Error('...')` silently
   drops everything the client could have been told.
+- **A chunked body counts as a body.** `bodyParserMiddleware` reads `Transfer-Encoding` as well as
+  the declared length, so a chunked request with no `Content-Length` is parsed on a route with content
+  types rather than answering 411, and earns a 400 on a route with none.
 - **A 404 is synthesised after `next()`** when the status is 404 and no body was set, and emits
   `warn` rather than `error`. A route that sets a 404 status _and_ a body passes through untouched.
 - **The rate limiter is inserted only when a `RateLimiter` is registered.** No registration means no
@@ -314,5 +317,8 @@ Invariants a change must not break:
   `details` or the response.
 - Graceful shutdown must remain bounded: long-lived connections are force-closed once the grace
   period elapses so `close()` can never hang.
+
+`authentication` is listed in `devDependencies` as well as `peerDependencies`, so turbo builds it
+first. Keep both entries.
 
 User-visible changes need a changeset in `.changeset/`.

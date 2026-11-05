@@ -26,7 +26,7 @@ externals used (by the avatar generators and `toDataUri`), so the package is Nod
 ## Position in the graph
 
 - **Depends on:** nothing internal, nothing external.
-- **Depended on by:** `authentication`, `cache`, `koa`, `kysely`, `scim`.
+- **Depended on by:** `authentication`, `kysely`, `scim`, `servercore`.
 - **Subpath exports:**
   - `.` — everything below. Pure functions, no side effects.
   - `./extensions` — **side-effect-only**. Importing it patches `Array.prototype` and

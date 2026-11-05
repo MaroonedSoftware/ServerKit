@@ -52,20 +52,20 @@ HMAC on inbound webhooks, `verifyToken` answers the one-time `hub.*` handshake, 
 
 ### `.` — verification
 
-| Export                                                                 | Kind      | Shape                                                       | Notes                                                      |
-| ---------------------------------------------------------------------- | --------- | ----------------------------------------------------------- | ---------------------------------------------------------- |
-| `verifyWhatsAppSignature`                                              | function  | `(input: VerifyWhatsAppSignatureInput) => void`             | HMAC over the raw body. **Throws** `WhatsAppError`.        |
-| `VerifyWhatsAppSignatureInput`                                         | type      | Raw body, header, and `WhatsAppSignatureOptions`            | —                                                          |
-| `WhatsAppSignatureOptions`                                             | type      | The app secret                                              | —                                                          |
-| `WhatsAppSignatureFailureReason`                                       | type      | Reason codes landing in `internalDetails.reason`            | —                                                          |
-| `WhatsAppSignaturePolicy`                                              | class     | `extends Policy<WhatsAppSignaturePolicyContext>`            | Policy form — denies rather than throwing.                 |
-| `WhatsAppSignaturePolicyContext`                                       | interface | Structurally compatible with koa's `SignaturePolicyContext` | What lets `requireSignature` drive it.                     |
-| `WHATSAPP_SIGNATURE_POLICY`                                            | constant  | The `PolicyRegistryMap` key                                 | —                                                          |
-| `WHATSAPP_SIGNATURE_HEADER`                                            | constant  | `'X-Hub-Signature-256'`                                     | —                                                          |
-| `verifyWhatsAppWebhook`                                                | function  | `(input: VerifyWhatsAppWebhookInput) => string`             | The **`GET` handshake** — returns `hub.challenge` to echo. |
-| `VerifyWhatsAppWebhookInput`                                           | type      | The `hub.*` query params plus the expected verify token     | —                                                          |
-| `WhatsAppVerificationFailureReason`                                    | type      | —                                                           | —                                                          |
-| `WHATSAPP_HUB_MODE_PARAM` / `…CHALLENGE_PARAM` / `…VERIFY_TOKEN_PARAM` | constants | `'hub.mode'`, `'hub.challenge'`, `'hub.verify_token'`       | —                                                          |
+| Export                                                                                         | Kind      | Shape                                                       | Notes                                                      |
+| ---------------------------------------------------------------------------------------------- | --------- | ----------------------------------------------------------- | ---------------------------------------------------------- |
+| `verifyWhatsAppSignature`                                                                      | function  | `(input: VerifyWhatsAppSignatureInput) => void`             | HMAC over the raw body. **Throws** `WhatsAppError`.        |
+| `VerifyWhatsAppSignatureInput`                                                                 | type      | Raw body, header, and `WhatsAppSignatureOptions`            | —                                                          |
+| `WhatsAppSignatureOptions`                                                                     | type      | The app secret                                              | —                                                          |
+| `WhatsAppSignatureFailureReason`                                                               | type      | Reason codes landing in `internalDetails.reason`            | —                                                          |
+| `WhatsAppSignaturePolicy`                                                                      | class     | `extends Policy<WhatsAppSignaturePolicyContext>`            | Policy form — denies rather than throwing.                 |
+| `WhatsAppSignaturePolicyContext`                                                               | interface | Structurally compatible with koa's `SignaturePolicyContext` | What lets `requireSignature` drive it.                     |
+| `WHATSAPP_SIGNATURE_POLICY`                                                                    | constant  | The `PolicyRegistryMap` key                                 | —                                                          |
+| `WHATSAPP_SIGNATURE_HEADER`                                                                    | constant  | `'X-Hub-Signature-256'`                                     | —                                                          |
+| `verifyWhatsAppWebhook`                                                                        | function  | `(input: VerifyWhatsAppWebhookInput) => string`             | The **`GET` handshake** — returns `hub.challenge` to echo. |
+| `VerifyWhatsAppWebhookInput`                                                                   | type      | The `hub.*` query params plus the expected verify token     | —                                                          |
+| `WhatsAppVerificationFailureReason`                                                            | type      | —                                                           | —                                                          |
+| `WHATSAPP_HUB_MODE_PARAM` / `WHATSAPP_HUB_CHALLENGE_PARAM` / `WHATSAPP_HUB_VERIFY_TOKEN_PARAM` | constants | `'hub.mode'`, `'hub.challenge'`, `'hub.verify_token'`       | —                                                          |
 
 Two separate mechanisms: the `GET` handshake registers the webhook once, and the HMAC verifies every
 `POST` afterwards. You need both routes.
@@ -122,7 +122,12 @@ policies.set(WHATSAPP_SIGNATURE_POLICY, WhatsAppSignaturePolicy);
 
 // 1. The one-time GET handshake — no signature to verify yet
 router.get('/whatsapp/webhook', async ctx => {
-  ctx.body = verifyWhatsAppWebhook({ query: ctx.query, expectedToken: config.verifyToken });
+  ctx.body = verifyWhatsAppWebhook({
+    verifyToken: config.verifyToken,
+    mode: ctx.query['hub.mode'] as string | undefined,
+    token: ctx.query['hub.verify_token'] as string | undefined,
+    challenge: ctx.query['hub.challenge'] as string | undefined,
+  });
 });
 
 // 2. Every inbound POST — HMAC-verified

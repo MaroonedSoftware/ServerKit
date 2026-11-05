@@ -36,7 +36,7 @@ Runtime dependencies: `@maroonedsoftware/errors`, `@maroonedsoftware/logger`, `d
 ## Position in the graph
 
 - **Depends on:** `errors`, `logger`.
-- **Depended on by:** `koa`, `johnny5`.
+- **Depended on by:** `fastify`, `johnny5`, `koa`, `servercore`.
 - **Subpath exports:**
   - `.` — core, plus the sources and resolvers that need no extra dependency (file, JSON, dotenv,
     fetch, env).
@@ -93,12 +93,12 @@ a database driver.
 
 ### `./yaml`, `./postgres`, `./aws`, `./gcp`
 
-| Entry        | Exports                                                                                               | Default reference pattern |
-| ------------ | ----------------------------------------------------------------------------------------------------- | ------------------------- |
-| `./yaml`     | `AppConfigSourceYaml`                                                                                 | —                         |
-| `./postgres` | `AppConfigSourcePostgres` (+ `…Options`, `…Connection`, `…Source` types), `AppConfigResolverPostgres` | `${pg:KEY}`               |
-| `./aws`      | `AppConfigSourceAwsSecrets` (+ `…Options`), `AppConfigResolverAwsSecrets`                             | `${aws:KEY}`              |
-| `./gcp`      | `AppConfigSourceGcpSecrets` (+ `…Options`), `AppConfigResolverGcpSecrets`                             | `${gcp:KEY}`              |
+| Entry        | Exports                                                                                                                                                                 | Default reference pattern |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| `./yaml`     | `AppConfigSourceYaml`                                                                                                                                                   | —                         |
+| `./postgres` | `AppConfigSourcePostgres` (+ `AppConfigSourcePostgresOptions`, `AppConfigSourcePostgresConnection`, `AppConfigSourcePostgresSource` types), `AppConfigResolverPostgres` | `${pg:KEY}`               |
+| `./aws`      | `AppConfigSourceAwsSecrets` (+ `AppConfigSourceAwsSecretsOptions`), `AppConfigResolverAwsSecrets`                                                                       | `${aws:KEY}`              |
+| `./gcp`      | `AppConfigSourceGcpSecrets` (+ `AppConfigSourceGcpSecretsOptions`), `AppConfigResolverGcpSecrets`                                                                       | `${gcp:KEY}`              |
 
 The intra-config pass uses `${ref:some.path}`, and `AppConfigResolverEnv` uses `${env:KEY}`.
 
@@ -144,9 +144,9 @@ abstract class DbOptions extends AppConfigSection<DbConfig> {}
 
 // Later sources win the deep merge
 const builder = new AppConfigBuilder()
-  .addSource(new AppConfigSourceYaml({ path: 'config/base.yaml' }))
-  .addSource(new AppConfigSourceJson({ path: `config/${env}.json` }))
-  .addSource(new AppConfigSourceDotenv({ path: '.env' }))
+  .addSource(new AppConfigSourceYaml('config/base.yaml'))
+  .addSource(new AppConfigSourceJson(`config/${env}.json`))
+  .addSource(new AppConfigSourceDotenv('.env'))
   .addResolver(new AppConfigResolverEnv())
   .addResolver(new AppConfigResolverGcpSecrets('my-project'))
   .resolveReferences();

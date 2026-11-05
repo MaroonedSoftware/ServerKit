@@ -41,12 +41,13 @@ Runtime dependencies: `@maroonedsoftware/errors`, `@maroonedsoftware/logger`,
 
 ### `.` — config and errors
 
-| Export                          | Kind                       | Shape                                                        | Notes                                                  |
-| ------------------------------- | -------------------------- | ------------------------------------------------------------ | ------------------------------------------------------ |
-| `TelegramConfig`                | interface + abstract class | `{ botToken, secretToken?, apiBaseUrl?, requestTimeoutMs? }` | Declaration-merged so one symbol is type and DI token. |
-| `TelegramError`                 | class                      | `extends ServerkitError`                                     | —                                                      |
-| `IsTelegramError`               | type guard                 | `(error: unknown) => error is TelegramError`                 | —                                                      |
-| `TELEGRAM_DEFAULT_API_BASE_URL` | constant                   | —                                                            | Override for a self-hosted Bot API server.             |
+| Export                          | Kind                       | Shape                                                                                                      | Notes                                                               |
+| ------------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `TelegramConfig`                | interface + abstract class | `{ botToken, secretToken?, apiBaseUrl?, requestTimeoutMs?, fetch? }`                                       | Declaration-merged so one symbol is type and DI token.              |
+| `TelegramFetch`                 | type                       | `(url: string, init: { method: 'POST'; headers; body: string; signal: AbortSignal }) => Promise<Response>` | The subset of `fetch` the client needs. Defaults to the global one. |
+| `TelegramError`                 | class                      | `extends ServerkitError`                                                                                   | —                                                                   |
+| `IsTelegramError`               | type guard                 | `(error: unknown) => error is TelegramError`                                                               | —                                                                   |
+| `TELEGRAM_DEFAULT_API_BASE_URL` | constant                   | —                                                                                                          | Override for a self-hosted Bot API server.                          |
 
 ### `.` — secret-token verification
 
@@ -83,10 +84,12 @@ the secret you registered with `setWebhook`.
 
 ### `.` — client
 
-| Export                                | Kind     | Shape                                   | Notes                            |
-| ------------------------------------- | -------- | --------------------------------------- | -------------------------------- |
-| `TelegramClient`                      | class    | `sendMessage`, `answerCallbackQuery`, … | Built-in Bot API client, no SDK. |
-| `TELEGRAM_DEFAULT_REQUEST_TIMEOUT_MS` | constant | —                                       | —                                |
+| Export                                | Kind      | Shape                                                                                                                                                                    | Notes                                            |
+| ------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
+| `TelegramClient`                      | class     | `sendMessage`, `answerCallbackQuery`, `setWebhook`, `deleteWebhook`, `getMe`, `getWebhookInfo`, `getUpdates(params?, options?)`, `callMethod(method, params?, options?)` | Built-in Bot API client, no SDK.                 |
+| `TELEGRAM_DEFAULT_REQUEST_TIMEOUT_MS` | constant  | —                                                                                                                                                                        | —                                                |
+| `TelegramCallOptions`                 | interface | `{ timeoutMs? }`                                                                                                                                                         | Overrides `requestTimeoutMs` for one call.       |
+| `TelegramGetUpdatesParams`            | interface | `{ offset?, limit?, timeout?, allowed_updates? }`                                                                                                                        | `timeout` is the long-poll wait, in **seconds**. |
 
 ### `./comms`
 
@@ -120,6 +123,17 @@ router.post('/telegram/webhook', requireSignature<TelegramSecretTokenOptions>('t
   });
   ctx.status = 200;
 });
+```
+
+Long polling, for a bot with no public address:
+
+```typescript
+let offset: number | undefined;
+for (;;) {
+  const updates = (await client.getUpdates({ offset, timeout: 25 })) as TelegramUpdate[];
+  for (const update of updates) await dispatcher.dispatchUpdate(update);
+  if (updates.length > 0) offset = updates[updates.length - 1]!.update_id + 1;
+}
 ```
 
 Channel-agnostic instead:
@@ -163,7 +177,17 @@ await dispatchTelegram(router, client, update);
 - **Media and non-text updates are skipped by the comms adapter.** They stay on
   `TelegramUpdateHandlerMap`. Mixing the two paths is expected.
 - **The bot token is in the URL path** of every Bot API call. Any logging of the request URL leaks
-  it.
+  it, and a custom `TelegramConfig.fetch` receives that URL. The client redacts the token from its own
+  errors.
+- **A call that never reached Telegram throws a `TelegramError` too**, with the redacted message on
+  `internalDetails.reason` and deliberately no `cause`. API failures carry `method`, `status`,
+  `errorCode`, `description`, and, when Telegram gave one, `retryAfter` in seconds.
+- **Telegram refuses `getUpdates` while a webhook is set.** A non-empty `url` from `getWebhookInfo`
+  means one is; `deleteWebhook` removes it.
+- **`getUpdates` allows its `timeout` on top of `requestTimeoutMs`**, so a quiet poll is not cut off.
+  An explicit `options.timeoutMs` replaces that sum, wait included.
+- **`offset` confirms every earlier update to Telegram.** Persist it if a restart must not replay
+  them.
 - **`apiBaseUrl` is overridable** for a self-hosted Bot API server; the default is Telegram's.
 
 ## Working inside this package
@@ -189,6 +213,8 @@ Invariants a change must not break:
   `@maroonedsoftware/cache`.** Both are optional peers.
 - No dependency on `@maroonedsoftware/koa`; the structural policy context keeps the arrow out.
 - Secret-token comparison stays constant-time.
+- `callMethod` must not attach a transport error as `cause`: its message usually quotes the URL, and
+  the URL holds the token.
 - The `finally` that answers a `callback_query` is a UX and redelivery control, not cleanup.
 - The four chat packages share a deliberate shape: config token, error + guard, verification
   function + policy, handler maps, dispatcher, client, `./comms` adapter. Keep changes consistent

@@ -65,13 +65,12 @@ dependencies: `@maroonedsoftware/authentication`, `@maroonedsoftware/errors`,
 | `UserSchemaId`, `GroupSchemaId`, `EnterpriseUserSchemaId`, `ResourceTypeSchemaId`, `ServiceProviderConfigSchemaId` | constants  | URN identifiers.                                           |
 | `ScimSchema`, `ScimAttributeDefinition`, `ScimResourceType`                                                        | interfaces | Schema metadata shapes.                                    |
 | `buildServiceProviderConfig`                                                                                       | function   | Builds the `/ServiceProviderConfig` document.              |
-| `ScimServiceProviderConfig` / `…Options` / `ScimAuthenticationScheme`                                              | interfaces | —                                                          |
+| `ScimServiceProviderConfig` / `ScimServiceProviderConfigOptions` / `ScimAuthenticationScheme`                      | interfaces | —                                                          |
 
 ### Filter
 
 | Export                        | Kind     | Shape                                                                               | Notes                               |
 | ----------------------------- | -------- | ----------------------------------------------------------------------------------- | ----------------------------------- |
-| `tokenizeScimFilter`          | function | `(input: string) => ScimToken[]`                                                    | —                                   |
 | `parseScimFilter`             | function | `(input: string) => ScimFilterNode`                                                 | The full RFC 7644 §3.4.2.2 grammar. |
 | `ScimFilterNode`              | type     | `ScimFilterComparison \| ScimFilterLogical \| ScimFilterNot \| ScimFilterValuePath` | The AST.                            |
 | `ScimComparisonOperator`      | type     | `eq`, `ne`, `co`, `sw`, `ew`, `gt`, `ge`, `lt`, `le`, `pr`                          | —                                   |
@@ -106,6 +105,11 @@ dependencies: `@maroonedsoftware/authentication`, `@maroonedsoftware/errors`,
 | `ScimListResult<TResource>`                                           | interface      | `{ resources; totalResults }` — `totalResults` is the **filter-matching total**, not the page size.                                                 |
 | `ScimSortOrder`                                                       | type           | `'ascending' \| 'descending'`                                                                                                                       |
 | `ScimUserService` / `ScimGroupService` / `ScimServiceProviderService` | class          | Sit between the router and the repositories.                                                                                                        |
+| `ScimServices`                                                        | interface      | `{ userService; groupService; serviceProviderService }`                                                                                             |
+| `ScimServicesResolver<TRequest>`                                      | type           | `(request: TRequest) => ScimServices \| Promise<ScimServices>`                                                                                      |
+| `ScimServiceSource<TRequest>`                                         | type           | Either the three services or `resolveServices`, never both.                                                                                         |
+| `ScimEndpointSettings`                                                | interface      | `{ maxResults?; baseUrl? }`                                                                                                                         |
+| `ScimEndpointOptions<TRequest>`                                       | type           | `ScimServiceSource<TRequest> & ScimEndpointSettings`, the options every transport shares.                                                           |
 
 ### Scope helpers and media type (root)
 

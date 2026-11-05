@@ -43,12 +43,12 @@ Runtime dependencies: `@maroonedsoftware/errors`, `@maroonedsoftware/logger`,
 
 ### `.` — config and errors
 
-| Export         | Kind                       | Shape                                                                                                                           | Notes                                                  |
-| -------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `SlackConfig`  | interface + abstract class | `{ botToken, signingSecret?, appToken?, incomingWebhookUrl?, signatureMaxAgeSeconds?, requestTimeoutMs?, apiBaseUrl?, fetch? }` | Declaration-merged so one symbol is type and DI token. |
-| `SlackFetch`   | type                       | `@slack/web-api`'s `FetchFunction`                                                                                              | The global `fetch` satisfies it.                       |
-| `SlackError`   | class                      | `extends ServerkitError`                                                                                                        | —                                                      |
-| `IsSlackError` | type guard                 | `(error: unknown) => error is SlackError`                                                                                       | —                                                      |
+| Export         | Kind                       | Shape                                                                                                                                                              | Notes                                                                                                                         |
+| -------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| `SlackConfig`  | interface + abstract class | `{ botToken, signingSecret?, appToken?, incomingWebhookUrl?, signatureMaxAgeSeconds?, requestTimeoutMs?, apiBaseUrl?, fetch?, retries?, rejectRateLimitedCalls? }` | Declaration-merged so one symbol is type and DI token. `retries` and `rejectRateLimitedCalls` go to `WebClient`; see Gotchas. |
+| `SlackFetch`   | type                       | `@slack/web-api`'s `FetchFunction`                                                                                                                                 | The global `fetch` satisfies it.                                                                                              |
+| `SlackError`   | class                      | `extends ServerkitError`                                                                                                                                           | —                                                                                                                             |
+| `IsSlackError` | type guard                 | `(error: unknown) => error is SlackError`                                                                                                                          | —                                                                                                                             |
 
 ### `.` — signature verification
 
@@ -171,6 +171,11 @@ await dispatchSlackCommand(router, client, payload);
 
 ## Gotchas
 
+- **`WebClient` retries in the background by default**: ten retries over about thirty minutes, for a
+  transport error, a non-200, or a rate limit it waited out. When a job queue or a host deadline
+  already owns retrying, those retries outlive the caller and can deliver a stale message. Set
+  `retries: 0`, and `rejectRateLimitedCalls: true` to reject with `WebAPIRateLimitedError` instead of
+  pausing every call until `Retry-After` has passed.
 - **`./comms` normalises only part of the surface.** `dispatchSlackInteraction` handles
   `block_actions` and returns silently for everything else; `view_submission` and `view_closed` stay
   on `SlackInteractionHandlerMap`. Mixing the two paths is expected, not a mistake.
