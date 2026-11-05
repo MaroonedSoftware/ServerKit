@@ -1,5 +1,16 @@
 # @maroonedsoftware/saml
 
+## 0.3.2
+
+### Patch Changes
+
+- 81615ac: Correct the published AGENTS.md guides against the source: fix snippets that did not compile, remove exports that do not exist, add missing ones, and bring the dependency lines in line with each package.json. No runtime change.
+- Updated dependencies [81615ac]
+  - @maroonedsoftware/authentication@6.8.1
+  - @maroonedsoftware/cache@0.6.1
+  - @maroonedsoftware/errors@1.9.2
+  - @maroonedsoftware/policies@0.6.10
+
 ## 0.3.1
 
 ### Patch Changes

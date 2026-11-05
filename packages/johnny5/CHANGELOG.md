@@ -1,5 +1,17 @@
 # @maroonedsoftware/johnny5
 
+## 8.1.12
+
+### Patch Changes
+
+- 81615ac: Correct the published AGENTS.md guides against the source: fix snippets that did not compile, remove exports that do not exist, add missing ones, and bring the dependency lines in line with each package.json. No runtime change.
+- Updated dependencies [81615ac]
+  - @maroonedsoftware/appconfig@2.7.1
+  - @maroonedsoftware/logger@1.1.10
+  - @maroonedsoftware/permissions@0.4.1
+  - @maroonedsoftware/permissions-dsl@0.6.1
+  - @maroonedsoftware/servercore@0.5.1
+
 ## 8.1.11
 
 ### Patch Changes
