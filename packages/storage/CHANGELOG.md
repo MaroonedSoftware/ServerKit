@@ -1,5 +1,12 @@
 # @maroonedsoftware/storage
 
+## 0.4.2
+
+### Patch Changes
+
+- Updated dependencies [81615ac]
+  - @maroonedsoftware/errors@1.9.2
+
 ## 0.4.1
 
 ### Patch Changes

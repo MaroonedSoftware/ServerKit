@@ -1,5 +1,13 @@
 # @maroonedsoftware/permissions-dsl
 
+## 0.6.1
+
+### Patch Changes
+
+- 81615ac: Correct the published AGENTS.md guides against the source: fix snippets that did not compile, remove exports that do not exist, add missing ones, and bring the dependency lines in line with each package.json. No runtime change.
+- Updated dependencies [81615ac]
+  - @maroonedsoftware/permissions@0.4.1
+
 ## 0.6.0
 
 ### Minor Changes

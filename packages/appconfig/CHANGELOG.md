@@ -1,5 +1,14 @@
 # @maroonedsoftware/appconfig
 
+## 2.7.1
+
+### Patch Changes
+
+- 81615ac: Correct the published AGENTS.md guides against the source: fix snippets that did not compile, remove exports that do not exist, add missing ones, and bring the dependency lines in line with each package.json. No runtime change.
+- Updated dependencies [81615ac]
+  - @maroonedsoftware/errors@1.9.2
+  - @maroonedsoftware/logger@1.1.10
+
 ## 2.7.0
 
 ### Minor Changes
