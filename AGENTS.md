@@ -68,7 +68,9 @@ Two audiences use these files:
 
 ## Dependency layers
 
-Arrows point downward. A package may depend on any lower layer and never on a higher one.
+Each layer depends downward. A package may depend on any lower layer and never on a higher one.
+The graph below counts `dependencies` and `peerDependencies`. `devDependencies` are test-only and
+do not count.
 
 ```
 L3  discord  slack  telegram  whatsapp  scim  saml  johnny5
@@ -78,9 +80,21 @@ L1  appconfig  policies  encryption  multipart  zod  storage
 L0  errors  logger  utilities  permissions  eventbus  telemetry
 ```
 
-L0 packages have zero internal dependencies. `errors`, `logger`, `utilities`, `permissions`, and
-`eventbus` must stay that way — they are the packages a downstream app is most likely to adopt
-alone, and adding an internal dependency to one of them silently widens every install below it.
+L0 packages have zero internal dependencies, and all six must stay that way. They are the packages
+a downstream app is most likely to adopt alone, and an internal dependency added to one of them
+silently widens every install that pulls it in. `telemetry` keeps its optional peers (`kysely`, the
+OpenTelemetry packages, `google-auth-library`) behind subpaths, so its root entry stays free of them too.
+
+Having no internal dependencies does not make a package L0: `cache` has none and `serverfeed` has
+only an optional peer on `logger`, and both sit at L1 by role.
+
+Four packages also depend within their own layer, and these are the only such edges. Do not add
+another without a reason as strong:
+
+- `servercore` (L1) on `appconfig`, `multipart`, and `policies`, and optionally on `serverfeed`.
+  `servercore` is the framework-neutral half of the HTTP adapters, so it composes its L1 peers.
+- `koa` (L2, required peer), `fastify` (L2, dependency), and `mcp` (L2, dependency) on
+  `authentication`.
 
 ### The optional-peer + subpath pattern
 
@@ -100,7 +114,13 @@ optional peer of `serverfeed` — specifically so `logger` stays dependency-free
 The same pattern covers `discord/comms`, `slack/comms`, `telegram/comms`, `whatsapp/comms`
 (adapter in the chat package, `comms` is the core), `scim/koa` and `scim/fastify` (the
 transport-free SCIM core at the root, each framework's transport behind its subpath), and every
-cloud SDK: `appconfig/{aws,gcp}`, `storage/{s3,gcs}`, `cache/ioredis`, `jobbroker/pgboss`.
+external SDK or driver: `appconfig/{aws,gcp,postgres,yaml}`, `storage/{s3,gcs}`, `cache/ioredis`,
+`jobbroker/pgboss`, `telemetry/{kysely,otlp,google}`, `zod/serializer`, and the `johnny5`
+integrations (`johnny5/{postgres,redis,kysely,permissions,keyring,serverkit}`).
+
+Not every subpath is an integration. `discord/gateway`, `slack/socketmode`, `permissions/conformance`,
+`kysely/testing`, and `utilities/extensions` split off code that most importers do not want loaded,
+so each package's `AGENTS.md` is the place to look for the reason.
 
 **When adding an integration:** put the adapter in the higher-level package, export it as a
 subpath, and take the other side as an optional peer. Do not add a hard dependency to keep an
@@ -116,14 +136,16 @@ These are checkable rules. An agent should verify its own output against them be
 The convention most likely to be violated by default.
 
 - **File names** use dot separators, composed from the exported symbol plus a kind suffix:
-  `scim.user.service.ts`, `require.security.middleware.ts`, `enterprise.user.schema.ts`.
+  `scim.user.service.ts`, `require.scim.scope.middleware.ts`, `enterprise.user.schema.ts`.
   Tests mirror their source: `scim.user.service.test.ts`. Barrels are `index.ts`.
 - **Catalog keys** — job names, document kinds, rule keys, anything used as a string identifier in
   a `Record<string, …>` — use dot notation: `agreement.terms.of.service`.
 - **Code identifiers** are camelCase or PascalCase.
 
-Exception: the directories `permissions-dsl`, `config-eslint`, and `config-typescript` predate the
-rule. Their _contents_ still follow it. Do not add new hyphenated names.
+Exception: the directories `permissions-dsl`, `config-eslint`, `config-typescript`, and
+`apps/vscode-extension` predate the rule. Their _contents_ still follow it. Skill directories under
+`.claude/skills/` are also hyphenated, because the directory name is the slash command; the files
+inside them follow the rule. Do not add new hyphenated names.
 
 ### Luxon, not `Date`
 
@@ -188,8 +210,8 @@ service needs to observe reloads.
 The composition root is a `ServerKitServerBuilder` plus a list of `ServerKitModule`s. Two
 adapters offer it: `@maroonedsoftware/koa` and `@maroonedsoftware/fastify`. Both are thin layers
 over `@maroonedsoftware/servercore`, which owns the module lifecycle, body parsers, error
-rendering, and SSE transport, so `setup`, `start`, `whenReady`, `lifecycleSignal`, and the module
-hooks behave identically on either. Pick one adapter per server.
+rendering, and SSE transport, so `setup`, `start`, `whenReady`, `close`, `lifecycleSignal`, and the
+module hooks behave identically on either. Pick one adapter per server.
 
 Only the composition root is shared. Above it the two diverge, so a Koa snippet is **not** a
 Fastify snippet with the import swapped. Koa mounts `(ctx, next)` middleware and a
@@ -200,6 +222,9 @@ snippet below is Koa. For Fastify, follow the canonical usage in
 
 ```typescript
 import { ServerKitServerBuilder, ServerKitRouter } from '@maroonedsoftware/koa';
+
+const router = ServerKitRouter(); // A factory, not a class: `new ServerKitRouter()` throws at runtime.
+// ...add routes...
 
 const builder = new ServerKitServerBuilder();
 const container = await builder.setup(config, logger, modules);
@@ -212,9 +237,11 @@ await builder.start(3000);
 ```
 
 `setup` registers `Logger` and `AppConfig`, wires the body-parser mappings, runs every module's
-`setup` hook, registers `ServerKitContext` as a scoped placeholder, and builds the container. It
-sets Luxon's default zone to UTC on construction and throws if you call anything else before
-`setup`. `start` resolves once the socket is bound and every `start` hook has run.
+`setup` hook, registers `ServerKitContext` as a scoped placeholder, and builds the container. The
+builder sets Luxon's default zone to UTC on construction. `setupMiddleware` (`setupPlugins` on
+Fastify) and `start` throw until `setup` has built the container. `start` resolves once the socket
+is bound and every `start` hook has run. Its optional second argument takes `shutdownGraceMs`,
+`shutdownBudgetMs`, and `gracefulCrash`.
 
 ### Module lifecycle
 
@@ -226,13 +253,19 @@ registration order so a module tears down before whatever it depends on.
 | `setup(registry, config)`  | Before the container is built    | Registering services and bindings                                          |
 | `start(container, signal)` | Socket listening, before "ready" | Wiring that must exist before the first request: subscribers, listeners    |
 | `ready(container, signal)` | After every module's `start`     | Background work that must not delay boot: pollers, schedulers, cache warms |
-| `shutdown(container)`      | On SIGINT/SIGTERM, reverse order | Closing connections, flushing buffers                                      |
+| `shutdown(container)`      | When the server closes, reverse  | Closing connections, flushing buffers                                      |
 
 `start` hooks are all awaited, so anything slow belongs in `ready` — work done in `start` delays
-boot for every module after it. A `ready` hook that throws is logged and does not block the rest.
-Both receive an `AbortSignal` that fires when shutdown begins; honour it cooperatively (pass it to
-`fetch`, timers, and long loops) so a shutdown received mid-boot can unwind instead of tearing
-down a half-wired server.
+boot for every module after it. A `ready` hook that throws is logged and does not block the rest,
+unless its module sets `readyRequired: true`, in which case the failure closes the server and it
+exits with code 1. Both receive an `AbortSignal` that fires when shutdown begins; honour it
+cooperatively (pass it to `fetch`, timers, and long loops) so a shutdown received mid-boot can
+unwind instead of tearing down a half-wired server.
+
+Shutdown begins on SIGINT or SIGTERM, on `builder.close()`, and, with `gracefulCrash` on, on an
+uncaught exception or unhandled rejection. It waits for an in-flight `ready` hook up to
+`shutdownGraceMs`, runs the `shutdown` hooks, and ends with `process.exit()`. A `shutdown` hook that
+throws is logged and the rest still run.
 
 ### Middleware order is load-bearing
 
@@ -256,16 +289,23 @@ and it will fail at runtime rather than at compile time.
 ### Commands
 
 ```bash
-pnpm build      # turbo, dependency-aware
-pnpm test
-pnpm lint
-pnpm format
+pnpm build        # turbo run build, dependency-aware
+pnpm test         # vitest run, every package through the root vitest.config.ts
+pnpm test:turbo   # turbo run test, per package, building dependencies first
+pnpm lint         # turbo run lint
+pnpm format       # turbo run format
+pnpm changeset    # add a changeset file
 ```
 
-Per package: `cd packages/<name> && pnpm test`. Builds are tsup (ESM) plus
-`tsc --emitDeclarationOnly` for types.
+`build:ci` and `test:ci` are the CI variants. `vscode:install` and `vscode:uninstall` manage the
+local VS Code extension, and `bootstrap:npm` runs `scripts/bootstrap.npm.packages.sh`.
 
-If pnpm's `verifyDepsBeforeRun` check misfires in a sandboxed session, run the underlying binary
+Per package: `cd packages/<name> && pnpm test`. Builds are tsup (ESM) plus
+`tsc --emitDeclarationOnly` for types, set in each package's `build` script. `johnny5` keeps its
+tsup settings in `tsup.config.ts`.
+
+`pnpm-workspace.yaml` sets `verifyDepsBeforeRun: warn`, so stale dependencies print a notice before
+`pnpm run` and nothing more. If the check misfires in a sandboxed session, run the underlying binary
 (`vitest`, `eslint`) directly. **Never set `CI=true` to get past it** — that does not skip the
 check, it auto-confirms a destructive purge and reinstall of the whole workspace.
 
@@ -279,8 +319,10 @@ A new public export has to land in four places or it is invisible to consumers:
 4. The package `AGENTS.md` "API surface" table.
 
 A new _subpath_ export also needs an `exports` entry in `package.json`, a matching tsup entry in
-the `build` script, and the peer declared under `peerDependenciesMeta` as optional if it pulls in
-an external SDK.
+the `build` script (`tsup.config.ts` for `johnny5`), and the peer declared under
+`peerDependenciesMeta` as optional if it pulls in an external SDK.
+
+A new or changed _dependency_ between packages also has to agree with "Dependency layers" above.
 
 ### Changesets
 
@@ -291,9 +333,11 @@ repo, not just yours. Add the changeset file and let the release automation do t
 
 ### Skills
 
-`.claude/skills/` holds vetted, working examples for the most commonly generated code:
+`.claude/skills/` holds examples for the most commonly generated code:
 `config`, `error-handler`, `job`, `koa-middleware`, `koa-route`, `fastify-plugin`, `fastify-route`,
-`logger-setup`, `multipart-upload`. When generating code of one of those shapes, use the skill's
-example as the starting point rather than writing a fresh one — the examples are kept in sync with
-the packages. The Koa and Fastify skills are not interchangeable: the two adapters have different
-models, so use the one matching the adapter the app installed.
+`logger-setup`, `module`, `multipart-upload`. When generating code of one of those shapes, use the
+skill's example as the starting point rather than writing a fresh one. Nothing compiles the examples
+automatically: they are checked against `src/` when someone refreshes them, so when one disagrees
+with a package's entry point, trust the entry point and fix the example. The Koa and Fastify skills
+are not interchangeable: the two adapters have different models, so use the one matching the adapter
+the app installed.

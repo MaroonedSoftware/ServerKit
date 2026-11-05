@@ -7,8 +7,12 @@ in pairs. Use the `koa-*` skills in an app built on `@maroonedsoftware/koa` and 
 skills in one built on `@maroonedsoftware/fastify`. Their output is not interchangeable.
 
 `/multipart-upload` is Koa-only for the same reason; on Fastify use `/fastify-route` with
-`multipart/form-data`. The remaining skills (`/config`, `/error-handler`, `/job`, `/logger-setup`)
-are adapter-neutral.
+`multipart/form-data`. The remaining skills (`/config`, `/error-handler`, `/job`, `/logger-setup`,
+`/module`) are adapter-neutral.
+
+Each skill's examples are checked against package source when the skills are refreshed. Nothing
+in CI compiles them, so if one disagrees with a package's `src/index.ts`, trust the source and fix
+the example.
 
 ## Available Skills
 
@@ -29,8 +33,9 @@ Generate a properly typed Koa route handler with ServerKit patterns.
 ```
 
 **What it generates:**
-- ServerKitRouter with proper typing
-- Body parser middleware (if content types specified)
+- A router from `ServerKitRouter()`, with `ctx` typed as `ServerKitContext`
+- `bodyParserMiddleware` (if content types specified), with the payload on `ctx.parsedBody`
+- `requirePolicy()` guard for authenticated routes
 - Error handling with httpError
 - Logger integration
 - Request ID tracking
@@ -49,16 +54,16 @@ Generate custom ServerKit middleware with proper typing and error handling.
 
 **Examples:**
 ```
-/koa-middleware auth
-/koa-middleware rateLimit src/middleware/rate-limit.middleware.ts
+/koa-middleware requestTiming
+/koa-middleware requireTenant src/middleware/require.tenant.middleware.ts
 ```
 
 **What it generates:**
-- ServerKitMiddleware type signature
+- `ServerKitMiddleware` for the server stack, or `ServerKitRouterMiddleware` for one route
 - ServerKitContext access
 - Async/await and next() handling
-- Error handling pattern
-- JSDoc documentation
+- Rejection by throwing `HttpError`
+- JSDoc saying where in the stack it belongs
 
 ---
 
@@ -122,7 +127,7 @@ Generate a background job class with typed payload and JobBroker integration.
 **Examples:**
 ```
 /job SendEmail
-/job ProcessPayment src/jobs/payments/process-payment.job.ts
+/job ProcessPayment src/jobs/payments/process.payment.job.ts
 ```
 
 **What it generates:**
@@ -130,14 +135,14 @@ Generate a background job class with typed payload and JobBroker integration.
 - Typed payload interface
 - @Injectable decorator
 - run() method scaffold
-- Registration examples
-- On-demand and scheduled patterns
+- `PgBossJobRegistryMap` entry and DI registration
+- On-demand (`JobBroker.send`) and scheduled (`cron`) patterns
 
 ---
 
 ### 6. `/config` - Generate AppConfig Setup
 
-Generate AppConfig setup with sources and providers for configuration management.
+Generate AppConfig setup with sources and resolvers for configuration management.
 
 **Usage:**
 ```
@@ -147,14 +152,14 @@ Generate AppConfig setup with sources and providers for configuration management
 **Examples:**
 ```
 /config
-/config json yaml dotenv gcp
+/config json yaml dotenv env gcp
 /config json dotenv --file src/config/app.config.ts
 ```
 
 **What it generates:**
 - AppConfigBuilder with sources
-- Providers (env vars, GCP secrets)
-- Type-safe config interface
+- Resolvers (`${env:KEY}`, GCP and AWS secrets)
+- Type-safe config shape
 - Usage examples
 
 ---
@@ -188,7 +193,7 @@ Add error handling decorators to a class for automatic error conversion.
 
 ### 8. `/logger-setup` - Generate Logger DI Setup
 
-Generate logger registration and configuration for dependency injection.
+Generate logger setup for the server builder, or for a standalone registry.
 
 **Usage:**
 ```
@@ -202,10 +207,9 @@ Generate logger registration and configuration for dependency injection.
 ```
 
 **What it generates:**
-- InjectKit registry setup
-- Logger interface registration
-- Singleton configuration
-- Usage examples
+- A logger to pass to `builder.setup`
+- A `Logger` token registration for code with no server builder
+- Usage examples, including a custom logger
 
 ---
 
@@ -227,29 +231,51 @@ Generate a **Koa** route handler for multipart/form-data file uploads. On Fastif
 
 **What it generates:**
 - POST route with multipart parser
-- MultipartBody typing
-- File validation (size, mime type)
+- MultipartBody typing, from `@maroonedsoftware/multipart`
+- A file handler passed to `body.parse`, with count and size limits and a mime type check
 - Stream handling
 - Error handling
+
+---
+
+### 10. `/module` - Generate ServerKit Module
+
+Generate a `ServerKitModule`, the unit a ServerKit app is composed from. Works on both adapters.
+
+**Usage:**
+```
+/module <name> [file]
+```
+
+**Examples:**
+```
+/module mailer
+/module billing src/billing/billing.module.ts
+```
+
+**What it generates:**
+- A named module with DI registrations in `setup`
+- The `start`, `ready`, and `shutdown` hooks the module needs
+- A typed config binding
+- The line to add to the `builder.setup` array
 
 ---
 
 ## Skill Features
 
 All skills:
-- Generate production-ready code
-- Follow ServerKit best practices
+- Generate a starting point with TODOs, not finished business logic
+- Follow the conventions in the root `AGENTS.md`: dot-separated file names and catalog keys, Luxon for time
 - Include proper TypeScript types
-- Add comprehensive error handling
+- Signal failures with `HttpError` or a `ServerkitError` subclass
 - Include usage examples and comments
-- Create or append to existing files intelligently
+- Create new files, and most also append to existing ones
 
 ## Examples Directory
 
 Each skill includes example files in the `examples/` directory showing:
 - Common use cases
-- Best practices
-- Complete working code
+- The imports and wiring the package expects
 - Integration patterns
 
 ## Development Workflow
@@ -274,7 +300,7 @@ Typical workflow using these skills:
 
 3. **Add middleware or plugins:**
    ```
-   /koa-middleware auth src/middleware/auth.middleware.ts
+   /koa-middleware requireTenant src/middleware/require.tenant.middleware.ts
    ```
    ```
    /fastify-plugin requireTenant src/hooks/require.tenant.hook.ts
@@ -282,7 +308,7 @@ Typical workflow using these skills:
 
 4. **Create background jobs:**
    ```
-   /job SendEmail src/jobs/send-email.job.ts
+   /job SendEmail src/jobs/send.email.job.ts
    ```
 
 5. **Add error handling:**
@@ -290,9 +316,14 @@ Typical workflow using these skills:
    /error-handler src/services/user.service.ts postgres
    ```
 
-6. **Add file uploads:**
+6. **Add file uploads (Koa):**
    ```
    /multipart-upload /api/users/:id/avatar src/routes/users.routes.ts
    ```
 
-This scaffolds a complete ServerKit application with routes, middleware, jobs, config, logging, error handling, and file uploads!
+7. **Group the services into modules:**
+   ```
+   /module mailer
+   ```
+
+This scaffolds the shape of a ServerKit application: routes, middleware, jobs, config, logging, error handling, and file uploads, with the TODOs left for you to fill in.

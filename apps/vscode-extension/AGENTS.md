@@ -34,7 +34,11 @@ Runtime dependencies: `@maroonedsoftware/permissions`, `@maroonedsoftware/permis
 - **Depended on by:** nothing.
 - **Subpath exports:** none. `main` is `./dist/client/extension.js`; VS Code loads it.
 
-## Contribution surface
+## API surface
+
+None importable: this is an application. What it exposes is what it registers with the editor.
+
+### Contribution surface
 
 What the extension registers with VS Code, from `package.json`:
 
@@ -65,6 +69,11 @@ There is **no** completion, hover, or go-to-definition provider. Diagnostics com
 
 `WorkspaceIndex` globs `**/*.perm` across every workspace folder on initialise and revalidates
 everything, so a cross-file reference resolves against namespaces defined in other files.
+
+## Canonical usage
+
+Install it as under Install, then open a `.perm` file. To develop it, run `pnpm dev` here for the esbuild
+watch, open this folder in a fresh VS Code window, and press `F5` to launch an Extension Development Host.
 
 ## Build
 

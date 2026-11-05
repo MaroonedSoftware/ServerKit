@@ -88,7 +88,7 @@ afford both dependencies, so this core stays free of every provider SDK. See the
 
 ```typescript
 import { ChannelRouter } from '@maroonedsoftware/comms';
-import { createSlackCommsAdapter } from '@maroonedsoftware/slack/comms';
+import { dispatchSlackCommand } from '@maroonedsoftware/slack/comms';
 
 const router = new ChannelRouter(logger);
 
@@ -100,15 +100,18 @@ router
   .command('deploy', async (event, reply) => {
     await reply.send({
       text: `Deploy ${event.command!.args}?`,
-      buttons: [{ id: 'deploy:confirm', label: 'Confirm', value: event.command!.args }],
+      buttons: [{ id: 'deploy.confirm', label: 'Confirm', value: event.command!.args }],
     });
   })
-  .action('deploy:confirm', async (event, reply) => {
+  .action('deploy.confirm', async (event, reply) => {
     await deploy(event.action!.value!);
     await reply.sendTemplate('order.card', order);
   })
   .message(async (event, reply) => reply.send({ text: `You said: ${event.text}` }))
   .fallback(async (_event, reply) => reply.send({ text: "I didn't understand that." }));
+
+// In the channel's route
+await dispatchSlackCommand(router, slackClient, payload);
 ```
 
 The channel package's `./comms` adapter normalizes its webhook payload and calls

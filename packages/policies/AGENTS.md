@@ -27,8 +27,8 @@ Runtime dependencies: `@maroonedsoftware/errors`, `injectkit`, `luxon`.
 ## Position in the graph
 
 - **Depends on:** `errors`.
-- **Depended on by:** `authentication`, `koa` (`requirePolicy`), `mcp` (bearer auth), `discord`,
-  `slack`, `telegram`, `whatsapp`, `johnny5`.
+- **Depended on by:** `authentication`, `fastify` and `koa` (`requirePolicy`), `mcp` (bearer auth),
+  `saml`, `servercore`, `discord`, `slack`, `telegram`, `whatsapp`.
 - **Subpath exports:** none. The package has no `exports` map at all.
 
 ## API surface
@@ -153,6 +153,9 @@ In a Koa router, prefer the `requirePolicy` middleware from `@maroonedsoftware/k
 
 ## Gotchas
 
+- **`this.allow()` returns one shared, frozen object.** An allow result carries no per-decision data,
+  so every evaluation gets the same instance. Mutating it throws in strict mode; never attach data to
+  it.
 - **`assert` throws 403 by default, not 401.** A policy that fails because the caller is
   unauthenticated needs `assert(name, ctx, 401)`, otherwise the client is told "forbidden" when it
   should be told to authenticate.

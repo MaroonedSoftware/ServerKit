@@ -25,7 +25,8 @@ Runtime dependencies: `@maroonedsoftware/errors`, `zod` (v4). `fast-json-stringi
 ## Position in the graph
 
 - **Depends on:** `errors`.
-- **Depended on by:** nothing internal. It is a leaf that applications use directly.
+- **Depended on by:** `fastify`, as an **optional** peer for its `./zod` subpath. Otherwise applications
+  use it directly.
 - **Subpath exports:** `@maroonedsoftware/zod/serializer` — `compileSerializer`, behind the
   optional `fast-json-stringify` peer so the root barrel stays dependency-light. The package has
   an `exports` map, so deep imports into `dist/` do not resolve.

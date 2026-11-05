@@ -29,8 +29,8 @@ Runtime dependency: `luxon`. Optional peer: `@maroonedsoftware/logger`.
 
 - **Depends on:** nothing internal at runtime. `logger` is an **optional** peer, reachable only
   through the `./logger` subpath.
-- **Depended on by:** `koa`, as an **optional** peer for its `@maroonedsoftware/koa/serverfeed` SSE
-  transport.
+- **Depended on by:** `fastify`, `koa`, and `servercore`, as an **optional** peer for each one's
+  `./serverfeed` subpath.
 - **Subpath exports:**
   - `.` — the event contract and the `ServerFeed` bus. Loads nothing but `luxon`.
   - `./logger` — `ServerFeedLogger`, a decorator that mirrors qualifying log lines onto a feed.
@@ -38,8 +38,8 @@ Runtime dependency: `luxon`. Optional peer: `@maroonedsoftware/logger`.
     stays dependency-free**. This is the canonical example of the repo's optional-peer +
     subpath pattern; see the root AGENTS.md.
 
-The SSE transport points the same way: it lives in `koa` (which can afford a `serverfeed`
-dependency), not here.
+The SSE transport points the same way: it lives in `servercore` and the adapters (which can afford a
+`serverfeed` dependency), not here.
 
 ## API surface
 

@@ -74,5 +74,6 @@ are wrong. If nothing qualifies, say "None beyond the repo-wide rules" rather th
 <!--
 For an agent editing this package rather than consuming it: src/ layout, where tests live,
 invariants a change must not break, whether a changeset is required, what else must be updated
-in lockstep (README, root README index, root AGENTS.md package index, exports, tsup entries).
+in lockstep (README, root README index, root AGENTS.md package index and dependency layers,
+exports, tsup entries).
 -->

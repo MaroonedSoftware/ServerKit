@@ -28,7 +28,7 @@ Runtime dependencies: `injectkit`, `luxon`. Optional peer: `ioredis`.
 
 - **Depends on:** nothing internal. This is an L1 package with no ServerKit dependencies at all —
   keep it that way (see Gotchas).
-- **Depended on by:** `authentication`, `discord`, `mcp`, `slack`, `telegram`, `whatsapp`.
+- **Depended on by:** `authentication`, `discord`, `mcp`, `saml`, `slack`, `telegram`, `whatsapp`.
 - **Subpath exports:**
   - `.` — `CacheProvider`, `IdempotencyStore`, `CacheIdempotencyStore`. Backend-agnostic; loads no
     Redis client.

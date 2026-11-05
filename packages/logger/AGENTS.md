@@ -25,9 +25,9 @@ dependencies, and it must stay that way.
 ## Position in the graph
 
 - **Depends on:** nothing internal.
-- **Depended on by:** `appconfig`, `authentication`, `comms`, `discord`, `jobbroker`, `johnny5`,
-  `koa`, `mcp`, `scim`, `slack`, `telegram`, `whatsapp`, and — as an **optional** peer —
-  `serverfeed`.
+- **Depended on by:** `appconfig`, `authentication`, `comms`, `discord`, `fastify`, `jobbroker`,
+  `johnny5`, `koa`, `mcp`, `scim`, `servercore`, `slack`, `telegram`, `whatsapp`, and (as an
+  **optional** peer) `serverfeed`.
 - **Subpath exports:** none. The package has no `exports` map at all.
 
 The `serverfeed` relationship is the one to understand: the bridge that turns log calls into feed

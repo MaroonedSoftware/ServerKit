@@ -1,7 +1,7 @@
 ---
 user-invocable: true
 allowed-tools: Read, Write, Edit, Grep, Glob
-description: Generate a Fastify route plugin with ServerKit typing, route config body parsing, guards, and error handling
+description: Generate a route plugin for an app on @maroonedsoftware/fastify, with route config body parsing, guards, and error handling. On @maroonedsoftware/koa use /koa-route instead.
 argument-hint: <method> <path> [file] [content-types]
 ---
 
@@ -104,6 +104,16 @@ When this skill is invoked:
    `request.parsedBody` do not exist in this adapter. Body content types belong in route `config`
    and the parsed body is `request.body`.
 
-6. **Confirm to user:**
+6. **Know the wiring these depend on:**
+   - A route with a `schema.body` but no `config.body` fails every request with a 500 naming the
+     route: the schema does not replace the content-type allow-list
+   - `requirePolicy()` reads the session set by `authenticationPlugin` (in the default stack) and
+     resolves `PolicyService` from the request container, so the app must register one
+   - For `multipart/form-data`, `request.body` is a lazy `MultipartBody` from
+     `@maroonedsoftware/multipart`, not parsed data. Cast it and call
+     `await body.parse(fileHandler, limits)`. `/multipart-upload` documents that call, which is the
+     same on both adapters
+
+7. **Confirm to user:**
    - Show the file path, the method and path, the accepted content types, and any guard added
    - Remind them to pass the plugin to `builder.setupRoutes` if the file is new

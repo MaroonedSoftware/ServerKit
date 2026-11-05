@@ -26,7 +26,7 @@ Runtime dependencies: `@maroonedsoftware/errors`, `@fastify/busboy`. Node-only (
 ## Position in the graph
 
 - **Depends on:** `errors`.
-- **Depended on by:** `koa`.
+- **Depended on by:** `servercore`.
 - **Subpath exports:** none. The package has no `exports` map at all.
 
 ## API surface

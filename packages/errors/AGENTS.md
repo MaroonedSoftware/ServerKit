@@ -26,9 +26,9 @@ No required peers, no runtime dependencies. This package is L0 and must stay tha
 ## Position in the graph
 
 - **Depends on:** nothing internal, and nothing external.
-- **Depended on by:** nearly everything — `appconfig`, `authentication`, `cache`, `comms`,
-  `discord`, `encryption`, `jobbroker`, `koa`, `kysely`, `mcp`, `multipart`, `policies`, `scim`,
-  `slack`, `storage`, `telegram`, `whatsapp`, `zod`.
+- **Depended on by:** nearly everything: `appconfig`, `authentication`, `comms`, `discord`,
+  `encryption`, `fastify`, `jobbroker`, `koa`, `kysely`, `mcp`, `multipart`, `policies`, `saml`,
+  `scim`, `servercore`, `slack`, `storage`, `telegram`, `whatsapp`, `zod`.
 - **Subpath exports:** none. Everything ships from the root barrel.
 
 ## API surface

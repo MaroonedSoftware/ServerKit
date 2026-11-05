@@ -23,13 +23,13 @@ unlocks the `./serverfeed` subpath; `@maroonedsoftware/zod`, `zod`, and `fast-js
 unlock `./zod` (the last only for response serialization).
 
 Runtime dependencies: `appconfig`, `authentication`, `errors`, `logger`, `policies`, `servercore`,
-plus `injectkit` and `type-is`.
+plus `fastify-plugin`, `injectkit`, and `type-is`.
 
 ## Position in the graph
 
 - **Depends on:** `servercore` (the framework-neutral core), `appconfig`, `authentication`,
   `errors`, `logger`, `policies`.
-- **Depended on by:** nothing internal.
+- **Depended on by:** `scim`, as an **optional** peer for its `./fastify` subpath.
 - **Subpath exports:** `./serverfeed` — the SSE adapter for `@maroonedsoftware/serverfeed`, an
   **optional** peer. `./zod` — Fastify's schema compilers backed by `@maroonedsoftware/zod`, also
   optional peers. Both are subpaths so nothing reachable from the root barrel imports either.
@@ -38,15 +38,15 @@ plus `injectkit` and `type-is`.
 
 ### Context, plugin, router types
 
-| Export                      | Kind                       | Shape                                                                                                                                                                                           | Notes                                                                                              |
-| --------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `ServerKitContext`          | interface + abstract class | `extends FastifyRequest`; the module augmentation adds `container`, `logger`, `loggerName`, `userAgent`, `ipAddress`, `correlationId`, `requestId`, `rawBody`, `authenticationSession`, `reply` | Declaration-merged so one symbol is both the type and a DI token. The request **is** the context.  |
-| `ServerKitPlugin`           | type                       | `FastifyPluginAsync`                                                                                                                                                                            | A server-stack plugin, registered in order by `setupPlugins`. Applies to the root instance.        |
-| `serverKitPlugin`           | function                   | `(name: string, plugin: (app: FastifyInstance) => void \| Promise<unknown>) => ServerKitPlugin`                                                                                                 | Wraps a plugin with `fastify-plugin` so its hooks escape encapsulation. Use it for custom steps.   |
-| `createFastifyLogger`       | function                   | `(logger: Logger, bindings?: Record<string, unknown>) => FastifyBaseLogger`                                                                                                                     | Bridges Fastify's logging to a ServerKit `Logger`. `fatal` maps to `error`. Installed by default.  |
-| `ServerKitRoutes`           | type                       | `FastifyPluginAsync`                                                                                                                                                                            | A route plugin. Encapsulated, so its own hooks apply only to its routes.                           |
-| `ServerKitRouteMount`       | interface                  | `{ plugin: ServerKitRoutes; prefix?: string }`                                                                                                                                                  | A route plugin plus the path prefix to mount it under.                                             |
-| `FastifyContextConfig.body` | augmentation               | `body?: string[]`                                                                                                                                                                               | Route `config` field: the content types this route accepts a body for. Read by `bodyParserPlugin`. |
+| Export                      | Kind                       | Shape                                                                                                                                                                                           | Notes                                                                                                                                                                                              |
+| --------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ServerKitContext`          | interface + abstract class | `extends FastifyRequest`; the module augmentation adds `container`, `logger`, `loggerName`, `userAgent`, `ipAddress`, `correlationId`, `requestId`, `rawBody`, `authenticationSession`, `reply` | Declaration-merged so one symbol is both the type and a DI token. The request **is** the context.                                                                                                  |
+| `ServerKitPlugin`           | type                       | `FastifyPluginAsync`                                                                                                                                                                            | A server-stack plugin, registered in order by `setupPlugins`. Applies to the root instance.                                                                                                        |
+| `serverKitPlugin`           | function                   | `(name: string, plugin: (app: FastifyInstance) => void \| Promise<unknown>) => ServerKitPlugin`                                                                                                 | Wraps a plugin with `fastify-plugin` so its hooks escape encapsulation. Use it for custom steps.                                                                                                   |
+| `createFastifyLogger`       | function                   | `(logger: Logger, bindings?: Record<string, unknown>) => FastifyBaseLogger`                                                                                                                     | Bridges Fastify's logging to a ServerKit `Logger`. `fatal` maps to `error`. An `Error` in the merge-object position stays intact, with the bindings as a separate parameter. Installed by default. |
+| `ServerKitRoutes`           | type                       | `FastifyPluginAsync`                                                                                                                                                                            | A route plugin. Encapsulated, so its own hooks apply only to its routes.                                                                                                                           |
+| `ServerKitRouteMount`       | interface                  | `{ plugin: ServerKitRoutes; prefix?: string }`                                                                                                                                                  | A route plugin plus the path prefix to mount it under.                                                                                                                                             |
+| `FastifyContextConfig.body` | augmentation               | `body?: string[]`                                                                                                                                                                               | Route `config` field: the content types this route accepts a body for. Read by `bodyParserPlugin`.                                                                                                 |
 
 ### Server plugins
 
@@ -205,8 +205,9 @@ follow the snippets here rather than translating the Koa skills, which describe 
   dispatches on the request headers and reads `request.raw` itself.
 - **Omitting `bodyParserPlugin` from a custom stack leaves Fastify's own parsers active**, so
   `request.body` is parsed by Fastify with no route allow-list and no ServerKit status contract.
-- **A chunked body without `Content-Length` counts as "no body"** for the 411 check, the same rule
-  the Koa adapter applies.
+- **A chunked body without `Content-Length` counts as a body**, the same rule the Koa adapter
+  applies. A `Transfer-Encoding` header satisfies the 411 check and reaches the parser on a route
+  with `config.body`, and earns a 400 on a route without it.
 - **`errorPlugin` renders three different bodies**, the same security boundary as Koa's: an
   `HttpError` yields its status, message, details, and headers; a bare `ServerkitError` a 500
   **with** details; a plain `Error` a generic 500 with none. A Fastify-raised 4xx becomes an

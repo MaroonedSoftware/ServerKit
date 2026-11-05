@@ -59,11 +59,10 @@ Everything below is exported from the root barrel.
 | `CompileResult`   | interface | Compiled/written file summary                                                     | —                                                                                  |
 | `importGenerated` | function  | `(path: string) => Promise<unknown>`                                              | Dynamic import via `pathToFileURL`.                                                |
 
-### Parsing and AST (`src/grammar.ts`, `src/parser.ts`, `src/ast.ts`)
+### Parsing and AST (`src/parser.ts`, `src/ast.ts`)
 
 | Export                                                                                         | Kind               | Shape                                                                  | Notes                                   |
 | ---------------------------------------------------------------------------------------------- | ------------------ | ---------------------------------------------------------------------- | --------------------------------------- |
-| `grammar`                                                                                      | constant           | `ohm.Grammar`                                                          | Built from `src/permissions.ohm`.       |
 | `parse`                                                                                        | function           | `(opts: ParseOptions) => FileNode`                                     | Throws `ParseError` with a source span. |
 | `ParseOptions`                                                                                 | interface          | `{ source, filename? }`                                                | —                                       |
 | `FileNode`, `NamespaceNode`, `RelationNode`, `PermissionNode`, `MemberNode`, `SubjectTypeNode` | interfaces / types | AST nodes, all `extends Located`                                       | Every node carries a `SourceSpan`.      |
@@ -106,24 +105,15 @@ Everything below is exported from the root barrel.
 | `stringifyFixture`                 | function   | `(file: FixtureFile, relationships: RelationTuple[]) => string`                                                                                      | —                                                                    |
 | `FixtureSourceMap`                 | interface  | Index/key → 1-indexed line                                                                                                                           | For editor gutter diagnostics.                                       |
 | `validateFile`                     | function   | `(opts: ValidateFileOptions) => ValidateFileResult`                                                                                                  | —                                                                    |
-
-### Cache (`src/cache.ts`)
-
-| Export                                                      | Kind       | Shape                                                            | Notes                                            |
-| ----------------------------------------------------------- | ---------- | ---------------------------------------------------------------- | ------------------------------------------------ |
-| `CacheManifest`, `CachedFileEntry`, `CachedNamespaceOutput` | interfaces | On-disk incremental-compile manifest                             | —                                                |
-| `loadManifest`                                              | function   | `(path: string, configHash: string) => Promise<CacheManifest>`   | Discards the manifest on a config-hash mismatch. |
-| `saveManifest`                                              | function   | `(path: string, manifest: CacheManifest) => Promise<void>`       | —                                                |
-| `hashString`                                                | function   | `(s: string) => string` — SHA-256 hex                            | —                                                |
-| `computeConfigHash`                                         | function   | `(config: PermissionsConfig, compilerVersion: string) => string` | Includes the compiler version.                   |
+| `yamlParse`, `yamlStringify`       | functions  | Re-exports of the `yaml` package's `parse` and `stringify`                                                                                           | Lets a consumer reach YAML I/O without a direct `yaml` dependency.   |
 
 ### CLI
 
 ```bash
 pdsl compile [--config <path>]   # default when no subcommand is given
-pdsl validate <fixture...>
-pdsl check <relationship> [--explain]
-pdsl explain <relationship>
+pdsl validate <pattern...>
+pdsl check <fixture> <relationship> [--explain]
+pdsl explain <fixture> <relationship>
 ```
 
 `pdsl --config foo.json` with no subcommand is accepted as legacy shorthand for `compile`.
@@ -174,7 +164,7 @@ object and evaluates `viewer` there.
 ```bash
 pdsl compile
 pdsl validate 'src/permissions/**/*.perm.yaml'
-pdsl explain 'document:readme.view@user:alice'
+pdsl explain src/permissions/document.perm.yaml 'document:readme.view@user:alice'
 ```
 
 A fixture:
