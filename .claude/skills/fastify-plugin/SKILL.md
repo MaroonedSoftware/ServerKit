@@ -1,7 +1,7 @@
 ---
 user-invocable: true
 allowed-tools: Read, Write, Edit, Grep, Glob
-description: Generate a ServerKit Fastify plugin or route guard with proper typing and error handling
+description: Generate a plugin for the @maroonedsoftware/fastify stack or a guard for one route, with proper typing and error handling. On @maroonedsoftware/koa use /koa-middleware instead.
 argument-hint: <name> [file]
 ---
 

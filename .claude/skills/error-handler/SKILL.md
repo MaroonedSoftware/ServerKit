@@ -1,7 +1,7 @@
 ---
 user-invocable: true
 allowed-tools: Read, Write, Edit, Grep, Glob
-description: Add error handling decorators (@OnError or @OnPostgresError) to a class
+description: Add an error-mapping class decorator from @maroonedsoftware/errors to a service or repository, @OnError for domain errors or @OnPostgresError for SQLSTATE codes
 argument-hint: <file> <decorator-type>
 ---
 
@@ -21,7 +21,7 @@ Add error handling decorators to a class for automatic error conversion.
 1. Reads the target file
 2. Adds appropriate imports
 3. Adds decorator to the class
-4. For @OnError: includes default error handler that converts to HttpError
+4. For @OnError: includes a handler that converts known errors to HttpError
 5. For @OnPostgresError: adds decorator with automatic mapping
 6. Preserves existing class code
 
@@ -41,23 +41,28 @@ Add HTTP error handling:
 
 ### @OnPostgresError Decorator
 
-Automatically maps PostgreSQL errors to appropriate HTTP errors:
+Automatically maps errors with a SQLSTATE code to HTTP errors:
 
 ```typescript
 import { OnPostgresError } from '@maroonedsoftware/errors';
 
 @OnPostgresError()
 export class UserRepository {
-  // Unique constraint violation → 409 Conflict
+  // Unique constraint violation (23505) → 409 Conflict
   async create(data: UserData) { }
 
-  // Foreign key violation → 400 Bad Request
+  // Foreign key violation (23503) → 409 Conflict
   async update(id: string, data: UserData) { }
 
-  // Not null violation → 400 Bad Request
+  // Not null violation (23502) → 400 Bad Request
   async save(data: UserData) { }
 }
 ```
+
+The full mapping is in `packages/errors/src/postgres/postgres.error.handler.ts`. Check violations and
+bad data (23514, 22000, 22003, 22004, 22023, 22P02) are 400. Rollbacks and deadlocks (40000, 40001,
+40002, 40P01) are 500 with internal details for the logs. Any other SQLSTATE is 500. An error
+without a SQLSTATE code is re-thrown unchanged.
 
 ### @OnError Decorator
 
@@ -67,11 +72,11 @@ Wraps all methods with custom error handling:
 import { OnError, httpError } from '@maroonedsoftware/errors';
 
 @OnError(error => {
-  // Convert any error to HTTP error
-  if (error.name === 'ValidationError') {
-    throw httpError(400).withDetails({ message: error.message });
+  // Throw a replacement to change what the caller sees.
+  if (error instanceof ValidationError) {
+    throw httpError(400).withDetails({ message: error.message }).withCause(error);
   }
-  throw httpError(500).withCause(error);
+  // Returning re-throws the original error, which renders as a 500.
 })
 export class UserService {
   async createUser(data: UserData) { }
@@ -108,17 +113,23 @@ When this skill is invoked:
    - Preserve any existing decorators (like @Injectable)
 
 6. **Error handler for @OnError:**
-   - Create a handler that checks error types
+   - Create a handler that checks error types, preferring `instanceof` on `ServerkitError` subclasses over comparing `error.name`
    - Convert known errors to appropriate HTTP status codes
-   - Default to 500 for unknown errors
-   - Use .withCause(error) to preserve original error
+   - Use `.withCause(error)` to preserve the original error
+   - Leave unknown errors alone by returning. The decorator re-throws the original, and `errorMiddleware` or `errorPlugin` renders a plain `Error` as a generic 500 with no details
+   - Put anything that must be logged but not sent to a client in `.withInternalDetails(...)`, not `.withDetails(...)`
+   - The handler cannot swallow an error: a handler that returns still ends with the original being re-thrown
 
-7. **Use Edit tool:**
+7. **Know what the decorator does not cover:**
+   - It wraps methods and accessors declared on the class itself. It does not wrap inherited methods, static methods, or the constructor
+   - A rejection is caught only if the method returns a native `Promise`, which an `async` method always does. A non-async method that returns a Kysely builder, or any other thenable, is not covered
+
+8. **Use Edit tool:**
    - Find the class declaration line
    - Add the decorator on the line before the class
    - Ensure proper formatting and indentation
 
-8. **Confirm to user:**
+9. **Confirm to user:**
    - Show which file was modified
    - Show which decorator was added
    - Show the class that was decorated
