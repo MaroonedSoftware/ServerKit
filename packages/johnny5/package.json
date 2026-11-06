@@ -80,7 +80,7 @@
     "dist/**"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && tsc --emitDeclarationOnly --declaration",
     "build:ci": "eslint --max-warnings=0 && pnpm run build",
     "dev": "tsup --watch",
     "lint": "eslint --fix",
