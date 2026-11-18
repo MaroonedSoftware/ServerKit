@@ -329,7 +329,7 @@ await runner.start();
 
 When a registration declares no worker policy and no default is set, pg-boss's own defaults apply: one worker, one job per fetch.
 
-> `concurrency` maps to pg-boss `localConcurrency` and per-job settlement to `perJobResults`, both of which the package's peer floor (**pg-boss >= 12.21.0**) guarantees.
+> `concurrency` maps to pg-boss `localConcurrency` and per-job settlement to `perJobResults`, both of which the package's peer floor (**pg-boss >= 12.38.0**) guarantees.
 
 ## Monitoring & draining dead-letter queues
 
@@ -575,7 +575,7 @@ process.on('SIGTERM', async () => {
 
 ## Peer Dependencies
 
-- `pg-boss` ^12.21.0 - PostgreSQL-based job queue
+- `pg-boss` ^12.38.0 - PostgreSQL-based job queue
 - `reflect-metadata` - Required by InjectKit for decorator metadata
 
 ## License

@@ -201,7 +201,7 @@ See [.claude/skills/job](../../.claude/skills/job) for the generator and its exa
   reconciles onto the queue via `createQueue`/`updateQueue`, a worker policy configures only the
   workers _this process_ starts. Two nodes on the same queue may use different values, and a change
   takes effect on the next runner start for that node alone.
-- **The peer floor is pg-boss >= 12.21.0**, and it is load-bearing. `concurrency` maps to
+- **The peer floor is pg-boss >= 12.38.0**, and it is load-bearing. `concurrency` maps to
   `localConcurrency` (added in 12.6.0) and per-job settlement to `perJobResults` (added in 12.21.0).
   An older peer would ignore `perJobResults`, take the handler's `JobResult[]` as the batch's single
   output, and mark **every job complete, including the failed ones**.
