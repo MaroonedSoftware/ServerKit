@@ -2,12 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Duration } from 'luxon';
 import { JobBroker } from '../src/job.broker.js';
 import { JobInfo } from '../src/job.info.js';
+import { JobScheduleOptions } from '../src/job.schedule.options.js';
 import { JobSendOptions } from '../src/job.send.options.js';
 
 class TestJobBroker extends JobBroker {
   send = vi.fn<(name: string, payload: object, options?: JobSendOptions) => Promise<string>>().mockResolvedValue('job-id');
-  schedule = vi.fn<(name: string, cron: string, payload?: object) => Promise<void>>().mockResolvedValue(undefined);
-  unschedule = vi.fn<(name: string) => Promise<void>>().mockResolvedValue(undefined);
+  schedule = vi
+    .fn<(name: string, recurrence: string, payload?: object, options?: JobScheduleOptions) => Promise<void>>()
+    .mockResolvedValue(undefined);
+  unschedule = vi.fn<(name: string, key?: string) => Promise<void>>().mockResolvedValue(undefined);
   cancel = vi.fn<(name: string, id: string | string[]) => Promise<void>>().mockResolvedValue(undefined);
   resume = vi.fn<(name: string, id: string | string[]) => Promise<void>>().mockResolvedValue(undefined);
   deleteJob = vi.fn<(name: string, id: string | string[]) => Promise<void>>().mockResolvedValue(undefined);
@@ -22,11 +25,11 @@ class FailingJobBroker extends JobBroker {
     throw new Error('Queue unavailable');
   }
 
-  async schedule(_name: string, _cron: string, _payload?: object): Promise<void> {
+  async schedule(_name: string, _recurrence: string, _payload?: object, _options?: JobScheduleOptions): Promise<void> {
     throw new Error('Queue unavailable');
   }
 
-  async unschedule(_name: string): Promise<void> {
+  async unschedule(_name: string, _key?: string): Promise<void> {
     throw new Error('Queue unavailable');
   }
 
@@ -118,6 +121,12 @@ describe('JobBroker', () => {
       expect(broker.schedule).toHaveBeenCalledWith('heartbeat', '* * * * *');
     });
 
+    it('should accept schedule options', async () => {
+      const options: JobScheduleOptions = { key: 'routine-1', timeZone: 'America/Chicago', missed: 'skip' };
+      await broker.schedule('routine.run', 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0', { routineId: 'routine-1' }, options);
+      expect(broker.schedule).toHaveBeenCalledWith('routine.run', 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0', { routineId: 'routine-1' }, options);
+    });
+
     it('should return a Promise that resolves to void', async () => {
       const result = await broker.schedule('daily-report', '0 9 * * *');
       expect(result).toBeUndefined();
@@ -148,6 +157,11 @@ describe('JobBroker', () => {
     it('should accept a job name', async () => {
       await broker.unschedule('daily-report');
       expect(broker.unschedule).toHaveBeenCalledWith('daily-report');
+    });
+
+    it('should accept a key', async () => {
+      await broker.unschedule('routine.run', 'routine-1');
+      expect(broker.unschedule).toHaveBeenCalledWith('routine.run', 'routine-1');
     });
 
     it('should return a Promise that resolves to void', async () => {

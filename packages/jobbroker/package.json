@@ -60,6 +60,7 @@
     "luxon": "^3.7.2"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.16",
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
     "@types/luxon": "^3.7.5",

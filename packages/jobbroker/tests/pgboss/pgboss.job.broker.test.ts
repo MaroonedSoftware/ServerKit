@@ -170,14 +170,61 @@ describe('PgBossJobBroker', () => {
 
       expect(mockPgBoss.schedule).toHaveBeenCalledWith('test-job', '0 0 * * *', undefined, { db: transactionalDb });
     });
+
+    it('should map key, timeZone and missed onto pg-boss key, tz and missed', async () => {
+      await broker.schedule(
+        'test-job',
+        'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+        { message: 'hi' },
+        {
+          key: 'routine-1',
+          timeZone: 'America/Chicago',
+          missed: 'once',
+        },
+      );
+
+      expect(mockPgBoss.schedule).toHaveBeenCalledWith(
+        'test-job',
+        'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+        { message: 'hi' },
+        { db: undefined, key: 'routine-1', tz: 'America/Chicago', missed: 'once' },
+      );
+    });
+
+    it('should leave out options that were not given', async () => {
+      await broker.schedule('test-job', '0 0 * * *', undefined, { key: 'only-key' });
+
+      expect(mockPgBoss.schedule).toHaveBeenCalledWith('test-job', '0 0 * * *', undefined, { db: undefined, key: 'only-key' });
+    });
+
+    it('should pass an empty options object through as no options', async () => {
+      await broker.schedule('test-job', '0 0 * * *', undefined, {});
+
+      expect(mockPgBoss.schedule).toHaveBeenCalledWith('test-job', '0 0 * * *', undefined, { db: undefined });
+    });
   });
 
   describe('unschedule', () => {
+    it('should unschedule a keyed schedule', async () => {
+      await broker.unschedule('test-job', 'routine-1');
+
+      expect(mockPgBoss.unschedule).toHaveBeenCalledWith('test-job', 'routine-1', { db: undefined });
+    });
+
+    it('should unschedule on the executor supplied by the connection provider', async () => {
+      const transactionalDb = { executeSql: vi.fn() } as unknown as Db;
+      vi.spyOn(connectionProvider, 'executor').mockReturnValue(transactionalDb);
+
+      await broker.unschedule('test-job', 'routine-1');
+
+      expect(mockPgBoss.unschedule).toHaveBeenCalledWith('test-job', 'routine-1', { db: transactionalDb });
+    });
+
     it('should unschedule a job when job is registered', async () => {
       await broker.unschedule('test-job');
 
       expect(mockPgBoss.unschedule).toHaveBeenCalledOnce();
-      expect(mockPgBoss.unschedule).toHaveBeenCalledWith('test-job');
+      expect(mockPgBoss.unschedule).toHaveBeenCalledWith('test-job', undefined, { db: undefined });
     });
 
     it('should throw an error when job is not registered', async () => {
@@ -318,7 +365,7 @@ describe('PgBossJobBroker', () => {
     it('should recognize cron-configured job registrations for unschedule', async () => {
       await broker.unschedule('cron-job');
 
-      expect(mockPgBoss.unschedule).toHaveBeenCalledWith('cron-job');
+      expect(mockPgBoss.unschedule).toHaveBeenCalledWith('cron-job', undefined, { db: undefined });
     });
   });
 });

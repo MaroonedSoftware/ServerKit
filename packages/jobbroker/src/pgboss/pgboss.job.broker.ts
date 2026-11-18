@@ -1,8 +1,9 @@
-import { PgBoss } from 'pg-boss';
+import { PgBoss, type ScheduleOptions } from 'pg-boss';
 import { Injectable } from 'injectkit';
 import { DateTime, Duration } from 'luxon';
 import { JobBroker } from '../job.broker.js';
 import { JobInfo } from '../job.info.js';
+import { JobScheduleOptions } from '../job.schedule.options.js';
 import { JobSendOptions } from '../job.send.options.js';
 import { PgBossJobRegistryMap } from './pgboss.job.registration.js';
 import { PgBossConnectionProvider } from './pgboss.connection.provider.js';
@@ -12,7 +13,8 @@ import { PgBossConnectionProvider } from './pgboss.connection.provider.js';
  *
  * This broker uses PostgreSQL (via pg-boss) as the backing queue for job
  * processing. It provides reliable, transactional job queuing with support
- * for scheduled jobs using cron expressions.
+ * for recurring schedules on cron expressions or RFC 5545 recurrence rules,
+ * many per queue when each has its own key.
  *
  * Each enqueue and schedule call sources its pg-boss `db` executor from the
  * injected {@link PgBossConnectionProvider}. The default provider returns
@@ -111,47 +113,74 @@ export class PgBossJobBroker extends JobBroker {
   }
 
   /**
-   * Schedules a recurring job using a cron expression.
+   * Schedules a recurring job on a cron expression or an RFC 5545 recurrence rule.
    *
-   * The job will be automatically enqueued by pg-boss according to the
-   * specified cron schedule. If a schedule already exists for this job,
-   * it will be updated with the new cron expression and payload.
+   * pg-boss decides the format from the expression itself and stores one row
+   * per job name and key, so scheduling again with the same name and key
+   * replaces that row. The options map onto pg-boss's own: `key` to `key`,
+   * `timeZone` to `tz`, and `missed` to `missed`. pg-boss validates the
+   * recurrence and the zone before writing and throws on either.
    *
    * The schedule-insert SQL runs against the executor returned by the injected
-   * {@link PgBossConnectionProvider}; the default executor uses pg-boss's own
-   * pool, which is the expected behavior for bootstrap-time scheduling.
+   * {@link PgBossConnectionProvider}; when that executor is bound to an active
+   * transaction, the schedule commits or rolls back with it.
    *
    * @typeParam Payload - The type of the job payload.
    * @param name - The name of the registered job to schedule.
-   * @param cron - A cron expression (e.g., '0 9 * * *' for daily at 9am).
+   * @param recurrence - A cron expression or an RFC 5545 recurrence rule.
    * @param payload - Optional data to pass to the job on each execution.
-   * @returns A promise that resolves when the schedule has been created.
+   * @param options - Optional key, time zone and missed-occurrence policy.
+   * @returns A promise that resolves when the schedule has been created or replaced.
    * @throws Error if the job name is not found in the registry.
+   * @throws Error if pg-boss rejects the recurrence, the time zone or the key.
    */
-  async schedule<Payload extends object>(name: string, cron: string, payload?: Payload): Promise<void> {
+  async schedule<Payload extends object>(name: string, recurrence: string, payload?: Payload, options?: JobScheduleOptions): Promise<void> {
     if (!this.registrations.has(name)) {
       throw new Error(`Job ${name} is not registered`);
     }
 
-    await this.pgboss.schedule(name, cron, payload, { db: this.connectionProvider.executor() });
+    await this.pgboss.schedule(name, recurrence, payload, {
+      db: this.connectionProvider.executor(),
+      ...this.toScheduleOptions(options),
+    });
+  }
+
+  /**
+   * Maps backend-agnostic schedule options onto pg-boss's `key`, `tz` and
+   * `missed`, leaving out any that were not given so pg-boss applies its own
+   * defaults (the unkeyed schedule, UTC, and `skip`).
+   */
+  private toScheduleOptions(options: JobScheduleOptions | undefined): Pick<ScheduleOptions, 'key' | 'tz' | 'missed'> {
+    return {
+      ...(options?.key !== undefined && { key: options.key }),
+      ...(options?.timeZone !== undefined && { tz: options.timeZone }),
+      ...(options?.missed !== undefined && { missed: options.missed }),
+    };
   }
 
   /**
    * Removes a scheduled job from pg-boss.
    *
-   * This stops future executions of the scheduled job. Jobs that are
-   * already queued will still be processed.
+   * This stops future executions of the schedule with the given name and key.
+   * Jobs that are already queued will still be processed. pg-boss reads a
+   * missing key as the empty key, so `unschedule(name)` removes only the
+   * unkeyed schedule and leaves keyed ones in place.
    *
-   * @param name - The name of the scheduled job to remove.
+   * The delete runs against the executor returned by the injected
+   * {@link PgBossConnectionProvider}, so inside a transaction it rolls back
+   * with the transaction.
+   *
+   * @param name - The name of the scheduled job.
+   * @param key - The key the schedule was created with, if any.
    * @returns A promise that resolves when the schedule has been removed.
    * @throws Error if the job name is not found in the registry.
    */
-  async unschedule(name: string): Promise<void> {
+  async unschedule(name: string, key?: string): Promise<void> {
     if (!this.registrations.has(name)) {
       throw new Error(`Job ${name} is not registered`);
     }
 
-    await this.pgboss.unschedule(name);
+    await this.pgboss.unschedule(name, key, { db: this.connectionProvider.executor() });
   }
 
   /**
