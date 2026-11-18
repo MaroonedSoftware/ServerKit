@@ -1,9 +1,10 @@
-import { PgBoss, type ScheduleOptions } from 'pg-boss';
+import { PgBoss, type Schedule, type ScheduleOptions } from 'pg-boss';
 import { Injectable } from 'injectkit';
 import { DateTime, Duration } from 'luxon';
 import { JobBroker } from '../job.broker.js';
 import { JobInfo } from '../job.info.js';
-import { JobScheduleOptions } from '../job.schedule.options.js';
+import { JobSchedule } from '../job.schedule.js';
+import { JobScheduleOptions, JobSchedulePreviewOptions } from '../job.schedule.options.js';
 import { JobSendOptions } from '../job.send.options.js';
 import { PgBossJobRegistryMap } from './pgboss.job.registration.js';
 import { PgBossConnectionProvider } from './pgboss.connection.provider.js';
@@ -181,6 +182,87 @@ export class PgBossJobBroker extends JobBroker {
     }
 
     await this.pgboss.unschedule(name, key, { db: this.connectionProvider.executor() });
+  }
+
+  /**
+   * Lists the schedules on a job name from pg-boss.
+   *
+   * With a key this reads the one row by its primary key. Without one it pages
+   * through every schedule on the name, so a queue with many keyed schedules is
+   * returned whole rather than cut off at pg-boss's page size.
+   *
+   * pg-boss offers no connection option for this read, so it always runs on
+   * pg-boss's own pool: a schedule written inside a transaction that has not
+   * committed yet is not visible here.
+   *
+   * @typeParam Payload - The type of the scheduled payload.
+   * @param name - The name of the registered job.
+   * @param key - When given, only the schedule with this key.
+   * @returns A promise that resolves with the matching schedules, ordered by key.
+   * @throws Error if the job name is not found in the registry.
+   */
+  async getSchedules<Payload extends object>(name: string, key?: string): Promise<JobSchedule<Payload>[]> {
+    if (!this.registrations.has(name)) {
+      throw new Error(`Job ${name} is not registered`);
+    }
+
+    if (key !== undefined) {
+      const schedule = await this.pgboss.getSchedule(name, key);
+      return schedule ? [this.toJobSchedule<Payload>(schedule)] : [];
+    }
+
+    const schedules: Schedule[] = [];
+    let after: Pick<Schedule, 'name' | 'key'> | undefined;
+    for (;;) {
+      const page = await this.pgboss.getSchedules(name, undefined, { limit: PgBossJobBroker.schedulePageSize, ...(after && { after }) });
+      schedules.push(...page);
+      const last = page.at(-1);
+      if (page.length < PgBossJobBroker.schedulePageSize || !last) {
+        break;
+      }
+      after = { name: last.name, key: last.key };
+    }
+
+    return schedules.map(schedule => this.toJobSchedule<Payload>(schedule));
+  }
+
+  /** Rows read per page when {@link getSchedules} lists every schedule on a name. */
+  private static readonly schedulePageSize = 1000;
+
+  /** Maps a pg-boss schedule row onto the backend-agnostic {@link JobSchedule}. */
+  private toJobSchedule<Payload extends object>(schedule: Schedule): JobSchedule<Payload> {
+    return {
+      name: schedule.name,
+      key: schedule.key,
+      recurrence: schedule.cron,
+      timeZone: schedule.timezone || 'UTC',
+      ...(schedule.data != null && { payload: schedule.data as Payload }),
+    };
+  }
+
+  /**
+   * Computes the next occurrences of a recurrence with pg-boss's
+   * `previewSchedule`, which validates exactly as {@link schedule} does and
+   * touches neither the database nor the schedule table.
+   *
+   * `from` defaults to pg-boss's reading of database time, which on an instance
+   * that runs schedules accounts for clock skew against the database. The
+   * returned `DateTime`s are in `options.timeZone`, or UTC when omitted.
+   *
+   * @param recurrence - A cron expression or an RFC 5545 recurrence rule.
+   * @param options - Optional time zone, starting point and count.
+   * @returns A promise that resolves with the occurrences, earliest first.
+   * @throws Error if pg-boss rejects the recurrence, the time zone or the count.
+   */
+  async previewSchedule(recurrence: string, options?: JobSchedulePreviewOptions): Promise<DateTime[]> {
+    const zone = options?.timeZone ?? 'UTC';
+    const occurrences = this.pgboss.previewSchedule(recurrence, {
+      tz: zone,
+      ...(options?.from !== undefined && { from: options.from.toJSDate() }),
+      ...(options?.count !== undefined && { count: options.count }),
+    });
+
+    return occurrences.map(occurrence => DateTime.fromJSDate(occurrence, { zone }));
   }
 
   /**

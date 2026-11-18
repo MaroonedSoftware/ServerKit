@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { PGlite, type Transaction } from '@electric-sql/pglite';
+import { DateTime } from 'luxon';
 import { PgBoss, fromPglite, type Db } from 'pg-boss';
 import { PgBossJobBroker } from '../../src/pgboss/pgboss.job.broker.js';
 import { PgBossJobRegistryMap } from '../../src/pgboss/pgboss.job.registration.js';
@@ -162,5 +163,50 @@ describe('PgBossJobBroker schedules against pg-boss', () => {
 
     const schedules = await pgboss.getSchedules(QUEUE);
     expect(schedules.map(s => s.key)).toEqual(['keyed']);
+  });
+
+  it('lists schedules through the broker', async () => {
+    await broker.schedule(QUEUE, 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0', { routineId: 'a' }, { key: 'a', timeZone: 'Europe/Paris' });
+    await broker.schedule(QUEUE, '0 17 * * *', undefined, { key: 'b' });
+
+    expect(await broker.getSchedules(QUEUE)).toEqual([
+      { name: QUEUE, key: 'a', recurrence: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0', timeZone: 'Europe/Paris', payload: { routineId: 'a' } },
+      { name: QUEUE, key: 'b', recurrence: '0 17 * * *', timeZone: 'UTC' },
+    ]);
+    expect(await broker.getSchedules(QUEUE, 'b')).toEqual([{ name: QUEUE, key: 'b', recurrence: '0 17 * * *', timeZone: 'UTC' }]);
+    expect(await broker.getSchedules(QUEUE, 'missing')).toEqual([]);
+  });
+
+  it('previews a weekly recurrence rule in a time zone', async () => {
+    const from = DateTime.fromISO('2030-01-01T00:00:00', { zone: 'America/Chicago' });
+
+    const occurrences = await broker.previewSchedule('FREQ=WEEKLY;BYDAY=MO,WE;BYHOUR=9;BYMINUTE=0', {
+      timeZone: 'America/Chicago',
+      from,
+      count: 3,
+    });
+
+    expect(occurrences.map(o => o.toISO())).toEqual([
+      '2030-01-02T09:00:00.000-06:00',
+      '2030-01-07T09:00:00.000-06:00',
+      '2030-01-09T09:00:00.000-06:00',
+    ]);
+  });
+
+  it('previews a monthly recurrence rule across daylight saving', async () => {
+    const from = DateTime.fromISO('2030-02-01T00:00:00', { zone: 'America/New_York' });
+
+    const occurrences = await broker.previewSchedule('FREQ=MONTHLY;BYMONTHDAY=15;BYHOUR=8;BYMINUTE=0', {
+      timeZone: 'America/New_York',
+      from,
+      count: 2,
+    });
+
+    expect(occurrences.map(o => o.toISO())).toEqual(['2030-02-15T08:00:00.000-05:00', '2030-03-15T08:00:00.000-04:00']);
+  });
+
+  it('rejects an invalid recurrence in a preview', async () => {
+    await expect(broker.previewSchedule('FREQ=SOMETIMES')).rejects.toThrow();
+    await expect(broker.previewSchedule('0 9 * * *', { timeZone: 'Mars/Olympus_Mons' })).rejects.toThrow();
   });
 });

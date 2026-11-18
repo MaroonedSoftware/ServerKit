@@ -1,6 +1,8 @@
 import { Injectable } from 'injectkit';
+import { DateTime } from 'luxon';
 import { JobInfo } from './job.info.js';
-import { JobScheduleOptions } from './job.schedule.options.js';
+import { JobSchedule } from './job.schedule.js';
+import { JobScheduleOptions, JobSchedulePreviewOptions } from './job.schedule.options.js';
 import { JobSendOptions } from './job.send.options.js';
 
 /**
@@ -46,6 +48,10 @@ import { JobSendOptions } from './job.send.options.js';
  *   key: routineId,
  *   timeZone: 'America/Chicago',
  * });
+ *
+ * // Listing and previewing them
+ * const [routine] = await jobBroker.getSchedules('routine.run', routineId);
+ * const next = await jobBroker.previewSchedule(routine.recurrence, { timeZone: routine.timeZone, count: 3 });
  *
  * // Removing a scheduled job
  * await jobBroker.unschedule('daily-report');
@@ -117,6 +123,36 @@ export abstract class JobBroker {
    * @throws `NotSupportedError` if a key is given and the backend does not support keyed schedules.
    */
   abstract unschedule(name: string, key?: string): Promise<void>;
+
+  /**
+   * Lists the schedules on a job name.
+   *
+   * @typeParam Payload - The type of the scheduled payload.
+   * @param name - The name of the registered job type.
+   * @param key - When given, only the schedule with this key (an array of at
+   *              most one). Pass `''` for the name's unkeyed schedule.
+   * @returns A promise that resolves with the matching schedules, ordered by key.
+   * @throws If the job name is not registered.
+   * @throws `NotSupportedError` if the backend cannot list schedules.
+   */
+  abstract getSchedules<Payload extends object>(name: string, key?: string): Promise<JobSchedule<Payload>[]>;
+
+  /**
+   * Computes the next occurrences of a recurrence without storing anything.
+   *
+   * Takes the same cron expressions and RFC 5545 recurrence rules as
+   * {@link schedule} and rejects the same invalid ones, so it doubles as a
+   * validation step before scheduling. The result describes the recurrence, not
+   * delivery: a scheduled job lands at or shortly after each listed time.
+   *
+   * @param recurrence - A cron expression or an RFC 5545 recurrence rule.
+   * @param options - Optional time zone, starting point and count.
+   * @returns A promise that resolves with the occurrences, earliest first, in
+   *          `options.timeZone` (UTC when omitted).
+   * @throws If the recurrence, the time zone or the count is invalid.
+   * @throws `NotSupportedError` if the backend cannot preview recurrences.
+   */
+  abstract previewSchedule(recurrence: string, options?: JobSchedulePreviewOptions): Promise<DateTime[]>;
 
   /**
    * Requests cancellation of one or more jobs.

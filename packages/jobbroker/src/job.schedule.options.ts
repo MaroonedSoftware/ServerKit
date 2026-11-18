@@ -1,3 +1,5 @@
+import { DateTime } from 'luxon';
+
 /**
  * Options controlling a recurring schedule created by {@link JobBroker.schedule}.
  *
@@ -39,4 +41,30 @@ export interface JobScheduleOptions {
    * When omitted, the backend's default applies (`'skip'` for pg-boss).
    */
   missed?: 'skip' | 'once';
+}
+
+/**
+ * Options for {@link JobBroker.previewSchedule}.
+ */
+export interface JobSchedulePreviewOptions {
+  /**
+   * The IANA time zone to evaluate the recurrence in, as
+   * {@link JobScheduleOptions.timeZone} would. Defaults to UTC. The returned
+   * `DateTime`s are in this zone.
+   */
+  timeZone?: string;
+
+  /**
+   * The point the preview starts from. Occurrences are strictly after it, so
+   * passing the last occurrence of one page back in yields the next page.
+   * Defaults to now.
+   */
+  from?: DateTime;
+
+  /**
+   * How many occurrences to return. A finite recurrence rule may return fewer,
+   * and one whose last occurrence has passed returns none. Defaults to the
+   * backend's default (5 for pg-boss, which allows at most 1000).
+   */
+  count?: number;
 }

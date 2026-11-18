@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Duration } from 'luxon';
+import { DateTime, Duration } from 'luxon';
 import { JobBroker } from '../src/job.broker.js';
 import { JobInfo } from '../src/job.info.js';
-import { JobScheduleOptions } from '../src/job.schedule.options.js';
+import { JobSchedule } from '../src/job.schedule.js';
+import { JobScheduleOptions, JobSchedulePreviewOptions } from '../src/job.schedule.options.js';
 import { JobSendOptions } from '../src/job.send.options.js';
 
 class TestJobBroker extends JobBroker {
@@ -18,6 +19,14 @@ class TestJobBroker extends JobBroker {
   async getJob<Payload extends object>(_name: string, _id: string): Promise<JobInfo<Payload> | null> {
     return null;
   }
+
+  async getSchedules<Payload extends object>(name: string, key?: string): Promise<JobSchedule<Payload>[]> {
+    return [{ name, key: key ?? '', recurrence: '0 9 * * *', timeZone: 'UTC' }];
+  }
+
+  previewSchedule = vi
+    .fn<(recurrence: string, options?: JobSchedulePreviewOptions) => Promise<DateTime[]>>()
+    .mockResolvedValue([DateTime.fromISO('2030-01-01T09:00:00Z', { zone: 'utc' })]);
 }
 
 class FailingJobBroker extends JobBroker {
@@ -46,6 +55,14 @@ class FailingJobBroker extends JobBroker {
   }
 
   async getJob<Payload extends object>(_name: string, _id: string): Promise<JobInfo<Payload> | null> {
+    throw new Error('Queue unavailable');
+  }
+
+  async getSchedules<Payload extends object>(_name: string, _key?: string): Promise<JobSchedule<Payload>[]> {
+    throw new Error('Queue unavailable');
+  }
+
+  async previewSchedule(_recurrence: string, _options?: JobSchedulePreviewOptions): Promise<DateTime[]> {
     throw new Error('Queue unavailable');
   }
 }
@@ -172,6 +189,29 @@ describe('JobBroker', () => {
     it('should propagate errors from the implementation', async () => {
       const failingBroker = new FailingJobBroker();
       await expect(failingBroker.unschedule('daily-report')).rejects.toThrow('Queue unavailable');
+    });
+  });
+
+  describe('getSchedules', () => {
+    it('should return backend-agnostic schedules', async () => {
+      const schedules = await broker.getSchedules('routine.run', 'routine-1');
+      expect(schedules).toEqual([{ name: 'routine.run', key: 'routine-1', recurrence: '0 9 * * *', timeZone: 'UTC' }]);
+    });
+
+    it('should propagate errors from implementation', async () => {
+      await expect(new FailingJobBroker().getSchedules('routine.run')).rejects.toThrow('Queue unavailable');
+    });
+  });
+
+  describe('previewSchedule', () => {
+    it('should return Luxon DateTimes', async () => {
+      const [first] = await broker.previewSchedule('0 9 * * *', { timeZone: 'UTC', count: 1 });
+      expect(DateTime.isDateTime(first)).toBe(true);
+      expect(broker.previewSchedule).toHaveBeenCalledWith('0 9 * * *', { timeZone: 'UTC', count: 1 });
+    });
+
+    it('should propagate errors from implementation', async () => {
+      await expect(new FailingJobBroker().previewSchedule('0 9 * * *')).rejects.toThrow('Queue unavailable');
     });
   });
 });
