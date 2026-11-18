@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { DateTime, Duration } from 'luxon';
-import { Db, PgBoss } from 'pg-boss';
+import { Db, PgBoss, type Schedule } from 'pg-boss';
 import { PgBossJobBroker } from '../../src/pgboss/pgboss.job.broker.js';
 import { PgBossJobRegistryMap } from '../../src/pgboss/pgboss.job.registration.js';
 import { PgBossConnectionProvider } from '../../src/pgboss/pgboss.connection.provider.js';
@@ -27,6 +27,9 @@ describe('PgBossJobBroker', () => {
       resume: vi.fn().mockResolvedValue({ updated: 1 }),
       deleteJob: vi.fn().mockResolvedValue({ updated: 1 }),
       findJobs: vi.fn().mockResolvedValue([]),
+      getSchedule: vi.fn().mockResolvedValue(null),
+      getSchedules: vi.fn().mockResolvedValue([]),
+      previewSchedule: vi.fn().mockReturnValue([]),
     } as unknown as PgBoss;
 
     registrations = new PgBossJobRegistryMap();
@@ -170,14 +173,61 @@ describe('PgBossJobBroker', () => {
 
       expect(mockPgBoss.schedule).toHaveBeenCalledWith('test-job', '0 0 * * *', undefined, { db: transactionalDb });
     });
+
+    it('should map key, timeZone and missed onto pg-boss key, tz and missed', async () => {
+      await broker.schedule(
+        'test-job',
+        'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+        { message: 'hi' },
+        {
+          key: 'routine-1',
+          timeZone: 'America/Chicago',
+          missed: 'once',
+        },
+      );
+
+      expect(mockPgBoss.schedule).toHaveBeenCalledWith(
+        'test-job',
+        'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+        { message: 'hi' },
+        { db: undefined, key: 'routine-1', tz: 'America/Chicago', missed: 'once' },
+      );
+    });
+
+    it('should leave out options that were not given', async () => {
+      await broker.schedule('test-job', '0 0 * * *', undefined, { key: 'only-key' });
+
+      expect(mockPgBoss.schedule).toHaveBeenCalledWith('test-job', '0 0 * * *', undefined, { db: undefined, key: 'only-key' });
+    });
+
+    it('should pass an empty options object through as no options', async () => {
+      await broker.schedule('test-job', '0 0 * * *', undefined, {});
+
+      expect(mockPgBoss.schedule).toHaveBeenCalledWith('test-job', '0 0 * * *', undefined, { db: undefined });
+    });
   });
 
   describe('unschedule', () => {
+    it('should unschedule a keyed schedule', async () => {
+      await broker.unschedule('test-job', 'routine-1');
+
+      expect(mockPgBoss.unschedule).toHaveBeenCalledWith('test-job', 'routine-1', { db: undefined });
+    });
+
+    it('should unschedule on the executor supplied by the connection provider', async () => {
+      const transactionalDb = { executeSql: vi.fn() } as unknown as Db;
+      vi.spyOn(connectionProvider, 'executor').mockReturnValue(transactionalDb);
+
+      await broker.unschedule('test-job', 'routine-1');
+
+      expect(mockPgBoss.unschedule).toHaveBeenCalledWith('test-job', 'routine-1', { db: transactionalDb });
+    });
+
     it('should unschedule a job when job is registered', async () => {
       await broker.unschedule('test-job');
 
       expect(mockPgBoss.unschedule).toHaveBeenCalledOnce();
-      expect(mockPgBoss.unschedule).toHaveBeenCalledWith('test-job');
+      expect(mockPgBoss.unschedule).toHaveBeenCalledWith('test-job', undefined, { db: undefined });
     });
 
     it('should throw an error when job is not registered', async () => {
@@ -274,6 +324,75 @@ describe('PgBossJobBroker', () => {
     });
   });
 
+  describe('getSchedules', () => {
+    const row = (key: string, extra: Partial<Schedule> = {}): Schedule =>
+      ({ name: 'test-job', key, kind: 'cron', cron: '0 9 * * *', timezone: 'Europe/Paris', data: { message: key }, ...extra }) as Schedule;
+
+    it('should read one schedule by key and map it', async () => {
+      vi.mocked(mockPgBoss.getSchedule).mockResolvedValueOnce(row('routine-1'));
+
+      const schedules = await broker.getSchedules('test-job', 'routine-1');
+
+      expect(mockPgBoss.getSchedule).toHaveBeenCalledWith('test-job', 'routine-1');
+      expect(schedules).toEqual([
+        { name: 'test-job', key: 'routine-1', recurrence: '0 9 * * *', timeZone: 'Europe/Paris', payload: { message: 'routine-1' } },
+      ]);
+    });
+
+    it('should return an empty array when the keyed schedule does not exist', async () => {
+      expect(await broker.getSchedules('test-job', 'missing')).toEqual([]);
+    });
+
+    it('should leave out a missing payload and default a missing zone to UTC', async () => {
+      vi.mocked(mockPgBoss.getSchedule).mockResolvedValueOnce(row('bare', { data: null as unknown as object, timezone: null as unknown as string }));
+
+      const [schedule] = await broker.getSchedules('test-job', 'bare');
+
+      expect(schedule).toEqual({ name: 'test-job', key: 'bare', recurrence: '0 9 * * *', timeZone: 'UTC' });
+    });
+
+    it('should page through every schedule on the name when no key is given', async () => {
+      const firstPage = Array.from({ length: 1000 }, (_, i) => row(`k${String(i).padStart(4, '0')}`));
+      vi.mocked(mockPgBoss.getSchedules)
+        .mockResolvedValueOnce(firstPage)
+        .mockResolvedValueOnce([row('z')]);
+
+      const schedules = await broker.getSchedules('test-job');
+
+      expect(schedules).toHaveLength(1001);
+      expect(mockPgBoss.getSchedules).toHaveBeenNthCalledWith(1, 'test-job', undefined, { limit: 1000 });
+      expect(mockPgBoss.getSchedules).toHaveBeenNthCalledWith(2, 'test-job', undefined, { limit: 1000, after: { name: 'test-job', key: 'k0999' } });
+    });
+
+    it('should throw an error when job is not registered', async () => {
+      await expect(broker.getSchedules('unregistered-job')).rejects.toThrow('Job unregistered-job is not registered');
+      expect(mockPgBoss.getSchedules).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('previewSchedule', () => {
+    it('should pass the options to pg-boss and return DateTimes in the requested zone', async () => {
+      const from = DateTime.fromISO('2030-01-01T00:00:00Z', { zone: 'utc' });
+      vi.mocked(mockPgBoss.previewSchedule).mockReturnValueOnce([new Date('2030-01-01T15:00:00Z')]);
+
+      const occurrences = await broker.previewSchedule('0 9 * * *', { timeZone: 'America/Chicago', from, count: 1 });
+
+      expect(mockPgBoss.previewSchedule).toHaveBeenCalledWith('0 9 * * *', { tz: 'America/Chicago', from: from.toJSDate(), count: 1 });
+      expect(occurrences).toHaveLength(1);
+      expect(occurrences[0]!.zoneName).toBe('America/Chicago');
+      expect(occurrences[0]!.toISO()).toBe('2030-01-01T09:00:00.000-06:00');
+    });
+
+    it('should default to UTC and leave out from and count', async () => {
+      vi.mocked(mockPgBoss.previewSchedule).mockReturnValueOnce([new Date('2030-01-01T09:00:00Z')]);
+
+      const [occurrence] = await broker.previewSchedule('0 9 * * *');
+
+      expect(mockPgBoss.previewSchedule).toHaveBeenCalledWith('0 9 * * *', { tz: 'UTC' });
+      expect(occurrence?.zoneName).toBe('UTC');
+    });
+  });
+
   describe('multiple job registrations', () => {
     beforeEach(() => {
       registrations.set('job-1', TestJob);
@@ -318,7 +437,7 @@ describe('PgBossJobBroker', () => {
     it('should recognize cron-configured job registrations for unschedule', async () => {
       await broker.unschedule('cron-job');
 
-      expect(mockPgBoss.unschedule).toHaveBeenCalledWith('cron-job');
+      expect(mockPgBoss.unschedule).toHaveBeenCalledWith('cron-job', undefined, { db: undefined });
     });
   });
 });

@@ -45,8 +45,10 @@ Notably **not** a dependency: `kysely`. Transactional enqueue is supported throu
 | `Job<Payload>`                       | abstract class             | `@Injectable() abstract run(payload: Payload, signal?: AbortSignal): Promise<void>`                                          | `Payload extends object = object`.                                                                         |
 | `JobBroker`                          | abstract class             | `@Injectable()`. Producer side.                                                                                              | Unsupported operations throw `NotSupportedError` rather than no-op.                                        |
 | `#send`                              | method                     | `<P extends object>(name: string, payload: P, options?: JobSendOptions) => Promise<string>`                                  | Returns the job id. Throws if `name` is not registered.                                                    |
-| `#schedule`                          | method                     | `<P extends object>(name: string, cron: string, payload?: P) => Promise<void>`                                               | —                                                                                                          |
-| `#unschedule`                        | method                     | `(name: string) => Promise<void>`                                                                                            | —                                                                                                          |
+| `#schedule`                          | method                     | `<P extends object>(name: string, recurrence: string, payload?: P, options?: JobScheduleOptions) => Promise<void>`           | Cron or RFC 5545 RRULE. One schedule per name and key; the same key replaces it.                           |
+| `#unschedule`                        | method                     | `(name: string, key?: string) => Promise<void>`                                                                              | Without `key`, removes only the unkeyed schedule.                                                          |
+| `#getSchedules`                      | method                     | `<P extends object>(name: string, key?: string) => Promise<JobSchedule<P>[]>`                                                | With `key`, at most one. Ordered by key.                                                                   |
+| `#previewSchedule`                   | method                     | `(recurrence: string, options?: JobSchedulePreviewOptions) => Promise<DateTime[]>`                                           | Stores nothing. Validates as `schedule` does. Results are in `options.timeZone` (UTC by default).          |
 | `#cancel` / `#resume` / `#deleteJob` | method                     | `(name: string, id: string \| string[]) => Promise<void>`                                                                    | `cancel` aborts the signal for a running job.                                                              |
 | `#getJob`                            | method                     | `<P extends object>(name: string, id: string) => Promise<JobInfo<P> \| null>`                                                | —                                                                                                          |
 | `JobRunner`                          | abstract class             | `@Injectable()`. `start()`, `stop()`                                                                                         | Consumer side. `stop()` waits for in-flight jobs.                                                          |
@@ -54,6 +56,9 @@ Notably **not** a dependency: `kysely`. Transactional enqueue is supported throu
 | `JobContext`                         | interface + abstract class | `{ id: string; name: string; signal: AbortSignal; expiresIn?: Duration }`                                                    | Declaration-merged so one symbol is both the type and the DI token.                                        |
 | `registerJobContext`                 | function                   | `<T extends Registry>(registry: T) => T`                                                                                     | **Required** if any service injects `JobContext`. Registers a throwing placeholder.                        |
 | `JobSendOptions`                     | interface                  | `{ startAfter?: Duration \| DateTime }`                                                                                      | Relative delay or absolute earliest-run time. A lower bound, not exact scheduling.                         |
+| `JobScheduleOptions`                 | interface                  | `{ key?: string; timeZone?: string; missed?: 'skip' \| 'once' }`                                                             | `timeZone` is IANA, UTC when omitted. `missed` defaults to the backend's (`skip` on pg-boss).              |
+| `JobSchedule<Payload>`               | interface                  | `{ name, key, recurrence, timeZone, payload? }`                                                                              | `key` is `''` for the unkeyed schedule. No backend bookkeeping fields.                                     |
+| `JobSchedulePreviewOptions`          | interface                  | `{ timeZone?: string; from?: DateTime; count?: number }`                                                                     | Occurrences are strictly after `from`, so paging passes the last one back in.                              |
 | `JobQueuePolicy`                     | interface                  | `{ retryLimit?, retryDelay?: Duration, retryBackoff?, retryDelayMax?: Duration, expiresIn?: Duration, deadLetter?: string }` | Applied per queue when the runner starts. `expiresIn` is what surfaces as `JobContext.expiresIn`.          |
 | `JobWorkerPolicy`                    | interface                  | `{ concurrency?: number, batchSize?: number, pollInterval?: Duration }`                                                      | Configures the worker **this node** starts, not the queue. Applied when the runner registers the worker.   |
 | `JobInfo<Payload>`                   | interface                  | `{ id, name, state: JobState, data: Payload }`                                                                               | Lowest common denominator across backends.                                                                 |
@@ -137,6 +142,31 @@ await db.transaction().execute(async trx => {
 });
 ```
 
+Keyed schedules put many schedules on one queue, each with its own key, zone and recurrence:
+
+```typescript
+await broker.schedule(
+  'routine.run',
+  'FREQ=WEEKLY;BYDAY=MO,WE;BYHOUR=9;BYMINUTE=0',
+  { routineId },
+  {
+    key: routineId,
+    timeZone: person.timeZone,
+    missed: 'skip',
+  },
+);
+
+const [routine] = await broker.getSchedules('routine.run', routineId);
+if (routine) {
+  const next = await broker.previewSchedule(routine.recurrence, { timeZone: routine.timeZone, count: 3 });
+}
+
+await broker.unschedule('routine.run', routineId); // leaves every other routine's schedule alone
+```
+
+Inside the transactional-enqueue scope above, `schedule` and `unschedule` commit or roll back with
+the transaction.
+
 See [.claude/skills/job](../../.claude/skills/job) for the generator and its examples.
 
 ## Rules for generated code
@@ -201,10 +231,20 @@ See [.claude/skills/job](../../.claude/skills/job) for the generator and its exa
   reconciles onto the queue via `createQueue`/`updateQueue`, a worker policy configures only the
   workers _this process_ starts. Two nodes on the same queue may use different values, and a change
   takes effect on the next runner start for that node alone.
-- **The peer floor is pg-boss >= 12.21.0**, and it is load-bearing. `concurrency` maps to
+- **The peer floor is pg-boss >= 12.38.0**, and it is load-bearing. `concurrency` maps to
   `localConcurrency` (added in 12.6.0) and per-job settlement to `perJobResults` (added in 12.21.0).
   An older peer would ignore `perJobResults`, take the handler's `JobResult[]` as the batch's single
-  output, and mark **every job complete, including the failed ones**.
+  output, and mark **every job complete, including the failed ones**. Keyed schedules need 12.38:
+  RRULE recurrences, `missed`, `previewSchedule`, and `unschedule` on a caller's connection all
+  arrived there.
+- **`unschedule(name)` removes only the unkeyed schedule.** pg-boss reads a missing key as `''`,
+  so keyed schedules on the same name survive it. To clear a name, list it with `getSchedules` and
+  unschedule each key.
+- **`getSchedules` is not transactional on pg-boss.** pg-boss offers no connection option for the
+  read, so it runs on pg-boss's own pool and does not see a schedule an uncommitted transaction
+  wrote. `schedule` and `unschedule` do run on the connection provider's executor.
+- **A registry `cron` is the unkeyed schedule.** The runner schedules `PgBossJobRegistration.cron`
+  without a key or zone, so it lives beside any keyed schedules on that name and in UTC.
 - **`JobQueueStats.failed` is a retained count**, bounded by the queue's retention policy, not an
   all-time total. It goes down on its own.
 - **`KyselyTransactionConnectionProvider` strips plugins before adapting the transaction.**
@@ -233,6 +273,8 @@ src/
   job.context.ts           JobContext (interface + token), registerJobContext
   job.info.ts              JobState, JobInfo
   job.send.options.ts      JobSendOptions
+  job.schedule.options.ts  JobScheduleOptions, JobSchedulePreviewOptions
+  job.schedule.ts          JobSchedule
   job.queue.policy.ts      JobQueuePolicy
   job.worker.policy.ts     JobWorkerPolicy
   not.supported.error.ts   NotSupportedError

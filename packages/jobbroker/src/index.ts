@@ -6,6 +6,8 @@ export * from './job.js';
 export * from './job.context.js';
 export * from './job.info.js';
 export * from './job.send.options.js';
+export * from './job.schedule.options.js';
+export * from './job.schedule.js';
 export * from './job.queue.policy.js';
 export * from './job.worker.policy.js';
 export * from './job.monitor.js';

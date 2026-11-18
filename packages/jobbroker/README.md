@@ -6,7 +6,7 @@ A flexible background job processing library with support for scheduled and on-d
 
 - **Abstract interfaces** for easy testing and alternative implementations
 - **Dependency injection** support via [injectkit](https://www.npmjs.com/package/injectkit)
-- **Scheduled jobs** using cron expressions
+- **Scheduled jobs** on cron expressions or RFC 5545 recurrence rules, many per queue with their own key and time zone
 - **On-demand jobs** for immediate execution
 - **Cancellation** of queued _and_ running jobs, plus state lookup, delete, and resume
 - **Per-queue retry & dead-letter policy** for retry limits, backoff, and poison-message capture
@@ -166,6 +166,39 @@ await broker.schedule('cleanup', '0 0 * * *', { olderThan: 30 });
 // Remove a schedule
 await broker.unschedule('cleanup');
 ```
+
+### Keyed schedules
+
+A job name holds one schedule per key, so one queue can carry many independent schedules, each with its own recurrence, payload and time zone. Scheduling again with the same name and key replaces that schedule and leaves the others alone. A recurrence is a cron expression or an RFC 5545 recurrence rule.
+
+```typescript
+// One schedule per routine on a single queue, evaluated in the owner's zone
+await broker.schedule(
+  'routine.run',
+  'FREQ=WEEKLY;BYDAY=MO,WE,FR;BYHOUR=9;BYMINUTE=0',
+  { routineId },
+  {
+    key: routineId,
+    timeZone: 'America/Chicago',
+    missed: 'skip', // or 'once': send one job for the latest occurrence missed while nothing was running
+  },
+);
+
+// Read them back
+const all = await broker.getSchedules('routine.run'); // JobSchedule[], ordered by key
+const mine = await broker.getSchedules('routine.run', routineId); // [] when there is none
+
+// Preview the next occurrences without storing anything (also validates the recurrence and zone)
+const next = await broker.previewSchedule('FREQ=MONTHLY;BYMONTHDAY=1;BYHOUR=8;BYMINUTE=0', {
+  timeZone: 'Europe/Paris',
+  count: 3,
+}); // DateTime[]
+
+// Remove just this routine's schedule
+await broker.unschedule('routine.run', routineId);
+```
+
+Without a key, `schedule` and `unschedule` target the name's single unkeyed schedule, exactly as before, so `unschedule(name)` never touches keyed schedules. With pg-boss, `schedule` and `unschedule` both run on the `PgBossConnectionProvider` executor, so inside a transaction they commit or roll back with it (see [Transactional enqueue](#transactional-enqueue)). `getSchedules` always reads through pg-boss's own pool, so it does not see a schedule written by a transaction that has not committed.
 
 ## Job execution scope and `JobContext`
 
@@ -329,7 +362,7 @@ await runner.start();
 
 When a registration declares no worker policy and no default is set, pg-boss's own defaults apply: one worker, one job per fetch.
 
-> `concurrency` maps to pg-boss `localConcurrency` and per-job settlement to `perJobResults`, both of which the package's peer floor (**pg-boss >= 12.21.0**) guarantees.
+> `concurrency` maps to pg-boss `localConcurrency` and per-job settlement to `perJobResults`, both of which the package's peer floor (**pg-boss >= 12.38.0**) guarantees.
 
 ## Monitoring & draining dead-letter queues
 
@@ -398,15 +431,21 @@ Injection token describing the job execution in flight, registered by the runner
 
 Abstract base class for sending, cancelling, and inspecting jobs. Operations a backend cannot honor throw `NotSupportedError`.
 
-| Method                                                                         | Description                                                                                                         |
-| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| `send<P>(name: string, payload: P, options?: JobSendOptions): Promise<string>` | Queue a job; resolves with the new job id. Pass `options.startAfter` (a Luxon `Duration` or `DateTime`) to defer it |
-| `schedule<P>(name: string, cron: string, payload?: P): Promise<void>`          | Create a recurring job schedule                                                                                     |
-| `unschedule(name: string): Promise<void>`                                      | Remove a recurring job schedule                                                                                     |
-| `cancel(name: string, id: string \| string[]): Promise<void>`                  | Request cancellation of queued or running jobs (cooperative)                                                        |
-| `resume(name: string, id: string \| string[]): Promise<void>`                  | Re-queue previously cancelled jobs                                                                                  |
-| `deleteJob(name: string, id: string \| string[]): Promise<void>`               | Permanently delete jobs                                                                                             |
-| `getJob<P>(name: string, id: string): Promise<JobInfo<P> \| null>`             | Look up a job's current state, or `null` if it does not exist                                                       |
+| Method                                                                                                    | Description                                                                                                                            |
+| --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `send<P>(name: string, payload: P, options?: JobSendOptions): Promise<string>`                            | Queue a job; resolves with the new job id. Pass `options.startAfter` (a Luxon `Duration` or `DateTime`) to defer it                    |
+| `schedule<P>(name: string, recurrence: string, payload?: P, options?: JobScheduleOptions): Promise<void>` | Create or replace a recurring schedule on a cron expression or RFC 5545 recurrence rule. `options` take `key`, `timeZone` and `missed` |
+| `unschedule(name: string, key?: string): Promise<void>`                                                   | Remove the schedule with that key, or the unkeyed one when `key` is omitted                                                            |
+| `getSchedules<P>(name: string, key?: string): Promise<JobSchedule<P>[]>`                                  | List a name's schedules, or the one with `key`                                                                                         |
+| `previewSchedule(recurrence: string, options?: JobSchedulePreviewOptions): Promise<DateTime[]>`           | Next occurrences of a recurrence, without storing anything. `options` take `timeZone`, `from` and `count`                              |
+| `cancel(name: string, id: string \| string[]): Promise<void>`                                             | Request cancellation of queued or running jobs (cooperative)                                                                           |
+| `resume(name: string, id: string \| string[]): Promise<void>`                                             | Re-queue previously cancelled jobs                                                                                                     |
+| `deleteJob(name: string, id: string \| string[]): Promise<void>`                                          | Permanently delete jobs                                                                                                                |
+| `getJob<P>(name: string, id: string): Promise<JobInfo<P> \| null>`                                        | Look up a job's current state, or `null` if it does not exist                                                                          |
+
+### `JobScheduleOptions` / `JobSchedule<Payload>` / `JobSchedulePreviewOptions`
+
+`JobScheduleOptions` is `{ key?, timeZone?, missed?: 'skip' | 'once' }`. `JobSchedule` is the backend-agnostic schedule `getSchedules` returns: `{ name, key, recurrence, timeZone, payload? }`, with `key` `''` for the unkeyed schedule and `timeZone` `'UTC'` when none was given. `JobSchedulePreviewOptions` is `{ timeZone?, from?: DateTime, count? }`.
 
 ### `JobInfo<Payload>` / `JobState`
 
@@ -575,7 +614,7 @@ process.on('SIGTERM', async () => {
 
 ## Peer Dependencies
 
-- `pg-boss` ^12.21.0 - PostgreSQL-based job queue
+- `pg-boss` ^12.38.0 - PostgreSQL-based job queue
 - `reflect-metadata` - Required by InjectKit for decorator metadata
 
 ## License

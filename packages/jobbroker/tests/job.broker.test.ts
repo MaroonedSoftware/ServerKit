@@ -1,13 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Duration } from 'luxon';
+import { DateTime, Duration } from 'luxon';
 import { JobBroker } from '../src/job.broker.js';
 import { JobInfo } from '../src/job.info.js';
+import { JobSchedule } from '../src/job.schedule.js';
+import { JobScheduleOptions, JobSchedulePreviewOptions } from '../src/job.schedule.options.js';
 import { JobSendOptions } from '../src/job.send.options.js';
 
 class TestJobBroker extends JobBroker {
   send = vi.fn<(name: string, payload: object, options?: JobSendOptions) => Promise<string>>().mockResolvedValue('job-id');
-  schedule = vi.fn<(name: string, cron: string, payload?: object) => Promise<void>>().mockResolvedValue(undefined);
-  unschedule = vi.fn<(name: string) => Promise<void>>().mockResolvedValue(undefined);
+  schedule = vi
+    .fn<(name: string, recurrence: string, payload?: object, options?: JobScheduleOptions) => Promise<void>>()
+    .mockResolvedValue(undefined);
+  unschedule = vi.fn<(name: string, key?: string) => Promise<void>>().mockResolvedValue(undefined);
   cancel = vi.fn<(name: string, id: string | string[]) => Promise<void>>().mockResolvedValue(undefined);
   resume = vi.fn<(name: string, id: string | string[]) => Promise<void>>().mockResolvedValue(undefined);
   deleteJob = vi.fn<(name: string, id: string | string[]) => Promise<void>>().mockResolvedValue(undefined);
@@ -15,6 +19,14 @@ class TestJobBroker extends JobBroker {
   async getJob<Payload extends object>(_name: string, _id: string): Promise<JobInfo<Payload> | null> {
     return null;
   }
+
+  async getSchedules<Payload extends object>(name: string, key?: string): Promise<JobSchedule<Payload>[]> {
+    return [{ name, key: key ?? '', recurrence: '0 9 * * *', timeZone: 'UTC' }];
+  }
+
+  previewSchedule = vi
+    .fn<(recurrence: string, options?: JobSchedulePreviewOptions) => Promise<DateTime[]>>()
+    .mockResolvedValue([DateTime.fromISO('2030-01-01T09:00:00Z', { zone: 'utc' })]);
 }
 
 class FailingJobBroker extends JobBroker {
@@ -22,11 +34,11 @@ class FailingJobBroker extends JobBroker {
     throw new Error('Queue unavailable');
   }
 
-  async schedule(_name: string, _cron: string, _payload?: object): Promise<void> {
+  async schedule(_name: string, _recurrence: string, _payload?: object, _options?: JobScheduleOptions): Promise<void> {
     throw new Error('Queue unavailable');
   }
 
-  async unschedule(_name: string): Promise<void> {
+  async unschedule(_name: string, _key?: string): Promise<void> {
     throw new Error('Queue unavailable');
   }
 
@@ -43,6 +55,14 @@ class FailingJobBroker extends JobBroker {
   }
 
   async getJob<Payload extends object>(_name: string, _id: string): Promise<JobInfo<Payload> | null> {
+    throw new Error('Queue unavailable');
+  }
+
+  async getSchedules<Payload extends object>(_name: string, _key?: string): Promise<JobSchedule<Payload>[]> {
+    throw new Error('Queue unavailable');
+  }
+
+  async previewSchedule(_recurrence: string, _options?: JobSchedulePreviewOptions): Promise<DateTime[]> {
     throw new Error('Queue unavailable');
   }
 }
@@ -118,6 +138,12 @@ describe('JobBroker', () => {
       expect(broker.schedule).toHaveBeenCalledWith('heartbeat', '* * * * *');
     });
 
+    it('should accept schedule options', async () => {
+      const options: JobScheduleOptions = { key: 'routine-1', timeZone: 'America/Chicago', missed: 'skip' };
+      await broker.schedule('routine.run', 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0', { routineId: 'routine-1' }, options);
+      expect(broker.schedule).toHaveBeenCalledWith('routine.run', 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0', { routineId: 'routine-1' }, options);
+    });
+
     it('should return a Promise that resolves to void', async () => {
       const result = await broker.schedule('daily-report', '0 9 * * *');
       expect(result).toBeUndefined();
@@ -150,6 +176,11 @@ describe('JobBroker', () => {
       expect(broker.unschedule).toHaveBeenCalledWith('daily-report');
     });
 
+    it('should accept a key', async () => {
+      await broker.unschedule('routine.run', 'routine-1');
+      expect(broker.unschedule).toHaveBeenCalledWith('routine.run', 'routine-1');
+    });
+
     it('should return a Promise that resolves to void', async () => {
       const result = await broker.unschedule('daily-report');
       expect(result).toBeUndefined();
@@ -158,6 +189,29 @@ describe('JobBroker', () => {
     it('should propagate errors from the implementation', async () => {
       const failingBroker = new FailingJobBroker();
       await expect(failingBroker.unschedule('daily-report')).rejects.toThrow('Queue unavailable');
+    });
+  });
+
+  describe('getSchedules', () => {
+    it('should return backend-agnostic schedules', async () => {
+      const schedules = await broker.getSchedules('routine.run', 'routine-1');
+      expect(schedules).toEqual([{ name: 'routine.run', key: 'routine-1', recurrence: '0 9 * * *', timeZone: 'UTC' }]);
+    });
+
+    it('should propagate errors from implementation', async () => {
+      await expect(new FailingJobBroker().getSchedules('routine.run')).rejects.toThrow('Queue unavailable');
+    });
+  });
+
+  describe('previewSchedule', () => {
+    it('should return Luxon DateTimes', async () => {
+      const [first] = await broker.previewSchedule('0 9 * * *', { timeZone: 'UTC', count: 1 });
+      expect(DateTime.isDateTime(first)).toBe(true);
+      expect(broker.previewSchedule).toHaveBeenCalledWith('0 9 * * *', { timeZone: 'UTC', count: 1 });
+    });
+
+    it('should propagate errors from implementation', async () => {
+      await expect(new FailingJobBroker().previewSchedule('0 9 * * *')).rejects.toThrow('Queue unavailable');
     });
   });
 });
