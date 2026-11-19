@@ -64,12 +64,12 @@ export interface JobWorkerPolicy {
    * at once, counted across every node consuming the queue. pg-boss tracks it
    * in the database. Jobs sent without a group are not limited by it.
    *
-   * The limit is checked when a worker fetches, not held as a lock, so it is
-   * approximate: two workers that fetch at nearly the same moment can both see
-   * no running job in a group and each start one, putting two of that group's
-   * jobs in flight under a limit of 1. Use it to bound load per group across
-   * nodes. When a group's jobs must never overlap, use
-   * {@link localGroupConcurrency} instead.
+   * With a limit of 1, a group's jobs run one at a time across the whole fleet.
+   * Workers that fetch at the same moment can briefly claim past the limit, but
+   * pg-boss counts the group again once a claim commits and puts the extra jobs
+   * back before any handler sees them. The exception is a queue created outside
+   * the runner with a pg-boss policy that caps queued jobs per key (such as
+   * `stately`): a job that policy will not take back runs over the limit.
    *
    * The count is shared, but the limit is still this worker's: each node checks
    * the database against the value it was started with, so give every node
@@ -82,7 +82,7 @@ export interface JobWorkerPolicy {
    *
    * @example
    * ```typescript
-   * // Up to two of a tenant's jobs at a time across the fleet, roughly.
+   * // Up to two of a tenant's jobs at a time across the fleet.
    * const worker: JobWorkerPolicy = { concurrency: 8, groupConcurrency: 2 };
    * ```
    */
@@ -97,9 +97,9 @@ export interface JobWorkerPolicy {
    * limited by it.
    *
    * It does not coordinate across nodes. Two nodes consuming the same queue can
-   * each run one of a group's jobs at the same time, so strict per-group order
-   * needs a single node consuming the queue (or another way of pinning a group
-   * to one node).
+   * each run one of a group's jobs at the same time, so it fits a queue that a
+   * single node consumes, or a cap on what one node takes on per group. For a
+   * limit that spans nodes, use {@link groupConcurrency}.
    *
    * Takes the same shapes as {@link groupConcurrency}: a number, or
    * `{ default, tiers }`. Cannot be combined with {@link groupConcurrency}: the

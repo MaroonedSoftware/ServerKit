@@ -85,9 +85,9 @@ describe('PgBossJobRunner local group concurrency against pg-boss', () => {
     await broker.send(QUEUE, { group: 'b', label: 'b1' }, { group: { id: 'b' } });
 
     // Queued before any worker exists, so all four workers' first fetches go
-    // for them at once. On a real server that is when a database-checked group
-    // limit can let two of group a's jobs start together; PGlite runs one query
-    // at a time, so it cannot show that race, only that the local limit holds.
+    // for them at once, which is when concurrent fetches race on a real server.
+    // PGlite runs one query at a time, so it cannot show that race, only that
+    // the local limit holds.
     await runner.start();
 
     // One job from each group starts; the second job of group a stays queued.

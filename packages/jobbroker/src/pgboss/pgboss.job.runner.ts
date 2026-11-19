@@ -443,7 +443,7 @@ export class PgBossJobRunner extends JobRunner {
    * rounded — pg-boss accepts intervals down to 0.5s, so rounding would turn a
    * deliberate sub-second poll into either 0 (rejected) or 1.
    * `groupConcurrency` maps to pg-boss's database-tracked `groupConcurrency`
-   * (counted across nodes, approximate under simultaneous fetches) and
+   * (counted across nodes) and
    * `localGroupConcurrency` to pg-boss's in-process `localGroupConcurrency`
    * (exact, but within this node only).
    *

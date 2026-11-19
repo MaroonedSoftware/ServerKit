@@ -10,7 +10,7 @@ A flexible background job processing library with support for scheduled and on-d
 - **On-demand jobs** for immediate execution
 - **Cancellation** of queued _and_ running jobs, plus state lookup, delete, and resume
 - **Per-queue retry & dead-letter policy** for retry limits, backoff, and poison-message capture
-- **Per-queue worker policy** for concurrency, batch size, poll interval, and per-group limits (exact on one node, or approximate across nodes)
+- **Per-queue worker policy** for concurrency, batch size, poll interval, and per-group limits (across every node, or in process on one)
 - **Job groups** on send, so jobs sharing a key run one at a time while other keys run in parallel
 - **Per-job settlement** so one failing job in a batch never drags its siblings into retry
 - **Permanent failures** that skip remaining retries and dead-letter immediately
@@ -368,23 +368,23 @@ When a registration declares no worker policy and no default is set, pg-boss's o
 
 ### Ordering within a group
 
-Some queues must keep one key's jobs in order (the replies in one conversation, the updates to one account) without making every other key wait. Send each job with a `group`, and give the worker a `localGroupConcurrency`:
+Some queues must keep one key's jobs in order (the replies in one conversation, the updates to one account) without making every other key wait. Send each job with a `group`, and give the worker a `groupConcurrency`:
 
 ```typescript
 registry.set('chat.reply', {
   job: ChatReplyJob,
   worker: {
     concurrency: 3, // three jobs at once on this node...
-    localGroupConcurrency: 1, // ...but never two from the same conversation
+    groupConcurrency: 1, // ...but never two from the same conversation, on any node
   },
 });
 
 await broker.send('chat.reply', { conversationId, messageId }, { group: { id: conversationId } });
 ```
 
-`localGroupConcurrency` is counted in process by the node's own workers, so the limit is exact: with a limit of 1, one conversation's jobs run strictly one after another while other conversations run alongside them. It does not coordinate across nodes, so two nodes consuming the queue can each run one of a group's jobs at the same time. Strict per-group order needs a single node consuming the queue.
+`groupConcurrency` is counted in the database, so the limit spans every node consuming the queue: with a limit of 1, one conversation's jobs run one after another while other conversations run alongside them. When workers fetch at the same moment, a fetch can briefly claim more of a group's jobs than the limit allows, but pg-boss counts the group again once its claim commits and puts the extra jobs back before any handler sees them. Its limit is each worker's own value, so give every node the same one. The one way past it is a queue created outside the runner with a pg-boss policy that caps queued jobs per key, such as `stately`: when a key's queued slot has filled since the claim, pg-boss cannot put the job back and it runs over the limit.
 
-`groupConcurrency` is the cross-node alternative. pg-boss counts a group's running jobs in the database, so the limit spans every node, but it is checked when a worker fetches rather than held as a lock. Two workers that fetch at nearly the same moment can both see no running job in a group and each take one, so under a limit of 1 two of a group's jobs can still start together. Use it to bound load per group across a fleet, not to guarantee order. Its limit is each worker's own value, so give every node the same one.
+`localGroupConcurrency` is the in-process alternative. The node's own workers count their running jobs, so the limit is exact on that node and costs no extra queries, but it does not coordinate across nodes: two nodes consuming the queue can each run one of a group's jobs at the same time. Use it when a single node consumes the queue, or to cap what one node takes on per group.
 
 The two cannot be combined: pg-boss accepts only one, and the runner refuses to start if a queue's effective policy (its own `worker` merged over `defaultWorkerPolicy`) sets both. A queue can clear one it inherits from the default by setting that field to `undefined`. Jobs sent without a `group` are limited by neither.
 
@@ -539,13 +539,13 @@ Backend-agnostic per-queue retry and dead-letter policy (see [Retry & dead-lette
 
 Per-queue worker throughput, declared on the registration's `worker` field or runner-wide via `defaultWorkerPolicy`. All fields optional.
 
-| Field                   | Type                                                            | Meaning                                                                                                                                                                           |
-| ----------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `concurrency`           | `number`                                                        | Jobs this node may run at once for the queue. Each unit settles its own job.                                                                                                      |
-| `batchSize`             | `number`                                                        | Jobs fetched per trip and handed to the handler as one batch, settled as a unit.                                                                                                  |
-| `pollInterval`          | `Duration`                                                      | How long a worker waits between fetches while idle. Passed through unrounded.                                                                                                     |
-| `localGroupConcurrency` | `number \| { default: number; tiers?: Record<string, number> }` | Jobs of one `group` that may run at once on this node. Exact, but not coordinated across nodes.                                                                                   |
-| `groupConcurrency`      | `number \| { default: number; tiers?: Record<string, number> }` | Jobs of one `group` that may run at once across all nodes, counted in the database. Approximate: simultaneous fetches can exceed it. Not combinable with `localGroupConcurrency`. |
+| Field                   | Type                                                            | Meaning                                                                                                                          |
+| ----------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `concurrency`           | `number`                                                        | Jobs this node may run at once for the queue. Each unit settles its own job.                                                     |
+| `batchSize`             | `number`                                                        | Jobs fetched per trip and handed to the handler as one batch, settled as a unit.                                                 |
+| `pollInterval`          | `Duration`                                                      | How long a worker waits between fetches while idle. Passed through unrounded.                                                    |
+| `localGroupConcurrency` | `number \| { default: number; tiers?: Record<string, number> }` | Jobs of one `group` that may run at once on this node, counted in process. Not coordinated across nodes.                         |
+| `groupConcurrency`      | `number \| { default: number; tiers?: Record<string, number> }` | Jobs of one `group` that may run at once across all nodes, counted in the database. Not combinable with `localGroupConcurrency`. |
 
 Configures the worker this process starts, not the queue. See [Worker concurrency](#worker-concurrency).
 
