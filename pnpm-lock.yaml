@@ -453,7 +453,7 @@ importers:
         specifier: ^0.29.5
         version: 0.29.5
       pg-boss:
-        specifier: ^12.38.0
+        specifier: ^12.38.2
         version: 12.38.2(@opentelemetry/api@1.9.1)
 
   packages/johnny5:

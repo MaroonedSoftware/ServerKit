@@ -55,7 +55,7 @@ Notably **not** a dependency: `kysely`. Transactional enqueue is supported throu
 | `JobMonitor`                         | abstract class             | `@Injectable()`. `getQueueStats`, `listJobs`, `redrive`, `deleteJob`, `retryJob`                                                  | Operational surface — dashboards, dead-letter drains.                                                       |
 | `JobContext`                         | interface + abstract class | `{ id: string; name: string; signal: AbortSignal; expiresIn?: Duration }`                                                         | Declaration-merged so one symbol is both the type and the DI token.                                         |
 | `registerJobContext`                 | function                   | `<T extends Registry>(registry: T) => T`                                                                                          | **Required** if any service injects `JobContext`. Registers a throwing placeholder.                         |
-| `JobSendOptions`                     | interface                  | `{ startAfter?: Duration \| DateTime; group?: { id: string; tier?: string } }`                                                    | `startAfter`: a lower bound, not exact scheduling. `group`: only limits anything with a `groupConcurrency`. |
+| `JobSendOptions`                     | interface                  | `{ startAfter?: Duration \| DateTime; group?: { id: string; tier?: string } }`                                                    | `startAfter`: a lower bound, not exact scheduling. `group`: has no effect until a worker sets group limits. |
 | `JobScheduleOptions`                 | interface                  | `{ key?: string; timeZone?: string; missed?: 'skip' \| 'once' }`                                                                  | `timeZone` is IANA, UTC when omitted. `missed` defaults to the backend's (`skip` on pg-boss).               |
 | `JobSchedule<Payload>`               | interface                  | `{ name, key, recurrence, timeZone, payload? }`                                                                                   | `key` is `''` for the unkeyed schedule. No backend bookkeeping fields.                                      |
 | `JobSchedulePreviewOptions`          | interface                  | `{ timeZone?: string; from?: DateTime; count?: number }`                                                                          | Occurrences are strictly after `from`, so paging passes the last one back in.                               |
@@ -227,15 +227,17 @@ See [.claude/skills/job](../../.claude/skills/job) for the generator and its exa
 - **`PermanentJobError` is matched by direct `instanceof`, not by walking the `cause` chain.** The
   meaning is "this handler declared the failure permanent". Wrapping a transient error in one makes
   it permanent; a transient error that merely carries one as its cause stays retryable.
-- **Use `localGroupConcurrency`, not `groupConcurrency`, to keep a group's jobs in order.** A queue
-  that must run one key's jobs one at a time (one conversation, one account) while different keys
-  run in parallel sends each job with `group: { id: key }` and runs with
-  `worker: { concurrency: n, localGroupConcurrency: 1 }`. That limit is counted in process, so it is
-  exact on the node, but it does not coordinate across nodes: strict order needs one node consuming
-  the queue. `groupConcurrency` is counted in the database and spans nodes, but it is checked at
-  fetch time, not locked, so two workers fetching at once can both start a job from the same group
-  under a limit of 1. Treat it as a load bound, not an ordering guarantee, and give every node the
-  same value. Jobs sent without a group ignore both.
+- **Use `groupConcurrency` to keep a group's jobs in order across nodes.** A queue that must run
+  one key's jobs one at a time (one conversation, one account) while different keys run in
+  parallel sends each job with `group: { id: key }` and runs with
+  `worker: { concurrency: n, groupConcurrency: 1 }`. The limit is counted in the database and spans
+  nodes. Simultaneous fetches can briefly claim past it, but pg-boss (>= 12.38.1) counts again after
+  the claim commits and puts the extra jobs back before a handler sees them. The exception is a
+  queue created outside the runner with a policy that caps queued jobs per key (such as `stately`),
+  where a job pg-boss cannot put back runs over the limit. Each node checks its own value, so give
+  every node the same one. `localGroupConcurrency` is counted in process: exact on the node with no
+  extra queries, but not coordinated across nodes, so it fits a queue a single node consumes. Jobs
+  sent without a group ignore both.
 - **`groupConcurrency` and `localGroupConcurrency` are mutually exclusive.** pg-boss rejects both
   together, and the runner checks every queue's merged policy (own `worker` over
   `defaultWorkerPolicy`) before it starts anything, throwing a `ServerkitError` naming the queue. A
@@ -244,13 +246,15 @@ See [.claude/skills/job](../../.claude/skills/job) for the generator and its exa
   reconciles onto the queue via `createQueue`/`updateQueue`, a worker policy configures only the
   workers _this process_ starts. Two nodes on the same queue may use different values, and a change
   takes effect on the next runner start for that node alone.
-- **The peer floor is pg-boss >= 12.38.0**, and it is load-bearing. `concurrency` maps to
+- **The peer floor is pg-boss >= 12.38.2**, and it is load-bearing. `concurrency` maps to
   `localConcurrency` (added in 12.6.0) and per-job settlement to `perJobResults` (added in 12.21.0).
   `groupConcurrency`, `localGroupConcurrency`, and the `group` send option are 12.x features the same floor covers.
   An older peer would ignore `perJobResults`, take the handler's `JobResult[]` as the batch's single
   output, and mark **every job complete, including the failed ones**. Keyed schedules need 12.38:
   RRULE recurrences, `missed`, `previewSchedule`, and `unschedule` on a caller's connection all
-  arrived there.
+  arrived there. Before 12.38.1, workers fetching at once could each claim a job of the same group
+  and run a group past its `groupConcurrency`. 12.38.2 also stops maintenance deleting a job that
+  is waiting for its retry.
 - **`unschedule(name)` removes only the unkeyed schedule.** pg-boss reads a missing key as `''`,
   so keyed schedules on the same name survive it. To clear a name, list it with `getSchedules` and
   unschedule each key.
