@@ -390,7 +390,7 @@ The two cannot be combined: pg-boss accepts only one, and the runner refuses to 
 
 A group may also carry a `tier`, and either limit may give tiers their own values: `{ default: 1, tiers: { priority: 3 } }` lets a group sent with `group: { id, tier: 'priority' }` run three at once while every other group runs one.
 
-> `concurrency` maps to pg-boss `localConcurrency`, `localGroupConcurrency` and `groupConcurrency` to the pg-boss options of the same names, a send's `group` to pg-boss's `group` job option, and per-job settlement to `perJobResults`, all of which the package's peer floor (**pg-boss >= 12.38.0**) guarantees.
+> `concurrency` maps to pg-boss `localConcurrency`, `localGroupConcurrency` and `groupConcurrency` to the pg-boss options of the same names, a send's `group` to pg-boss's `group` job option, and per-job settlement to `perJobResults`, all of which the package's peer floor (**pg-boss >= 12.38.2**) guarantees.
 
 ## Monitoring & draining dead-letter queues
 
@@ -644,7 +644,7 @@ process.on('SIGTERM', async () => {
 
 ## Peer Dependencies
 
-- `pg-boss` ^12.38.0 - PostgreSQL-based job queue
+- `pg-boss` ^12.38.2 - PostgreSQL-based job queue
 - `reflect-metadata` - Required by InjectKit for decorator metadata
 
 ## License

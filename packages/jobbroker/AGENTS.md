@@ -244,13 +244,15 @@ See [.claude/skills/job](../../.claude/skills/job) for the generator and its exa
   reconciles onto the queue via `createQueue`/`updateQueue`, a worker policy configures only the
   workers _this process_ starts. Two nodes on the same queue may use different values, and a change
   takes effect on the next runner start for that node alone.
-- **The peer floor is pg-boss >= 12.38.0**, and it is load-bearing. `concurrency` maps to
+- **The peer floor is pg-boss >= 12.38.2**, and it is load-bearing. `concurrency` maps to
   `localConcurrency` (added in 12.6.0) and per-job settlement to `perJobResults` (added in 12.21.0).
   `groupConcurrency`, `localGroupConcurrency`, and the `group` send option are 12.x features the same floor covers.
   An older peer would ignore `perJobResults`, take the handler's `JobResult[]` as the batch's single
   output, and mark **every job complete, including the failed ones**. Keyed schedules need 12.38:
   RRULE recurrences, `missed`, `previewSchedule`, and `unschedule` on a caller's connection all
-  arrived there.
+  arrived there. Before 12.38.1, workers fetching at once could each claim a job of the same group
+  and run a group past its `groupConcurrency`. 12.38.2 also stops maintenance deleting a job that
+  is waiting for its retry.
 - **`unschedule(name)` removes only the unkeyed schedule.** pg-boss reads a missing key as `''`,
   so keyed schedules on the same name survive it. To clear a name, list it with `getSchedules` and
   unschedule each key.

@@ -65,10 +65,10 @@
     "@repo/config-typescript": "workspace:*",
     "@types/luxon": "^3.7.5",
     "kysely": "^0.29.5",
-    "pg-boss": "^12.38.0"
+    "pg-boss": "^12.38.2"
   },
   "peerDependencies": {
-    "pg-boss": "^12.38.0"
+    "pg-boss": "^12.38.2"
   },
   "peerDependenciesMeta": {
     "pg-boss": {
