@@ -1,5 +1,12 @@
 # @maroonedsoftware/jobbroker
 
+## 1.15.1
+
+### Patch Changes
+
+- bd9ea20: Recommend `groupConcurrency` for keeping a group's jobs from overlapping across nodes. With pg-boss 12.38.1 and later it holds under simultaneous fetches, so the docs no longer call it approximate. `localGroupConcurrency` is described as the in-process limit for a queue one node consumes.
+- 917234d: Require pg-boss 12.38.2. Before 12.38.1, workers that fetched at the same moment could each claim a job of one group and run the group past its `groupConcurrency`. 12.38.2 also stops maintenance from deleting a job that is waiting for its retry.
+
 ## 1.15.0
 
 ### Minor Changes
