@@ -41,7 +41,7 @@ const QUEUE = 'chat.reply';
  * PGlite database, so the group limit asserted is the one pg-boss enforces
  * when fetching, not what a mock was handed.
  */
-describe('PgBossJobRunner group concurrency against pg-boss', () => {
+describe('PgBossJobRunner local group concurrency against pg-boss', () => {
   let pglite: PGlite;
   let pgboss: PgBoss;
   let runner: PgBossJobRunner;
@@ -60,7 +60,7 @@ describe('PgBossJobRunner group concurrency against pg-boss', () => {
     const registrations = new PgBossJobRegistryMap();
     registrations.set(QUEUE, {
       job: HeldJob,
-      worker: { concurrency: 3, groupConcurrency: 1, pollInterval: Duration.fromObject({ milliseconds: 500 }) },
+      worker: { concurrency: 4, localGroupConcurrency: 1, pollInterval: Duration.fromObject({ milliseconds: 500 }) },
     });
 
     const logger = { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn(), trace: vi.fn() } as unknown as Logger;
@@ -68,8 +68,9 @@ describe('PgBossJobRunner group concurrency against pg-boss', () => {
     runner.cancelPollIntervalSeconds = 0;
     broker = new PgBossJobBroker(registrations, pgboss, new PgBossConnectionProvider());
 
-    // Creates the queue and starts the workers, so the jobs below are picked up.
-    await runner.start();
+    // The queue exists before the runner starts, so the test can queue jobs first.
+    await pgboss.start();
+    await pgboss.createQueue(QUEUE);
   }, 60_000);
 
   afterAll(async () => {
@@ -83,11 +84,17 @@ describe('PgBossJobRunner group concurrency against pg-boss', () => {
     await broker.send(QUEUE, { group: 'a', label: 'a2' }, { group: { id: 'a' } });
     await broker.send(QUEUE, { group: 'b', label: 'b1' }, { group: { id: 'b' } });
 
+    // Queued before any worker exists, so all four workers' first fetches go
+    // for them at once. On a real server that is when a database-checked group
+    // limit can let two of group a's jobs start together; PGlite runs one query
+    // at a time, so it cannot show that race, only that the local limit holds.
+    await runner.start();
+
     // One job from each group starts; the second job of group a stays queued.
     await vi.waitFor(() => expect(running).toHaveLength(2), { timeout: 10_000, interval: 50 });
     expect(running.map(p => p.group).sort()).toEqual(['a', 'b']);
 
-    // Give the three workers several more polls to (wrongly) pick up a2.
+    // Give the four workers several more polls to (wrongly) pick up a2.
     await new Promise(resolve => setTimeout(resolve, 1_500));
     expect(running).toHaveLength(2);
 

@@ -175,8 +175,16 @@ export class PgBossJobRunner extends JobRunner {
    * immediately.
    *
    * @returns A promise that resolves when all workers are registered with pg-boss.
+   * @throws ServerkitError before anything is created or started, if a queue's
+   *         effective worker policy sets both `groupConcurrency` and
+   *         `localGroupConcurrency`.
    */
   async start(): Promise<void> {
+    // Checked up front so a conflicting policy fails before anything is created or started.
+    for (const [name, registration] of this.registrations.entries()) {
+      this.assertWorkerPolicy(name, this.resolveWorkerPolicy(registration));
+    }
+
     await this.pgboss.start();
 
     // Tracks queues we have already ensured exist during this start pass, so a
@@ -409,12 +417,35 @@ export class PgBossJobRunner extends JobRunner {
   }
 
   /**
+   * Rejects an effective worker policy that sets both `groupConcurrency` and
+   * `localGroupConcurrency`. pg-boss accepts only one, and because the runner's
+   * {@link defaultWorkerPolicy} is merged beneath each queue's own policy, the
+   * two can meet without either declaration setting both. Failing here names
+   * the queue; a queue that inherits one from the default can opt out of it by
+   * setting that field to `undefined` in its own policy.
+   *
+   * @param name - The queue the policy applies to.
+   * @param policy - The effective worker policy for the queue, or `undefined`.
+   * @throws ServerkitError if the policy sets both group limits.
+   * @internal
+   */
+  private assertWorkerPolicy(name: string, policy: JobWorkerPolicy | undefined): void {
+    if (policy?.groupConcurrency !== undefined && policy.localGroupConcurrency !== undefined) {
+      throw new ServerkitError(
+        `Worker policy for queue "${name}" sets both groupConcurrency and localGroupConcurrency; set one (a queue can clear one inherited from defaultWorkerPolicy by setting it to undefined)`,
+      ).withDetails({ queue: name });
+    }
+  }
+
+  /**
    * Maps a backend-agnostic {@link JobWorkerPolicy} onto pg-boss's native work
    * options. `pollInterval` is passed as a fractional second count rather than
    * rounded — pg-boss accepts intervals down to 0.5s, so rounding would turn a
    * deliberate sub-second poll into either 0 (rejected) or 1.
-   * `groupConcurrency` maps to pg-boss's database-tracked `groupConcurrency`, so
-   * the per-group limit holds across nodes, not just within this one.
+   * `groupConcurrency` maps to pg-boss's database-tracked `groupConcurrency`
+   * (counted across nodes, approximate under simultaneous fetches) and
+   * `localGroupConcurrency` to pg-boss's in-process `localGroupConcurrency`
+   * (exact, but within this node only).
    *
    * Always returns options, because `perJobResults` is always on: it is what makes
    * pg-boss settle each job in a batch individually, and what gives
@@ -438,6 +469,9 @@ export class PgBossJobRunner extends JobRunner {
     }
     if (policy?.groupConcurrency !== undefined) {
       options.groupConcurrency = policy.groupConcurrency;
+    }
+    if (policy?.localGroupConcurrency !== undefined) {
+      options.localGroupConcurrency = policy.localGroupConcurrency;
     }
     return options;
   }

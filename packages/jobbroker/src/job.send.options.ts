@@ -33,16 +33,17 @@ export interface JobSendOptions {
 
   /**
    * Put the job in a group, so a worker can cap how many jobs of one group run
-   * at once (see {@link JobWorkerPolicy.groupConcurrency}).
+   * at once (see {@link JobWorkerPolicy.localGroupConcurrency} and
+   * {@link JobWorkerPolicy.groupConcurrency}).
    *
    * - `id` names the group. Jobs that must not overlap share an id: with a
    *   group concurrency of 1, jobs sharing an id run one after another while
    *   jobs in other groups run alongside them.
    * - `tier` optionally places the group in a tier, so a worker can give
-   *   different tiers different limits (`groupConcurrency.tiers`).
+   *   different tiers different limits (the `tiers` of either limit).
    *
    * Grouping has no effect on its own; it only matters once the queue's
-   * worker sets a group concurrency. Backends map this onto their native
+   * worker sets a group limit. Backends map this onto their native
    * grouping (pg-boss's `group` job option). A backend without job groups
    * throws a `NotSupportedError`.
    *
