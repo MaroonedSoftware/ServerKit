@@ -30,4 +30,27 @@ export interface JobSendOptions {
    * `NotSupportedError`.
    */
   startAfter?: Duration | DateTime;
+
+  /**
+   * Put the job in a group, so a worker can cap how many jobs of one group run
+   * at once (see {@link JobWorkerPolicy.groupConcurrency}).
+   *
+   * - `id` names the group. Jobs that must not overlap share an id: with a
+   *   group concurrency of 1, jobs sharing an id run one after another while
+   *   jobs in other groups run alongside them.
+   * - `tier` optionally places the group in a tier, so a worker can give
+   *   different tiers different limits (`groupConcurrency.tiers`).
+   *
+   * Grouping has no effect on its own; it only matters once the queue's
+   * worker sets a group concurrency. Backends map this onto their native
+   * grouping (pg-boss's `group` job option). A backend without job groups
+   * throws a `NotSupportedError`.
+   *
+   * @example
+   * ```typescript
+   * // One conversation's replies stay in order; other conversations run in parallel.
+   * await broker.send('chat.reply', payload, { group: { id: conversationId } });
+   * ```
+   */
+  group?: { id: string; tier?: string };
 }

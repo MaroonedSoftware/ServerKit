@@ -884,6 +884,43 @@ describe('PgBossJobRunner', () => {
       expect(mockPgBoss.work).toHaveBeenCalledWith('defaults-only', { perJobResults: true, localConcurrency: 2, batchSize: 5 }, expect.any(Function));
     });
 
+    it('maps groupConcurrency onto pg-boss groupConcurrency beside localConcurrency', async () => {
+      registrations.clear();
+      registrations.set('chat.reply', { job: TestJob, worker: { concurrency: 3, groupConcurrency: 1 } });
+      registrations.set('tiered', { job: TestJob, worker: { groupConcurrency: { default: 1, tiers: { priority: 3 } } } });
+      runner = new PgBossJobRunner(mockContainer, registrations, mockPgBoss, mockLogger);
+
+      await runner.start();
+
+      expect(mockPgBoss.work).toHaveBeenCalledWith(
+        'chat.reply',
+        { perJobResults: true, localConcurrency: 3, groupConcurrency: 1 },
+        expect.any(Function),
+      );
+      expect(mockPgBoss.work).toHaveBeenCalledWith(
+        'tiered',
+        { perJobResults: true, groupConcurrency: { default: 1, tiers: { priority: 3 } } },
+        expect.any(Function),
+      );
+    });
+
+    it('merges groupConcurrency through defaultWorkerPolicy', async () => {
+      registrations.clear();
+      registrations.set('inherits', { job: TestJob, worker: { concurrency: 4 } });
+      registrations.set('overrides', { job: TestJob, worker: { groupConcurrency: 2 } });
+      runner = new PgBossJobRunner(mockContainer, registrations, mockPgBoss, mockLogger);
+      runner.defaultWorkerPolicy = { groupConcurrency: 1 };
+
+      await runner.start();
+
+      expect(mockPgBoss.work).toHaveBeenCalledWith(
+        'inherits',
+        { perJobResults: true, localConcurrency: 4, groupConcurrency: 1 },
+        expect.any(Function),
+      );
+      expect(mockPgBoss.work).toHaveBeenCalledWith('overrides', { perJobResults: true, groupConcurrency: 2 }, expect.any(Function));
+    });
+
     it('maps an empty worker policy to perJobResults alone', async () => {
       registrations.clear();
       registrations.set('empty.policy', { job: TestJob, worker: {} });

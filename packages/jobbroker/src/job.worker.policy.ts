@@ -58,4 +58,27 @@ export interface JobWorkerPolicy {
    * it as a fractional second count, not rounded.
    */
   pollInterval?: Duration;
+
+  /**
+   * The most jobs of one group (see {@link JobSendOptions.group}) that may run
+   * at once, across every node consuming the queue. pg-boss tracks it in the
+   * database, so the limit holds however many nodes and workers are running.
+   * Jobs sent without a group are not limited by it.
+   *
+   * The count is shared, but the limit is still this worker's: each node checks
+   * the database against the value it was started with, so give every node
+   * consuming the queue the same value.
+   *
+   * Pass a number for one limit on every group, or `{ default, tiers }` to give
+   * groups in particular tiers their own limit, with `default` covering the
+   * rest. A limit of 1 keeps each group's jobs strictly one at a time while
+   * {@link concurrency} still lets different groups run side by side.
+   *
+   * @example
+   * ```typescript
+   * // Three jobs at once on this node, but never two from the same group.
+   * const worker: JobWorkerPolicy = { concurrency: 3, groupConcurrency: 1 };
+   * ```
+   */
+  groupConcurrency?: number | { default: number; tiers?: Record<string, number> };
 }
