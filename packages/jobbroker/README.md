@@ -10,7 +10,8 @@ A flexible background job processing library with support for scheduled and on-d
 - **On-demand jobs** for immediate execution
 - **Cancellation** of queued _and_ running jobs, plus state lookup, delete, and resume
 - **Per-queue retry & dead-letter policy** for retry limits, backoff, and poison-message capture
-- **Per-queue worker policy** for concurrency, batch size, and poll interval
+- **Per-queue worker policy** for concurrency, batch size, poll interval, and per-group concurrency
+- **Job groups** on send, so jobs sharing a key run one at a time while other keys run in parallel
 - **Per-job settlement** so one failing job in a batch never drags its siblings into retry
 - **Permanent failures** that skip remaining retries and dead-letter immediately
 - **Dead-letter monitoring** to inspect, redrive, retry, or discard failed jobs
@@ -149,6 +150,9 @@ await broker.send('send-email', payload, { startAfter: Duration.fromObject({ min
 
 // ...or until an absolute moment (Luxon DateTime)
 await broker.send('send-email', payload, { startAfter: DateTime.now().plus({ hours: 2 }) });
+
+// Group a job, so a worker's groupConcurrency can keep one group's jobs from overlapping
+await broker.send('chat.reply', payload, { group: { id: conversationId } });
 
 // Inspect a job's current state
 const info = await broker.getJob('send-email', id); // { id, name, state, data } | null
@@ -362,7 +366,27 @@ await runner.start();
 
 When a registration declares no worker policy and no default is set, pg-boss's own defaults apply: one worker, one job per fetch.
 
-> `concurrency` maps to pg-boss `localConcurrency` and per-job settlement to `perJobResults`, both of which the package's peer floor (**pg-boss >= 12.38.0**) guarantees.
+### Ordering within a group
+
+Some queues must keep one key's jobs in order (the replies in one conversation, the updates to one account) without making every other key wait. Send each job with a `group`, and give the worker a `groupConcurrency`:
+
+```typescript
+registry.set('chat.reply', {
+  job: ChatReplyJob,
+  worker: {
+    concurrency: 3, // three jobs at once on this node...
+    groupConcurrency: 1, // ...but never two from the same conversation, on any node
+  },
+});
+
+await broker.send('chat.reply', { conversationId, messageId }, { group: { id: conversationId } });
+```
+
+Unlike `concurrency`, which is per node, `groupConcurrency` is counted in the database, so the limit holds however many nodes consume the queue. The limit itself is still each worker's own value, so give every node the same one. Jobs sent without a `group` are not limited by it.
+
+A group may also carry a `tier`, and `groupConcurrency` may give tiers their own limits: `{ default: 1, tiers: { priority: 3 } }` lets a group sent with `group: { id, tier: 'priority' }` run three at once while every other group runs one.
+
+> `concurrency` maps to pg-boss `localConcurrency`, `groupConcurrency` to pg-boss `groupConcurrency`, a send's `group` to pg-boss's `group` job option, and per-job settlement to `perJobResults`, all of which the package's peer floor (**pg-boss >= 12.38.0**) guarantees.
 
 ## Monitoring & draining dead-letter queues
 
@@ -431,17 +455,17 @@ Injection token describing the job execution in flight, registered by the runner
 
 Abstract base class for sending, cancelling, and inspecting jobs. Operations a backend cannot honor throw `NotSupportedError`.
 
-| Method                                                                                                    | Description                                                                                                                            |
-| --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `send<P>(name: string, payload: P, options?: JobSendOptions): Promise<string>`                            | Queue a job; resolves with the new job id. Pass `options.startAfter` (a Luxon `Duration` or `DateTime`) to defer it                    |
-| `schedule<P>(name: string, recurrence: string, payload?: P, options?: JobScheduleOptions): Promise<void>` | Create or replace a recurring schedule on a cron expression or RFC 5545 recurrence rule. `options` take `key`, `timeZone` and `missed` |
-| `unschedule(name: string, key?: string): Promise<void>`                                                   | Remove the schedule with that key, or the unkeyed one when `key` is omitted                                                            |
-| `getSchedules<P>(name: string, key?: string): Promise<JobSchedule<P>[]>`                                  | List a name's schedules, or the one with `key`                                                                                         |
-| `previewSchedule(recurrence: string, options?: JobSchedulePreviewOptions): Promise<DateTime[]>`           | Next occurrences of a recurrence, without storing anything. `options` take `timeZone`, `from` and `count`                              |
-| `cancel(name: string, id: string \| string[]): Promise<void>`                                             | Request cancellation of queued or running jobs (cooperative)                                                                           |
-| `resume(name: string, id: string \| string[]): Promise<void>`                                             | Re-queue previously cancelled jobs                                                                                                     |
-| `deleteJob(name: string, id: string \| string[]): Promise<void>`                                          | Permanently delete jobs                                                                                                                |
-| `getJob<P>(name: string, id: string): Promise<JobInfo<P> \| null>`                                        | Look up a job's current state, or `null` if it does not exist                                                                          |
+| Method                                                                                                    | Description                                                                                                                                         |
+| --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `send<P>(name: string, payload: P, options?: JobSendOptions): Promise<string>`                            | Queue a job; resolves with the new job id. Pass `options.startAfter` (a Luxon `Duration` or `DateTime`) to defer it, or `options.group` to group it |
+| `schedule<P>(name: string, recurrence: string, payload?: P, options?: JobScheduleOptions): Promise<void>` | Create or replace a recurring schedule on a cron expression or RFC 5545 recurrence rule. `options` take `key`, `timeZone` and `missed`              |
+| `unschedule(name: string, key?: string): Promise<void>`                                                   | Remove the schedule with that key, or the unkeyed one when `key` is omitted                                                                         |
+| `getSchedules<P>(name: string, key?: string): Promise<JobSchedule<P>[]>`                                  | List a name's schedules, or the one with `key`                                                                                                      |
+| `previewSchedule(recurrence: string, options?: JobSchedulePreviewOptions): Promise<DateTime[]>`           | Next occurrences of a recurrence, without storing anything. `options` take `timeZone`, `from` and `count`                                           |
+| `cancel(name: string, id: string \| string[]): Promise<void>`                                             | Request cancellation of queued or running jobs (cooperative)                                                                                        |
+| `resume(name: string, id: string \| string[]): Promise<void>`                                             | Re-queue previously cancelled jobs                                                                                                                  |
+| `deleteJob(name: string, id: string \| string[]): Promise<void>`                                          | Permanently delete jobs                                                                                                                             |
+| `getJob<P>(name: string, id: string): Promise<JobInfo<P> \| null>`                                        | Look up a job's current state, or `null` if it does not exist                                                                                       |
 
 ### `JobScheduleOptions` / `JobSchedule<Payload>` / `JobSchedulePreviewOptions`
 
@@ -511,11 +535,12 @@ Backend-agnostic per-queue retry and dead-letter policy (see [Retry & dead-lette
 
 Per-queue worker throughput, declared on the registration's `worker` field or runner-wide via `defaultWorkerPolicy`. All fields optional.
 
-| Field          | Type       | Meaning                                                                          |
-| -------------- | ---------- | -------------------------------------------------------------------------------- |
-| `concurrency`  | `number`   | Jobs this node may run at once for the queue. Each unit settles its own job.     |
-| `batchSize`    | `number`   | Jobs fetched per trip and handed to the handler as one batch, settled as a unit. |
-| `pollInterval` | `Duration` | How long a worker waits between fetches while idle. Passed through unrounded.    |
+| Field              | Type                                                            | Meaning                                                                                        |
+| ------------------ | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `concurrency`      | `number`                                                        | Jobs this node may run at once for the queue. Each unit settles its own job.                   |
+| `batchSize`        | `number`                                                        | Jobs fetched per trip and handed to the handler as one batch, settled as a unit.               |
+| `pollInterval`     | `Duration`                                                      | How long a worker waits between fetches while idle. Passed through unrounded.                  |
+| `groupConcurrency` | `number \| { default: number; tiers?: Record<string, number> }` | Jobs of one `group` that may run at once across all nodes, tracked by pg-boss in the database. |
 
 Configures the worker this process starts, not the queue. See [Worker concurrency](#worker-concurrency).
 

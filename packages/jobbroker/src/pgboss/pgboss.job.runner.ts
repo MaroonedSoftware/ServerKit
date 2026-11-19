@@ -413,6 +413,8 @@ export class PgBossJobRunner extends JobRunner {
    * options. `pollInterval` is passed as a fractional second count rather than
    * rounded — pg-boss accepts intervals down to 0.5s, so rounding would turn a
    * deliberate sub-second poll into either 0 (rejected) or 1.
+   * `groupConcurrency` maps to pg-boss's database-tracked `groupConcurrency`, so
+   * the per-group limit holds across nodes, not just within this one.
    *
    * Always returns options, because `perJobResults` is always on: it is what makes
    * pg-boss settle each job in a batch individually, and what gives
@@ -433,6 +435,9 @@ export class PgBossJobRunner extends JobRunner {
     }
     if (policy?.pollInterval !== undefined) {
       options.pollingIntervalSeconds = policy.pollInterval.as('seconds');
+    }
+    if (policy?.groupConcurrency !== undefined) {
+      options.groupConcurrency = policy.groupConcurrency;
     }
     return options;
   }

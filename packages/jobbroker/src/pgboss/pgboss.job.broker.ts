@@ -70,10 +70,14 @@ export class PgBossJobBroker extends JobBroker {
    * {@link Duration} is converted to a relative number of seconds and a
    * {@link DateTime} to an absolute `Date`.
    *
+   * When `options.group` is supplied it is passed through as pg-boss's `group`
+   * job option, so a worker's `groupConcurrency` can limit how many jobs of that
+   * group run at once.
+   *
    * @typeParam Payload - The type of the job payload.
    * @param name - The name of the registered job to execute.
    * @param payload - The data to pass to the job handler.
-   * @param options - Optional enqueue options, e.g. `startAfter` to defer the job.
+   * @param options - Optional enqueue options, e.g. `startAfter` to defer the job or `group` to group it.
    * @returns A promise that resolves with the id of the queued job.
    * @throws Error if the job name is not found in the registry.
    * @throws Error if pg-boss does not return a job id (e.g. the job was
@@ -87,6 +91,7 @@ export class PgBossJobBroker extends JobBroker {
     const id = await this.pgboss.send(name, payload, {
       db: this.connectionProvider.executor(),
       ...this.toStartAfter(options?.startAfter),
+      ...(options?.group ? { group: options.group } : {}),
     });
     if (!id) {
       throw new Error(`Failed to enqueue job ${name}`);

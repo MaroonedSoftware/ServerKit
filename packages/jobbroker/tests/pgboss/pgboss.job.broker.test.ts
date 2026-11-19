@@ -121,6 +121,21 @@ describe('PgBossJobBroker', () => {
 
       expect(mockPgBoss.send).toHaveBeenCalledWith('test-job', payload, { db: undefined, startAfter: runAt.toJSDate() });
     });
+
+    it('should pass a group through as the pg-boss group option', async () => {
+      const payload = { message: 'grouped' };
+
+      await broker.send('test-job', payload, { group: { id: 'conversation.1', tier: 'priority' } });
+
+      expect(mockPgBoss.send).toHaveBeenCalledWith('test-job', payload, { db: undefined, group: { id: 'conversation.1', tier: 'priority' } });
+    });
+
+    it('should not set group when none is given', async () => {
+      await broker.send('test-job', { message: 'ungrouped' }, { startAfter: Duration.fromObject({ seconds: 1 }) });
+
+      const [, , sendOptions] = vi.mocked(mockPgBoss.send).mock.calls[0]!;
+      expect(sendOptions).not.toHaveProperty('group');
+    });
   });
 
   describe('schedule', () => {
