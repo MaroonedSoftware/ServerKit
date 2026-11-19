@@ -921,6 +921,75 @@ describe('PgBossJobRunner', () => {
       expect(mockPgBoss.work).toHaveBeenCalledWith('overrides', { perJobResults: true, groupConcurrency: 2 }, expect.any(Function));
     });
 
+    it('maps localGroupConcurrency onto pg-boss localGroupConcurrency', async () => {
+      registrations.clear();
+      registrations.set('chat.reply', { job: TestJob, worker: { concurrency: 3, localGroupConcurrency: 1 } });
+      registrations.set('tiered', { job: TestJob, worker: { localGroupConcurrency: { default: 1, tiers: { priority: 3 } } } });
+      runner = new PgBossJobRunner(mockContainer, registrations, mockPgBoss, mockLogger);
+
+      await runner.start();
+
+      expect(mockPgBoss.work).toHaveBeenCalledWith(
+        'chat.reply',
+        { perJobResults: true, localConcurrency: 3, localGroupConcurrency: 1 },
+        expect.any(Function),
+      );
+      expect(mockPgBoss.work).toHaveBeenCalledWith(
+        'tiered',
+        { perJobResults: true, localGroupConcurrency: { default: 1, tiers: { priority: 3 } } },
+        expect.any(Function),
+      );
+    });
+
+    it('merges localGroupConcurrency through defaultWorkerPolicy', async () => {
+      registrations.clear();
+      registrations.set('inherits', { job: TestJob, worker: { concurrency: 4 } });
+      registrations.set('overrides', { job: TestJob, worker: { localGroupConcurrency: 2 } });
+      runner = new PgBossJobRunner(mockContainer, registrations, mockPgBoss, mockLogger);
+      runner.defaultWorkerPolicy = { localGroupConcurrency: 1 };
+
+      await runner.start();
+
+      expect(mockPgBoss.work).toHaveBeenCalledWith(
+        'inherits',
+        { perJobResults: true, localConcurrency: 4, localGroupConcurrency: 1 },
+        expect.any(Function),
+      );
+      expect(mockPgBoss.work).toHaveBeenCalledWith('overrides', { perJobResults: true, localGroupConcurrency: 2 }, expect.any(Function));
+    });
+
+    it('refuses to start, before touching pg-boss, when a queue sets both group limits', async () => {
+      registrations.clear();
+      registrations.set('fine', TestJob);
+      registrations.set('both', { job: TestJob, worker: { groupConcurrency: 1, localGroupConcurrency: 1 } });
+      runner = new PgBossJobRunner(mockContainer, registrations, mockPgBoss, mockLogger);
+
+      await expect(runner.start()).rejects.toThrow(/queue "both" sets both groupConcurrency and localGroupConcurrency/);
+      expect(mockPgBoss.start).not.toHaveBeenCalled();
+      expect(mockPgBoss.createQueue).not.toHaveBeenCalled();
+      expect(mockPgBoss.work).not.toHaveBeenCalled();
+    });
+
+    it('refuses to start when the default and a queue policy together set both group limits', async () => {
+      registrations.clear();
+      registrations.set('mixed', { job: TestJob, worker: { localGroupConcurrency: 1 } });
+      runner = new PgBossJobRunner(mockContainer, registrations, mockPgBoss, mockLogger);
+      runner.defaultWorkerPolicy = { groupConcurrency: 2 };
+
+      await expect(runner.start()).rejects.toThrow(/queue "mixed" sets both/);
+    });
+
+    it('lets a queue clear a group limit inherited from the default', async () => {
+      registrations.clear();
+      registrations.set('local', { job: TestJob, worker: { groupConcurrency: undefined, localGroupConcurrency: 1 } });
+      runner = new PgBossJobRunner(mockContainer, registrations, mockPgBoss, mockLogger);
+      runner.defaultWorkerPolicy = { groupConcurrency: 2 };
+
+      await runner.start();
+
+      expect(mockPgBoss.work).toHaveBeenCalledWith('local', { perJobResults: true, localGroupConcurrency: 1 }, expect.any(Function));
+    });
+
     it('maps an empty worker policy to perJobResults alone', async () => {
       registrations.clear();
       registrations.set('empty.policy', { job: TestJob, worker: {} });

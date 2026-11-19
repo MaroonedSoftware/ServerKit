@@ -71,7 +71,8 @@ export class PgBossJobBroker extends JobBroker {
    * {@link DateTime} to an absolute `Date`.
    *
    * When `options.group` is supplied it is passed through as pg-boss's `group`
-   * job option, so a worker's `groupConcurrency` can limit how many jobs of that
+   * job option, so a worker's `localGroupConcurrency` or `groupConcurrency` can
+   * limit how many jobs of that
    * group run at once.
    *
    * @typeParam Payload - The type of the job payload.
