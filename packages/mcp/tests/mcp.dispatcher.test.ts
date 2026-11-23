@@ -163,10 +163,28 @@ describe('McpDispatcher (stateless)', () => {
     expect(response).toMatchObject({ id: 8, result: { content: [{ type: 'text', text: 'user-1' }] } });
   });
 
-  it('errors when calling an unregistered tool', async () => {
+  it('answers an unregistered tool with an error result naming the closest tools', async () => {
     const { dispatcher } = buildDispatcher();
-    const response = (await dispatcher.dispatch(rpc(3, 'tools/call', { name: 'nope', arguments: {} }), makeContext())) as { error?: unknown };
-    expect(response.error).toBeDefined();
+    const response = (await dispatcher.dispatch(rpc(3, 'tools/call', { name: 'echoo', arguments: {} }), makeContext())) as {
+      error?: unknown;
+      result?: CallToolResult;
+    };
+    expect(response.error).toBeUndefined();
+    expect(response.result).toEqual({
+      isError: true,
+      content: [{ type: 'text', text: 'No tool named "echoo". The closest: echo. Call one of those instead.' }],
+    });
+  });
+
+  it('answers an unregistered tool with no near name by pointing at the tool list', async () => {
+    const { dispatcher } = buildDispatcher();
+    const response = (await dispatcher.dispatch(rpc(3, 'tools/call', { name: 'nope', arguments: {} }), makeContext())) as {
+      result?: CallToolResult;
+    };
+    expect(response.result).toMatchObject({
+      isError: true,
+      content: [{ type: 'text', text: 'No tool named "nope". List the tools to see which ones there are.' }],
+    });
   });
 
   it('hands the tool a live abort signal that is not yet aborted', async () => {

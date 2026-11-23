@@ -27,6 +27,7 @@ pnpm add @maroonedsoftware/mcp @modelcontextprotocol/sdk
 | `McpServerFactory`                                | Builds SDK `Server` instances wired to the handler maps — memoizes the `tools/list` payload and uses stable, ALS-backed request handlers.                                                                           |
 | `McpToolHandler` / `McpToolHandlerMap`            | One-method tool handler interface (`handle(args, context)`) + its `Map<toolName, handler>` DI token.                                                                                                                |
 | `ExplainedToolHandler` / `explainToolErrors(map)` | Wraps a tool (or every tool in a map) so a thrown `HttpError` becomes an `isError` result the model can act on, instead of a JSON-RPC error.                                                                        |
+| `closestMcpNames(wanted, names)`                  | The registered names nearest a guessed tool name. A call to an unregistered tool answers with them as an `isError` result instead of a JSON-RPC error.                                                            |
 | `McpHelpToolHandler`                              | Opt-in `help` tool: an overview plus every other tool's description, for clients that ignore `instructions` and for text that must be current per call.                                                             |
 | `McpResourceHandler` / `McpResourceHandlerMap`    | Resource handler interface (`read(uri, context)`) + its `Map<uri, handler>` DI token.                                                                                                                               |
 | `McpUiResource`                                   | Base class for an MCP Apps `ui://` resource: subclass it, return the app HTML from `html(context)`, and it is served with the MCP Apps MIME type and `_meta.ui`.                                                    |
@@ -188,6 +189,16 @@ registry
 ```
 
 `new ExplainedToolHandler(handler)` wraps a single tool.
+
+### Unknown tool names
+
+A call naming a tool that is not registered does not end in a JSON-RPC error. It returns a tool result with `isError: true` that names the tool and up to three of the closest registered names, nearest first, so the model can retry with a real one:
+
+```text
+No tool named "list_channel". The closest: list_channels, read_channel. Call one of those instead.
+```
+
+A name counts as close when it shares an underscore-separated word with the guess or is a few edits from it. Only tools this client was listed are suggested, so an app-only tool never reaches a client without MCP UI. `closestMcpNames(wanted, names)` is exported for the same matching elsewhere.
 
 ## MCP UI (MCP Apps)
 
