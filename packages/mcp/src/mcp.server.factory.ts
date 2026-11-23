@@ -24,6 +24,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { McpConfig, MCP_DEFAULT_REQUEST_TIMEOUT_MS } from './mcp.config.js';
 import { McpError } from './mcp.error.js';
+import { unknownMcpToolMessage } from './mcp.closest.names.js';
 import { McpToolHandlerMap } from './mcp.tool.handler.js';
 import { McpResourceHandlerMap } from './mcp.resource.handler.js';
 import { McpPromptHandlerMap } from './mcp.prompt.handler.js';
@@ -128,7 +129,10 @@ export class McpServerFactory {
     const handler = this.tools.get(name);
     if (!handler) {
       this.logger.debug('No MCP tool handler registered', { tool: name });
-      throw new McpError(`No MCP tool registered for "${name}"`).withInternalDetails({ tool: name });
+      // A tool result rather than a JSON-RPC error, so the model reads the near names and retries.
+      // Only names this client was listed are suggested.
+      const listed = (this.hidesUi() ? this.toolListWithoutUi : this.toolList).tools.map(tool => tool.name);
+      return { isError: true, content: [{ type: 'text', text: unknownMcpToolMessage(name, listed) }] };
     }
 
     return handler.handle(request.params.arguments ?? {}, context.forTool(name, this.requestSignal(extra)));
