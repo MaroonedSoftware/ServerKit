@@ -11,6 +11,7 @@ export * from './mcp.require.policy.js';
 export * from './mcp.tool.handler.js';
 export * from './mcp.closest.names.js';
 export * from './mcp.explained.tool.handler.js';
+export * from './mcp.capped.tool.handler.js';
 export * from './mcp.help.tool.handler.js';
 export * from './mcp.resource.handler.js';
 export * from './mcp.ui.js';

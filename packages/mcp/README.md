@@ -27,6 +27,7 @@ pnpm add @maroonedsoftware/mcp @modelcontextprotocol/sdk
 | `McpServerFactory`                                | Builds SDK `Server` instances wired to the handler maps — memoizes the `tools/list` payload and uses stable, ALS-backed request handlers.                                                                           |
 | `McpToolHandler` / `McpToolHandlerMap`            | One-method tool handler interface (`handle(args, context)`) + its `Map<toolName, handler>` DI token.                                                                                                                |
 | `ExplainedToolHandler` / `explainToolErrors(map)` | Wraps a tool (or every tool in a map) so a thrown `HttpError` becomes an `isError` result the model can act on, instead of a JSON-RPC error.                                                                        |
+| `CappedToolHandler` / `capToolResults(map, { maxChars })` | Wraps a tool (or every tool in a map) so a result whose text runs past `maxChars` is cut and ends with a hint telling the model to ask for less. |
 | `closestMcpNames(wanted, names)`                  | The registered names nearest a guessed tool name. A call to an unregistered tool answers with them as an `isError` result instead of a JSON-RPC error.                                                            |
 | `McpHelpToolHandler`                              | Opt-in `help` tool: an overview plus every other tool's description, for clients that ignore `instructions` and for text that must be current per call.                                                             |
 | `McpResourceHandler` / `McpResourceHandlerMap`    | Resource handler interface (`read(uri, context)`) + its `Map<uri, handler>` DI token.                                                                                                                               |
@@ -189,6 +190,29 @@ registry
 ```
 
 `new ExplainedToolHandler(handler)` wraps a single tool.
+
+### Capping result size
+
+A tool that returns a huge result fills the model's context, and the model answers from whatever it reads. Wrap your tools with `capToolResults` and a result whose text runs past `maxChars` (summed over its text blocks) is cut and ends with a hint on how to get less:
+
+```text
+… [cut at 20000 of 184213 characters: ask for less: a narrower search or filter, a smaller limit, or the next page]
+```
+
+The text block the cap falls in is cut, later text blocks are dropped, and non-text blocks are kept. A cut result drops `structuredContent`, since it is usually the same data and would send the whole payload anyway. A tool that declares an `outputSchema` must return `structuredContent` unless the result is an error, so its cut result is marked `isError: true`. A result within the cap is returned unchanged.
+
+```ts
+import { McpToolHandlerMap, capToolResults, explainToolErrors } from '@maroonedsoftware/mcp';
+
+registry
+  .register(McpToolHandlerMap)
+  .useFactory(container =>
+    capToolResults(explainToolErrors(new McpToolHandlerMap([['search_docs', container.get(SearchDocsTool)]])), { maxChars: 20_000 }),
+  )
+  .asSingleton();
+```
+
+`new CappedToolHandler(handler, { maxChars })` wraps a single tool.
 
 ### Unknown tool names
 
