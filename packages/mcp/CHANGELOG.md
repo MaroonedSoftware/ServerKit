@@ -1,5 +1,12 @@
 # @maroonedsoftware/mcp
 
+## 0.9.0
+
+### Minor Changes
+
+- cb2d3d9: Add `capToolResults(tools, { maxChars })` and `CappedToolHandler`, which cut a tool result whose text runs past `maxChars` and end it with `… [cut at N of M characters: ask for less: a narrower search or filter, a smaller limit, or the next page]`, so the model narrows its call instead of answering from part of the data. A cut result drops `structuredContent`, and is marked `isError` when the tool declares an `outputSchema`. A result within the cap is returned unchanged.
+- 54bd579: A `tools/call` naming an unregistered tool now returns a tool result with `isError: true` instead of a JSON-RPC error. Its text names the tool and up to three of the closest tools this client was listed (sharing an underscore-separated word with the guess, or a few edits away), so the model can retry with a real name. The matching is exported as `closestMcpNames`, with `unknownMcpToolMessage` and `MCP_CLOSEST_NAMES_LIMIT`.
+
 ## 0.8.1
 
 ### Patch Changes
